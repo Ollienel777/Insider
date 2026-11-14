@@ -17,6 +17,7 @@ export function ghostOf(checked: CheckedPlan): GhostPlan {
 
 const REASON: Record<NonNullable<CrewAnswer["reason"]>, string> = {
   "fake mode": "Fake mode: no model was called. This is a recorded crew reply.",
+  configuration: "No model was called: a setting refuses live calls. This is a recorded crew reply.",
   timeout: "The model didn't answer within the time limit, so a recorded crew reply stands in.",
   error: "The model call failed, so a recorded crew reply stands in.",
 };
