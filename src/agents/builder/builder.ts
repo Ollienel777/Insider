@@ -7,7 +7,8 @@
 // fixtures/llm/scripts/builder-<id>.json: the graph, the todos, the subagent
 // dispatch and every tool run for real against the fake adapters; only the
 // model's turns are recorded. Live, the same agent runs on the builder model
-// from the LLM adapter.
+// from the LLM adapter; `npm run record:builds` saves a live run's turns as a
+// script (record.ts), in fixtures/llm/recorded/.
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { createDeepAgent, GENERAL_PURPOSE_SUBAGENT } from "deepagents";
 import { todoListMiddleware } from "langchain";
@@ -18,13 +19,15 @@ import { type BuilderAgent, BuildTrace, LevelManifest, SCRIPTED_MODEL_PREFIX } f
 import type { ServiceMode } from "@/lib/mode";
 import { BUILDER_PROMPT, DATA_ANALYST_PROMPT, GAME_MASTER_PROMPT, SUBAGENT_DESCRIPTIONS } from "./prompts";
 import { analystTools, builderTools, type BuildRun, gameMasterTools } from "./tools";
-import { TraceRecorder, type TraceRecorderOptions } from "./trace";
+import { type RecordedTurn, TraceRecorder, type TraceRecorderOptions } from "./trace";
 
 export interface BuiltLevel {
   manifest: LevelManifest;
   trace: BuildTrace;
   /** The deep agent's final answer. */
   summary: string;
+  /** Every model call the builder and its subagents made, in order. */
+  turns: RecordedTurn[];
 }
 
 export interface BuildOptions extends TraceRecorderOptions {
@@ -59,6 +62,18 @@ async function scriptFor(buildingId: string): Promise<Script | undefined> {
   }
 }
 
+/**
+ * The trace header for a fake-mode build. It says plainly what ran: no language
+ * model, only the recorded script (#17, R1-M5); and, when the script is a live
+ * recording, whose turns it replays and when they were recorded.
+ */
+export function scriptedLabel(script: Script): string {
+  const source = script.recorded
+    ? `replaying ${script.recorded.model}'s turns recorded ${script.recorded.recordedAt}; no LLM ran`
+    : "no LLM ran";
+  return `${SCRIPTED_MODEL_PREFIX}${script.id}), ${source}`;
+}
+
 async function resolveModel(buildingId: string, options: BuildOptions): Promise<{ model: BaseChatModel; label: string }> {
   if (options.model) return { model: options.model, label: options.modelLabel ?? options.model._llmType() };
   const script = await scriptFor(buildingId);
@@ -70,9 +85,7 @@ async function resolveModel(buildingId: string, options: BuildOptions): Promise<
           "fake mode cannot build it",
       );
     }
-    // Say plainly what ran: no language model; the model's turns are the
-    // script's, replayed by ScriptedChatModel (#17, R1-M5).
-    return { model: selection.model, label: `${SCRIPTED_MODEL_PREFIX}${script.id}), no LLM ran` };
+    return { model: selection.model, label: scriptedLabel(script) };
   }
   const id = (selection.model as { model?: unknown }).model;
   return { model: selection.model, label: `${selection.provider}${typeof id === "string" ? ` ${id}` : ""}` };
@@ -143,7 +156,12 @@ export async function buildLevel(buildingId: string, options: BuildOptions = {})
   if (!run.manifest) {
     throw new LevelBuildError(`the Level Builder finished without writing a manifest for ${buildingId}`, traceSoFar());
   }
-  return { manifest: LevelManifest.parse(run.manifest), trace: BuildTrace.parse(traceSoFar()), summary };
+  return {
+    manifest: LevelManifest.parse(run.manifest),
+    trace: BuildTrace.parse(traceSoFar()),
+    summary,
+    turns: recorder.turns,
+  };
 }
 
 /** A build that did not produce a manifest, with the trace of what it did. */

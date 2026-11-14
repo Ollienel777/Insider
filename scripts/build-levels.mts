@@ -5,6 +5,7 @@
 // (and saying so) any that fake mode has no recorded script for. A building
 // named on the command line that fails to build fails the command.
 import { getCoStar } from "@/adapters/costar";
+import { safeErrorMessage } from "@/adapters/llm";
 import { buildLevel, writeCachedLevel } from "@/agents/builder";
 import { City } from "@/domain";
 
@@ -22,10 +23,10 @@ for (const id of ids) {
     const counts = (kind: string) => level.trace.events.filter((e) => e.kind === kind).length;
     console.log(
       `${id}: ${level.summary || "built"} [${counts("todo")} todos, ${counts("subagent")} subagent tasks, ` +
-        `${counts("tool")} tool calls] → ${written.map((p) => p.slice(process.cwd().length + 1)).join(", ")}`,
+        `${counts("tool")} tool calls, ${level.turns.length} model calls] → ${written.map((p) => p.slice(process.cwd().length + 1)).join(", ")}`,
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = safeErrorMessage(error);
     if (requested.length === 0 && /no recorded builder script/.test(message)) {
       console.log(`${id}: skipped, ${message}`);
       continue;
