@@ -8,7 +8,9 @@
 // Orders answer an alarm, so they last only while there is one: at Calm every
 // order and lock is dropped (a late answer to an event the alarm has since
 // decayed from), and the decay to Calm ends the Chief's targets and unlocks
-// the doors the Chief locked (alarm.ts). The level's own locked doors stay.
+// the doors the Chief locked (alarm.ts), a level door the player picked open
+// and the Chief then re-locked among them. Doors the level locked and nobody
+// opened stay locked.
 import type { ChiefOrders, GuardOrder } from "@/domain";
 import { orderGuard } from "./guards";
 import { zoneTarget, type RunState } from "./state";
@@ -30,8 +32,8 @@ export interface AppliedOrders {
 
 /**
  * Applies the Chief's orders to the run, from the guards' next hop. Unknown
- * guards and zones are dropped, and at Calm everything is. The orders are kept on the run, so the next
- * turn's log entry carries them (RunTurn.chief).
+ * guards and zones are dropped, and at Calm everything is. The orders are
+ * kept on the run, so the next turn's log entry carries them (RunTurn.chief).
  */
 export function applyChiefOrders(run: RunState, chief: ChiefOrders): AppliedOrders {
   let state = run;

@@ -149,7 +149,7 @@ describe("a sighting at Lockdown (PR #58, R1-M1)", () => {
   });
 
   it("is still an event after a turn unseen when noise was heard in between (#94)", () => {
-    // A locked door between n0 and n1; a deaf guard on n3 that never moves hears a pick on n1.
+    // A locked door between n0 and n1; a blind guard on n3 that never moves hears a pick on n1.
     const noisy = lineLevel(8, {
       floor: lineFloor(8, { door: [0, "d-01"] }),
       guards: [{ id: "G1", patrol: ["n3"] }],
