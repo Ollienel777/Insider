@@ -34,6 +34,9 @@ import {
 } from "./board";
 import { BoardView } from "./board-view";
 import { LensLegend, LensToggle, useLayerLens } from "./layer-lens";
+import { LiveControls } from "./live-controls";
+import { usePlayMode } from "./play-mode";
+import { useTurnClock } from "./turn-clock";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
 import { loadCrewPlan, type StoredCrewPlan } from "./crew-plan-store";
@@ -86,6 +89,7 @@ type Load =
  * browser (SPEC §4.5), the placer turns the cached manifest into a level on
  * it, and the engine plays it. Keys: 1–9 a neighbour, W wait, Space take,
  * S sprint (the numbers then mark nodes two open hops away; S or Esc walks).
+ * In Live (issue 99) a turn the player lets run out is played by the clock; P pauses it.
  */
 export function RunScreen({
   building,
@@ -303,6 +307,18 @@ export function RunScreen({
     [placed, run, callChief, building.id, missionId, inMemory],
   );
 
+  // Live mode (issue 99): the clock plays its turns through `play`, like a key. A clock turn is
+  // not the player's own action, so it leaves them sprinting if they were.
+  const [playMode, setPlayMode] = usePlayMode();
+  const clock = useTurnClock({
+    live: playMode === "live",
+    run,
+    play: (action) => {
+      play(action);
+      setMode(mode);
+    },
+  });
+
   const retryChief = useCallback(() => {
     const current = latestRun.current;
     if (current && current.alarmEvents.length > 0) callChief(current, current.alarmEvents.length - 1);
@@ -480,6 +496,7 @@ export function RunScreen({
                 source={source}
               />
             ) : null}
+            {run ? <LiveControls mode={playMode} onChange={setPlayMode} clock={clock} /> : null}
           </div>
 
           {lens && run && placed ? <LensLegend placed={placed} locked={run.locked} /> : null}
