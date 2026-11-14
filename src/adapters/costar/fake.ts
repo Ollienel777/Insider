@@ -21,7 +21,7 @@ export function createFakeCoStar(
   buildings: readonly Building[] = FIXTURE_BUILDINGS,
   { failWith }: FakeCoStarOptions = {},
 ): CoStarAdapter {
-  if (failWith && process.env.NODE_ENV === "test") return failingCoStar(failWith);
+  if (failWith !== undefined && process.env.NODE_ENV === "test") return failingCoStar(failWith);
   const byId = new Map(buildings.map((b) => [b.id, b]));
   // Callers get copies, so nothing they do can change the fixtures.
   const copy = <T>(value: T): T => structuredClone(value);

@@ -41,6 +41,8 @@ const pins = (html: string) => [...html.matchAll(/data-testid="map-pin"[^>]*data
 
 beforeEach(() => {
   override = null;
+  // The switch is gated on NODE_ENV; pin it so an exported shell value cannot flip the suite.
+  vi.stubEnv("NODE_ENV", "test");
 });
 
 afterEach(() => {
