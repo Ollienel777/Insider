@@ -39,12 +39,23 @@ export const F1_DEMO = Object.freeze({
   recordsDoor: "d-records-room",
 });
 
+/**
+ * The fixture floor a CoStar kit building plays on when its scan is not the
+ * board (#95): in fake mode, when the live load fails, or when the scan can't
+ * hold the level. Kit ids are integers and fixture ids are `F1`…, so the two
+ * never collide. A kit building's level is built from its own record and
+ * placed on this floor as on any other; the Run labels it a stand-in.
+ */
+export const STAND_IN_FLOOR = "F1";
+const isKitId = (id: string): boolean => /^\d+$/.test(id);
+
 export function createFakeMatterport(
   floors: Readonly<Record<string, FloorGraph>> = FIXTURE_FLOORS,
 ): MatterportAdapter {
   return {
     async loadFloor(building) {
-      const floor = Object.hasOwn(floors, building.id) ? floors[building.id] : undefined;
+      const id = Object.hasOwn(floors, building.id) ? building.id : isKitId(building.id) ? STAND_IN_FLOOR : undefined;
+      const floor = id !== undefined && Object.hasOwn(floors, id) ? floors[id] : undefined;
       // Callers get a copy, so nothing they do can change the fixture.
       return floor ? structuredClone(floor) : null;
     },

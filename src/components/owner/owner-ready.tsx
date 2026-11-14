@@ -150,17 +150,25 @@ export function OwnerReady({
     return boardOf(manifest, floor, fix.rerun.fixed, OWNER_SEED) ?? batchBefore;
   }, [batchBefore, fix, side, manifest, floor]);
 
-  // Coverage and open windows (issue 120): measured on each setup's board, so they follow every edit with no batch.
-  const editMeasure = useMemo(() => measureSetup(editBoard), [editBoard]);
-  const batchMeasures = useMemo<BatchMeasures | null>(() => {
-    if (!batchBefore) return null;
-    const fixed = fix.status === "applied" && !fix.rerun.dropped && fix.rerun.fixed ? boardOf(manifest, floor, fix.rerun.fixed, OWNER_SEED) : null;
-    return { before: measureSetup(batchBefore), after: fixed ? measureSetup(fixed) : null };
-  }, [batchBefore, fix, manifest, floor]);
-  const pairMeasures = useMemo<[SetupMeasure, SetupMeasure] | null>(
-    () => (pairBoards ? [measureSetup(pairBoards[0]), measureSetup(pairBoards[1])] : null),
-    [pairBoards],
+  // Coverage and open windows (issue 120): measured over the nights each setup's batch plays (issue 132),
+  // so they follow every edit with no batch. A draft with a problem gets none: the batch would not play it, and
+  // the board shows only the part of it that fits.
+  const editMeasure = useMemo(
+    () => (problems.all.length > 0 ? null : measureSetup(manifest, floor, draft.setup)),
+    [problems, manifest, floor, draft.setup],
   );
+  const batchMeasures = useMemo<BatchMeasures | null>(() => {
+    if (batch.status !== "done") return null;
+    const before = measureSetup(manifest, floor, batch.setup, batch.result.seeds);
+    if (!before) return null;
+    if (fix.status !== "applied" || fix.rerun.dropped || !fix.rerun.fixed) return { before, after: null };
+    return { before, after: measureSetup(manifest, floor, fix.rerun.fixed, fix.rerun.afterResult.seeds) };
+  }, [batch, fix, manifest, floor]);
+  const pairMeasures = useMemo<[SetupMeasure, SetupMeasure] | null>(() => {
+    if (pair.status !== "done") return null;
+    const [a, b] = pair.sides.map((s) => measureSetup(manifest, floor, s.setup, s.result.seeds));
+    return a && b ? [a, b] : null;
+  }, [pair, manifest, floor]);
 
   // An edit that changed nothing (the same object back) leaves the draft as it was.
   const edit = (next: OwnerSetup) => {

@@ -4,10 +4,11 @@ import { roundOf } from "@/engine/autoplay";
 import type { Board } from "@/engine";
 
 /**
- * The longest night the measure steps through. A night is the least common
+ * The longest cycle `cycleLength` reports. A night is the least common
  * multiple of every guard's round (its hops times its tempo) and every
  * camera's sweep (2 or 3 turns); with odd round lengths that can grow large,
- * so it stops at 240 turns, which is longer than any attempt (120 turns).
+ * so it stops at 240 turns. Coverage steps no further than an attempt lasts
+ * (`AUTOPLAY_MAX_TURNS`, 120 turns).
  */
 export const CYCLE_CAP = 240;
 

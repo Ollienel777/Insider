@@ -136,7 +136,15 @@ export function SetupPanel({
           {count(setup.guards.length, "guard")} · {count(setup.cleaners?.length ?? 0, "cleaner")} · {count(setup.cameras.length, "camera")} · {count(locked, "locked door")} ·{" "}
           {count(setup.desks.length, "desk")}
         </p>
-        {measure ? <MeasureLines measure={measure} testId="owner-setup-measure" /> : null}
+        {problems.all.length > 0 ? (
+          // A setup with a problem is not what the batch would play, nor what the board draws whole: no number for it.
+          <p data-testid="owner-setup-measure-blocked" className="text-sm text-text-2">
+            {problems.all.length === 1 ? "Fix the problem below" : `Fix the ${problems.all.length} problems below`} to measure coverage and open
+            windows.
+          </p>
+        ) : measure ? (
+          <MeasureLines measure={measure} testId="owner-setup-measure" />
+        ) : null}
         <p data-testid="owner-setup-note" className="text-sm text-text-2">
           {draft.state === "untouched"
             ? "This is the building's generated security in your terms. Change it to match what you really have."

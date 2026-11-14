@@ -57,3 +57,12 @@ export function showcaseIds(env: Env = process.env): Set<string> | null {
 export function showcaseMission(buildingId: string, env: Env = process.env): string | null {
   return showcase(env).find((e) => e.buildingId === buildingId)?.missionId ?? null;
 }
+
+/**
+ * The showcase building a mission is cast onto (#103): the first pair on the
+ * list that names the mission, or null when none does. The list is the whole
+ * source; nothing searches the kit for one.
+ */
+export function showcaseBuilding(missionId: string, env: Env = process.env): string | null {
+  return showcase(env).find((e) => e.missionId === missionId)?.buildingId ?? null;
+}

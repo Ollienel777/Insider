@@ -44,6 +44,7 @@ import {
   updateCamera,
 } from "./owner-edit";
 import type { Selection } from "./owner-board";
+import { measureSetup } from "./setup-measure";
 import { SetupPanel, type Draft, type Tool } from "./setup-panel";
 import type { OwnerBatch, OwnerFix } from "./use-owner-batch";
 
@@ -128,6 +129,63 @@ describe("the editor's states", () => {
     expect(playable(drawing, floor).guards.find((g) => g.id === "G1")!.round).toEqual([]);
   });
 
+  it("with a problem, no coverage or open windows: says to fix it, even with a measure passed (issue 132)", () => {
+    const drawing = extendRound(startRound(starting, "G1"), "G1", "mc-4");
+    // The batch would not play it, so there is nothing honest to measure; the playable part would give a number.
+    expect(measureSetup(manifest, floor, drawing)).toBeNull();
+    expect(measureSetup(manifest, floor, playable(drawing, floor))).not.toBeNull();
+    const html = renderToStaticMarkup(
+      <SetupPanel
+        floor={floor}
+        draft={{ setup: drawing, pristine: false, state: "editing" }}
+        problems={problemsOf(drawing, floor)}
+        selection={null}
+        tool="select"
+        saved={[]}
+        batchError={null}
+        onTool={noop}
+        onSelect={noop}
+        onEdit={noop}
+        onRename={noop}
+        onSave={noop}
+        onLoad={noop}
+        onDelete={noop}
+        onReset={noop}
+        measure={measureSetup(manifest, floor, starting)}
+      />,
+    );
+    expect(html).toContain('data-testid="owner-setup-measure-blocked"');
+    expect(html).toContain("Fix the problem below to measure coverage and open windows.");
+    expect(html).not.toContain("Coverage:");
+    expect(html).not.toContain('data-testid="owner-setup-measure"');
+  });
+
+  it("without a problem, the two numbers and what they mean, but no line on attempts it has not played", () => {
+    const html = renderToStaticMarkup(
+      <SetupPanel
+        floor={floor}
+        draft={{ setup: starting, pristine: true, state: "untouched" }}
+        problems={problemsOf(starting, floor)}
+        selection={null}
+        tool="select"
+        saved={[]}
+        batchError={null}
+        onTool={noop}
+        onSelect={noop}
+        onEdit={noop}
+        onRename={noop}
+        onSave={noop}
+        onLoad={noop}
+        onDelete={noop}
+        onReset={noop}
+        measure={measureSetup(manifest, floor, starting)}
+      />,
+    );
+    expect(html).toContain("Coverage: 47% of the floor is watched at some point in every night the crew plays.");
+    expect(html).toContain('data-testid="owner-setup-measure-note"');
+    expect(html).not.toContain('data-testid="owner-setup-measure-timing"');
+  });
+
   it("an element off the floor is named, and left off the board", () => {
     const off = { ...starting, cameras: [...starting.cameras, { id: "C3", node: "nowhere", kind: "fixed" as const, facing: "n" as const }] };
     const html = editor({ setup: off, pristine: false, state: "editing" }, { kind: "camera", id: "C3" });
@@ -160,6 +218,22 @@ describe("night cleaners in the editor", () => {
     // The last node again takes it off; staying put keeps the first.
     expect(extendCleanerRound(round, "K1", "o-south").cleaners![0].round).toEqual(["o-west", "o-north"]);
     expect(clearCleanerRound(round, "K1").cleaners![0].round).toEqual(["o-west"]);
+  });
+
+  it("closing a cleaner's round on its first node adds nothing, as for a guard (issue 123)", () => {
+    const round = extendCleanerRound(extendCleanerRound(startCleanerRound(withCleaner.setup, "K1"), "K1", "o-north"), "K1", "o-south");
+    // The click that closes the loop: the round already walks back to its start.
+    const closed = extendCleanerRound(round, "K1", "o-west");
+    expect(closed).toBe(round);
+    expect(closed.cleaners![0].round).toEqual(["o-west", "o-north", "o-south"]);
+    expect(validateOwnerSetup(closed, floor)).toEqual([]);
+    // A cleaner standing on one node: a click on that node doesn't double it either.
+    const still = startCleanerRound(withCleaner.setup, "K1");
+    expect(extendCleanerRound(still, "K1", "o-west").cleaners![0].round).toEqual(["o-west"]);
+    // An unknown cleaner leaves the setup alone.
+    expect(extendCleanerRound(round, "K9", "o-north")).toBe(round);
+    // Drawing and staying put are the same edit.
+    expect(startCleanerRound).toBe(clearCleanerRound);
   });
 
   it("an edited or removed generated cleaner comes off the generated list, and the rest still play as generated", () => {
@@ -393,11 +467,18 @@ describe("50 attempts, the fix, and the rerun", () => {
         stale={false}
         fixedSaved={null}
         side="before"
+        measures={{ before: measureSetup(manifest, floor, starting)!, after: measureSetup(manifest, floor, rerun.fixed!)! }}
         onEdit={noop}
         onRetry={noop}
         onOpenFixed={noop}
       />,
     );
+    // Under the count, the floor plan's two numbers and what they mean; with windows open, no line on how the 17 got out.
+    expect(html).toContain("Open windows: 40 of 80 moments in the 10 nights the crew plays let a crew in and out unseen.");
+    expect(html).toContain('data-testid="owner-measure-note"');
+    expect(html).not.toContain('data-testid="owner-measure-timing"');
+    expect(html).toContain("47% watched · 40/80 open");
+    expect(html).toContain("Coverage 47% → 50%, open windows 40 → 0.");
     expect(html).toMatch(/data-testid="owner-count" data-escaped="17" data-total="50"/);
     expect(html).toMatch(/data-testid="owner-before-count" data-escaped="17" data-total="50"/);
     expect(html).toMatch(/data-testid="owner-after-count" data-escaped="0" data-total="50"/);

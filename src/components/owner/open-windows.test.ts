@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { ChiefFix, LevelManifest, type FloorGraph } from "@/domain";
+import type { OwnerSetup } from "@/domain/owner-setup";
 import { act, createRun, moveGuards, type Level, type RunState } from "@/engine";
 import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.romaine-1974.json";
@@ -15,8 +16,8 @@ import { demoSetups } from "./demo-setups";
 import { CYCLE_CAP } from "./night";
 import { openWindows, type OpenWindows } from "./open-windows";
 import { ownerZones } from "./owner-batch";
-import { boardOf, setupFromPlaced, setupWithFix } from "./owner-edit";
-import { firstWindowLine, measureChange, measureSetup, windowsLine } from "./setup-measure";
+import { setupFromPlaced, setupWithFix } from "./owner-edit";
+import { batchNights, firstWindowLine, measureChange, measureSetup, windowsLine } from "./setup-measure";
 
 /** Nodes n0…n(k-1) in a line, plus `side` hanging off n0, no sightlines: a guard sees only its own node. */
 function line(k: number, doors: Record<number, string> = {}): FloorGraph {
@@ -124,38 +125,42 @@ describe("open windows on a small floor", () => {
   });
 });
 
-describe("open windows on F1", () => {
+describe("open windows on F1, over the nights the batch plays", () => {
   const manifest = LevelManifest.parse(structuredClone(cached));
   const floor = FIXTURE_FLOORS.F1;
-  const generated = placeLevel(manifest, floor, 1);
-  const fixed = boardOf(
-    manifest,
-    floor,
-    setupWithFix(setupFromPlaced(generated), toEngineFix(ChiefFix.parse(fixRecording.fix), ownerZones(manifest, floor)), generated.level, "After the fix"),
-    1,
-  )!;
-  const [night, moved] = demoSetups("F1").map((d) => boardOf(manifest, floor, d.setup, 1)!);
+  const generated = setupFromPlaced(placeLevel(manifest, floor, 1));
+  const fixed = setupWithFix(generated, toEngineFix(ChiefFix.parse(fixRecording.fix), ownerZones(manifest, floor)), placeLevel(manifest, floor, 1).level, "After the fix");
+  const [night, moved] = demoSetups("F1").map((d) => d.setup);
+  const of = (s: OwnerSetup) => measureSetup(manifest, floor, s)!;
 
   it("pins each setup's windows, as they come out", () => {
-    const of = (p: typeof generated) => measureSetup(p).windows;
-    expect(of(generated)).toMatchObject({ open: 4, moments: 8, share: 50 });
-    expect(of(fixed)).toMatchObject({ open: 0, moments: 8, share: 0, first: null });
-    expect(of(night)).toMatchObject({ open: 4, moments: 8, share: 50 });
-    expect(of(moved)).toMatchObject({ open: 2, moments: 8, share: 25 });
-    expect(windowsLine(measureSetup(night))).toBe("Open windows: 4 of 8 moments in the night let a crew in and out unseen.");
-    expect(measureChange(measureSetup(night), measureSetup(moved))).toBe(
-      "Coverage 50% → 57%, open windows 4 → 2",
+    expect(of(generated).windows).toMatchObject({ open: 40, moments: 80, share: 50 });
+    expect(of(fixed).windows).toMatchObject({ open: 0, moments: 80, share: 0, first: null });
+    expect(of(night).windows).toMatchObject({ open: 40, moments: 80, share: 50 });
+    expect(of(moved).windows).toMatchObject({ open: 20, moments: 80, share: 25 });
+    expect(of(moved)).toMatchObject({ openNights: 10, nights: 10, firstNight: 1 });
+    expect(windowsLine(of(night))).toBe("Open windows: 40 of 80 moments in the 10 nights the crew plays let a crew in and out unseen.");
+    expect(measureChange(of(night), of(moved))).toBe("Coverage 43% → 50%, open windows 40 → 20");
+    expect(firstWindowLine(of(moved))).toBe(
+      "The first opens on night 1, turn 1: Freight Lift Lobby → Dock Corridor → Records Room → Dock Corridor → Freight Lift Lobby.",
     );
-    expect(firstWindowLine(measureSetup(moved))).toBe(
-      "The first opens on turn 0: Freight Lift Lobby → Dock Corridor → Records Room → Dock Corridor → Freight Lift Lobby.",
-    );
-    expect(firstWindowLine(measureSetup(fixed))).toBeNull();
+    expect(firstWindowLine(of(fixed))).toBeNull();
   });
 
-  it("every first window plays out through the engine unseen and unheard by guards and cameras (the night shift's cleaner is left out, as it never catches)", () => {
-    for (const placed of [generated, night, moved]) {
-      const first = measureSetup(placed).windows.first!;
-      const run = playBack(placed.level, first);
+  it("counts each night's windows with that night's guards and cameras, and adds them up", () => {
+    for (const setup of [generated, fixed, night, moved]) {
+      const nights = batchNights(manifest, floor, setup)!;
+      const each = nights.map((n) => openWindows(n.level, n.entries.map((e) => e.nodeId)));
+      expect(of(setup).windows.open).toBe(each.reduce((sum, w) => sum + w.open, 0));
+      expect(of(setup).windows.moments).toBe(each.reduce((sum, w) => sum + w.moments, 0));
+    }
+  });
+
+  it("every first window plays out through the engine on its night unseen and unheard by guards and cameras (the night shift's cleaner is left out, as it never catches)", () => {
+    for (const setup of [generated, night, moved]) {
+      const m = of(setup);
+      const first = m.windows.first!;
+      const run = playBack(batchNights(manifest, floor, setup)![m.firstNight! - 1].level, first);
       expect(run.status).toBe("won");
       expect(run.alarmEvents.filter((e) => e.cause.kind !== "cleaner" && e.cause.kind !== "decay")).toEqual([]);
       expect(run.turn - first.turn).toBeLessThanOrEqual(120);
@@ -163,6 +168,6 @@ describe("open windows on F1", () => {
   });
 
   it("gives the same answer every time", () => {
-    expect(measureSetup(moved).windows).toEqual(measureSetup(moved).windows);
+    expect(of(moved).windows).toEqual(of(moved).windows);
   });
 });

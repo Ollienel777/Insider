@@ -88,6 +88,47 @@ export function writeFictionalKit(kit: FictionalKit): string {
   return dir;
 }
 
+/**
+ * The kit building the recorded kit path plays (#95): a fictional LA office,
+ * built 1968, Class B, twelve stories, two suites free on floor 6 and one on
+ * floor 9, with a fictional scan id. Its level is the Level Builder's
+ * recorded run, fixtures/llm/scripts/builder-900101-romaine-1974.json.
+ */
+export const SMOKE_KIT_BUILDING = "900101";
+
+/** A kit holding only `SMOKE_KIT_BUILDING`, for the smoke server (`HEIST_TEST_KIT=1`) and the tests. */
+export function smokeFictionalKit(): string {
+  const id = Number(SMOKE_KIT_BUILDING);
+  return writeFictionalKit({
+    properties: [
+      fictionalProperty(id, {
+        buildingClass: 2,
+        buildingName: "Testwood Exchange",
+        numStoriesAboveGrade: 12,
+        constructionEvents: [{ eventType: 2, year: 1968, month: 3 }],
+        primaryAddress: {
+          id: id * 10,
+          city: "Testville",
+          latitude: 34.0489,
+          longitude: -118.2551,
+          researchMarketId: 20,
+          streetNumber: "200",
+          streetName: "Example",
+          streetType: "Ave",
+        },
+      }),
+    ],
+    listings: [
+      fictionalListing(700101, id, [
+        { floorName: 30, suite: "610", squareFeetMax: 6200 },
+        { floorName: 30, suite: "640", squareFeetMax: 4100 },
+        { floorName: 33, suite: "905", squareFeetMax: 2300 },
+      ]),
+    ],
+    scans: [[id, "mpTestEEEE001"]],
+  });
+}
+
 /** A small kit: three LA offices and one Houston one, two of them pinnable. */
 export function smallFictionalKit(): string {
   return writeFictionalKit({

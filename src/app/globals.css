@@ -226,6 +226,16 @@ body {
   }
 }
 
+/* The Inside view after hours (issue 117): the scan's player dimmed and
+   tinted to the board's slate, so the real floor reads as the same night the
+   board plays. A filter on the player's frame; the pane's toggle takes it
+   off. Tuned by eye on an office scan: it is mostly greyed first and then
+   tinted, because turning the hues alone left a daylight sky brown in every
+   window, and it is dimmed before the tint so a white wall does not clip. */
+.scan-after-hours {
+  filter: grayscale(0.7) brightness(0.44) contrast(1.3) sepia(0.4) hue-rotate(170deg) saturate(1.5);
+}
+
 /* The danger meter in Live flashes once when the alarm changes level: a wash
    of the level's own colour (the layer's text colour, set by the meter in
    src/components/run/danger-meter.tsx) that fades to nothing. No fill-mode:

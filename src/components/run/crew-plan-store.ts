@@ -3,6 +3,12 @@
 // run log; the Run screen follows it as the panel's plan. Storage can be
 // blocked or full, so every read and write may quietly do nothing: even
 // reaching `localStorage` throws when site data is blocked.
+//
+// A CoStar kit building's plan is derived from a level built from its real
+// record, and nothing from a kit record is stored (#93, #95). So its plan
+// lives in this module's memory instead, like a scanned board's run log
+// (run-log-store.ts): it reaches the Run on a client-side navigation, and a
+// full reload forgets it.
 import { CrewPlan } from "@/domain";
 
 export interface StoredCrewPlan {
@@ -18,32 +24,58 @@ export const crewPlanKey = (buildingId: string, missionId?: string | null) =>
 /** The browser's storage, read inside the caller's `try`: the getter itself throws when site data is blocked. */
 const browserStorage = (): Storage | undefined => globalThis.localStorage;
 
+/** Kit buildings' plans, by storage key (building and mission): never written to storage. */
+const held = new Map<string, StoredCrewPlan>();
+
+/**
+ * Hands the plan to the Run. `inMemory` (a kit building) keeps it in this
+ * module's memory and removes any copy in storage under its key.
+ */
 export function saveCrewPlan(
   buildingId: string,
   stored: StoredCrewPlan,
-  storage?: Pick<Storage, "setItem">,
+  storage?: Pick<Storage, "setItem"> & Partial<Pick<Storage, "removeItem">>,
   missionId?: string | null,
+  inMemory = false,
 ): void {
+  const key = crewPlanKey(buildingId, missionId);
+  if (inMemory) held.set(key, stored);
+  else held.delete(key);
   try {
-    (storage ?? browserStorage())?.setItem(crewPlanKey(buildingId, missionId), JSON.stringify(stored));
+    const store = storage ?? browserStorage();
+    if (inMemory) store?.removeItem?.(key);
+    else store?.setItem(key, JSON.stringify(stored));
   } catch {
     // The plan on screen still stands; only the hand-off to Run is lost.
   }
 }
 
-/** The stored plan, or null when there is none or it no longer parses. */
+/**
+ * The plan held in memory (a kit building's), else the stored one; null when there is none or it no
+ * longer parses. `inMemory` (a kit building) reads only memory and removes a copy stored before #95.
+ */
 export function loadCrewPlan(
   buildingId: string,
-  storage?: Pick<Storage, "getItem">,
+  storage?: Pick<Storage, "getItem"> & Partial<Pick<Storage, "removeItem">>,
   missionId?: string | null,
+  inMemory = false,
 ): StoredCrewPlan | null {
+  const key = crewPlanKey(buildingId, missionId);
+  const kept = held.get(key) ?? null;
   try {
-    const raw = (storage ?? browserStorage())?.getItem(crewPlanKey(buildingId, missionId));
+    const store = storage ?? browserStorage();
+    if (inMemory) {
+      store?.removeItem?.(key);
+      return kept;
+    }
+    if (kept) return kept;
+    const raw = store?.getItem(key);
     if (!raw) return null;
     const value = JSON.parse(raw) as { plan?: unknown; recorded?: unknown };
     const plan = CrewPlan.safeParse(value.plan);
     return plan.success ? { plan: plan.data, recorded: value.recorded === true } : null;
   } catch {
-    return null;
+    // Blocked storage still leaves the plan held in memory.
+    return kept;
   }
 }

@@ -1,11 +1,27 @@
-// Coverage and open windows on screen (issue 120): what the floor plan says
-// about a setup, beside what the crew's attempts say. Read from
+// Coverage and open windows on screen (issue 120): what the floor plan
+// says about a setup, beside what the crew's attempts say. Read from
 // `measureSetup`, so it needs no batch and follows every edit.
 import { cn } from "@/lib/utils";
-import { coverageLine, firstWindowLine, measureChange, windowsLine, type SetupMeasure } from "./setup-measure";
+import { coverageLine, firstWindowLine, measureChange, timingLine, windowsLine, type SetupMeasure } from "./setup-measure";
 
-/** The lines, each number in mono: "Coverage: 53% of the floor…", "Open windows: 4 of 8 moments…", and which way the first goes. */
-export function MeasureLines({ measure, testId, className }: { measure: SetupMeasure; testId: string; className?: string }) {
+/**
+ * The two lines, "Coverage: 47% of the floor…" and "Open windows: 7 of 80
+ * moments…", which way the first window goes, what they mean under them, and,
+ * beside a count where attempts got out with no window open, how they did it.
+ */
+export function MeasureLines({
+  measure,
+  testId,
+  escaped,
+  className,
+}: {
+  measure: SetupMeasure;
+  testId: string;
+  /** The attempts that got out, when the lines sit under a count. */
+  escaped?: number;
+  className?: string;
+}) {
+  const timing = escaped === undefined ? null : timingLine(measure, escaped);
   const first = firstWindowLine(measure);
   return (
     <div
@@ -23,11 +39,19 @@ export function MeasureLines({ measure, testId, className }: { measure: SetupMea
           {first}
         </p>
       ) : null}
+      {timing ? (
+        <p data-testid={`${testId}-timing`} className="text-text-1">
+          {timing}
+        </p>
+      ) : null}
+      <p data-testid={`${testId}-note`} className="text-xs">
+        {MEASURE_NOTE(measure)}
+      </p>
     </div>
   );
 }
 
-/** One side's two numbers, short, for a card: "50% watched · 4/8 open". */
+/** One side's two numbers, short, for a card: "43% watched · 7/80 open". */
 export function MeasureChips({ measure, testId }: { measure: SetupMeasure; testId: string }) {
   return (
     <p
@@ -43,7 +67,7 @@ export function MeasureChips({ measure, testId }: { measure: SetupMeasure; testI
   );
 }
 
-/** "Coverage 50% → 57%, open windows 4 → 2.", with what each means under it. */
+/** "Coverage 43% → 50%, open windows 7 → 1.", with what each means under it. */
 export function MeasureChange({ from, to, testId }: { from: SetupMeasure; to: SetupMeasure; testId: string }) {
   return (
     <div className="flex flex-col gap-1">
@@ -62,6 +86,6 @@ export function MeasureChange({ from, to, testId }: { from: SetupMeasure; to: Se
   );
 }
 
-/** What the two numbers mean, in one line. */
+/** What the two numbers mean, in one line, and what they leave out. */
 export const MEASURE_NOTE = (m: Pick<SetupMeasure, "noun">) =>
-  `Coverage is the share of the floor a camera or guard watches at some point in a night; an open window is a way in and a turn of the night from which a crew can take the ${m.noun} and get out without a guard or camera seeing it or a guard hearing it. From the floor plan alone: no attempts played.`;
+  `Coverage is the share of the floor a camera or guard watches at some point in every night the crew plays; an open window is a way in and a turn of one of those nights from which a crew can take the ${m.noun} and get out without a guard or camera seeing it or a guard hearing it. From the floor plan alone, with no attempts played: it leaves out night cleaners, and being seen is not being caught.`;
