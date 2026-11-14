@@ -132,6 +132,17 @@ describe("narrateDrill", () => {
     await expect(failed).rejects.toBeInstanceOf(NarratorUnavailableError);
     await expect(failed).rejects.toThrow(/the model did not answer/);
   });
+
+  it("live, with a setting that refuses every live call, answers with the recording as for a failed call", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("HEIST_MODE", "live");
+    vi.stubEnv("LLM_MODE", "live");
+    vi.stubEnv("LLM_PROVIDER", "openai");
+    const answer = await narrateDrill(factsFor("staged"));
+    expect(answer).toMatchObject({ recorded: true, reason: "error", recording: "floor-22-staged" });
+    await expect(narrateDrill(factsFor(8))).rejects.toBeInstanceOf(NarratorUnavailableError);
+    warn.mockRestore();
+  });
 });
 
 describe("POST /api/drill/narrative", () => {

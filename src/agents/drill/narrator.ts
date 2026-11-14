@@ -6,7 +6,6 @@
 // drill, that is the model's failure, not "nothing recorded": it throws
 // `NarratorUnavailableError`, so the screen offers a retry.
 import {
-  forcedChatModelSelection,
   getChatModelSelection,
   LlmConfigurationError,
   structuredCall,
@@ -87,14 +86,16 @@ export class NarratorUnavailableError extends Error {
   }
 }
 
-/** The fast model, or the recording when a setting refuses every live call (logged, as structuredCall does). */
-function safeSelection(): ChatModelSelection {
+/**
+ * The fast model, or undefined when a setting refuses every live call: structuredCall then
+ * answers with the recording, reason "error", as for any failed live call.
+ */
+function safeSelection(): ChatModelSelection | undefined {
   try {
     return getChatModelSelection("fast");
   } catch (error) {
     if (!(error instanceof LlmConfigurationError)) throw error;
-    console.warn(`narrateDrill: the recorded narrative stands in (configuration: ${error.message})`);
-    return forcedChatModelSelection();
+    return undefined;
   }
 }
 
@@ -111,7 +112,7 @@ export async function narrateDrill(facts: DrillFacts, options: NarrateOptions = 
     if (!found) {
       const none = `no recorded narrative for this drill of "${facts.buildingId}", floor ${facts.floor}`;
       // Live, the fake answers only after the model failed: that failure is what to report.
-      if (selection.mode === "live") throw new NarratorUnavailableError(`the model did not answer, and there is ${none}`);
+      if (selection?.mode !== "fake") throw new NarratorUnavailableError(`the model did not answer, and there is ${none}`);
       throw new NoNarrativeError(none);
     }
     recording = found.id;
