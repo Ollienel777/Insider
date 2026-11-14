@@ -1,0 +1,9 @@
+https://www.hackprinceton.com/
+https://hackprinceton-spring-26.devpost.com/project-gallery
+https://hackprinceton-fall-2025.devpost.com/project-gallery
+https://hackprinceton-spring-26.devpost.com/
+https://hackprinceton-fall-2025.devpost.com/
+https://docs.langchain.com/oss/python/deepagents
+https://matterport.github.io/showcase-sdk/
+https://www.costargroup.com/
+https://vexceldata.com/
