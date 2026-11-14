@@ -68,8 +68,8 @@ test.describe("after npm run demo:reset", () => {
   test("the next page load clears the stored run log and the forced fixtures", async ({ page, context, baseURL }) => {
     await page.goto("/");
     await page.evaluate(() => {
-      localStorage.setItem("heist:run-log:F1", JSON.stringify({ turns: 14 }));
-      localStorage.setItem("heist:crew-plan:F1", "{}");
+      localStorage.setItem("heist:run-log:F1:romaine-1974", JSON.stringify({ turns: 14 }));
+      localStorage.setItem("heist:crew-plan:F1:romaine-1974", "{}");
     });
     await context.addCookies([{ name: "heist-fixtures", value: "costar", url: baseURL! }]);
 
@@ -82,7 +82,7 @@ test.describe("after npm run demo:reset", () => {
     // rendered with CoStar forced, reloads once more.
     await expect.poll(async () => (await context.cookies()).some((c) => c.name === "heist-fixtures")).toBe(false);
     await page.waitForLoadState("load");
-    const stored = await page.evaluate(() => [localStorage.getItem("heist:run-log:F1"), localStorage.getItem("heist:crew-plan:F1")]);
+    const stored = await page.evaluate(() => [localStorage.getItem("heist:run-log:F1:romaine-1974"), localStorage.getItem("heist:crew-plan:F1:romaine-1974")]);
     expect(stored).toEqual([null, null]);
     // The settings say what is served now, not what the cookie said (R1-C2).
     await page.keyboard.press("Shift+?");
@@ -90,8 +90,8 @@ test.describe("after npm run demo:reset", () => {
     await page.keyboard.press("Escape");
 
     // A run after the reset survives the next page.
-    await page.evaluate(() => localStorage.setItem("heist:run-log:F1", "{}"));
+    await page.evaluate(() => localStorage.setItem("heist:run-log:F1:romaine-1974", "{}"));
     await page.reload();
-    expect(await page.evaluate(() => localStorage.getItem("heist:run-log:F1"))).toBe("{}");
+    expect(await page.evaluate(() => localStorage.getItem("heist:run-log:F1:romaine-1974"))).toBe("{}");
   });
 });

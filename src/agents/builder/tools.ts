@@ -4,25 +4,29 @@
 //
 // One `BuildRun` holds what the tools learned in this run.
 // `write_manifest` builds the manifest from the derivation that
-// `derive_security_profile` stored, the mission picked from the library and
-// the briefing the agent wrote, so every number in the level comes from a
+// `derive_security_profile` stored, the mission the run was given (the one
+// the player chose, #119) and the briefing the agent wrote, so every number in the level comes from a
 // tool call the trace shows, never from the model's own text.
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import type { CoStarAdapter } from "@/adapters/costar";
 import type { VexcelAdapter } from "@/adapters/vexcel";
-import { type Building, LevelManifest, type Mission, type Provenance, type Zone } from "@/domain";
+import { BRIEFING_MAX_WORDS, type Building, briefingProblems, LevelManifest, type Mission, type Provenance, type Zone } from "@/domain";
 import { deriveSecurityProfile, type SecurityDerivation } from "@/level/rules";
-import { missionsFor, MISSIONS } from "./missions";
+import { findMission, MISSIONS } from "./missions";
 
 export interface BuildRun {
   /** The building this run builds; every tool refuses any other id. */
   buildingId: string;
+  /** The mission this run builds the level for; `get_mission` and `write_manifest` refuse any other id. */
+  missionId: string;
   costar: CoStarAdapter;
   vexcel: VexcelAdapter;
   missions?: readonly Mission[];
   /** Set by `derive_security_profile`. */
   derivation?: SecurityDerivation;
+  /** The game master's last answer, kept by the builder; `write_manifest` checks the briefing came from it. */
+  gameMasterAnswer?: string;
   /** Set by `write_manifest`. */
   manifest?: LevelManifest;
 }
@@ -120,26 +124,41 @@ export function analystTools(run: BuildRun) {
   return [getBuilding, getAvailableSpace, getAerialEntries, deriveProfile];
 }
 
-/** The tool the game master uses: the mission library. */
+/** The run's mission from the library; any other id is refused. */
+function mission(run: BuildRun, missionId: string): Mission {
+  if (missionId !== run.missionId) throw new Error(`this run builds mission ${run.missionId}, not ${missionId}`);
+  const found = findMission(missionId, run.missions ?? MISSIONS);
+  if (!found) throw new Error(`no mission "${missionId}" in the library`);
+  return found;
+}
+
+/** The tool the game master uses: the mission the player chose. */
 export function gameMasterTools(run: BuildRun) {
-  const listMissions = tool(
-    // The building is already cast, so the casting needs stay out of the reply (JSON drops the undefined key).
-    async ({ city }) => json(missionsFor(city, run.missions ?? MISSIONS).map((m) => ({ ...m, casting: undefined }))),
+  const getMission = tool(
+    async ({ missionId }) => {
+      // The building is already cast, so the casting needs stay out of the reply.
+      const { casting: _casting, ...rest } = mission(run, missionId);
+      void _casting;
+      return json(rest);
+    },
     {
-      name: "list_missions",
+      name: "get_mission",
       description:
-        "Every mission staged in a city: each one's id, type, title, the documented event it is inspired by (or " +
-        "null when fictional), objective and exit condition.",
-      schema: z.object({ city: z.enum(["LA", "Houston"]) }),
+        "The mission this level is built for: its id, city, type, title, the documented event it is inspired by " +
+        "(or null when fictional), objective and exit condition.",
+      schema: z.object({ missionId: z.string().describe("The mission id the builder was given, for example romaine-1974") }),
     },
   );
-  return [listMissions];
+  return [getMission];
 }
 
 const WriteManifestArgs = z.object({
   buildingId: z.string(),
-  missionId: z.string().describe("A mission id from list_missions, staged in the building's city"),
-  briefing: z.string().min(1).describe("The Game Master's briefing to the crew, in plain English"),
+  missionId: z.string().describe("The mission id the builder was given"),
+  briefing: z
+    .string()
+    .min(1)
+    .describe("The game master's briefing to the crew, copied verbatim: every sentence, the game-fiction line included"),
   objective: z
     .object({
       name: z.string().min(1).describe("The game-fiction name of the room the objective is in"),
@@ -155,9 +174,20 @@ export function builderTools(run: BuildRun) {
       const b = await building(run, buildingId);
       const derivation = run.derivation;
       if (!derivation) throw new Error("call derive_security_profile (through the data-analyst) before write_manifest");
-      const mission = (run.missions ?? MISSIONS).find((m) => m.id === missionId);
-      if (!mission) throw new Error(`no mission "${missionId}" in the library`);
-      if (mission.city !== b.city) throw new Error(`mission ${missionId} is staged in ${mission.city}, not ${b.city}`);
+      const problems = briefingProblems(briefing);
+      // Verbatim: the briefing must appear, word for word, in what the game master answered (R1-M1).
+      // With no answer captured there is nothing to check it against, so it is refused, not waved through.
+      const squash = (t: string) => t.replace(/\s+/g, " ").trim();
+      if (run.gameMasterAnswer === undefined) {
+        problems.push("no game-master answer to check the briefing against: dispatch the game-master first");
+      } else if (!squash(run.gameMasterAnswer).includes(squash(briefing))) {
+        problems.push("the briefing is not the game master's word for word: copy it exactly, every sentence");
+      }
+      if (problems.length > 0) {
+        throw new Error(`${problems.join("; ")}. Send it back to the game-master to rewrite; do not edit it yourself`);
+      }
+      const chosen = mission(run, missionId);
+      if (chosen.city !== b.city) throw new Error(`mission ${missionId} is staged in ${chosen.city}, not ${b.city}`);
 
       const fiction = (elementRole: string, field: string, value: string, rule: string): Provenance => ({
         elementRole,
@@ -175,19 +205,19 @@ export function builderTools(run: BuildRun) {
           fiction(
             "zone:objective",
             "mission.objective",
-            mission.objective,
-            `Mission "${mission.title}" (game fiction): ${mission.objective.toLowerCase()}`,
+            chosen.objective,
+            `Mission "${chosen.title}" (game fiction): ${chosen.objective.toLowerCase()}`,
           ),
         ],
       };
       const missionProvenance = fiction(
-        `mission:${mission.id}`,
+        `mission:${chosen.id}`,
         "mission.inspiredBy",
-        mission.inspiredBy ? `${mission.inspiredBy.event}, ${mission.inspiredBy.date}` : "fictional",
-        mission.inspiredBy
-          ? `Picked from the ${b.city} library; inspired by ${mission.inspiredBy.event} (${mission.inspiredBy.date}), ` +
+        chosen.inspiredBy ? `${chosen.inspiredBy.event}, ${chosen.inspiredBy.date}` : "fictional",
+        chosen.inspiredBy
+          ? `The mission the player chose; inspired by ${chosen.inspiredBy.event} (${chosen.inspiredBy.date}), ` +
             "staged in a comparable building"
-          : `Picked from the ${b.city} library; a fictional mission, labelled as such`,
+          : "The mission the player chose; a fictional mission, labelled as such",
       );
 
       const manifest = LevelManifest.parse({
@@ -195,20 +225,22 @@ export function builderTools(run: BuildRun) {
         securityProfile: derivation.securityProfile,
         zones: [...derivation.zones, objectiveZone],
         entries: derivation.entries,
-        mission: { ...mission, briefing },
+        missionId: chosen.id,
+        mission: { ...chosen, briefing },
         provenance: [...derivation.provenance, objectiveZone.provenance[0], missionProvenance],
       });
       run.manifest = manifest;
       return (
         `Manifest written for ${buildingId}: ${manifest.zones.length} zones, ${manifest.entries.length} entries, ` +
-        `${manifest.provenance.length} provenance entries, mission ${mission.id}.`
+        `${manifest.provenance.length} provenance entries, mission ${chosen.id}.`
       );
     },
     {
       name: "write_manifest",
       description:
-        "Writes the level manifest: the derived security profile, zones and entries, plus the chosen mission, " +
-        "its briefing and the objective zone. Validates it against the LevelManifest schema.",
+        "Writes the level manifest: the derived security profile, zones and entries, plus the mission, its " +
+        `briefing and the objective zone. Refuses a briefing over ${BRIEFING_MAX_WORDS} words or one that does not ` +
+        "say its security is game fiction. Validates it against the LevelManifest schema.",
       schema: WriteManifestArgs,
     },
   );

@@ -1,6 +1,6 @@
 {
   "buildingId": "F1",
-  "note": "Recorded crew replies for Halvorsen Tower, keyword-routed by src/agents/crew/recorded.ts. The first reply whose keyword set all occur in the order answers; the last, with no keywords, is the default. Zone ids are the cached manifest's (data/levels/F1.json).",
+  "note": "Recorded crew replies for Halvorsen Tower, keyword-routed by src/agents/crew/recorded.ts. The first reply whose keyword set all occur in the order answers; the last, with no keywords, is the default. Zone ids are the cached manifest's (data/levels/F1.romaine-1974.json; these replies are kept per building, so any mission on F1 reuses them).",
   "replies": [
     {
       "id": "dock-wait",
