@@ -5,6 +5,7 @@
 // fixtures meanwhile, until `npm run demo:reset`.
 import { BASEMAPS } from "@/components/map/basemap";
 import type { Building, City } from "@/domain";
+import { createFakeCoStar } from "./fake";
 import { loadKitIndex, type KitIndex } from "./kit";
 import { mapSelection } from "./mapping";
 import type { CoStarAdapter } from "./types";
@@ -51,6 +52,12 @@ export function createLiveCoStar(config: LiveCoStarConfig): LiveCoStar {
     return pending;
   }
 
+  // The search does not read the kit yet: an `InventoryProperty` needs a
+  // property type and entry kinds the kit mapping does not provide. Until it
+  // does, the search answers from the fixture inventory, marked
+  // `source: "fixture"`, without throwing, so it never trips the breaker
+  // that live buildings share.
+  const fixtures = createFakeCoStar();
   const copy = <T>(value: T): T => structuredClone(value);
   const building = (kit: KitIndex, id: string) => kit.properties.get(id)?.building ?? null;
 
@@ -76,5 +83,6 @@ export function createLiveCoStar(config: LiveCoStarConfig): LiveCoStar {
       const found = loaded ? building(loaded, id) : null;
       return found ? copy(found) : null;
     },
+    searchInventory: (filters) => fixtures.searchInventory(filters),
   };
 }

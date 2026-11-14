@@ -18,7 +18,11 @@ const f1 = FIXTURE_BUILDINGS.find((b) => b.id === "F1")!;
 // A fictional kit building: F1's fields under a kit-style id.
 const kitBuilding: Building = { ...f1, id: "900001", name: "Testwood Tower", source: "costar" };
 
-const render = async (id: string) => renderToStaticMarkup(await DossierPage({ params: Promise.resolve({ id }) }));
+// Levels are mission-keyed: the page reads `?m=`. A kit building has no own
+// mission, so every render names one.
+const M = "romaine-1974";
+const render = async (id: string) =>
+  renderToStaticMarkup(await DossierPage({ params: Promise.resolve({ id }), searchParams: Promise.resolve({ m: M }) }));
 
 describe("the Dossier without a cached level", () => {
   beforeEach(() => {
@@ -41,6 +45,6 @@ describe("the Dossier without a cached level", () => {
 
   it("still offers a fixture building the build command", async () => {
     state.building = f1;
-    expect(await render("F1")).toContain("npm run build:levels -- F1");
+    expect(await render("F1")).toContain(`npm run build:levels -- F1:${M}`);
   });
 });

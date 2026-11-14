@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { LevelManifest, type Provenance } from "@/domain";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import { describeKinds, layerCounts, lensElements, type LensElement } from "./lens";
 import { RUN_SEED } from "./run-screen";
 

@@ -1,15 +1,16 @@
-// The dossier's Data → Level table (SPEC §2 beat 3, DESIGN.md Dossier): one
-// row per rule of the rules table that shaped this level, read from the
-// cached manifest's provenance. Each row names the layer, the field and its
+// The dossier's Data → Level table (SPEC §2 beat 4, DESIGN.md Dossier): it
+// opens with why the building was cast for the mission (issue 119), then one row
+// per rule of the rules table that shaped this level, read from the cached
+// manifest's provenance. Each row names the layer, the field and its
 // value, the rule in plain words, and what the level got from it.
 //
 // Pure: the page computes the rows on the server and the screen only shows
 // them. A row whose provenance the manifest lacks is left out, never invented.
-import type { CameraKind, LevelManifest, LockKind, Provenance, ProvenanceLayer } from "@/domain";
+import type { CameraKind, Candidate, LevelManifest, LockKind, Mission, Provenance, ProvenanceLayer } from "@/domain";
 
 export interface DataToLevelRow {
   /** Stable key, and the row's `data-rule`. */
-  id: "era" | "guards" | "staging" | "crowded" | "dock";
+  id: "cast" | "era" | "guards" | "staging" | "crowded" | "dock";
   layer: Exclude<ProvenanceLayer, "fiction">;
   field: string;
   value: string;
@@ -67,11 +68,33 @@ export function entryEffect(rule: string): string {
   return capitalise(predicate);
 }
 
-export function dataToLevelRows(manifest: LevelManifest): DataToLevelRow[] {
+/** Why this building was cast, as the casting search read it. */
+export interface CastBecause {
+  /** The finalist: the Casting Director's, or derived from the mission's filters until it runs (issue 117). */
+  candidate: Pick<Candidate, "id" | "reason">;
+  mission: Pick<Mission, "id" | "title">;
+  /** True when no agent wrote the reason: it was derived from the mission's casting filters. */
+  derived: boolean;
+}
+
+/** The cast-because row (SPEC §2 beat 4): the mission it was cast for, and the finalist's reason. */
+export function castBecauseRow({ candidate, mission, derived }: CastBecause): DataToLevelRow {
+  return {
+    id: "cast",
+    layer: "costar",
+    field: "casting",
+    value: mission.id,
+    rule: `Cast for ${mission.title}${derived ? " (derived from its casting filters)" : ""}`,
+    result: `Cast because: ${candidate.reason}`,
+  };
+}
+
+export function dataToLevelRows(manifest: LevelManifest, cast?: CastBecause | null): DataToLevelRow[] {
   const byRole = new Map<string, Provenance>();
   for (const p of manifest.provenance) if (!byRole.has(p.elementRole)) byRole.set(p.elementRole, p);
   const profile = manifest.securityProfile;
-  const rows: DataToLevelRow[] = [];
+  // The first row says why this building is the stage at all.
+  const rows: DataToLevelRow[] = cast ? [castBecauseRow(cast)] : [];
 
   // Year built → era: locks and cameras.
   const era = byRole.get("profile:era");

@@ -6,6 +6,7 @@ import type { DossierFact } from "./dossier-screen";
 
 interface DossierUnavailableProps {
   buildingId: string;
+  missionId: string;
   name: string;
   /** `missing`: no cached level yet; `invalid`: the cached files fail their schema. */
   reason: "missing" | "invalid";
@@ -21,9 +22,9 @@ interface DossierUnavailableProps {
 }
 
 /** The dossier without a cached level: what happened, and the way to fix it or go on. */
-export function DossierUnavailable({ buildingId, name, reason, detail, facts, source }: DossierUnavailableProps) {
+export function DossierUnavailable({ buildingId, missionId, name, reason, detail, facts, source }: DossierUnavailableProps) {
   const kit = source === "costar";
-  const command = `npm run build:levels -- ${buildingId}`;
+  const command = `npm run build:levels -- ${buildingId}:${missionId}`;
   return (
     <BuildingScreen
       visualLabel="Dossier"
