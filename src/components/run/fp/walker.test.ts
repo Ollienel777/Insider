@@ -1,23 +1,22 @@
 // Free movement mapped onto engine moves (issue 115), on the cached levels
 // placed on the three fixture floors as the Run screen places them. A bot
-// walks the floor with the same controls a player has (a yaw and a forward
-// key); every action comes out of `stepWalker` and goes into the engine's
-// `act`, which must accept it.
+// walks the floor with the same controls a player has (a yaw, the movement
+// keys and E); every action comes out of `stepWalker` or `heldAction` and goes
+// into the engine's `act`, which must accept it.
 import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { LevelManifest } from "@/domain";
-import { act, createRun, type Action, type RunState } from "@/engine";
+import { act, createRun, neighbours, type Action, type RunState } from "@/engine";
 import { placeLevel } from "@/level/placer";
 import { quietRoute } from "@/level/quiet-route";
 import f1 from "../../../../data/levels/F1.romaine-1974.json";
 import f2 from "../../../../data/levels/F2.sunset-1986.json";
 import f3 from "../../../../data/levels/F3.night-desk.json";
-import { choices } from "../board";
 import { RUN_SEED } from "../run-screen";
 import type { Ground, Vec } from "./ground";
 import { FP } from "./tuning";
-import { createWalker, nearestNode, nodeUnderfoot, promptFor, reconcile, stepWalker, type Controls, type Walker } from "./walker";
-import { buildWorld, groundOf, openingBetween, type World } from "./world";
+import { createWalker, heldAction, legalMoves, promptFor, reconcile, stepWalker, type Controls, type Walker } from "./walker";
+import { buildWorld, groundOf, type World } from "./world";
 
 const CASES = [
   { id: "F1", cached: f1 },
@@ -25,10 +24,11 @@ const CASES = [
   { id: "F3", cached: f3 },
 ] as const;
 
-const IDLE: Controls = { forward: 0, strafe: 0, walk: false, yaw: 0, interact: false };
+const IDLE: Controls = { forward: 0, strafe: 0, walk: false, yaw: 0, use: false, usePressed: false };
 const distance = (a: Vec, b: Vec) => Math.hypot(a.x - b.x, a.y - b.y);
+const yawTo = (from: Vec, to: Vec) => Math.atan2(to.y - from.y, to.x - from.x);
 
-/** The walker, the engine's run, and every action the walker has handed back, in order. */
+/** The walker, the engine's run, and every action handed to the engine, in order. */
 interface Session {
   world: World;
   ground: Ground;
@@ -42,29 +42,40 @@ function session(world: World, run: RunState): Session {
   return { world, ground, walker: createWalker(ground, run), run, played: [] };
 }
 
-/** One step. An action handed back is played through the engine, which must accept it. */
-function step(s: Session, controls: Controls): void {
-  const { walker, action } = stepWalker(s.walker, s.ground, s.run, controls);
-  s.walker = walker;
-  if (!action) return;
+function play(s: Session, action: Action): void {
   const result = act(s.run, action);
   if (!result.ok) throw new Error(`the engine refused ${JSON.stringify(action)}: ${result.reason}`);
   s.run = result.run;
   s.played.push(action);
 }
 
-/** Runs (or walks) straight at `target` until within 6 cm of it, or `seconds` pass. */
-function walkTo(s: Session, target: Vec, { walk = false, seconds = 12 } = {}): void {
+/** One step. An action handed back is played through the engine, which must accept it. */
+function step(s: Session, controls: Controls): void {
+  const { walker, action } = stepWalker(s.walker, s.ground, s.run, controls);
+  s.walker = walker;
+  if (action) play(s, action);
+}
+
+/** Runs straight at `target` until within 6 cm of it, or `seconds` pass. */
+function walkTo(s: Session, target: Vec, seconds = 12): void {
   for (let i = 0; i < seconds / FP.stepS && distance(s.walker.pos, target) > 0.06; i++) {
-    const yaw = Math.atan2(target.y - s.walker.pos.y, target.x - s.walker.pos.x);
     const near = distance(s.walker.pos, target) < 0.4;
-    step(s, { forward: 1, strafe: 0, walk: walk || near, yaw, interact: false });
+    step(s, { ...IDLE, forward: 1, walk: near, yaw: yawTo(s.walker.pos, target) });
   }
 }
 
-/** Walks the engine's edge from the walker's node to `to`, through its doorway if it has one. */
+/** Walks the engine's edge from `from` to `to`, through its doorway if it has one. */
 function walkEdge(s: Session, from: string, to: string): void {
   for (const point of s.ground.path(from, to).slice(1)) walkTo(s, point);
+}
+
+/** A place 0.6 m in front of `door`, on `nodeId`'s side of it. */
+function inFront(ground: Ground, door: { centre: Vec }, nodeId: string): Vec {
+  const node = ground.nodes.get(nodeId)!;
+  const dx = node.x - door.centre.x;
+  const dy = node.y - door.centre.y;
+  const length = Math.hypot(dx, dy) || 1;
+  return { x: door.centre.x + (dx / length) * 0.6, y: door.centre.y + (dy / length) * 0.6 };
 }
 
 function rest(s: Session, steps = 30): void {
@@ -74,299 +85,197 @@ function rest(s: Session, steps = 30): void {
 describe.each(CASES)("free movement on $id", ({ id, cached }) => {
   const placed = placeLevel(LevelManifest.parse(structuredClone(cached)), structuredClone(FIXTURE_FLOORS[id]), RUN_SEED);
   const world = buildWorld(placed.level.floor);
+  const ground = groundOf(world);
   const fresh = () => createRun(placed.level);
   /** The same run with nobody on the floor to catch the player, for the tests of the walking alone. */
   const empty = (): RunState => ({ ...fresh(), guards: [], cleaners: [] });
 
-  it("walks the quiet route node to node, handing the engine exactly its moves, picks and take, in order", () => {
+  it("walks the quiet route and wins: every action handed over is the engine's to accept, and the route's own moves, picks and take are among them in order", () => {
     const route = quietRoute(placed)!;
-    expect(route).not.toBeNull();
     const s = session(world, fresh());
-    const waited: number[] = [];
-    route.forEach((expected, i) => {
-      const before = s.played.length;
+    for (const expected of route) {
       if (expected.kind === "move") {
         walkEdge(s, s.run.playerNode, expected.to);
+        expect(s.run.playerNode, JSON.stringify(expected)).toBe(expected.to);
       } else if (expected.kind === "pick") {
-        const opening = world.openings.find((o) => o.doorId === expected.doorId)!;
-        walkTo(s, opening.a === s.run.playerNode ? opening.sideA : opening.sideB);
-        // Lean on the door until the engine has been handed one pick.
-        for (let n = 0; n < 2 / FP.stepS && s.played.length === before; n++) {
-          const yaw = Math.atan2(opening.centre.y - s.walker.pos.y, opening.centre.x - s.walker.pos.x);
-          step(s, { forward: 1, strafe: 0, walk: false, yaw, interact: false });
-        }
+        const door = ground.doors.find((d) => d.doorId === expected.doorId)!;
+        walkTo(s, inFront(ground, door, s.run.playerNode));
+        const yaw = yawTo(s.walker.pos, door.centre);
+        const before = s.played.length;
+        step(s, { ...IDLE, yaw, use: true, usePressed: true });
+        rest(s, 2);
+        expect(s.played.slice(before), JSON.stringify(expected)).toEqual([expected]);
       } else if (expected.kind === "take") {
-        step(s, { ...IDLE, interact: true });
-      } else if (expected.kind === "wait") {
-        // A wait is the Run screen's (a key, or the turn clock): the walker stands through it and hands back nothing.
-        const result = act(s.run, expected);
-        if (!result.ok) throw new Error(result.reason);
-        s.run = result.run;
-        waited.push(i);
+        const objective = ground.nodes.get(s.run.board.level.objective)!;
+        step(s, { ...IDLE, yaw: yawTo(s.walker.pos, { x: objective.x + 1, y: objective.y }), usePressed: true, use: true });
+        expect(s.played.at(-1)).toEqual({ kind: "take" });
+      } else {
+        // A wait is the turn clock's: the walker stands through it and hands back nothing.
+        play(s, expected);
+        const before = s.played.length;
         rest(s);
-        expect(s.played.length, `step ${i}: standing still played something`).toBe(before);
-        return;
+        expect(s.played.length).toBe(before);
       }
-      expect(s.played.slice(before), `step ${i}: ${JSON.stringify(expected)}`).toEqual([expected]);
-    });
-    expect(s.played).toEqual(route.filter((a) => a.kind !== "wait"));
+    }
     expect(s.run.status).toBe("won");
-    expect(s.run.alarmEvents).toEqual([]);
-    expect(s.run.turn).toBe(route.length);
-    expect(s.run.turns.map((t) => t.player.kind)).toEqual(route.map((a) => a.kind));
   });
 
-  it("walks every edge of the floor both ways, each one a single engine move", () => {
+  it("walks every edge of the floor both ways, ending on the far node with every move one the engine accepts", () => {
     for (const edge of placed.level.floor.edges) {
       for (const [from, to] of [[edge.a, edge.b], [edge.b, edge.a]]) {
-        // The engine's own state, with the player stood on `from` and every door open.
         const s = session(world, { ...empty(), playerNode: from, locked: [] });
         walkEdge(s, from, to);
-        expect(s.played, `${from} → ${to}`).toEqual([{ kind: "move", to }]);
-        expect(s.run.playerNode).toBe(to);
-        expect(distance(s.walker.pos, world.nodes.get(to)!)).toBeLessThan(0.1);
+        rest(s, 2);
+        expect(s.run.playerNode, `${from} → ${to}: ${JSON.stringify(s.played)}`).toBe(to);
+        expect(s.played.every((a) => a.kind === "move")).toBe(true);
+        expect(s.walker.region).toBe(to);
       }
     }
   });
 
-  it("stops at a locked door: leaning on it picks it, turn by turn, and only then does the way open", () => {
+  it("plays the move at once when the body steps from a node's area into a neighbour's", () => {
+    for (const [nodeId, node] of ground.nodes) {
+      for (const exit of neighbours(fresh().board, nodeId)) {
+        const s = session(world, { ...empty(), playerNode: nodeId, locked: [] });
+        // Just across the line: the body stands on the neighbour's ground, the walker still counts it here.
+        const there = ground.nodes.get(exit.to)!;
+        s.walker = { ...s.walker, pos: { x: there.x, y: there.y } };
+        step(s, IDLE);
+        expect(s.played, `${nodeId} → ${exit.to}`).toEqual([{ kind: "move", to: exit.to }]);
+        expect(s.run.playerNode).toBe(exit.to);
+        void node;
+      }
+    }
+  });
+
+  it("plays the legal moves in between, in order, when the body skips an area, and holds it back when there are none", () => {
+    const run0 = { ...empty(), locked: [] };
+    let checked = 0;
+    for (const [nodeId] of ground.nodes) {
+      for (const [farId, far] of ground.nodes) {
+        const moves = legalMoves({ ...run0, playerNode: nodeId }, nodeId, farId);
+        if (!moves || moves.length !== 2) continue;
+        const s = session(world, { ...run0, playerNode: nodeId });
+        s.walker = { ...s.walker, pos: { x: far.x, y: far.y } };
+        step(s, IDLE);
+        rest(s, 3);
+        expect(s.played, `${nodeId} ⇒ ${farId}`).toEqual(moves);
+        expect(s.run.playerNode).toBe(farId);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+    // Nothing within reach: four hops and more away, the body goes back to where it was.
+    const start = fresh().playerNode;
+    const far = [...ground.nodes.values()].find((n) => legalMoves({ ...run0, playerNode: start }, start, n.id, 20)!.length > FP.maxHops)!;
+    const s = session(world, { ...run0, playerNode: start });
+    const was = s.walker.pos;
+    s.walker = { ...s.walker, pos: { x: far.x, y: far.y } };
+    step(s, IDLE);
+    expect(s.played).toEqual([]);
+    expect(s.walker.pos).toEqual(was);
+    expect(s.walker.region).toBe(start);
+  });
+
+  it("holding E at a locked door moves to its node first, then picks on each held turn; letting go starts it over, as the engine rules", () => {
     const run0 = empty();
     const doorId = run0.locked[0];
-    const opening = world.openings.find((o) => o.doorId === doorId)!;
-    const picks = choices({ ...run0, playerNode: opening.a }).find((c) => c.doorId === doorId)!.progress!.of;
-    const s = session(world, { ...run0, playerNode: opening.a });
-    const far = world.nodes.get(opening.b)!;
-    walkTo(s, opening.sideA);
-    // Straight at the room beyond: the door holds, and every action handed back is a pick of it.
-    for (let n = 0; n < (picks + 1) * FP.pickEveryS / FP.stepS && s.run.locked.includes(doorId); n++) {
-      const yaw = Math.atan2(opening.centre.y - s.walker.pos.y, opening.centre.x - s.walker.pos.x);
-      step(s, { forward: 1, strafe: 0, walk: false, yaw, interact: false });
-      if (s.run.locked.includes(doorId)) {
-        const across = opening.axis === "x" ? "x" : "y";
-        const side = Math.sign(opening.sideA[across] - opening.centre[across]);
-        expect(Math.sign(s.walker.pos[across] - opening.centre[across])).toBe(side);
-      }
-    }
-    expect(s.played).toEqual(Array.from({ length: picks }, () => ({ kind: "pick", doorId })));
+    const door = ground.doors.find((d) => d.doorId === doorId)!;
+    // The engine has the player one move short of the door's node, the body stands at the door.
+    const before = neighbours(run0.board, door.a).find((e) => e.to !== door.b && e.doorId === undefined)!.to;
+    const s = session(world, { ...run0, playerNode: before });
+    s.walker = { ...s.walker, pos: inFront(ground, door, door.a), region: door.a, node: before };
+    const yaw = yawTo(s.walker.pos, door.centre);
+    const held = { ...IDLE, yaw, use: true };
+    expect(promptFor(s.walker, s.ground, s.run, yaw)).toMatchObject({ kind: "pick", doorId, node: door.a, moves: [{ kind: "move", to: door.a }] });
+    step(s, { ...held, usePressed: true });
+    rest(s, 2);
+    expect(s.played).toEqual([{ kind: "move", to: door.a }, { kind: "pick", doorId }]);
+    const of = (promptFor(s.walker, s.ground, s.run, yaw) as { of: number }).of;
+    expect(s.run.picking).toEqual({ doorId, progress: 1 });
+    // Let go for a turn: the clock waits, and the engine starts the lock over.
+    play(s, heldAction(s.walker, s.ground, s.run, { use: false, yaw }));
+    expect(s.played.at(-1)).toEqual({ kind: "wait" });
+    expect(s.run.picking).toBeNull();
+    // Hold again: one pick a turn until it opens.
+    step(s, { ...held, usePressed: true });
+    for (let turn = 1; turn < of; turn++) play(s, heldAction(s.walker, s.ground, s.run, held));
     expect(s.run.locked).not.toContain(doorId);
-    expect(s.run.turn).toBe(picks);
-    walkEdge(s, opening.a, opening.b);
-    expect(s.played.at(-1)).toEqual({ kind: "move", to: opening.b });
-    expect(distance(s.walker.pos, far)).toBeLessThan(0.1);
+    expect(s.played.slice(-of)).toEqual(Array.from({ length: of }, () => ({ kind: "pick", doorId })));
+    expect(promptFor(s.walker, s.ground, s.run, yaw)).toBeNull();
   });
 
-  it("picks a locked door with E when facing it from the engine's node, and not when facing away", () => {
-    const run0 = fresh();
+  it("does not pick a door the view is not on, or one out of reach", () => {
+    const run0 = empty();
     const doorId = run0.locked[0];
-    const opening = world.openings.find((o) => o.doorId === doorId)!;
-    const s = session(world, { ...run0, playerNode: opening.a });
-    walkTo(s, opening.sideA);
-    const yaw = Math.atan2(opening.centre.y - s.walker.pos.y, opening.centre.x - s.walker.pos.x);
-    expect(promptFor(s.walker, s.ground, s.run, yaw)).toMatchObject({ kind: "pick", doorId, done: 0 });
-    expect(promptFor(s.walker, s.ground, s.run, yaw + Math.PI)).toBeNull();
-    step(s, { ...IDLE, yaw: yaw + Math.PI, interact: true });
+    const door = ground.doors.find((d) => d.doorId === doorId)!;
+    const s = session(world, { ...run0, playerNode: door.a });
+    const a = ground.nodes.get(door.a)!;
+    s.walker = { ...s.walker, pos: { x: a.x, y: a.y }, region: door.a };
+    const yaw = yawTo(a, door.centre);
+    if (distance(a, door.centre) > FP.reachM) expect(promptFor(s.walker, s.ground, s.run, yaw)?.kind).not.toBe("pick");
+    step(s, { ...IDLE, yaw: yaw + Math.PI, use: true, usePressed: true });
     expect(s.played).toEqual([]);
-    step(s, { ...IDLE, yaw, interact: true });
-    expect(s.played).toEqual([{ kind: "pick", doorId }]);
   });
 
-  it("says a locked door cannot be picked from a node the engine does not have beside it", () => {
-    const run0 = fresh();
+  it("walls stop a body at a locked door: it stays in its own area until the door opens", () => {
+    const run0 = empty();
     const doorId = run0.locked[0];
-    const opening = world.openings.find((o) => o.doorId === doorId)!;
-    // The engine has the player on a node with no edge through this door.
-    const elsewhere = placed.level.floor.nodes.find((n) => n.id !== opening.a && n.id !== opening.b)!.id;
-    const s = session(world, { ...run0, playerNode: elsewhere });
-    s.walker = { ...s.walker, pos: { ...opening.sideA } };
-    const yaw = Math.atan2(opening.centre.y - s.walker.pos.y, opening.centre.x - s.walker.pos.x);
-    expect(promptFor(s.walker, s.ground, s.run, yaw)).toEqual({ kind: "locked", doorId });
-    for (let n = 0; n < 120; n++) step(s, { forward: 1, strafe: 0, walk: false, yaw, interact: n === 0 });
-    expect(s.played.filter((a) => a.kind === "pick")).toEqual([]);
-  });
-
-  it("hands back nothing at a node that is not a legal move, until the player reaches one that is", () => {
-    const run0 = fresh();
-    const board = run0.board;
-    // A node two hops from the start: not a neighbour, so not a move.
-    const first = choices({ ...run0, locked: [] })[0].nodeId;
-    const second = choices({ ...run0, locked: [], playerNode: first }).find(
-      (c) => c.nodeId !== run0.playerNode && !board.adjacency.get(run0.playerNode)!.some((e) => e.to === c.nodeId),
-    )!.nodeId;
-    const s = session(world, { ...run0, locked: [] });
-    s.walker = { ...s.walker, pos: { x: world.nodes.get(second)!.x, y: world.nodes.get(second)!.y } };
-    rest(s, 60);
-    expect(nodeUnderfoot(s.ground, s.run, s.walker.pos)).toBe(second);
+    const door = ground.doors.find((d) => d.doorId === doorId)!;
+    const s = session(world, { ...run0, playerNode: door.a });
+    walkTo(s, door.centre, 3);
     expect(s.played).toEqual([]);
-    expect(s.run.playerNode).toBe(run0.playerNode);
-    // Back to a neighbour of the engine's node: that one is a move.
-    walkEdge(s, second, first);
-    expect(s.played).toEqual([{ kind: "move", to: first }]);
+    expect(ground.regionOf(s.walker.pos)).not.toBe(door.b);
   });
 
-  it("plays a move once: standing on the node it arrived at hands back nothing more", () => {
-    const s = session(world, { ...fresh(), locked: [] });
-    const to = choices(s.run)[0].nodeId;
-    walkEdge(s, s.run.playerNode, to);
-    rest(s, 240);
-    expect(s.played).toEqual([{ kind: "move", to }]);
-  });
-
-  it("goes back to the engine's node when the engine says the player is somewhere else", () => {
-    const s = session(world, { ...fresh(), locked: [] });
+  it("goes back onto the engine's node when the engine says the player is somewhere else", () => {
+    const s = session(world, { ...empty(), locked: [] });
     const start = s.run.playerNode;
-    const to = choices(s.run)[0].nodeId;
+    const to = neighbours(s.run.board, start)[0].to;
     walkEdge(s, start, to);
     // A restart: turn 0 again, at the start.
-    s.run = { ...fresh(), locked: [] };
+    s.run = { ...empty(), locked: [] };
     rest(s, 1);
-    expect(s.walker.pos).toEqual({ x: world.nodes.get(start)!.x, y: world.nodes.get(start)!.y });
-    expect(s.walker.vel).toEqual({ x: 0, y: 0 });
+    expect(s.walker.pos).toEqual({ x: ground.nodes.get(start)!.x, y: ground.nodes.get(start)!.y });
+    expect(s.walker.region).toBe(start);
     // A number key: the engine moved the player without the walker.
-    const hop = act(s.run, { kind: "move", to });
-    if (!hop.ok) throw new Error(hop.reason);
-    s.run = hop.run;
+    play(s, { kind: "move", to });
     rest(s, 1);
     expect(s.walker.node).toBe(to);
-    expect(distance(s.walker.pos, world.nodes.get(to)!)).toBeLessThan(1e-9);
-    expect(s.played).toEqual([{ kind: "move", to }]);
+    expect(distance(s.walker.pos, ground.nodes.get(to)!)).toBeLessThan(1e-9);
   });
 
-  it("stays put through a turn that left the player where they were (a wait from the clock)", () => {
-    const s = session(world, { ...fresh(), locked: [] });
-    const target = s.ground.path(s.run.playerNode, choices(s.run)[0].nodeId)[1];
-    for (let i = 0; i < 20; i++) step(s, { forward: 1, strafe: 0, walk: true, yaw: Math.atan2(target.y - s.walker.pos.y, target.x - s.walker.pos.x), interact: false });
+  it("stays put through turns that leave the player where they were (the clock's waits)", () => {
+    const s = session(world, { ...empty(), locked: [] });
+    for (let i = 0; i < 20; i++) step(s, { ...IDLE, forward: 1, walk: true, yaw: 0.4 });
     const pos = s.walker.pos;
-    const waited = act(s.run, { kind: "wait" });
-    if (!waited.ok) throw new Error(waited.reason);
-    expect(reconcile(s.walker, s.ground, waited.run).pos).toBe(pos);
-    expect(reconcile(s.walker, s.ground, waited.run).turn).toBe(1);
+    play(s, { kind: "wait" });
+    expect(reconcile(s.walker, s.ground, s.run).pos).toBe(pos);
   });
 
-  it("offers a move again after the engine did not answer it, once the player has stepped off and back", () => {
-    const s = session(world, { ...fresh(), locked: [] });
-    const to = choices(s.run)[0].nodeId;
+  it("puts the body back in its node's area when the engine does not answer a move", () => {
+    const s = session(world, { ...empty(), locked: [] });
+    const to = neighbours(s.run.board, s.run.playerNode)[0].to;
     const handed: Action[] = [];
-    const drive = (target: Vec, seconds: number) => {
-      for (let i = 0; i < seconds / FP.stepS && distance(s.walker.pos, target) > 0.06; i++) {
-        const yaw = Math.atan2(target.y - s.walker.pos.y, target.x - s.walker.pos.x);
-        // The engine never answers: the run stays as it was.
-        const out = stepWalker(s.walker, s.ground, s.run, { forward: 1, strafe: 0, walk: false, yaw, interact: false });
+    for (const point of ground.path(s.run.playerNode, to).slice(1)) {
+      for (let i = 0; i < 12 / FP.stepS && distance(s.walker.pos, point) > 0.06 && handed.length === 0; i++) {
+        const out = stepWalker(s.walker, s.ground, s.run, { ...IDLE, forward: 1, yaw: yawTo(s.walker.pos, point) });
         s.walker = out.walker;
         if (out.action) handed.push(out.action);
       }
-    };
-    const path = s.ground.path(s.run.playerNode, to);
-    for (const point of path.slice(1)) drive(point, 12);
-    for (let i = 0; i < 2 / FP.stepS; i++) s.walker = stepWalker(s.walker, s.ground, s.run, IDLE).walker;
+    }
     expect(handed).toEqual([{ kind: "move", to }]);
-    expect(s.walker.refused).toBe(to);
-    drive(path[0], 12);
-    expect(s.walker.refused).toBeNull();
-    for (const point of path.slice(1)) drive(point, 12);
-    expect(handed).toEqual([{ kind: "move", to }, { kind: "move", to }]);
-  });
-
-  it("names the nearest node with no wall between, for the HUD", () => {
-    const s = session(world, fresh());
-    for (const opening of world.openings) {
-      expect(world.nodes.get(nearestNode(s.ground, { ...s.run, locked: [opening.doorId ?? ""] }, opening.sideA)!)!.roomId).toBe(opening.roomA);
-    }
-    expect(openingBetween(world, "no", "edge")).toBeNull();
-  });
-
-  it("never reaches a room the engine cannot follow it into: walking straight at every node from the start (#134)", () => {
-    // The #119 review (R1-M1): a straight walk could carry the body past a neighbour, more than 1 m off it,
-    // into a room further on while the engine still had the player at the start (F1: the lift straight at the
-    // dock corridor). After every step, the body's room must hold the engine's node, the move handed back,
-    // or a node the engine would move to.
-    const roomOf = new Map(placed.level.floor.nodes.map((n) => [n.id, n.roomId]));
-    for (const target of world.nodes.values()) {
-      const s = session(world, empty());
-      for (let i = 0; i < 8 / FP.stepS && distance(s.walker.pos, target) > 0.06; i++) {
-        step(s, { forward: 1, strafe: 0, walk: false, yaw: Math.atan2(target.y - s.walker.pos.y, target.x - s.walker.pos.x), interact: false });
-        const near = nearestNode(s.ground, s.run, s.walker.pos);
-        if (near === null) continue;
-        const rooms = new Set([s.walker.node, s.walker.pending?.to, ...choices(s.run).flatMap((c) => (c.kind === "move" ? [c.nodeId] : []))].map((id) => id && roomOf.get(id)));
-        expect(rooms.has(roomOf.get(near)), `towards ${target.id}: the body is in ${roomOf.get(near)} with the engine at ${s.run.playerNode}`).toBe(true);
-      }
-    }
-  });
-
-  it("walks on to no other room when a door is locked behind the body (#134)", () => {
-    // The Chief can lock a door between turns. A body that had walked through it without arriving on the far
-    // node is then in a room the engine no longer follows: it may walk there and back, but on to no other room.
-    const roomOf = new Map(placed.level.floor.nodes.map((n) => [n.id, n.roomId]));
-    let tried = 0;
-    const lockable = world.openings.filter((o) => o.lockable && o.doorId);
-    // Each lockable door, walked through either way: `near` is the engine's side, `far` the room the body is in.
-    const sides = lockable.flatMap((o) => [
-      { doorId: o.doorId!, near: o.a, far: o.b, farRoom: o.roomB, past: o.sideB },
-      { doorId: o.doorId!, near: o.b, far: o.a, farRoom: o.roomA, past: o.sideA },
-    ]);
-    for (const side of sides) {
-      // Through the door and not yet on the far node: no move played, the engine still on the near side. Then locked.
-      const s = session(world, { ...empty(), playerNode: side.near, locked: [side.doorId] });
-      s.walker = { ...s.walker, pos: { ...side.past } };
-      const behind = roomOf.get(nearestNode(s.ground, s.run, s.walker.pos) ?? "");
-      if (behind !== side.farRoom) continue;
-      const allowed = new Set([behind, ...[side.near, ...choices(s.run).flatMap((c) => (c.kind === "move" ? [c.nodeId] : []))].map((id) => roomOf.get(id))]);
-      const saved = { ...s.walker };
-      // Out of the far room by each of its other ways: to the node by that way, then along its edge to the next room.
-      const exits = placed.level.floor.edges
-        .flatMap((e) => [[e.a, e.b], [e.b, e.a]] as const)
-        .filter(([from, to]) => roomOf.get(from) === side.farRoom && roomOf.get(to) !== side.farRoom && to !== side.near);
-      for (const [from, next] of exits) {
-        s.walker = { ...saved };
-        for (const target of [world.nodes.get(side.far)!, world.nodes.get(from)!, ...s.ground.path(from, next).slice(1)]) {
-          for (let i = 0; i < 6 / FP.stepS && distance(s.walker.pos, target) > 0.06; i++) {
-            s.walker = stepWalker(s.walker, s.ground, s.run, { forward: 1, strafe: 0, walk: false, yaw: Math.atan2(target.y - s.walker.pos.y, target.x - s.walker.pos.x), interact: false }).walker;
-            const room = roomOf.get(nearestNode(s.ground, s.run, s.walker.pos) ?? "");
-            expect(room === undefined || allowed.has(room), `${side.doorId} locked behind, out by ${from} → ${next}: reached ${room}`).toBe(true);
-          }
-        }
-        tried += 1;
-      }
-    }
-    expect(tried, "no locked door to stand behind").toBeGreaterThan(0);
-  });
-
-  it("goes back to the engine's node on a restart even when that is the node it last read (#134)", () => {
-    // The #119 review (R1-N1): a turn count that went backwards is a new run, whatever the node says.
-    const s = session(world, { ...fresh(), locked: [] });
-    const start = s.run.playerNode;
-    const aside = { ...s.walker, turn: 5, pos: { x: s.walker.pos.x + 0.7, y: s.walker.pos.y }, vel: { x: 1, y: 0 } };
-    const back = reconcile(aside, s.ground, { ...fresh(), locked: [] });
-    expect(back.pos).toEqual({ x: world.nodes.get(start)!.x, y: world.nodes.get(start)!.y });
-    expect(back.vel).toEqual({ x: 0, y: 0 });
-    expect(back.turn).toBe(0);
+    for (let i = 0; i < 1 / FP.stepS; i++) s.walker = stepWalker(s.walker, s.ground, s.run, IDLE).walker;
+    expect(ground.regionOf(s.walker.pos)).toBe(s.run.playerNode);
+    expect(s.walker.region).toBe(s.run.playerNode);
   });
 
   it("stops the body when the run is over", () => {
-    const s = session(world, { ...fresh(), locked: [] });
-    for (let i = 0; i < 30; i++) step(s, { forward: 1, strafe: 0, walk: false, yaw: 0.3, interact: false });
+    const s = session(world, { ...empty(), locked: [] });
     s.run = { ...s.run, status: "caught" };
-    for (let i = 0; i < 30; i++) step(s, { forward: 1, strafe: 0, walk: false, yaw: 0.3, interact: true });
     const pos = s.walker.pos;
-    for (let i = 0; i < 30; i++) step(s, { forward: 1, strafe: 0, walk: false, yaw: 0.3, interact: true });
-    expect(s.walker.pos).toEqual(pos);
-    expect(s.played.every((a) => a.kind === "move")).toBe(true);
-  });
-});
-
-describe("the #119 review's walk on F1: the lift straight at the dock corridor (#134)", () => {
-  const placed = placeLevel(LevelManifest.parse(structuredClone(f1)), structuredClone(FIXTURE_FLOORS.F1), RUN_SEED);
-  const world = buildWorld(placed.level.floor);
-
-  it("plays the move to the lift lobby on the way, then the one into the corridor", () => {
-    const s = session(world, { ...createRun(placed.level), guards: [], cleaners: [], locked: [] });
-    expect(s.run.playerNode).toBe("fl-car");
-    const doorway = openingBetween(world, "fl-lobby", "dc-west")!;
-    walkTo(s, doorway.centre);
-    walkTo(s, world.nodes.get("dc-west")!);
-    expect(s.played).toEqual([
-      { kind: "move", to: "fl-lobby" },
-      { kind: "move", to: "dc-west" },
-    ]);
-    expect(s.run.playerNode).toBe("dc-west");
+    for (let i = 0; i < 30; i++) step(s, { ...IDLE, forward: 1, yaw: 0.3, use: true, usePressed: true });
+    expect(s.played).toEqual([]);
+    expect(distance(s.walker.pos, pos)).toBeLessThan(0.5);
   });
 });

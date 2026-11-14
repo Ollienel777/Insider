@@ -45,7 +45,7 @@ import { clearRunLog, keepRunLogInMemory, runLogOf, saveRunLog } from "./run-log
 import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postureOf, runRecordOf, type RunRecord } from "./run-history";
 import { MuteToggle, useRunSound } from "./run-sound";
 import { placeOrFixture } from "./scan-fallback";
-import { firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, ViewSwitch } from "./fp/run-view";
+import { FIRST_PERSON_TURN_MS, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, ViewSwitch, type HeldAction } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -303,8 +303,19 @@ export function RunScreen({
   // Live mode (issue 99): the clock plays its turns through `play`, like a key. A clock turn is
   // not the player's own action, so it leaves them sprinting if they were.
   const [playMode, setPlayMode] = usePlayMode();
+  // First person (issue 115) always runs on the clock, at its own pace, and its turn is the view's
+  // to choose: the next pick while E is held at a door, otherwise a wait.
+  const fpOn = placed !== null && firstPersonOn(runView, placed.level.floor);
+  const fpHeld = useRef<HeldAction | null>(null);
+  const holdFp = useCallback((held: HeldAction | null) => {
+    fpHeld.current = held;
+  }, []);
+  const fpTurn = useCallback((current: RunState): Action => fpHeld.current?.(current) ?? { kind: "wait" }, []);
+  const layoutMode = fpOn ? "live" : playMode;
   const clock = useTurnClock({
-    live: playMode === "live",
+    live: layoutMode === "live",
+    turnMs: fpOn ? FIRST_PERSON_TURN_MS : undefined,
+    action: fpOn ? fpTurn : undefined,
     run,
     play: (action) => {
       play(action);
@@ -350,12 +361,12 @@ export function RunScreen({
   const hidden = useMemo(() => hiddenRoutes(chief, revealed), [chief, revealed]);
 
   // Live's layout (issue 100): the HUD around the board, and everything else behind Details.
-  const [details, toggleDetails] = useDetails(playMode === "live");
-  const open = panelsOpen(playMode, details);
+  const [details, toggleDetails] = useDetails(layoutMode === "live", fpOn ? "i" : "d");
+  const open = panelsOpen(layoutMode, details);
   // The lens is put away with the bar: its key does nothing until Details opens it again.
   const [lens, toggleLens] = useLayerLens(open);
   const hud = usePlayHud({
-    live: playMode === "live",
+    live: layoutMode === "live",
     placed,
     run,
     mission: manifest?.mission ?? null,
@@ -414,8 +425,9 @@ export function RunScreen({
 
   return (
     <RunLayout
-      mode={playMode}
+      mode={layoutMode}
       details={details}
+      detailsKey={fpOn ? "I" : "D"}
       onDetails={toggleDetails}
       hud={hud}
       loading={settingUp}
@@ -487,13 +499,14 @@ export function RunScreen({
                   </Button>
                 }
               />
-            ) : run && placed && manifest && firstPersonOn(runView, placed.level.floor) ? (
+            ) : run && placed && manifest && fpOn ? (
               <FirstPersonView
                 placed={placed}
                 run={run}
                 objective={manifest.mission.objective}
                 onAct={play}
-                hudAround={hud !== null}
+                onHeld={holdFp}
+                paused={clock.state === "paused"}
                 onUnavailable={() => {
                   runView.fail();
                   setStatus(FP_UNAVAILABLE);
@@ -512,7 +525,7 @@ export function RunScreen({
             {/* Only over a board with a run on it: not over the loading or error state. Below md the
                 Live mode switch takes the top-right corner, so the mute button sits under it there. */}
             {run ? <MuteToggle muted={muted} onToggle={toggleMute} className="absolute top-2 right-8 max-md:top-16 max-md:right-6" /> : null}
-            {run ? <LiveControls mode={playMode} onChange={setPlayMode} clock={clock} /> : null}
+            {run && !fpOn ? <LiveControls mode={playMode} onChange={setPlayMode} clock={clock} /> : null}
           </div>
       }
       legend={lens && run && placed ? <LensLegend placed={placed} locked={run.locked} /> : null}
@@ -521,7 +534,7 @@ export function RunScreen({
             <p data-testid="run-status" aria-live="polite" className="min-w-0 text-sm text-text-1 md:truncate">
               {status}
             </p>
-            <div className={cn("flex shrink-0 items-center gap-4 text-sm text-text-2 max-md:hidden", placed && firstPersonOn(runView, placed.level.floor) ? "hidden" : null)}>
+            <div className={cn("flex shrink-0 items-center gap-4 text-sm text-text-2 max-md:hidden", fpOn ? "hidden" : null)}>
               <span className="flex items-center gap-2">
                 <Kbd>1–9</Kbd> {mode === "sprint" ? "sprint" : "move"}
               </span>
