@@ -256,19 +256,66 @@ describe("placeLevel on F1 from the cached manifest", () => {
   it("maps the zones onto rooms", () => {
     const zone = (id: string) => placed.zones.find((z) => z.zoneId === id);
     expect(zone("quiet-2202")?.roomIds).toEqual(["suites-2202-2205"]);
-    expect(zone("quiet-2209")?.roomIds).toEqual(["suites-2206-2209"]);
+    expect(zone("quiet-2205")?.roomIds).toEqual(["suites-2202-2205"]);
     expect(zone("quiet-2210")?.roomIds).toEqual(["office-2210"]);
     expect(zone("objective")?.roomIds).toEqual(["records-room"]);
     expect(zone("secure")?.roomIds).toEqual(["server-closet"]);
     expect(level.lockedDoors).toContain("d-server-closet");
     expect(level.zones?.["dock-N"]).toEqual([F1_DEMO.dockEntry]);
-    // F1's floor 22 has no occupied suite left, and only two entry nodes.
+    // Every suite room on F1's floor 22 matches an available suite, so the
+    // crowded zone keeps the one farthest from the way in, and its suites'
+    // quiet zones go unplaced. The floor has only two entry nodes.
+    expect(zone("crowded-22")?.roomIds).toEqual(["suites-2206-2209"]);
     expect(placed.unplaced.map((u) => u.elementRole)).toEqual([
       "entry:garage-E",
       "entry:lobby-S",
       "entry:exit-W",
-      "zone:crowded-22",
+      "zone:quiet-2206",
+      "zone:quiet-2207",
+      "zone:quiet-2208",
+      "zone:quiet-2209",
     ]);
+    expect(placed.unplaced.find((u) => u.elementRole === "zone:quiet-2206")?.reason).toMatch(/occupied/);
+  });
+
+  it("walks a night cleaner through the crowded zone, off the quiet route and the demo's way in (#95)", () => {
+    const crowded = new Set(placed.zones.find((z) => z.role === "crowded")!.nodes);
+    expect(level.cleaners).toHaveLength(1);
+    const [k1] = level.cleaners!;
+    expect(k1.id).toBe("K1");
+    expect(k1.patrol.length).toBeGreaterThan(0);
+    for (const id of k1.patrol) expect(crowded.has(id), id).toBe(true);
+    // Nothing the cleaner can see is on the quiet route or the straight walk in.
+    const seen = new Set([...crowded].flatMap((id) => [id, ...(level.floor.sightlines[id] ?? [])]));
+    const walked = [F1_DEMO.dockEntry, F1_DEMO.freightLiftWait, "dc-west", "dc-mid", "dc-east", "rr-door", F1_DEMO.objective];
+    for (const id of walked) expect(seen.has(id), id).toBe(false);
+  });
+
+  it("keeps guard rounds out of the crowded zone, where the cleaners walk", () => {
+    for (const seed of SEEDS) {
+      const p = placeF1(seed);
+      const crowded = new Set(p.zones.filter((z) => z.role === "crowded").flatMap((z) => z.nodes));
+      for (const guard of p.level.guards) for (const id of guard.patrol) expect(crowded.has(id), `seed ${seed}: ${guard.id} at ${id}`).toBe(false);
+    }
+  });
+
+  it("keeps the objective out of corridors, lobbies, stairs and lifts, whatever the model names it (#95)", () => {
+    for (const name of ["Corridor", "Main Corridor", "Lobby", "Elevator Lobby", "Stair", "West Stair", "Freight Lift"]) {
+      const m = manifest();
+      m.zones.find((z) => z.role === "objective")!.name = name;
+      const p = placeLevel(m, floor(), SEED, {});
+      expect(p.zones.find((z) => z.role === "objective")?.roomIds, name).toEqual(["records-room"]);
+      expect(p.level.objective, name).toBe(F1_DEMO.objective);
+    }
+  });
+
+  it("still finds the objective room by its zone's name when no keyword matches", () => {
+    const f = floor();
+    for (const r of f.rooms) if (r.id === "records-room") r.label = "Evidence Locker";
+    const m = manifest();
+    m.zones.find((z) => z.role === "objective")!.name = "Evidence locker";
+    const p = placeLevel(m, f, SEED, {});
+    expect(p.zones.find((z) => z.role === "objective")?.roomIds).toEqual(["records-room"]);
   });
 
   it("gives every placed element its manifest provenance entries, the same objects", () => {
