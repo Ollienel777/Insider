@@ -146,7 +146,8 @@ export function DossierScreen(props: DossierScreenProps) {
                 <table data-testid="data-to-level" className="w-full min-w-[560px] table-fixed text-left">
                   <colgroup>
                     <col className="w-[104px]" />
-                    <col className="w-[128px]" />
+                    {/* Wide enough for a 14-letter field id in 14px mono, so none breaks mid-word. */}
+                    <col className="w-[152px]" />
                     <col className="w-[112px]" />
                     <col />
                   </colgroup>
