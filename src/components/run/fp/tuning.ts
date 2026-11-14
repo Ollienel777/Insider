@@ -24,7 +24,7 @@ export const FP = Object.freeze({
   /** How near a locked door or the objective E works from. */
   reachM: 1.6,
   /** Leaning on a locked door this long starts picking it. */
-  pushPickS: 0.35,
+  pushPickS: 0.5,
   /** One pick, one turn: a held push picks again after this long. */
   pickEveryS: 0.7,
   /** An action the engine has not answered after this long is taken as refused. */

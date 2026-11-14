@@ -67,7 +67,7 @@ export function buildFloorGroup(world: World, palette: Palette, tone: (roomId: s
   const doorH = FP.doorHeightM;
 
   const shade = (colour: Color, by: number) => colour.clone().multiplyScalar(by);
-  const LIGHT: Record<RoomTone, number> = { lit: 1.5, plain: 1, dark: 0.55 };
+  const LIGHT: Record<RoomTone, number> = { lit: 1.45, plain: 1, dark: 0.72 };
 
   const faces = new Faces();
   const seams: number[] = [];
@@ -78,8 +78,8 @@ export function buildFloorGroup(world: World, palette: Palette, tone: (roomId: s
   for (const room of world.rooms) {
     const { x, y, w, h } = room.inner;
     const k = LIGHT[tone(room.id)];
-    const floor = shade(palette.n800, k);
-    const ceiling = shade(palette.n900, k);
+    const floor = shade(palette.n700, k * 0.9);
+    const ceiling = shade(palette.n850, k);
     faces.quad([[x, 0, y], [x + w, 0, y], [x + w, 0, y + h], [x, 0, y + h]], [0, 1, 0], floor);
     faces.quad([[x, H, y], [x + w, H, y], [x + w, H, y + h], [x, H, y + h]], [0, -1, 0], ceiling);
     // The plan's own grid on the floor, one line a unit: something for the eye to move against.

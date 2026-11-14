@@ -173,6 +173,8 @@ export class Actors {
 
   private buildDoors(keep: <T extends BufferGeometry | Material>(thing: T) => T): void {
     const body = keep(new MeshLambertMaterial({ color: this.palette.n500 }));
+    const plate = keep(new MeshLambertMaterial({ color: this.palette.n700 }));
+    const bar = keep(new MeshLambertMaterial({ color: this.palette.n300 }));
     const lock = keep(new MeshBasicMaterial({ color: this.palette.danger }));
     for (const door of this.ground.doors) {
       const dx = door.bar.b.x - door.bar.a.x;
@@ -182,11 +184,16 @@ export class Actors {
       const panel = new Mesh(keep(new BoxGeometry(width, FP.doorHeightM, 0.06)), body);
       panel.position.y = FP.doorHeightM / 2;
       leaf.add(panel);
-      // The lock's light, on both faces at hand height.
+      // On both faces: a kick plate, a push bar, and the lock's light at hand height. A door
+      // stood against is most of the view, so it has something on it to look at.
       for (const side of [-1, 1]) {
-        const light = new Mesh(keep(new BoxGeometry(0.1, 0.16, 0.02)), lock);
-        light.position.set(width / 2 - 0.16, 1.05, side * 0.04);
-        leaf.add(light);
+        const kick = new Mesh(keep(new BoxGeometry(width - 0.12, 0.28, 0.012)), plate);
+        kick.position.set(0, 0.2, side * 0.034);
+        const push = new Mesh(keep(new BoxGeometry(width - 0.3, 0.05, 0.05)), bar);
+        push.position.set(0, 1.0, side * 0.055);
+        const light = new Mesh(keep(new BoxGeometry(0.07, 0.12, 0.02)), lock);
+        light.position.set(width / 2 - 0.1, 1.22, side * 0.04);
+        leaf.add(kick, push, light);
       }
       leaf.rotation.y = -Math.atan2(dy, dx);
       leaf.position.set(door.centre.x, 0, door.centre.y);

@@ -119,7 +119,8 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
     const slant = new DirectionalLight(palette.n100, 1.5);
     slant.position.set(-0.55, 1, -0.3);
     scene.add(slant);
-    const torch = new PointLight(palette.n100, 1.4, 9, 2);
+    // A slow falloff: a wall the player is pressed against must not burn out.
+    const torch = new PointLight(palette.n100, 0.9, 14, 0.6);
     camera.add(torch);
     scene.add(camera);
 

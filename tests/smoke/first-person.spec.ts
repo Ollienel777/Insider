@@ -28,6 +28,7 @@ test("first person: walking onto the next node plays the engine's move", async (
   await expect(view.or(notice)).toBeVisible({ timeout: 30_000 });
   if (await notice.isVisible()) {
     // No WebGL in this browser: the board is back, and first person is not offered again.
+    test.info().annotations.push({ type: "fallback", description: "no WebGL here: the walk was not played, only the fallback checked" });
     await expect(page.getByTestId("run-board")).toBeVisible();
     await expect(page.getByTestId("run-view-first-person")).toBeDisabled();
     return;
