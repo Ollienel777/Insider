@@ -120,6 +120,29 @@ export const SIGHT_M = 10;
 export const SCAN_HOP_METRES = 6;
 /** How many of its shortest hops a position keeps (`dropLongHops`). */
 export const SCAN_HOPS_KEPT = 4;
+/**
+ * A sparse scan's positions can sit further apart than `SCAN_HOP_METRES`, and
+ * then the cut would leave only the spanning tree: no loop, so no way round a
+ * guard. The cut is therefore at least this many times the scan's own
+ * spacing, the median of each position's nearest hop (PR 116 review).
+ */
+export const SCAN_SPACING_FACTOR = 1.5;
+
+/** The longest hop `dropLongHops` keeps for being near on `floor`: 6 m, or more on a sparse scan. */
+export function hopCutMetres(floor: FloorGraph): number {
+  const at = new Map(floor.nodes.map((n) => [n.id, n]));
+  const nearest = new Map<string, number>();
+  for (const { a, b } of floor.edges) {
+    const [p, q] = [at.get(a)!, at.get(b)!];
+    const metres = Math.hypot(p.x - q.x, p.y - q.y);
+    for (const id of [a, b]) nearest.set(id, Math.min(nearest.get(id) ?? Infinity, metres));
+  }
+  const spacing = [...nearest.values()].sort((p, q) => p - q);
+  if (spacing.length === 0) return SCAN_HOP_METRES;
+  const mid = spacing.length >> 1;
+  const median = spacing.length % 2 ? spacing[mid] : (spacing[mid - 1] + spacing[mid]) / 2;
+  return Math.max(SCAN_HOP_METRES, SCAN_SPACING_FACTOR * median);
+}
 
 function roomTags(label: string): NodeTag[] {
   const tags: NodeTag[] = [];
@@ -370,8 +393,9 @@ export function toFullFloorGraph(sweepCollection: Record<string, unknown>, roomC
  *
  * 1. It is on the minimum spanning tree of the board's edges by length, so
  *    the board stays exactly as connected as it was.
- * 2. It is at most `SCAN_HOP_METRES` long, and among the `SCAN_HOPS_KEPT`
- *    shortest edges at one of its two ends.
+ * 2. It is at most `hopCutMetres(floor)` long (`SCAN_HOP_METRES`, or more on
+ *    a sparse scan), and among the `SCAN_HOPS_KEPT` shortest edges at one of
+ *    its two ends.
  *
  * Length is the distance on the board. Edges of the same length are ordered
  * by the ids of their ends, so the same scan always gives the same board.
@@ -380,6 +404,7 @@ export function toFullFloorGraph(sweepCollection: Record<string, unknown>, roomC
  */
 export function dropLongHops(floor: FloorGraph): FloorGraph {
   const at = new Map(floor.nodes.map((n) => [n.id, n]));
+  const cut = hopCutMetres(floor);
   const hops = floor.edges.map((edge) => {
     const [lo, hi] = edge.a < edge.b ? [edge.a, edge.b] : [edge.b, edge.a];
     const [p, q] = [at.get(lo)!, at.get(hi)!];
@@ -407,7 +432,7 @@ export function dropLongHops(floor: FloorGraph): FloorGraph {
     const [atLo, atHi] = [before.get(lo) ?? 0, before.get(hi) ?? 0];
     before.set(lo, atLo + 1);
     before.set(hi, atHi + 1);
-    if (metres <= SCAN_HOP_METRES && Math.min(atLo, atHi) < SCAN_HOPS_KEPT) kept.add(edge);
+    if (metres <= cut && Math.min(atLo, atHi) < SCAN_HOPS_KEPT) kept.add(edge);
   }
   return { ...floor, edges: floor.edges.filter((edge) => kept.has(edge)) };
 }

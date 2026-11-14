@@ -3,8 +3,11 @@
 // sweep and room records are made up, in the shape mapping.ts reads (as in
 // live.test.ts and scan-board.test.ts): no scan data is kept.
 import { describe, expect, it } from "vitest";
-import type { FloorGraph } from "@/domain";
-import { SCAN_HOP_METRES, SCAN_HOPS_KEPT, toFloorGraph, toFullFloorGraph } from "./mapping";
+import { LevelManifest, type FloorGraph } from "@/domain";
+import { createRun } from "@/engine";
+import { placeLevel } from "@/level/placer";
+import cached from "../../../data/levels/F1.romaine-1974.json";
+import { hopCutMetres, SCAN_HOP_METRES, SCAN_HOPS_KEPT, SCAN_SPACING_FACTOR, toFloorGraph, toFullFloorGraph } from "./mapping";
 
 const v = (x: number, z: number) => ({ x, y: 1.5, z });
 const sweep = (sid: string, x: number, z: number, room: string | null, neighbors: string[], extra = {}) => ({
@@ -139,6 +142,17 @@ function square(): Scan {
 }
 
 /**
+ * The same square beside five positions 1 m apart, every position listing
+ * every other: the scan's spacing is the cluster's, so the cut stays at 6 m
+ * and the square's 7 m sides are kept only as the tree needs them.
+ */
+function squareBesideCluster(): Scan {
+  const spots: Record<string, Spot> = { a: [0, 0, "r-yard"], b: [7, 0, "r-yard"], c: [7, 7, "r-yard"], d: [0, 7, "r-yard"] };
+  for (let i = 0; i < 5; i++) spots[`k${i}`] = [30 + i, 0, "r-yard"];
+  return { sweeps: sweepsOf(spots, everyPair(Object.keys(spots))), rooms: { "r-yard": room("r-yard", "Yard", -1, -1, 36, 8) } };
+}
+
+/**
  * Six positions that each list the other five. t1 and t2 are both exactly 5 m
  * from h, its fourth and fifth shortest hops, and h is the fifth at each of
  * them, behind four nearer positions.
@@ -212,7 +226,7 @@ function onTree(full: FloorGraph, hop: Hop): boolean {
 function ruled(full: FloorGraph): string[] {
   const nearest = (e: Hop) => shortestAt(full, e.a).includes(name(e)) || shortestAt(full, e.b).includes(name(e));
   return full.edges
-    .filter((e) => onTree(full, e) || (metres(full, e) <= SCAN_HOP_METRES && nearest(e)))
+    .filter((e) => onTree(full, e) || (metres(full, e) <= hopCutMetres(full) && nearest(e)))
     .map(name)
     .sort();
 }
@@ -271,6 +285,38 @@ describe("an open room where each of 10 positions lists the other 9", () => {
     expect(onTree(withFar.full, { a: "a4", b: "z" })).toBe(true);
     // The rest of the room is as it was without it.
     expect(hops(withFar.floor).filter((h) => !h.endsWith(" z"))).toEqual(hops(floor));
+  });
+});
+
+describe("a sparse scan keeps its loops (PR 116 review)", () => {
+  /** A 5 × 4 grid, 6.5 m apart, each position listing every other within 15 m: sparser than the 6 m cut. */
+  function sparseGrid(): Scan {
+    const spots: Record<string, Spot> = {};
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 5; c++) spots[`g${r}${c}`] = [6.5 * c, 6.5 * r, "r-hall"];
+    const ids = Object.keys(spots);
+    const near = everyPair(ids).filter(([a, b]) => Math.hypot(spots[a][0] - spots[b][0], spots[a][1] - spots[b][1]) <= 15);
+    return { sweeps: sweepsOf(spots, near), rooms: { "r-hall": room("r-hall", "Open Floor", -1, -1, 28, 21) } };
+  }
+
+  it("raises the cut to the scan's own spacing", () => {
+    expect(hopCutMetres(boards(sparseGrid()).full)).toBeCloseTo(SCAN_SPACING_FACTOR * 6.5);
+    expect(hopCutMetres(boards(openRoom()).full)).toBe(SCAN_HOP_METRES);
+  });
+
+  it("keeps every grid side, so the board has loops round any one position", () => {
+    const { floor } = boards(sparseGrid());
+    // 31 grid sides on a 5 × 4 grid; a tree on 20 positions would have 19 edges.
+    for (let r = 0; r < 4; r++)
+      for (let c = 0; c < 5; c++) {
+        if (c < 4) expect(hops(floor), `g${r}${c} g${r}${c + 1}`).toContain(`g${r}${c} g${r}${c + 1}`);
+        if (r < 3) expect(hops(floor), `g${r}${c} g${r + 1}${c}`).toContain(`g${r}${c} g${r + 1}${c}`);
+      }
+    expect(floor.edges.length).toBeGreaterThan(floor.nodes.length);
+  });
+
+  it("keeps a lone square's four 7 m sides: a loop, not a tree", () => {
+    const kept = hops(boards(square()).floor);
+    for (const side of ["a b", "a d", "b c", "c d"]) expect(kept, side).toContain(side);
   });
 });
 
@@ -345,10 +391,12 @@ describe("only the hops change: nodes, tags, rooms and sightlines are the full g
 
 describe("the same scan always gives the same board: a tie in length breaks by id", () => {
   it("picks the tree's hops by id when every side of a square is the same length", () => {
-    const scan = square();
-    // Four sides of 7 m, too long to keep for being near; the tree needs three, and takes them in id order.
-    expect(hops(boards(scan).floor)).toEqual(["a b", "a d", "b c"]);
-    expect(hops(boards(backwards(scan)).floor)).toEqual(["a b", "a d", "b c"]);
+    const scan = squareBesideCluster();
+    const sides = (floor: FloorGraph) => hops(floor).filter((h) => /^[a-d] [a-d]$/.test(h));
+    // The cut is 6 m here, so the four 7 m sides are too long to keep for being near; the tree needs three, in id order.
+    expect(hopCutMetres(boards(scan).full)).toBe(SCAN_HOP_METRES);
+    expect(sides(boards(scan).floor)).toEqual(["a b", "a d", "b c"]);
+    expect(sides(boards(backwards(scan)).floor)).toEqual(["a b", "a d", "b c"]);
   });
 
   it("picks a position's fourth hop by id when its fourth and fifth are the same length", () => {
@@ -383,5 +431,60 @@ describe("the rule, hop by hop, on every scan here", () => {
   it.each(scans)("%s keeps a hop when it is on the tree, or at most 6 m and one of an end's 4 shortest, and no other", (_, scan) => {
     const { full, floor } = boards(scan);
     expect(hops(floor)).toEqual(ruled(full));
+  });
+});
+
+describe("a level placed and played on a pruned dense scan (PR 116 review)", () => {
+  /**
+   * An office floor scanned densely: a corridor of 8 positions, a freight lift
+   * and a stair at its ends, and six rooms of 5 positions off it. Each position
+   * lists every other one within 12 m, as a scan's "can see" lists do, across
+   * rooms included: hundreds of hops, most of them between rooms.
+   */
+  function denseOffice(): Scan {
+    const spots: Record<string, Spot> = { lift: [-3, 0, "r-lift"], stair: [24, 0, "r-stair"] };
+    for (let i = 0; i < 8; i++) spots[`c${i}`] = [3 * i, 0, "r-corridor"];
+    const rooms: Record<string, unknown> = {
+      "r-lift": room("r-lift", "Freight Elevator", -4, -1, -2, 1),
+      "r-stair": room("r-stair", "Stairwell", 23, -1, 25, 1),
+      "r-corridor": room("r-corridor", "", -1, -1, 22, 1),
+    };
+    for (let k = 0; k < 6; k++) {
+      const north = k < 3;
+      const x0 = (k % 3) * 7;
+      const z0 = north ? 2.5 : -8.5;
+      for (let j = 0; j < 5; j++) spots[`r${k}p${j}`] = [x0 + 1 + (j % 3) * 2, z0 + 1 + Math.floor(j / 3) * 3, `r-room${k}`];
+      rooms[`r-room${k}`] = room(`r-room${k}`, "", x0, z0, x0 + 6, z0 + 6);
+    }
+    const ids = Object.keys(spots);
+    const links = everyPair(ids).filter(([a, b]) => Math.hypot(spots[a][0] - spots[b][0], spots[a][1] - spots[b][1]) <= 12);
+    return { sweeps: sweepsOf(spots, links), rooms };
+  }
+
+  const scan = denseOffice();
+  const { full, floor } = boards(scan);
+  const manifest = LevelManifest.parse(structuredClone(cached));
+  const placed = placeLevel(manifest, structuredClone(floor), 7);
+  const { level } = placed;
+
+  it("drops most of the scan's hops, and leaves the board as connected as it was", () => {
+    expect(full.edges.length).toBeGreaterThan(300);
+    expect(floor.edges.length).toBeLessThan(full.edges.length / 2);
+    expect(reached("lift", floor.edges)).toEqual(reached("lift", full.edges));
+  });
+
+  it("places the level on it, with guards, a way in and a lock on the objective's room", () => {
+    expect(placed.entries.length).toBeGreaterThan(0);
+    expect(level.guards.length).toBeGreaterThan(0);
+    expect(level.lockedDoors.length).toBeGreaterThan(0);
+    const run = createRun(level);
+    expect(run.status).toBe("playing");
+  });
+
+  it("keeps the files behind the lock, and reachable once it is picked", () => {
+    const shut = new Set(level.lockedDoors);
+    const open = level.floor.edges.filter((e) => !e.door || !shut.has(e.door.id));
+    expect(reached(level.start, open).has(level.objective)).toBe(false);
+    expect(reached(level.start, level.floor.edges).has(level.objective)).toBe(true);
   });
 });
