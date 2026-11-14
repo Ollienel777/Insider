@@ -9,7 +9,7 @@
 //   node scripts/check-floor.mjs path/to/F1.json one or more files
 //
 // Node built-ins only. Exits 1 and lists each problem when any file fails.
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -104,6 +104,9 @@ function main(argv) {
   return failed === 0 ? 0 : 1;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Both sides are realpath'd, as in gate.mjs, so a drive-letter case or symlink
+// difference still runs main() instead of silently exiting 0.
+const real = (p) => realpathSync.native(p);
+if (process.argv[1] && real(process.argv[1]) === real(fileURLToPath(import.meta.url))) {
   process.exitCode = main(process.argv.slice(2));
 }

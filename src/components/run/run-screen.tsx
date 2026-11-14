@@ -66,6 +66,8 @@ export function RunScreen({
 }) {
   const [loaded, setLoad] = useState<Load>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
+  /** The runs stored for this building now: what the Forget button would clear. */
+  const [storedRuns, setStoredRuns] = useState(0);
   const [run, setRun] = useState<RunState | null>(null);
   const [status, setStatus] = useState<string>("");
   const [lens, toggleLens] = useLayerLens();
@@ -117,6 +119,7 @@ export function RunScreen({
           const history = loadRunHistory(building.id);
           const placed = placeLevel(manifest, floor, RUN_SEED, undefined, postureOf(history));
           setLoad({ status: "ready", placed, live: floor.source === "matterport", history });
+          setStoredRuns(history.length);
           watchEntry.current = placed.watch?.entryId;
           startRun(placed.level);
           setStatus(`You're in at the ${placed.entries[0].label.toLowerCase()}. Pick a number to move.`);
@@ -135,6 +138,8 @@ export function RunScreen({
 
   const load: Load = manifest ? loaded : { status: "no-floor" };
   const placed = load.status === "ready" ? load.placed : null;
+  // The placement and the Chief's summary use `history`, read when the level was placed; the
+  // Forget button uses `storedRuns`, which also counts a run that ended since.
   const history = load.status === "ready" ? load.history : null;
   const zones = useMemo(() => (placed ? chiefZones(placed) : null), [placed]);
 
@@ -157,14 +162,21 @@ export function RunScreen({
       const controller = new AbortController();
       pendingChief.current = controller;
       latestSeq.current = seq;
+      let request: ReturnType<typeof chiefRequest>;
+      try {
+        // The run's first transition carries the summary of earlier runs, so the Chief's first word can adapt.
+        const watch = placed.watch;
+        const summary =
+          seq === 0 && history
+            ? chiefHistory(history, zones, watch ? { guardId: watch.guardId, zoneId: watch.entryId } : undefined)
+            : null;
+        request = chiefRequest(building.id, placed, zones, state, state.alarmEvents[seq], summary);
+      } catch (error) {
+        // A board the request can't carry: the panel says so, and the turn (and its log) goes on.
+        setChief({ status: "error", seq, message: error instanceof Error ? error.message : String(error) });
+        return;
+      }
       setChief({ status: "pending", seq });
-      // The run's first transition carries the summary of earlier runs, so the Chief's first word can adapt.
-      const watch = placed.watch;
-      const summary =
-        seq === 0 && history
-          ? chiefHistory(history, zones, watch ? { guardId: watch.guardId, zoneId: watch.entryId } : undefined)
-          : null;
-      const request = chiefRequest(building.id, placed, zones, state, state.alarmEvents[seq], summary);
       askChief(request, { signal: controller.signal }).then(
         (answer) => {
           // A newer alarm event has its own call out; this answer is stale.
@@ -212,7 +224,11 @@ export function RunScreen({
       if (result.run.alarmEvents.length > run.alarmEvents.length) callChief(result.run, result.run.alarmEvents.length - 1);
       // A run that just ended joins the history; the next visit's guards start from it.
       const record = run.status === "playing" ? runRecordOf(result.run) : null;
-      if (record) appendRunHistory(building.id, record);
+      if (record) {
+        appendRunHistory(building.id, record);
+        // The Forget button counts what is stored now, not what this run was placed from.
+        setStoredRuns(loadRunHistory(building.id).length);
+      }
       saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current, watchEntry.current));
     },
     [placed, run, callChief, building.id],
@@ -226,6 +242,7 @@ export function RunScreen({
   /** Forgets the earlier runs and places the level again, in its default posture. */
   const forgetHistory = useCallback(() => {
     clearRunHistory(building.id);
+    setStoredRuns(0);
     // No run on the board until the level is placed again: no key plays the old one meanwhile.
     latestRun.current = null;
     setRun(null);
@@ -287,7 +304,7 @@ export function RunScreen({
             <span aria-hidden className="h-4 w-px bg-border" />
             <span className="truncate text-sm text-text-1">{manifest?.mission.title}</span>
             <div className="ml-auto flex items-center gap-2">
-              {history && history.length > 0 ? (
+              {storedRuns > 0 ? (
                 <Button
                   variant="ghost"
                   onClick={forgetHistory}
@@ -295,7 +312,7 @@ export function RunScreen({
                   disabled={!run || (run.turn > 0 && run.status === "playing")}
                   data-testid="forget-history"
                 >
-                  Forget {history.length === 1 ? "1 earlier run" : `${history.length} earlier runs`}
+                  Forget {storedRuns === 1 ? "1 earlier run" : `${storedRuns} earlier runs`}
                 </Button>
               ) : null}
               <LensToggle on={lens} onToggle={toggleLens} disabled={!run} />

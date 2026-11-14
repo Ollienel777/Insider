@@ -22,6 +22,19 @@ export interface ChiefZones {
   toChief: ReadonlyMap<string, string>;
 }
 
+// The request's limits (`ChiefRequest`): a board over them is clamped here,
+// never refused by the parse in the middle of a turn.
+const MAX_ID = 64;
+const MAX_NAME = 80;
+const MAX_ZONES = 64;
+const MAX_GUARDS = 12;
+
+const clampId = (id: string) => id.slice(0, MAX_ID);
+const clampName = (name: string, fallback: string) => {
+  const trimmed = name.trim() || fallback;
+  return trimmed.length > MAX_NAME ? `${trimmed.slice(0, MAX_NAME - 1)}…` : trimmed;
+};
+
 /** The zones the Chief may name on this placed level. */
 export function chiefZones(placed: PlacedLevel): ChiefZones {
   const { level } = placed;
@@ -29,11 +42,15 @@ export function chiefZones(placed: PlacedLevel): ChiefZones {
   const zones: { id: string; name: string }[] = [];
   const toEngine = new Map<string, string>();
   const toChief = new Map<string, string>();
+  let long = 0;
   const add = (engineId: string, id: string, name: string) => {
     if (toChief.has(engineId)) return;
-    zones.push({ id, name });
-    toEngine.set(id, engineId);
-    toChief.set(engineId, id);
+    // An id over the request's limit, or one already taken, goes as an opaque `zone-N`.
+    let chiefId = id;
+    while (chiefId.length > MAX_ID || toEngine.has(chiefId)) chiefId = `zone-${++long}`;
+    zones.push({ id: chiefId, name: clampName(name, chiefId) });
+    toEngine.set(chiefId, engineId);
+    toChief.set(engineId, chiefId);
   };
   for (const id of Object.keys(level.zones ?? {})) add(id, id, zoneName(placed, id));
   // The rooms no zone holds: where a guard or the player can be outside every zone.
@@ -51,6 +68,8 @@ export function chiefZones(placed: PlacedLevel): ChiefZones {
 
 /**
  * The request for one alarm event: exactly the `ChiefRequest` fields, parsed so nothing more can ride along.
+ * Ids and names are clamped to the request's limits, and past 64 zones it keeps the ones a guard or the
+ * last sighting names first. Throws a plain message when it still fails its schema.
  * `history` is the summary of earlier runs (run-history.ts), for the run's first event only.
  */
 export function chiefRequest(
@@ -61,28 +80,39 @@ export function chiefRequest(
   event: AlarmEvent,
   history: ChiefHistory | null = null,
 ): ChiefRequest {
-  const chiefId = (engineId: string) => zones.toChief.get(engineId) ?? engineId;
-  const guards = run.guards.map((g) => ({
-    id: g.id,
+  const chiefId = (engineId: string) => zones.toChief.get(engineId) ?? clampId(engineId);
+  const lastKnownZone = event.lastKnownZone === null ? null : chiefId(event.lastKnownZone);
+  const guards = run.guards.slice(0, MAX_GUARDS).map((g) => ({
+    id: clampId(g.id),
     zoneId: chiefId(zoneOf(run.board, g.nodeId).zoneId),
     intent: g.target?.intent ?? "patrol",
   }));
+  const named = new Set([...guards.map((g) => g.zoneId), ...(lastKnownZone === null ? [] : [lastKnownZone])]);
+  const offered =
+    zones.zones.length <= MAX_ZONES
+      ? zones.zones
+      : [...zones.zones.filter((z) => named.has(z.id)), ...zones.zones.filter((z) => !named.has(z.id))].slice(0, MAX_ZONES);
   // A summary naming an id this request does not carry would fail the parse: the run goes on without it.
   const fits =
-    history && strayHistoryIds(history, new Set(zones.zones.map((z) => z.id)), new Set(guards.map((g) => g.id))).length === 0;
-  return ChiefRequest.parse({
+    history && strayHistoryIds(history, new Set(offered.map((z) => z.id)), new Set(guards.map((g) => g.id))).length === 0;
+  const parsed = ChiefRequest.safeParse({
     buildingId,
     transition: {
       turn: event.turn,
       from: event.from,
       to: event.to,
-      cause: { kind: event.cause.kind, ...(event.cause.id && { id: event.cause.id }) },
+      cause: { kind: event.cause.kind, ...(event.cause.id && { id: clampId(event.cause.id) }) },
     },
-    lastKnownZone: event.lastKnownZone === null ? null : chiefId(event.lastKnownZone),
+    lastKnownZone,
     guards,
-    zones: zones.zones,
+    zones: offered,
     ...(history && fits && { history }),
   });
+  if (!parsed.success) {
+    const fields = [...new Set(parsed.error.issues.map((i) => String(i.path[0] ?? "request")))].join(", ");
+    throw new Error(`this board doesn't fit the Chief's request (${fields})`);
+  }
+  return parsed.data;
 }
 
 /** The Chief's orders in the engine's zone ids. An id the Chief made up stays as it is, and the engine drops it. */

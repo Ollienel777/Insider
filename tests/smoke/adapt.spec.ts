@@ -43,6 +43,8 @@ test("a second run of F1 by the dock: G3 starts posted nearer it, the Chief says
   await expect(rationale).toHaveAttribute("data-done", "true", { timeout: 4_000 });
   await expect(rationale).not.toContainText("starts there tonight");
   await caught(page);
+  // The run that just ended counts at once, before any reload (R1-M1).
+  await expect(page.getByTestId("forget-history")).toHaveText("Forget 1 earlier run");
 
   // The second run: G3 stands elsewhere, and the first rationale names the dock and G3.
   await open(page);
