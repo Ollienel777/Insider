@@ -234,7 +234,9 @@ function BuildingRow({ building, selected, onSelect, onHover }: RowProps) {
             {building.name}
           </span>
           {disabled ? (
-            <span className="shrink-0 rounded-sm border border-border px-1.5 label-caps text-text-3">Level in prep</span>
+            <span className="shrink-0 rounded-sm border border-border px-1.5 label-caps text-text-3">
+              {building.source === "costar" ? "Facts only" : "Level in prep"}
+            </span>
           ) : null}
         </span>
         <span className="block truncate text-sm text-text-2">

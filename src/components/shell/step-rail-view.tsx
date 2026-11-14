@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Check } from "lucide-react";
 import { buildingHref } from "@/lib/building-href";
 import { cn } from "@/lib/utils";
-import { STEPS, stepStates, type StepState } from "./steps";
+import { FACTS_ONLY_NOTE, FACTS_ONLY_STEPS, STEPS, stepStates, type StepSegment, type StepState } from "./steps";
 
 const RUN_STEPS = STEPS.filter((step) => step.segment !== "drill");
 const DRILL = STEPS.find((step) => step.segment === "drill")!;
@@ -30,30 +30,54 @@ function StepLink({ href, label, state }: { href: string; label: string; state: 
   );
 }
 
+/** A step a facts-only building does not have: shown, not linked, with the reason. */
+function StepOff({ label }: { label: string }) {
+  return (
+    <span
+      aria-disabled="true"
+      title={FACTS_ONLY_NOTE}
+      data-state="off"
+      className="inline-flex h-11 cursor-not-allowed items-center rounded-sm px-1 text-sm text-text-3 md:px-3"
+    >
+      {label}
+      <span className="sr-only"> ({FACTS_ONLY_NOTE})</span>
+    </span>
+  );
+}
+
 /** The rail itself, with the current step given; `StepRail` supplies it from the route. */
 export function StepRailView({
   buildingId,
   current,
   missionId = null,
+  factsOnly = false,
 }: {
   buildingId: string;
   current: string | null;
   /** The chosen mission, carried on every step as `?m=` (issue 119). */
   missionId?: string | null;
+  /** A kit building (`isFactsOnly`): only Scout and the Dossier are linked; the rest are shown off. */
+  factsOnly?: boolean;
 }) {
   const states = stepStates(current);
   const href = (segment: string) => buildingHref(buildingId, segment, missionId);
+  const renderStep = ({ segment, label }: { segment: StepSegment; label: string }) =>
+    factsOnly && !FACTS_ONLY_STEPS.includes(segment) ? (
+      <StepOff label={label} />
+    ) : (
+      <StepLink href={href(segment)} label={label} state={states[segment]} />
+    );
   return (
     <nav aria-label="Steps" className="border-b border-border bg-surface-1 px-1 md:px-3">
       <ol className="flex h-11 items-center">
-        {RUN_STEPS.map((step) => (
-          <li key={step.segment}>
-            <StepLink href={href(step.segment)} label={step.label} state={states[step.segment]} />
+        {RUN_STEPS.map((s) => (
+          <li key={s.segment}>
+            {renderStep(s)}
           </li>
         ))}
         <li aria-hidden className="ml-auto h-5 w-px bg-border" />
         <li className="pl-1 md:pl-3">
-          <StepLink href={href(DRILL.segment)} label={DRILL.label} state={states[DRILL.segment]} />
+          {renderStep(DRILL)}
         </li>
       </ol>
     </nav>

@@ -23,7 +23,9 @@ export function BuildingScreen({ visual, panel, action, visualLabel }: BuildingS
         {visual}
       </section>
       <aside className="flex min-h-0 flex-col border-t border-border bg-surface-1 lg:border-t-0 lg:border-l">
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">{panel}</div>
+        <div data-testid="panel-body" className="min-h-0 flex-1 overflow-y-auto p-4">
+          {panel}
+        </div>
         {action ? <div className="border-t border-border p-4 [&>*]:w-full">{action}</div> : null}
       </aside>
     </div>

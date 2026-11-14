@@ -21,7 +21,8 @@ interface MapPinProps {
  * One building on the map (DESIGN.md, Map): a 12px disc with the three layer
  * dots beneath, each outlined when the building lacks that layer, and its
  * name beside it. The hit target is 40px. A building without a level is
- * shown but disabled, marked "Level in prep".
+ * shown but disabled, marked "Level in prep"; a CoStar kit building, which
+ * never gets a level, is marked "facts only" instead.
  */
 export function MapPin({ building, x, y, selected, showCard, onSelect, onHover }: MapPinProps) {
   const disabled = !building.levelReady;
@@ -35,7 +36,7 @@ export function MapPin({ building, x, y, selected, showCard, onSelect, onHover }
     >
       <button
         type="button"
-        aria-label={disabled ? `${building.name}, level in prep` : building.name}
+        aria-label={disabled ? `${building.name}, ${building.source === "costar" ? "facts only" : "level in prep"}` : building.name}
         aria-pressed={disabled ? undefined : selected}
         aria-disabled={disabled || undefined}
         aria-describedby={showCard ? `card-${building.id}` : undefined}

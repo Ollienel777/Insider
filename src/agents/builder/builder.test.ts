@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { DEFAULT_SUBAGENT_PROMPT } from "deepagents";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { resetCoStar } from "@/adapters/costar";
+import { getCoStar, resetCoStar } from "@/adapters/costar";
 import { createFakeCoStar } from "@/adapters/costar/fake";
 import { loadScript, ScriptedChatModel } from "@/adapters/llm";
 import type { ScriptInput } from "@/adapters/llm/scripted";
@@ -473,23 +473,19 @@ describe("the builder's guard rails", () => {
 
   it("with no adapters passed, reads live mode from the environment and keeps the data out of the trace (#72)", async () => {
     // `npm run build:levels` with COSTAR_MODE=live: the adapter's own mode
-    // decides. The stubbed fetch refuses every call, so nothing leaves the
-    // process; the breaker answers from the fixtures after the mode is read.
-    const fetch = vi.fn(() => Promise.reject(new Error("no network in tests")));
-    vi.stubGlobal("fetch", fetch);
+    // decides. Live CoStar reads a local kit and makes no request; F1 is a
+    // fixture id, answered before the kit, so the kit directory need not exist.
     vi.stubEnv("COSTAR_MODE", "live");
-    vi.stubEnv("COSTAR_API_BASE", "https://costar.invalid");
-    vi.stubEnv("COSTAR_API_KEY", "test-key");
+    vi.stubEnv("COSTAR_KIT_DIR", path.join(process.cwd(), ".heist", "no-kit-in-tests"));
     resetCoStar();
     try {
+      expect(getCoStar().mode).toBe("live");
       const built = await buildLevel("F1", "romaine-1974", {
         model: new ScriptedChatModel({ script: await loadScript("builder-F1-romaine-1974") }),
       });
-      expect(fetch).toHaveBeenCalled();
       expect(built.trace.liveData).toBe(true);
       expect(built.trace.events.some((e) => e.input !== undefined || e.output !== undefined)).toBe(false);
     } finally {
-      vi.unstubAllGlobals();
       vi.stubEnv("COSTAR_MODE", "fake");
       resetCoStar();
     }
