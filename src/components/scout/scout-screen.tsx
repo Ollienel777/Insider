@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { BuildingScreen } from "@/components/shell/building-screen";
+import { buildingHref } from "@/lib/building-href";
+import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,6 +39,7 @@ export function ScoutScreen({ building }: { building: ScoutBuilding }) {
   const [attempt, setAttempt] = useState(0);
   const [view, setView] = useState<ViewDir>("N");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const missionId = useMissionId();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -78,6 +81,11 @@ export function ScoutScreen({ building }: { building: ScoutBuilding }) {
   const entries = load.status === "ready" ? load.aerial.entries : [];
   const selected = entries.find((e) => e.id === selectedId) ?? null;
 
+  const retry = useCallback(() => {
+    setLoad({ status: "loading" });
+    setAttempt((a) => a + 1);
+  }, []);
+
   function pickEntry(entry: AerialEntry) {
     setSelectedId(entry.id);
     setView(entry.view);
@@ -103,10 +111,7 @@ export function ScoutScreen({ building }: { building: ScoutBuilding }) {
             {load.status === "loading" ? (
               <Skeleton data-testid="aerial-skeleton" className="absolute inset-0 rounded-md bg-surface-1" />
             ) : load.status === "error" ? (
-              <AerialError message={load.message} onRetry={() => {
-                setLoad({ status: "loading" });
-                setAttempt((a) => a + 1);
-              }} />
+              <AerialError message={load.message} onRetry={retry} />
             ) : (
               <AerialCanvas
                 views={views!}
@@ -145,10 +150,11 @@ export function ScoutScreen({ building }: { building: ScoutBuilding }) {
           load={load}
           selected={selected}
           onPick={pickEntry}
+          onRetry={retry}
         />
       }
       action={
-        <Link href={`/b/${encodeURIComponent(building.id)}/dossier`} className={buttonVariants({ variant: "primary" })}>
+        <Link href={buildingHref(building.id, "dossier", missionId)} className={buttonVariants({ variant: "primary" })}>
           Plan the job
         </Link>
       }
@@ -428,9 +434,15 @@ interface PanelProps {
   load: Load;
   selected: AerialEntry | null;
   onPick: (entry: AerialEntry) => void;
+  onRetry: () => void;
 }
 
-function ScoutPanel({ building, load, selected, onPick }: PanelProps) {
+/**
+ * The side panel. Every Vexcel-backed slot has three states: a skeleton while
+ * the aerial loads, its value when it lands, and, when it fails, a plain
+ * "not loaded" with a Retry beside the entries, so nothing shimmers forever.
+ */
+export function ScoutPanel({ building, load, selected, onPick, onRetry }: PanelProps) {
   const aerial = load.status === "ready" ? load.aerial : null;
   const facts: { term: string; value: ReactNode; layer: "costar" | "vexcel" }[] = [
     { term: "Built", value: building.yearBuilt, layer: "costar" },
@@ -438,7 +450,16 @@ function ScoutPanel({ building, load, selected, onPick }: PanelProps) {
     { term: "Stories", value: building.stories, layer: "costar" },
     {
       term: "Height",
-      value: aerial ? `${Math.round(aerial.heightM)} m` : <Skeleton className="mt-1 h-4 w-12" />,
+      value: aerial ? (
+        `${Math.round(aerial.heightM)} m`
+      ) : load.status === "error" ? (
+        <span data-testid="height-unavailable" className="text-text-3">
+          <span aria-hidden>—</span>
+          <span className="sr-only">Not loaded</span>
+        </span>
+      ) : (
+        <Skeleton data-testid="height-skeleton" className="mt-1 h-4 w-12" />
+      ),
       layer: "vexcel",
     },
   ];
@@ -472,7 +493,7 @@ function ScoutPanel({ building, load, selected, onPick }: PanelProps) {
           </h2>
           <span className="flex items-center gap-1.5 label-caps text-text-3">
             <LayerDot layer="vexcel" decorative />
-            {aerial ? `${aerial.entries.length} tagged` : "Tagging"}
+            {aerial ? `${aerial.entries.length} tagged` : load.status === "error" ? "Not loaded" : "Tagging"}
           </span>
         </div>
         {load.status === "loading" ? (
@@ -486,7 +507,12 @@ function ScoutPanel({ building, load, selected, onPick }: PanelProps) {
             ))}
           </ul>
         ) : load.status === "error" ? (
-          <p className="text-sm text-text-2">The entries come with the aerial. Retry it to tag them.</p>
+          <div data-testid="entries-error" className="flex flex-col items-start gap-3 rounded-md border border-border bg-surface-2 p-4">
+            <p className="text-sm text-text-2">The entries come with the aerial. Retry it to tag them.</p>
+            <Button variant="secondary" onClick={onRetry}>
+              Retry
+            </Button>
+          </div>
         ) : aerial!.entries.length === 0 ? (
           <p className="text-sm text-text-2">The aerial tags no entries on this building.</p>
         ) : (

@@ -11,6 +11,8 @@ export {
   selectChatModel,
   type SelectOptions,
 } from "./select";
+export { REDACTED, redactSecrets, safeErrorMessage } from "./redact";
 export { loadScript, Script, ScriptedChatModel, ScriptError, type ScriptedCall } from "./scripted";
 export { structuredCall, type StructuredAnswer, type StructuredCallOptions } from "./structured";
+export { WARM_TIMEOUT_MS, warmLiveModel, type WarmOptions } from "./warm";
 export { LlmConfigurationError, type ChatModelSelection, type LlmProvider, type LlmRole } from "./types";

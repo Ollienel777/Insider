@@ -1,0 +1,2347 @@
+[
+  {
+    "id": "F1",
+    "name": "Halvorsen Tower",
+    "city": "LA",
+    "neighbourhood": "Bunker Hill",
+    "lat": 34.05226,
+    "lng": -118.25287,
+    "yearBuilt": 1974,
+    "buildingClass": "A",
+    "stories": 42,
+    "rbaSf": 1018437,
+    "typicalFloorSf": 24850,
+    "availableSpace": [
+      {
+        "floor": 8,
+        "suite": "810",
+        "sf": 2618
+      },
+      {
+        "floor": 15,
+        "suite": "1504",
+        "sf": 1947
+      },
+      {
+        "floor": 22,
+        "suite": "2202",
+        "sf": 3412
+      },
+      {
+        "floor": 22,
+        "suite": "2203",
+        "sf": 2187
+      },
+      {
+        "floor": 22,
+        "suite": "2204",
+        "sf": 1946
+      },
+      {
+        "floor": 22,
+        "suite": "2205",
+        "sf": 2764
+      },
+      {
+        "floor": 22,
+        "suite": "2206",
+        "sf": 1518
+      },
+      {
+        "floor": 22,
+        "suite": "2207",
+        "sf": 3095
+      },
+      {
+        "floor": 22,
+        "suite": "2208",
+        "sf": 2231
+      },
+      {
+        "floor": 22,
+        "suite": "2209",
+        "sf": 1872
+      },
+      {
+        "floor": 22,
+        "suite": "2210",
+        "sf": 4316
+      },
+      {
+        "floor": 31,
+        "suite": "3120",
+        "sf": 5203
+      },
+      {
+        "floor": 37,
+        "suite": "3702",
+        "sf": 3861
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "propertyType": "office",
+    "entries": [
+      "dock",
+      "garage",
+      "lobby",
+      "service",
+      "roof"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "F2",
+    "name": "Figueroa Exchange",
+    "city": "LA",
+    "neighbourhood": "Financial District",
+    "lat": 34.05091,
+    "lng": -118.25864,
+    "yearBuilt": 1989,
+    "buildingClass": "A",
+    "stories": 52,
+    "rbaSf": 1146512,
+    "typicalFloorSf": 22940,
+    "availableSpace": [
+      {
+        "floor": 9,
+        "suite": "910",
+        "sf": 6283
+      },
+      {
+        "floor": 17,
+        "suite": "1720",
+        "sf": 4885
+      },
+      {
+        "floor": 17,
+        "suite": "1750",
+        "sf": 2312
+      },
+      {
+        "floor": 28,
+        "suite": "2810",
+        "sf": 7436
+      },
+      {
+        "floor": 41,
+        "suite": "4125",
+        "sf": 11254
+      },
+      {
+        "floor": 46,
+        "suite": "4630",
+        "sf": 3127
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "propertyType": "office",
+    "entries": [
+      "lobby",
+      "dock",
+      "garage",
+      "service",
+      "roof"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "F3",
+    "name": "Meridian on Wilshire",
+    "city": "LA",
+    "neighbourhood": "Westlake",
+    "lat": 34.05934,
+    "lng": -118.27512,
+    "yearBuilt": 2017,
+    "buildingClass": "A",
+    "stories": 30,
+    "rbaSf": 571893,
+    "typicalFloorSf": 19615,
+    "availableSpace": [
+      {
+        "floor": 6,
+        "suite": "610",
+        "sf": 3742
+      },
+      {
+        "floor": 12,
+        "suite": "1205",
+        "sf": 2118
+      },
+      {
+        "floor": 12,
+        "suite": "1230",
+        "sf": 5961
+      },
+      {
+        "floor": 24,
+        "suite": "2401",
+        "sf": 18974
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "propertyType": "office",
+    "entries": [
+      "lobby",
+      "garage",
+      "dock",
+      "service",
+      "roof"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "F4",
+    "name": "Smith Street Center",
+    "city": "Houston",
+    "neighbourhood": "Downtown",
+    "lat": 29.75712,
+    "lng": -95.36958,
+    "yearBuilt": 1983,
+    "buildingClass": "A",
+    "stories": 50,
+    "rbaSf": 1237846,
+    "typicalFloorSf": 25410,
+    "availableSpace": [
+      {
+        "floor": 14,
+        "suite": "1450",
+        "sf": 3286
+      },
+      {
+        "floor": 19,
+        "suite": "1910",
+        "sf": 8742
+      },
+      {
+        "floor": 19,
+        "suite": "1975",
+        "sf": 4413
+      },
+      {
+        "floor": 33,
+        "suite": "3320",
+        "sf": 12081
+      },
+      {
+        "floor": 44,
+        "suite": "4430",
+        "sf": 2957
+      },
+      {
+        "floor": 44,
+        "suite": "4460",
+        "sf": 1684
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "propertyType": "office",
+    "entries": [
+      "lobby",
+      "service",
+      "dock",
+      "garage",
+      "roof"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "F5",
+    "name": "Westchase Commons",
+    "city": "Houston",
+    "neighbourhood": "Westchase",
+    "lat": 29.73618,
+    "lng": -95.56137,
+    "yearBuilt": 2008,
+    "buildingClass": "B",
+    "stories": 6,
+    "rbaSf": 128904,
+    "typicalFloorSf": 21736,
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "150",
+        "sf": 2843
+      },
+      {
+        "floor": 2,
+        "suite": "210",
+        "sf": 4176
+      },
+      {
+        "floor": 2,
+        "suite": "245",
+        "sf": 1392
+      },
+      {
+        "floor": 4,
+        "suite": "410",
+        "sf": 6518
+      },
+      {
+        "floor": 5,
+        "suite": "520",
+        "sf": 3047
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "propertyType": "flex",
+    "entries": [
+      "lobby",
+      "dock",
+      "garage",
+      "service",
+      "roof"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L01",
+    "name": "Lancaster Building",
+    "city": "LA",
+    "neighbourhood": "Mid-Wilshire",
+    "lat": 34.06231,
+    "lng": -118.34412,
+    "yearBuilt": 1968,
+    "buildingClass": "B",
+    "stories": 13,
+    "rbaSf": 197184,
+    "typicalFloorSf": 15800,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 4,
+        "suite": "410",
+        "sf": 2210
+      },
+      {
+        "floor": 9,
+        "suite": "910",
+        "sf": 6120
+      },
+      {
+        "floor": 9,
+        "suite": "920",
+        "sf": 4880
+      },
+      {
+        "floor": 9,
+        "suite": "930",
+        "sf": 3620
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "service",
+      "lobby",
+      "roof"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L02",
+    "name": "Tolland Center",
+    "city": "LA",
+    "neighbourhood": "Financial District",
+    "lat": 34.04873,
+    "lng": -118.25541,
+    "yearBuilt": 1971,
+    "buildingClass": "A",
+    "stories": 28,
+    "rbaSf": 575232,
+    "typicalFloorSf": 21400,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 17,
+        "suite": "1710",
+        "sf": 5340
+      },
+      {
+        "floor": 17,
+        "suite": "1720",
+        "sf": 3910
+      },
+      {
+        "floor": 17,
+        "suite": "1730",
+        "sf": 2630
+      },
+      {
+        "floor": 23,
+        "suite": "2310",
+        "sf": 1875
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "garage",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L03",
+    "name": "Marston Building",
+    "city": "LA",
+    "neighbourhood": "Wilshire Center",
+    "lat": 34.06188,
+    "lng": -118.30176,
+    "yearBuilt": 1962,
+    "buildingClass": "B",
+    "stories": 16,
+    "rbaSf": 264192,
+    "typicalFloorSf": 17200,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 11,
+        "suite": "1110",
+        "sf": 7400
+      },
+      {
+        "floor": 11,
+        "suite": "1120",
+        "sf": 4900
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "garage",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L04",
+    "name": "Arcadia Exchange",
+    "city": "LA",
+    "neighbourhood": "Financial District",
+    "lat": 34.05012,
+    "lng": -118.25233,
+    "yearBuilt": 1972,
+    "buildingClass": "A",
+    "stories": 34,
+    "rbaSf": 744192,
+    "typicalFloorSf": 22800,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 19,
+        "suite": "1910",
+        "sf": 9200
+      },
+      {
+        "floor": 19,
+        "suite": "1920",
+        "sf": 6840
+      },
+      {
+        "floor": 27,
+        "suite": "2710",
+        "sf": 3110
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": false
+    },
+    "entries": [
+      "dock",
+      "lobby",
+      "roof"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L05",
+    "name": "Larchmont Medical Arts",
+    "city": "LA",
+    "neighbourhood": "Larchmont",
+    "lat": 34.07524,
+    "lng": -118.32371,
+    "yearBuilt": 1958,
+    "buildingClass": "B",
+    "stories": 8,
+    "rbaSf": 73728,
+    "typicalFloorSf": 9600,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 3,
+        "suite": "310",
+        "sf": 2400
+      },
+      {
+        "floor": 3,
+        "suite": "320",
+        "sf": 1800
+      },
+      {
+        "floor": 6,
+        "suite": "610",
+        "sf": 1150
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "lobby",
+      "service"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L06",
+    "name": "Hollis Building",
+    "city": "LA",
+    "neighbourhood": "Historic Core",
+    "lat": 34.04712,
+    "lng": -118.25022,
+    "yearBuilt": 1929,
+    "buildingClass": "B",
+    "stories": 12,
+    "rbaSf": 112896,
+    "typicalFloorSf": 9800,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 5,
+        "suite": "510",
+        "sf": 3600
+      },
+      {
+        "floor": 5,
+        "suite": "520",
+        "sf": 2500
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "lobby",
+      "service"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L07",
+    "name": "Grand Cypress Plaza",
+    "city": "LA",
+    "neighbourhood": "Bunker Hill",
+    "lat": 34.05402,
+    "lng": -118.25118,
+    "yearBuilt": 1966,
+    "buildingClass": "A",
+    "stories": 24,
+    "rbaSf": 458496,
+    "typicalFloorSf": 19900,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 14,
+        "suite": "1410",
+        "sf": 5100
+      },
+      {
+        "floor": 14,
+        "suite": "1420",
+        "sf": 3600
+      },
+      {
+        "floor": 20,
+        "suite": "2010",
+        "sf": 2700
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "garage",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L08",
+    "name": "Alvarado Professional Building",
+    "city": "LA",
+    "neighbourhood": "Westlake",
+    "lat": 34.05812,
+    "lng": -118.27756,
+    "yearBuilt": 1955,
+    "buildingClass": "C",
+    "stories": 9,
+    "rbaSf": 101952,
+    "typicalFloorSf": 11800,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 4,
+        "suite": "410",
+        "sf": 6200
+      },
+      {
+        "floor": 4,
+        "suite": "420",
+        "sf": 4300
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": false
+    },
+    "entries": [
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L09",
+    "name": "Vermont Commerce Building",
+    "city": "LA",
+    "neighbourhood": "Koreatown",
+    "lat": 34.06143,
+    "lng": -118.29171,
+    "yearBuilt": 1949,
+    "buildingClass": "C",
+    "stories": 7,
+    "rbaSf": 59808,
+    "typicalFloorSf": 8900,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 2,
+        "suite": "210",
+        "sf": 3100
+      },
+      {
+        "floor": 5,
+        "suite": "510",
+        "sf": 2050
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": false,
+      "matterport": false
+    },
+    "entries": [],
+    "source": "fixture"
+  },
+  {
+    "id": "L10",
+    "name": "Kesterson Building",
+    "city": "LA",
+    "neighbourhood": "Historic Core",
+    "lat": 34.04533,
+    "lng": -118.25279,
+    "yearBuilt": 1931,
+    "buildingClass": "C",
+    "stories": 11,
+    "rbaSf": 88704,
+    "typicalFloorSf": 8400,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 7,
+        "suite": "710",
+        "sf": 2900
+      },
+      {
+        "floor": 7,
+        "suite": "720",
+        "sf": 1600
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "lobby",
+      "roof"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L11",
+    "name": "Slauson Cold Storage",
+    "city": "LA",
+    "neighbourhood": "Central-Alameda",
+    "lat": 33.98912,
+    "lng": -118.24563,
+    "yearBuilt": 1961,
+    "buildingClass": "C",
+    "stories": 2,
+    "rbaSf": 78720,
+    "typicalFloorSf": 41000,
+    "propertyType": "industrial",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 18500
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "service"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L12",
+    "name": "Westwood Arcade",
+    "city": "LA",
+    "neighbourhood": "Westwood",
+    "lat": 34.06244,
+    "lng": -118.44717,
+    "yearBuilt": 1938,
+    "buildingClass": "B",
+    "stories": 3,
+    "rbaSf": 40896,
+    "typicalFloorSf": 14200,
+    "propertyType": "retail",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 3800
+      },
+      {
+        "floor": 1,
+        "suite": "120",
+        "sf": 2100
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "lobby",
+      "service"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L13",
+    "name": "Ninth Street Freight Terminal",
+    "city": "LA",
+    "neighbourhood": "Industrial District",
+    "lat": 34.03291,
+    "lng": -118.24012,
+    "yearBuilt": 1970,
+    "buildingClass": "C",
+    "stories": 2,
+    "rbaSf": 99840,
+    "typicalFloorSf": 52000,
+    "propertyType": "industrial",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 24000
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": false
+    },
+    "entries": [
+      "dock"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L14",
+    "name": "Sepulveda Pacific Tower",
+    "city": "LA",
+    "neighbourhood": "Sherman Oaks",
+    "lat": 34.15581,
+    "lng": -118.46625,
+    "yearBuilt": 1984,
+    "buildingClass": "B",
+    "stories": 20,
+    "rbaSf": 351360,
+    "typicalFloorSf": 18300,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 12,
+        "suite": "1210",
+        "sf": 5420
+      },
+      {
+        "floor": 12,
+        "suite": "1220",
+        "sf": 3080
+      },
+      {
+        "floor": 12,
+        "suite": "1230",
+        "sf": 2140
+      },
+      {
+        "floor": 16,
+        "suite": "1610",
+        "sf": 2600
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "garage",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L15",
+    "name": "Larkspur Galleria",
+    "city": "LA",
+    "neighbourhood": "Hollywood",
+    "lat": 34.09872,
+    "lng": -118.32493,
+    "yearBuilt": 1982,
+    "buildingClass": "B",
+    "stories": 3,
+    "rbaSf": 65088,
+    "typicalFloorSf": 22600,
+    "propertyType": "retail",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 6230
+      },
+      {
+        "floor": 1,
+        "suite": "120",
+        "sf": 3950
+      },
+      {
+        "floor": 2,
+        "suite": "210",
+        "sf": 4100
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "service",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L16",
+    "name": "Olympic Crest Tower",
+    "city": "LA",
+    "neighbourhood": "Century City",
+    "lat": 34.05791,
+    "lng": -118.41612,
+    "yearBuilt": 1985,
+    "buildingClass": "A",
+    "stories": 36,
+    "rbaSf": 798336,
+    "typicalFloorSf": 23100,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 21,
+        "suite": "2110",
+        "sf": 8900
+      },
+      {
+        "floor": 21,
+        "suite": "2120",
+        "sf": 6400
+      },
+      {
+        "floor": 30,
+        "suite": "3010",
+        "sf": 3300
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "lobby",
+      "roof"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L17",
+    "name": "Ventura Court",
+    "city": "LA",
+    "neighbourhood": "Encino",
+    "lat": 34.15983,
+    "lng": -118.50218,
+    "yearBuilt": 1981,
+    "buildingClass": "B",
+    "stories": 14,
+    "rbaSf": 220416,
+    "typicalFloorSf": 16400,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 8,
+        "suite": "810",
+        "sf": 7300
+      },
+      {
+        "floor": 8,
+        "suite": "820",
+        "sf": 5150
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": false
+    },
+    "entries": [
+      "garage",
+      "service"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L18",
+    "name": "Wilshire Normandie Plaza",
+    "city": "LA",
+    "neighbourhood": "Koreatown",
+    "lat": 34.06117,
+    "lng": -118.30036,
+    "yearBuilt": 1988,
+    "buildingClass": "C",
+    "stories": 12,
+    "rbaSf": 162432,
+    "typicalFloorSf": 14100,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 6,
+        "suite": "610",
+        "sf": 4100
+      },
+      {
+        "floor": 6,
+        "suite": "620",
+        "sf": 2700
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "garage",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L19",
+    "name": "Boyle Heights Distribution Center",
+    "city": "LA",
+    "neighbourhood": "Boyle Heights",
+    "lat": 34.02615,
+    "lng": -118.21387,
+    "yearBuilt": 1983,
+    "buildingClass": "C",
+    "stories": 1,
+    "rbaSf": 96000,
+    "typicalFloorSf": 96000,
+    "propertyType": "industrial",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 32000
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "service"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L20",
+    "name": "Mateo Works",
+    "city": "LA",
+    "neighbourhood": "Arts District",
+    "lat": 34.03912,
+    "lng": -118.23253,
+    "yearBuilt": 2019,
+    "buildingClass": "A",
+    "stories": 7,
+    "rbaSf": 164640,
+    "typicalFloorSf": 24500,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 3,
+        "suite": "310",
+        "sf": 4200
+      },
+      {
+        "floor": 5,
+        "suite": "510",
+        "sf": 9800
+      },
+      {
+        "floor": 5,
+        "suite": "520",
+        "sf": 7400
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "garage"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L21",
+    "name": "Ballona Creek Campus",
+    "city": "LA",
+    "neighbourhood": "Playa Vista",
+    "lat": 33.97521,
+    "lng": -118.42298,
+    "yearBuilt": 2021,
+    "buildingClass": "A",
+    "stories": 9,
+    "rbaSf": 231552,
+    "typicalFloorSf": 26800,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 2,
+        "suite": "210",
+        "sf": 3900
+      },
+      {
+        "floor": 6,
+        "suite": "610",
+        "sf": 10250
+      },
+      {
+        "floor": 6,
+        "suite": "620",
+        "sf": 6200
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "lobby",
+      "roof"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L22",
+    "name": "Cole Street Tower",
+    "city": "LA",
+    "neighbourhood": "Hollywood",
+    "lat": 34.09415,
+    "lng": -118.33087,
+    "yearBuilt": 2022,
+    "buildingClass": "A",
+    "stories": 15,
+    "rbaSf": 321120,
+    "typicalFloorSf": 22300,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 11,
+        "suite": "1110",
+        "sf": 12100
+      },
+      {
+        "floor": 11,
+        "suite": "1120",
+        "sf": 8000
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "garage",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L23",
+    "name": "Larkin Tower",
+    "city": "LA",
+    "neighbourhood": "South Park",
+    "lat": 34.04218,
+    "lng": -118.26294,
+    "yearBuilt": 2016,
+    "buildingClass": "A",
+    "stories": 33,
+    "rbaSf": 687456,
+    "typicalFloorSf": 21700,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 12,
+        "suite": "1210",
+        "sf": 2800
+      },
+      {
+        "floor": 26,
+        "suite": "2610",
+        "sf": 9300
+      },
+      {
+        "floor": 26,
+        "suite": "2620",
+        "sf": 6500
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": false
+    },
+    "entries": [
+      "dock",
+      "garage",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L24",
+    "name": "Palms Junction",
+    "city": "LA",
+    "neighbourhood": "Palms",
+    "lat": 34.02981,
+    "lng": -118.40472,
+    "yearBuilt": 2018,
+    "buildingClass": "A",
+    "stories": 8,
+    "rbaSf": 129024,
+    "typicalFloorSf": 16800,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 4,
+        "suite": "410",
+        "sf": 5600
+      },
+      {
+        "floor": 4,
+        "suite": "420",
+        "sf": 3800
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L25",
+    "name": "Atwater Creative Office",
+    "city": "LA",
+    "neighbourhood": "Atwater Village",
+    "lat": 34.11902,
+    "lng": -118.26174,
+    "yearBuilt": 2020,
+    "buildingClass": "B",
+    "stories": 4,
+    "rbaSf": 73728,
+    "typicalFloorSf": 19200,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 3,
+        "suite": "310",
+        "sf": 11200
+      },
+      {
+        "floor": 3,
+        "suite": "320",
+        "sf": 6400
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L26",
+    "name": "Bristol Market Hall",
+    "city": "LA",
+    "neighbourhood": "Highland Park",
+    "lat": 34.11117,
+    "lng": -118.19237,
+    "yearBuilt": 2019,
+    "buildingClass": "B",
+    "stories": 2,
+    "rbaSf": 35712,
+    "typicalFloorSf": 18600,
+    "propertyType": "retail",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 7400
+      },
+      {
+        "floor": 2,
+        "suite": "210",
+        "sf": 5300
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "service"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L27",
+    "name": "Warner Ridge Tower",
+    "city": "LA",
+    "neighbourhood": "Woodland Hills",
+    "lat": 34.17722,
+    "lng": -118.59811,
+    "yearBuilt": 1998,
+    "buildingClass": "A",
+    "stories": 22,
+    "rbaSf": 502656,
+    "typicalFloorSf": 23800,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 15,
+        "suite": "1510",
+        "sf": 11600
+      },
+      {
+        "floor": 15,
+        "suite": "1520",
+        "sf": 7200
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "garage",
+      "service"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L28",
+    "name": "Marina Gateway",
+    "city": "LA",
+    "neighbourhood": "Marina del Rey",
+    "lat": 33.98263,
+    "lng": -118.44051,
+    "yearBuilt": 2003,
+    "buildingClass": "B",
+    "stories": 10,
+    "rbaSf": 149760,
+    "typicalFloorSf": 15600,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 7,
+        "suite": "710",
+        "sf": 4900
+      },
+      {
+        "floor": 7,
+        "suite": "720",
+        "sf": 3300
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "garage",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "L29",
+    "name": "Westchester Aero Center",
+    "city": "LA",
+    "neighbourhood": "Westchester",
+    "lat": 33.95112,
+    "lng": -118.39184,
+    "yearBuilt": 1977,
+    "buildingClass": "C",
+    "stories": 2,
+    "rbaSf": 72960,
+    "typicalFloorSf": 38000,
+    "propertyType": "industrial",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 14500
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "service"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H01",
+    "name": "Calder Petroleum Tower",
+    "city": "Houston",
+    "neighbourhood": "Downtown",
+    "lat": 29.75898,
+    "lng": -95.36611,
+    "yearBuilt": 1981,
+    "buildingClass": "A",
+    "stories": 44,
+    "rbaSf": 1017984,
+    "typicalFloorSf": 24100,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 27,
+        "suite": "2710",
+        "sf": 5140
+      },
+      {
+        "floor": 27,
+        "suite": "2720",
+        "sf": 3620
+      },
+      {
+        "floor": 27,
+        "suite": "2730",
+        "sf": 2560
+      },
+      {
+        "floor": 38,
+        "suite": "3810",
+        "sf": 2240
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "lobby",
+      "garage"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H02",
+    "name": "Ridgeway Tower",
+    "city": "Houston",
+    "neighbourhood": "Uptown",
+    "lat": 29.74811,
+    "lng": -95.46102,
+    "yearBuilt": 1999,
+    "buildingClass": "A",
+    "stories": 31,
+    "rbaSf": 666624,
+    "typicalFloorSf": 22400,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 18,
+        "suite": "1810",
+        "sf": 6210
+      },
+      {
+        "floor": 18,
+        "suite": "1820",
+        "sf": 4660
+      },
+      {
+        "floor": 25,
+        "suite": "2510",
+        "sf": 3120
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "service"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H03",
+    "name": "Ashford Greenway Plaza",
+    "city": "Houston",
+    "neighbourhood": "Greenway Plaza",
+    "lat": 29.73122,
+    "lng": -95.43018,
+    "yearBuilt": 1976,
+    "buildingClass": "A",
+    "stories": 31,
+    "rbaSf": 702336,
+    "typicalFloorSf": 23600,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 12,
+        "suite": "1210",
+        "sf": 8100
+      },
+      {
+        "floor": 12,
+        "suite": "1220",
+        "sf": 6100
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "garage",
+      "lobby",
+      "service"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H04",
+    "name": "Brandt Memorial Tower",
+    "city": "Houston",
+    "neighbourhood": "Energy Corridor",
+    "lat": 29.78214,
+    "lng": -95.62117,
+    "yearBuilt": 1997,
+    "buildingClass": "A",
+    "stories": 18,
+    "rbaSf": 435456,
+    "typicalFloorSf": 25200,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 9,
+        "suite": "910",
+        "sf": 7900
+      },
+      {
+        "floor": 9,
+        "suite": "920",
+        "sf": 5600
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": false
+    },
+    "entries": [
+      "dock",
+      "garage"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H05",
+    "name": "Hale Building",
+    "city": "Houston",
+    "neighbourhood": "Montrose",
+    "lat": 29.74583,
+    "lng": -95.39114,
+    "yearBuilt": 1964,
+    "buildingClass": "A",
+    "stories": 11,
+    "rbaSf": 130944,
+    "typicalFloorSf": 12400,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 4,
+        "suite": "410",
+        "sf": 3100
+      },
+      {
+        "floor": 4,
+        "suite": "420",
+        "sf": 2100
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H06",
+    "name": "Ivey Medical Tower",
+    "city": "Houston",
+    "neighbourhood": "Texas Medical Center",
+    "lat": 29.70816,
+    "lng": -95.40113,
+    "yearBuilt": 1972,
+    "buildingClass": "A",
+    "stories": 21,
+    "rbaSf": 340704,
+    "typicalFloorSf": 16900,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 10,
+        "suite": "1010",
+        "sf": 4800
+      },
+      {
+        "floor": 10,
+        "suite": "1020",
+        "sf": 3100
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "service"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H07",
+    "name": "Westheimer Court",
+    "city": "Houston",
+    "neighbourhood": "Galleria",
+    "lat": 29.73752,
+    "lng": -95.46833,
+    "yearBuilt": 1985,
+    "buildingClass": "B",
+    "stories": 15,
+    "rbaSf": 270720,
+    "typicalFloorSf": 18800,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 8,
+        "suite": "810",
+        "sf": 9400
+      },
+      {
+        "floor": 8,
+        "suite": "820",
+        "sf": 5200
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "garage"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H08",
+    "name": "Heights Exchange Building",
+    "city": "Houston",
+    "neighbourhood": "Houston Heights",
+    "lat": 29.79063,
+    "lng": -95.39788,
+    "yearBuilt": 1926,
+    "buildingClass": "C",
+    "stories": 4,
+    "rbaSf": 29184,
+    "typicalFloorSf": 7600,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 2,
+        "suite": "210",
+        "sf": 2600
+      },
+      {
+        "floor": 2,
+        "suite": "220",
+        "sf": 1500
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": false
+    },
+    "entries": [
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H09",
+    "name": "Gessner Park Office",
+    "city": "Houston",
+    "neighbourhood": "Spring Branch",
+    "lat": 29.80321,
+    "lng": -95.54512,
+    "yearBuilt": 1990,
+    "buildingClass": "B",
+    "stories": 9,
+    "rbaSf": 127008,
+    "typicalFloorSf": 14700,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 5,
+        "suite": "510",
+        "sf": 6800
+      },
+      {
+        "floor": 5,
+        "suite": "520",
+        "sf": 4100
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H10",
+    "name": "Hillcroft Professional Plaza",
+    "city": "Houston",
+    "neighbourhood": "Gulfton",
+    "lat": 29.71088,
+    "lng": -95.49842,
+    "yearBuilt": 1978,
+    "buildingClass": "C",
+    "stories": 6,
+    "rbaSf": 65088,
+    "typicalFloorSf": 11300,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 3,
+        "suite": "310",
+        "sf": 4400
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": false,
+      "matterport": false
+    },
+    "entries": [],
+    "source": "fixture"
+  },
+  {
+    "id": "H11",
+    "name": "Navigation Terminal Warehouse",
+    "city": "Houston",
+    "neighbourhood": "Second Ward",
+    "lat": 29.75611,
+    "lng": -95.33582,
+    "yearBuilt": 1958,
+    "buildingClass": "C",
+    "stories": 1,
+    "rbaSf": 64000,
+    "typicalFloorSf": 64000,
+    "propertyType": "industrial",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 9800
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": false
+    },
+    "entries": [
+      "dock"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H12",
+    "name": "Village Arcade",
+    "city": "Houston",
+    "neighbourhood": "Rice Village",
+    "lat": 29.71713,
+    "lng": -95.41629,
+    "yearBuilt": 1965,
+    "buildingClass": "B",
+    "stories": 2,
+    "rbaSf": 31104,
+    "typicalFloorSf": 16200,
+    "propertyType": "retail",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 3300
+      },
+      {
+        "floor": 1,
+        "suite": "120",
+        "sf": 2200
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "service",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H13",
+    "name": "Sims Bayou Industrial, Building 4",
+    "city": "Houston",
+    "neighbourhood": "Hobby",
+    "lat": 29.66321,
+    "lng": -95.28414,
+    "yearBuilt": 1996,
+    "buildingClass": "B",
+    "stories": 1,
+    "rbaSf": 48000,
+    "typicalFloorSf": 48000,
+    "propertyType": "industrial",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 6200
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H14",
+    "name": "Greens Point Distribution Center",
+    "city": "Houston",
+    "neighbourhood": "Greenspoint",
+    "lat": 29.94583,
+    "lng": -95.41477,
+    "yearBuilt": 2001,
+    "buildingClass": "B",
+    "stories": 1,
+    "rbaSf": 118000,
+    "typicalFloorSf": 118000,
+    "propertyType": "industrial",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 22000
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": false
+    },
+    "entries": [
+      "dock",
+      "service"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H15",
+    "name": "Fifth Ward Fabrication Hall",
+    "city": "Houston",
+    "neighbourhood": "Fifth Ward",
+    "lat": 29.77762,
+    "lng": -95.33261,
+    "yearBuilt": 1974,
+    "buildingClass": "C",
+    "stories": 1,
+    "rbaSf": 22000,
+    "typicalFloorSf": 22000,
+    "propertyType": "industrial",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 1800
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H16",
+    "name": "Sharpstown Bazaar",
+    "city": "Houston",
+    "neighbourhood": "Sharpstown",
+    "lat": 29.70544,
+    "lng": -95.52117,
+    "yearBuilt": 1969,
+    "buildingClass": "C",
+    "stories": 2,
+    "rbaSf": 54528,
+    "typicalFloorSf": 28400,
+    "propertyType": "retail",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 4100
+      },
+      {
+        "floor": 1,
+        "suite": "120",
+        "sf": 2600
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H17",
+    "name": "Beltway Eight Tech Center",
+    "city": "Houston",
+    "neighbourhood": "Westchase",
+    "lat": 29.73344,
+    "lng": -95.55862,
+    "yearBuilt": 2012,
+    "buildingClass": "B",
+    "stories": 2,
+    "rbaSf": 60480,
+    "typicalFloorSf": 31500,
+    "propertyType": "flex",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 3540
+      },
+      {
+        "floor": 1,
+        "suite": "120",
+        "sf": 2400
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "garage"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H18",
+    "name": "Energy Corridor Flex Park",
+    "city": "Houston",
+    "neighbourhood": "Energy Corridor",
+    "lat": 29.78612,
+    "lng": -95.64233,
+    "yearBuilt": 2015,
+    "buildingClass": "B",
+    "stories": 2,
+    "rbaSf": 51456,
+    "typicalFloorSf": 26800,
+    "propertyType": "flex",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 4800
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "garage",
+      "lobby",
+      "service"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H19",
+    "name": "Northwest Crossing Labs",
+    "city": "Houston",
+    "neighbourhood": "Northwest Crossing",
+    "lat": 29.84117,
+    "lng": -95.52466,
+    "yearBuilt": 2005,
+    "buildingClass": "B",
+    "stories": 2,
+    "rbaSf": 46464,
+    "typicalFloorSf": 24200,
+    "propertyType": "flex",
+    "availableSpace": [
+      {
+        "floor": 2,
+        "suite": "210",
+        "sf": 3900
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "service",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H20",
+    "name": "Cypress Creek Flex",
+    "city": "Houston",
+    "neighbourhood": "Willowbrook",
+    "lat": 29.95824,
+    "lng": -95.55012,
+    "yearBuilt": 2017,
+    "buildingClass": "B",
+    "stories": 1,
+    "rbaSf": 20600,
+    "typicalFloorSf": 20600,
+    "propertyType": "flex",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 2100
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H21",
+    "name": "Harrisburg Logistics Center",
+    "city": "Houston",
+    "neighbourhood": "Harrisburg",
+    "lat": 29.72391,
+    "lng": -95.30214,
+    "yearBuilt": 2022,
+    "buildingClass": "A",
+    "stories": 1,
+    "rbaSf": 142000,
+    "typicalFloorSf": 142000,
+    "propertyType": "industrial",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 38000
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "service"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H22",
+    "name": "Avenida Tower",
+    "city": "Houston",
+    "neighbourhood": "Downtown",
+    "lat": 29.75211,
+    "lng": -95.35873,
+    "yearBuilt": 2018,
+    "buildingClass": "A",
+    "stories": 38,
+    "rbaSf": 933888,
+    "typicalFloorSf": 25600,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 30,
+        "suite": "3010",
+        "sf": 12400
+      },
+      {
+        "floor": 30,
+        "suite": "3020",
+        "sf": 7100
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "garage",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H23",
+    "name": "Elgin Midtown Office",
+    "city": "Houston",
+    "neighbourhood": "Midtown",
+    "lat": 29.73822,
+    "lng": -95.37941,
+    "yearBuilt": 2014,
+    "buildingClass": "B",
+    "stories": 8,
+    "rbaSf": 115968,
+    "typicalFloorSf": 15100,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 6,
+        "suite": "610",
+        "sf": 5200
+      },
+      {
+        "floor": 6,
+        "suite": "620",
+        "sf": 3100
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H24",
+    "name": "Kirby Market Hall",
+    "city": "Houston",
+    "neighbourhood": "Upper Kirby",
+    "lat": 29.73611,
+    "lng": -95.41892,
+    "yearBuilt": 2021,
+    "buildingClass": "B",
+    "stories": 2,
+    "rbaSf": 34176,
+    "typicalFloorSf": 17800,
+    "propertyType": "retail",
+    "availableSpace": [
+      {
+        "floor": 1,
+        "suite": "110",
+        "sf": 6600
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "service"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H25",
+    "name": "Energy Corridor West Campus",
+    "city": "Houston",
+    "neighbourhood": "Energy Corridor",
+    "lat": 29.78433,
+    "lng": -95.65102,
+    "yearBuilt": 2020,
+    "buildingClass": "A",
+    "stories": 12,
+    "rbaSf": 315648,
+    "typicalFloorSf": 27400,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 8,
+        "suite": "810",
+        "sf": 14200
+      },
+      {
+        "floor": 8,
+        "suite": "820",
+        "sf": 6900
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "garage"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H26",
+    "name": "Katy Freeway Plaza",
+    "city": "Houston",
+    "neighbourhood": "Memorial",
+    "lat": 29.78192,
+    "lng": -95.53381,
+    "yearBuilt": 2009,
+    "buildingClass": "B",
+    "stories": 14,
+    "rbaSf": 263424,
+    "typicalFloorSf": 19600,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 10,
+        "suite": "1010",
+        "sf": 6400
+      },
+      {
+        "floor": 10,
+        "suite": "1020",
+        "sf": 3800
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "garage",
+      "lobby"
+    ],
+    "source": "fixture"
+  },
+  {
+    "id": "H27",
+    "name": "Holcombe Medical Commons",
+    "city": "Houston",
+    "neighbourhood": "Texas Medical Center",
+    "lat": 29.70622,
+    "lng": -95.39871,
+    "yearBuilt": 2011,
+    "buildingClass": "A",
+    "stories": 16,
+    "rbaSf": 319488,
+    "typicalFloorSf": 20800,
+    "propertyType": "office",
+    "availableSpace": [
+      {
+        "floor": 11,
+        "suite": "1110",
+        "sf": 8300
+      },
+      {
+        "floor": 11,
+        "suite": "1120",
+        "sf": 5400
+      }
+    ],
+    "layers": {
+      "costar": true,
+      "vexcel": true,
+      "matterport": true
+    },
+    "entries": [
+      "dock",
+      "service"
+    ],
+    "source": "fixture"
+  }
+]

@@ -13,17 +13,18 @@ import RunPage from "@/app/b/[id]/run/page";
 
 const building = FIXTURE_BUILDINGS.find((b) => b.id === "F1")!;
 const router = vi.hoisted(() => ({ refresh: vi.fn() }));
+const readCachedLevel = vi.hoisted(() =>
+  vi.fn<(buildingId: string, missionId: string) => Promise<never>>(async () => {
+    throw new Error("mission.objective: expected string, received undefined");
+  }),
+);
 
 vi.mock("next/navigation", async (importOriginal) => ({
   ...(await importOriginal<typeof import("next/navigation")>()),
   useRouter: () => router,
 }));
 vi.mock("@/lib/building", () => ({ findBuilding: async (id: string) => (id === "F1" ? building : null) }));
-vi.mock("@/agents/builder/cache", () => ({
-  readCachedLevel: async () => {
-    throw new Error("mission.objective: expected string, received undefined");
-  },
-}));
+vi.mock("@/agents/builder/cache", () => ({ readCachedLevel }));
 
 const text = (html: string) => html.replace(/<[^>]+>/g, "").replace(/&#x27;/g, "'");
 
@@ -53,11 +54,15 @@ describe("a bad level file (#98)", () => {
     ["Debrief", DebriefPage],
   ] as const) {
     it(`gives ${step} its error state, with the fix and the way on`, async () => {
-      const out = renderToStaticMarkup(await Page({ params: Promise.resolve({ id: "F1" }) }));
+      readCachedLevel.mockClear();
+      const out = renderToStaticMarkup(
+        await Page({ params: Promise.resolve({ id: "F1" }), searchParams: Promise.resolve({ m: "romaine-1974" }) }),
+      );
+      expect(readCachedLevel).toHaveBeenCalledWith("F1", "romaine-1974");
       expect(out).toContain('data-testid="level-unavailable"');
       expect(text(out)).toContain(`${building.name}'s cached level failed its check`);
       expect(out).toContain(`${step} · F1`);
-      expect(out).toContain("npm run build:levels -- F1");
+      expect(out).toContain("npm run build:levels -- F1:romaine-1974");
       expect(out).toContain("mission.objective: expected string, received undefined");
       expect(out).toContain('href="/"');
     });

@@ -7,6 +7,7 @@
 import { ChatAnthropic } from "@langchain/anthropic";
 import type { BaseLanguageModelInput } from "@langchain/core/language_models/base";
 import type { z } from "zod";
+import { safeErrorMessage } from "./redact";
 import { getChatModelSelection, llmTimeoutMs } from "./select";
 import type { ChatModelSelection, LlmRole } from "./types";
 
@@ -69,7 +70,7 @@ export async function structuredCall<T>(
     return { value: schema.parse(raw), recorded: false };
   } catch (error) {
     const reason = error instanceof TimeoutError ? "timeout" : "error";
-    console.warn(`structuredCall(${name}): the recorded answer stands in (${reason}: ${(error as Error).message})`);
+    console.warn(`structuredCall(${name}): the recorded answer stands in (${reason}: ${safeErrorMessage(error)})`);
     return { value: await recorded(schema, options.fake), recorded: true, reason };
   } finally {
     clearTimeout(timer);

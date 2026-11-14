@@ -4,6 +4,8 @@ import { buttonVariants } from "@/components/ui/button";
 
 interface LevelUnavailableProps {
   buildingId: string;
+  /** The chosen mission (`?m=`): the level is keyed by building and mission. */
+  missionId: string;
   name: string;
   /** The screen that could not open: its visual's name and the label above the heading. */
   step: "Plan" | "Run" | "Debrief";
@@ -16,7 +18,7 @@ interface LevelUnavailableProps {
  * shows it): what happened, the command that fixes it, and the way on. A
  * missing level is each screen's own empty state; this is the error state.
  */
-export function LevelUnavailable({ buildingId, name, step, detail }: LevelUnavailableProps) {
+export function LevelUnavailable({ buildingId, missionId, name, step, detail }: LevelUnavailableProps) {
   return (
     <BuildingScreen
       visualLabel={step}
@@ -31,7 +33,7 @@ export function LevelUnavailable({ buildingId, name, step, detail }: LevelUnavai
             then reload.
           </p>
           <code className="w-fit rounded-sm border border-border bg-surface-2 px-3 py-2 font-mono text-sm text-text-1">
-            {`npm run build:levels -- ${buildingId}`}
+            {`npm run build:levels -- ${buildingId}:${missionId}`}
           </code>
           {detail ? <p className="font-mono text-sm break-words text-text-2">{detail}</p> : null}
         </div>

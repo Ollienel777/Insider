@@ -179,7 +179,10 @@ export function BoardView({
   useEffect(() => {
     if (!why) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") close();
+      if (event.key !== "Escape") return;
+      // Esc closes the card and does nothing else: the Run screen's handler sees it taken (issue 121).
+      event.preventDefault();
+      close();
     };
     const onDown = (event: PointerEvent) => {
       const el = event.target as Element | null;
@@ -1154,7 +1157,9 @@ function ChoiceHint({
   const label =
     choice.kind === "pick"
       ? `Pick the door to ${room}, ${choice.progress!.done} of ${choice.progress!.of} (${choice.key})`
-      : `Move to ${room} (${choice.key})`;
+      : choice.kind === "sprint"
+        ? `Sprint to ${room}, two hops, loud (${choice.key})`
+        : `Move to ${room} (${choice.key})`;
   const onKey = (event: KeyboardEvent) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -1184,6 +1189,8 @@ function ChoiceHint({
         fill="none"
         className="stroke-accent transition-[stroke-opacity] [stroke-opacity:0.55] group-hover:[stroke-opacity:1] group-focus-visible:[stroke-opacity:1]"
         strokeWidth="2"
+        // A sprint target's ring is dashed: two hops away, and loud (issue 121).
+        strokeDasharray={choice.kind === "sprint" ? "4 3" : undefined}
       />
       <rect
         x="-11"

@@ -2,8 +2,9 @@
 // (SPEC §4.5). Model ids come from the environment, with the spec's defaults
 // (§7; D28 confirms them).
 //
-// Not exercised against Anthropic: there is no key yet. Its unit tests run it
-// on a stubbed client.
+// The key comes from the environment only (`ANTHROPIC_API_KEY`, select.ts).
+// The crew and the Chief were measured live against Anthropic on F1 (#30);
+// the unit tests and CI run it on a stubbed client, with no key.
 import { ChatAnthropic, type AnthropicInput } from "@langchain/anthropic";
 import type { LlmRole } from "./types";
 

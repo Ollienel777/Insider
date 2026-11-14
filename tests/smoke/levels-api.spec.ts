@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-// The production build serves F1's cached level (SPEC §4.4): the manifest and
-// the Level Builder's trace, for the Dossier's beat 3.
-test("GET /api/levels/F1 returns the cached manifest and trace", async ({ request }) => {
-  const response = await request.get("/api/levels/F1");
+// The production build serves F1's cached level for romaine-1974 (SPEC §4.4,
+// keyed by building and mission, #119): the manifest and the Level Builder's
+// trace, for the Dossier's beat 4.
+test("GET /api/levels/F1?m=romaine-1974 returns the cached manifest and trace", async ({ request }) => {
+  const response = await request.get("/api/levels/F1?m=romaine-1974");
   expect(response.status()).toBe(200);
   const body = (await response.json()) as {
     manifest: { buildingId: string; securityProfile: { era: string; guardCount: number }; mission: { id: string } };
@@ -19,4 +20,5 @@ test("GET /api/levels/F1 returns the cached manifest and trace", async ({ reques
   ]);
 
   expect((await request.get("/api/levels/F9")).status()).toBe(404);
+  expect((await request.get("/api/levels/F1?m=sunset-1986")).status()).toBe(404);
 });

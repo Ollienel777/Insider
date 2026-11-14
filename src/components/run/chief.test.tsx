@@ -7,14 +7,15 @@ import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { F1_DEMO, FIXTURE_FLOORS } from "@/adapters/matterport/fake";
-import { replanChief } from "@/agents/chief";
+import { ScriptedChatModel, type ChatModelSelection } from "@/adapters/llm";
+import { CHIEF_PROMPT_HEAD, replanChief } from "@/agents/chief";
 import { CrewPlan, LevelManifest, type ChiefOrders } from "@/domain";
 import { act, applyChiefOrders, createRun, plannedPath, type Action, type RunState } from "@/engine";
 import { placeLevel } from "@/level/placer";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import crewF1 from "../../../fixtures/llm/crew-F1.json";
 import { crewPlanSteps, guardOrders, zoneName } from "./board";
-import { ChiefPanel, hiddenRoutes, LATE_NOTE, type ChiefState, type Revealed } from "./chief-panel";
+import { ChiefPanel, chiefSourceNote, hiddenRoutes, LATE_NOTE, type ChiefState, type Revealed } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
 import { crewPlanKey, loadCrewPlan, saveCrewPlan } from "./crew-plan-store";
 import { RUN_SEED } from "./run-screen";
@@ -103,6 +104,23 @@ describe("what the browser sends the Chief", () => {
     expect(JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)).toEqual(request);
     const failing = vi.fn(async () => Response.json({ error: "no cached level" }, { status: 404 }));
     await expect(askChief(request, { fetch: failing })).rejects.toThrow("no cached level");
+  });
+
+  it("reads an answer with no source, or one it does not know, as recorded, never as live", async () => {
+    const run = tripped();
+    const request = chiefRequest("F1", placed, zones, run, lastEvent(run));
+    const orders = { orders: [], lockZones: [], rationale: "Hold." };
+    for (const source of [undefined, "bogus"]) {
+      const fetch = vi.fn(async () => Response.json({ orders, recorded: false, ...(source && { source }) }));
+      const answer = await askChief(request, { fetch });
+      expect(answer, String(source)).toMatchObject({ source: "recorded", recorded: true });
+      expect(chiefSourceNote(answer)).toBe("Recorded orders: no model was called.");
+    }
+    // A live answer still reads as live.
+    const live = vi.fn(async () => Response.json({ orders, recorded: false, source: "model" }));
+    const answer = await askChief(request, { fetch: live });
+    expect(answer).toMatchObject({ source: "model", recorded: false });
+    expect(chiefSourceNote(answer)).toBe("Live orders: the model wrote these.");
   });
 });
 
@@ -221,6 +239,61 @@ describe("the Chief's panel", () => {
     expect(onTime).not.toContain("chief-late");
     expect(onTime).not.toContain("data-late");
     expect(onTime).toContain("text-danger");
+  });
+
+  describe("says truly where the orders came from (#30, R1-M2)", () => {
+    const live = (model: ScriptedChatModel): ChatModelSelection => ({ model, mode: "live", provider: "anthropic", reason: "test" });
+    const note = (out: string) => out.match(/data-testid="chief-source-note"[^>]*>([^<]*)</)?.[1];
+    const ready = async (selection?: ChatModelSelection) => {
+      const run = tripped();
+      const request = chiefRequest("F1", placed, zones, run, lastEvent(run));
+      const answer = (await replanChief(request, selection ? { selection } : {}))!;
+      return { answer, out: html({ status: "ready", seq: 0, answer, applied: applyChiefOrders(run, toEngineOrders(answer.orders, zones)) }) };
+    };
+
+    it("fake mode: recorded, and no model was called", async () => {
+      const { answer, out } = await ready();
+      expect(answer).toMatchObject({ source: "recorded", reason: "fake mode" });
+      expect(note(out)).toBe("Recorded orders: no model was called.");
+      expect(out).toContain('data-testid="chief-recorded-chip"');
+    });
+
+    it("a live answer: the model wrote the orders, and there is no recorded chip", async () => {
+      const orders = { orders: [{ guardId: "G2", intent: "block", zoneId: "objective" }], lockZones: [], rationale: "G2, sit on the records room." };
+      const model = new ScriptedChatModel({
+        script: { id: "chief-live", agents: [{ agent: "chief", systemIncludes: CHIEF_PROMPT_HEAD, turns: [{ toolCalls: [{ name: "chief_orders", args: orders }] }] }] },
+      });
+      const { answer, out } = await ready(live(model));
+      expect(answer).toMatchObject({ source: "model", recorded: false });
+      expect(note(out)).toBe("Live orders: the model wrote these.");
+      expect(out).not.toContain("chief-recorded-chip");
+      expect(out).not.toContain("no model was called");
+    });
+
+    it("a live call that failed: the model was called, and the recorded orders stand in", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const model = new ScriptedChatModel({ script: { id: "empty", agents: [{ agent: "other", systemIncludes: "nobody", turns: [{ content: "" }] }] } });
+      const { answer, out } = await ready(live(model));
+      expect(answer).toMatchObject({ source: "recorded", reason: "error" });
+      expect(note(out)).toBe("The model was called but the call failed, so recorded orders stand in.");
+      expect(out).toContain('data-testid="chief-recorded-chip"');
+      expect(out).not.toContain("no model was called");
+    });
+
+    it("a live call that timed out, or failed where no recording exists: says so for the rule-based orders too", () => {
+      expect(chiefSourceNote({ source: "recorded", reason: "timeout" })).toBe(
+        "The model was called but didn't answer in time, so recorded orders stand in.",
+      );
+      expect(chiefSourceNote({ source: "template", reason: "timeout" })).toBe(
+        "The model was called but didn't answer in time, so rule-based orders stand in.",
+      );
+      expect(chiefSourceNote({ source: "template", reason: "error" })).toBe(
+        "The model was called but the call failed, so rule-based orders stand in.",
+      );
+      expect(chiefSourceNote({ source: "template", reason: "fake mode" })).toBe(
+        "Rule-based orders: no recording for this moment, and no model was called.",
+      );
+    });
   });
 
   it("says when the Chief did not answer, and offers a retry", () => {

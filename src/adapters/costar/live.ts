@@ -4,6 +4,7 @@
 // Not exercised against CoStar: there is no key yet. Its unit tests run it on
 // a stubbed `fetch`.
 import type { Building, City } from "@/domain";
+import { createFakeCoStar } from "./fake";
 import { ENDPOINTS, propertyQuery, spaceQuery, toAvailableSpace, toBuilding, unwrapItem, unwrapList } from "./mapping";
 import type { CoStarAdapter } from "./types";
 
@@ -28,6 +29,11 @@ export function createLiveCoStar(config: LiveCoStarConfig): CoStarAdapter {
     throw new CoStarNotConfiguredError(missing.filter((m): m is string => Boolean(m)));
   }
 
+  // The kit reader (`KIT_FILES` in mapping.ts) waits on #27: until then the
+  // search answers from the fixture inventory itself, marked
+  // `source: "fixture"`, without throwing, so it never trips the breaker
+  // that live buildings share.
+  const fixtures = createFakeCoStar();
   const base = rawBase.replace(/\/+$/, "");
   const doFetch = config.fetch ?? fetch;
   const timeoutMs = config.timeoutMs ?? 8_000;
@@ -68,5 +74,6 @@ export function createLiveCoStar(config: LiveCoStarConfig): CoStarAdapter {
       const rows = await spacesOf(id);
       return rows === null ? null : toAvailableSpace(rows);
     },
+    searchInventory: (filters) => fixtures.searchInventory(filters),
   };
 }

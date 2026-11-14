@@ -159,10 +159,32 @@ test("when the aerial fails, the screen says so and Retry recovers", async ({ pa
   await expect(activeView(page).getByTestId("entry-marker")).toHaveCount(5);
 });
 
+test("when the aerial fails, the side panel shows the error with Retry, not a skeleton, and its Retry recovers", async ({ page }) => {
+  let fail = true;
+  await page.route("**/api/buildings/F1/aerial", (route) =>
+    fail
+      ? route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ mode: "fake", error: "upstream timed out" }) })
+      : route.continue(),
+  );
+  await page.goto("/b/F1/scout");
+  await expect(page.getByTestId("aerial-error")).toBeVisible();
+  const panelError = page.getByTestId("entries-error");
+  await expect(panelError).toBeVisible();
+  await expect(page.locator(".animate-pulse")).toHaveCount(0);
+  await expect(page.getByTestId("scout-facts")).toContainText("Height");
+  await expect(page.getByTestId("height-unavailable")).toBeVisible();
+
+  fail = false;
+  await panelError.getByRole("button", { name: "Retry" }).click();
+  await expect(canvas(page)).toBeVisible();
+  await expect(page.getByTestId("scout-facts")).toContainText("160 m");
+  await expect(page.getByTestId("entry-row")).toHaveCount(5);
+});
+
 test("Plan the job goes to the dossier", async ({ page }) => {
   await open(page);
   await page.getByRole("link", { name: "Plan the job" }).click();
-  await expect(page).toHaveURL(/\/b\/F1\/dossier$/);
+  await expect(page).toHaveURL(/\/b\/F1\/dossier\?m=romaine-1974$/);
 });
 
 test("the panel shows CoStar's facts beside Vexcel's height and entries", async ({ page }) => {
