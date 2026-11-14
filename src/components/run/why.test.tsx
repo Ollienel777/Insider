@@ -102,7 +102,8 @@ describe("liveSubtitle", () => {
   });
 
   it("names the Chief's order once one is given, so the card never contradicts the panel", () => {
-    const { run } = applyChiefOrders(createRun(placed.level), {
+    // The Chief's orders hold only while there is an alarm (#94).
+    const { run } = applyChiefOrders({ ...createRun(placed.level), alarm: "alert" }, {
       orders: [
         { guardId: "G3", intent: "block", zoneId: "dock-N" },
         { guardId: "G4", intent: "converge", zoneId: "dock-corridor" },
