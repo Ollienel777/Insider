@@ -164,11 +164,16 @@ export function stepWalker(
   // Move. A run that is over stops the body where it stands.
   const wish = playing ? wishVelocity(controls, controls.yaw) : { x: 0, y: 0 };
   const moved = ground.collide(walker.pos, accelerate(walker.vel, wish, dt), dt, run.locked);
-  // The body stays where the engine can follow it (#134): in a room that holds the engine's node, the
-  // move it was handed, or a node the engine would move to. A step out of such ground into a room further
-  // on is not taken, so no room is reached without its move. A body already elsewhere (put there by
-  // anything but walking) walks freely back.
-  const held = playing && followable(walker, ground, run, walker.pos) && !followable(walker, ground, run, moved.pos);
+  // The body stays where the engine can follow it (#134): in a room that holds the engine's node, the move
+  // it was handed, or a node it would move to now. A step into any other room is not taken, so no room is
+  // reached without its move. A body already outside those rooms (put there by a restart, or left there by
+  // a door the Chief locked behind it) may walk within its room and back, but on to no other. Inside a room
+  // the body walks freely, as before: a room with several nodes can still be crossed past one of them.
+  const roomOf = (id: string | null) => (id === null ? null : (run.board.level.floor.nodes.find((n) => n.id === id)?.roomId ?? null));
+  const rooms = new Set([...followedNodes(walker, run)].map(roomOf));
+  const was = playing ? nearestNode(ground, run, walker.pos) : null;
+  const [from, to] = [roomOf(was), playing ? roomOf(nearestNode(ground, run, moved.pos)) : null];
+  const held = playing && to !== null && !rooms.has(to) && (from === null || rooms.has(from) || to !== from);
   walker = held
     ? { ...walker, vel: { x: 0, y: 0 } }
     : { ...walker, pos: moved.pos, vel: moved.vel, walked: walker.walked + distance(moved.pos, walker.pos) };
@@ -201,26 +206,25 @@ export function stepWalker(
     return emit(held, { kind: "pick", doorId: push.doorId }, null);
   }
 
-  if (under !== null && under !== walker.node && under !== walker.refused) {
-    const legal = choices(run).some((c) => c.kind === "move" && c.nodeId === under);
-    if (legal) return emit(walker, { kind: "move", to: under }, under);
+  const legal = (id: string | null) => id !== null && choices(run).some((c) => c.kind === "move" && c.nodeId === id);
+  if (under !== null && under !== walker.node && under !== walker.refused && legal(under)) {
+    return emit(walker, { kind: "move", to: under }, under);
+  }
+  // Held at the edge of a neighbour's ground, walking on (#134): the player has walked past that node
+  // without stepping on it, so its move is played, and the ground beyond it opens with the next turn.
+  if (held && was !== null && was !== walker.node && was !== walker.refused && legal(was)) {
+    return emit(walker, { kind: "move", to: was }, was);
   }
   return { walker, action: null };
 }
 
 /**
- * Whether the engine can follow a body at `pos`: the room it stands in (the room of the nearest node with no
- * wall between) holds the engine's node, the node of the move handed back, or a node the engine would move
- * to now. Inside those rooms the body walks freely; it never reaches a room further on without a move. With
- * no node in clear view there is nothing to stray towards, so the body may stand there.
+ * The nodes the engine can follow the body by: its own node, the node of the move handed back, and every
+ * node it would move to now. The body walks freely on their ground; past it, a step waits for a move.
  */
-export function followable(walker: Walker, ground: Ground, run: RunState, pos: Vec): boolean {
-  const near = nearestNode(ground, run, pos);
-  if (near === null) return true;
-  const roomOf = new Map(run.board.level.floor.nodes.map((n) => [n.id, n.roomId]));
-  const room = roomOf.get(near);
-  const nodes = [walker.node, walker.pending?.to, ...choices(run).flatMap((c) => (c.kind === "move" ? [c.nodeId] : []))];
-  return nodes.some((id) => id != null && roomOf.get(id) === room);
+export function followedNodes(walker: Walker, run: RunState): Set<string> {
+  const moves = choices(run).flatMap((c) => (c.kind === "move" ? [c.nodeId] : []));
+  return new Set([walker.node, ...(walker.pending?.to ? [walker.pending.to] : []), ...moves]);
 }
 
 function emit(walker: Walker, action: Action, to: string | null): { walker: Walker; action: Action } {

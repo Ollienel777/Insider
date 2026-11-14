@@ -292,6 +292,44 @@ describe.each(CASES)("free movement on $id", ({ id, cached }) => {
     }
   });
 
+  it("walks on to no other room when a door is locked behind the body (#134)", () => {
+    // The Chief can lock a door between turns. A body that had walked through it without arriving on the far
+    // node is then in a room the engine no longer follows: it may walk there and back, but on to no other room.
+    const roomOf = new Map(placed.level.floor.nodes.map((n) => [n.id, n.roomId]));
+    let tried = 0;
+    const lockable = world.openings.filter((o) => o.lockable && o.doorId);
+    // Each lockable door, walked through either way: `near` is the engine's side, `far` the room the body is in.
+    const sides = lockable.flatMap((o) => [
+      { doorId: o.doorId!, near: o.a, far: o.b, farRoom: o.roomB, past: o.sideB },
+      { doorId: o.doorId!, near: o.b, far: o.a, farRoom: o.roomA, past: o.sideA },
+    ]);
+    for (const side of sides) {
+      // Through the door and not yet on the far node: no move played, the engine still on the near side. Then locked.
+      const s = session(world, { ...empty(), playerNode: side.near, locked: [side.doorId] });
+      s.walker = { ...s.walker, pos: { ...side.past } };
+      const behind = roomOf.get(nearestNode(s.ground, s.run, s.walker.pos) ?? "");
+      if (behind !== side.farRoom) continue;
+      const allowed = new Set([behind, ...[side.near, ...choices(s.run).flatMap((c) => (c.kind === "move" ? [c.nodeId] : []))].map((id) => roomOf.get(id))]);
+      const saved = { ...s.walker };
+      // Out of the far room by each of its other ways: to the node by that way, then along its edge to the next room.
+      const exits = placed.level.floor.edges
+        .flatMap((e) => [[e.a, e.b], [e.b, e.a]] as const)
+        .filter(([from, to]) => roomOf.get(from) === side.farRoom && roomOf.get(to) !== side.farRoom && to !== side.near);
+      for (const [from, next] of exits) {
+        s.walker = { ...saved };
+        for (const target of [world.nodes.get(side.far)!, world.nodes.get(from)!, ...s.ground.path(from, next).slice(1)]) {
+          for (let i = 0; i < 6 / FP.stepS && distance(s.walker.pos, target) > 0.06; i++) {
+            s.walker = stepWalker(s.walker, s.ground, s.run, { forward: 1, strafe: 0, walk: false, yaw: Math.atan2(target.y - s.walker.pos.y, target.x - s.walker.pos.x), interact: false }).walker;
+            const room = roomOf.get(nearestNode(s.ground, s.run, s.walker.pos) ?? "");
+            expect(room === undefined || allowed.has(room), `${side.doorId} locked behind, out by ${from} → ${next}: reached ${room}`).toBe(true);
+          }
+        }
+        tried += 1;
+      }
+    }
+    expect(tried, "no locked door to stand behind").toBeGreaterThan(0);
+  });
+
   it("goes back to the engine's node on a restart even when that is the node it last read (#134)", () => {
     // The #119 review (R1-N1): a turn count that went backwards is a new run, whatever the node says.
     const s = session(world, { ...fresh(), locked: [] });
@@ -312,5 +350,23 @@ describe.each(CASES)("free movement on $id", ({ id, cached }) => {
     for (let i = 0; i < 30; i++) step(s, { forward: 1, strafe: 0, walk: false, yaw: 0.3, interact: true });
     expect(s.walker.pos).toEqual(pos);
     expect(s.played.every((a) => a.kind === "move")).toBe(true);
+  });
+});
+
+describe("the #119 review's walk on F1: the lift straight at the dock corridor (#134)", () => {
+  const placed = placeLevel(LevelManifest.parse(structuredClone(f1)), structuredClone(FIXTURE_FLOORS.F1), RUN_SEED);
+  const world = buildWorld(placed.level.floor);
+
+  it("plays the move to the lift lobby on the way, then the one into the corridor", () => {
+    const s = session(world, { ...createRun(placed.level), guards: [], cleaners: [], locked: [] });
+    expect(s.run.playerNode).toBe("fl-car");
+    const doorway = openingBetween(world, "fl-lobby", "dc-west")!;
+    walkTo(s, doorway.centre);
+    walkTo(s, world.nodes.get("dc-west")!);
+    expect(s.played).toEqual([
+      { kind: "move", to: "fl-lobby" },
+      { kind: "move", to: "dc-west" },
+    ]);
+    expect(s.run.playerNode).toBe("dc-west");
   });
 });
