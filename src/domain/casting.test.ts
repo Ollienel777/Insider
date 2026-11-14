@@ -12,6 +12,7 @@ import {
 import { searchInventory, vacantFloors } from "@/adapters/costar/search";
 import buildingsRaw from "../../fixtures/costar/buildings.json";
 import inventoryRaw from "../../fixtures/inventory.json";
+import finalistsRaw from "../../fixtures/inventory-finalists.json";
 import missionsRaw from "../../fixtures/missions.json";
 
 const missions = Mission.array().parse(missionsRaw);
@@ -26,14 +27,8 @@ function funnel(filters: CastingFilter[], all: InventoryProperty[]) {
 
 // ---- the fixtures ----------------------------------------------------------
 
-/** Each mission's own fixture building and its expected finalists, best first (SPEC §7). */
-const EXPECTED: Record<string, string[]> = {
-  "romaine-1974": ["F1", "L01", "L02"],
-  "sunset-1986": ["F2", "L14", "L15"],
-  "night-desk": ["F3", "L20", "L21"],
-  "paper-trail-2001": ["F4", "H01", "H02"],
-  "syntactic-2019": ["F5", "H13", "H17"],
-};
+/** Each mission's expected finalists, its own fixture building first (SPEC §7). */
+const EXPECTED: Record<string, string[]> = finalistsRaw;
 
 describe("fixtures/missions.json", () => {
   it("holds the five missions of SPEC §4.6, romaine-1974 first", () => {
@@ -63,6 +58,16 @@ describe("fixtures/inventory.json", () => {
         Object.entries(p!).filter(([key]) => key !== "propertyType" && key !== "entries"),
       );
       expect(asBuilding).toEqual(b);
+    }
+  });
+
+  it("keeps each building's floor area consistent", () => {
+    for (const p of inventory) {
+      expect(p.rbaSf, p.id).toBeGreaterThanOrEqual(p.typicalFloorSf);
+      for (const f of vacantFloors(p)) {
+        expect(f.floor, p.id).toBeLessThanOrEqual(p.stories);
+        expect(f.sf, p.id).toBeLessThanOrEqual(p.typicalFloorSf);
+      }
     }
   });
 
@@ -102,20 +107,25 @@ function candidate(p: InventoryProperty): Candidate {
     source: p.source,
     vacantFloor: { floor: floor.floor, sf: floor.sf, suites: floor.suites },
     fit: [{ criterion: "built", value: p.yearBuilt }],
-    reason: "A 1970s tower with a dark floor and a dock.",
+    reason: "A dark floor tonight, and a way in on the aerial.",
   };
 }
 
-const { steps, ranked } = funnel(romaine.casting, inventory);
-const result = {
-  missionId: romaine.id,
-  funnel: steps,
-  finalists: ranked.slice(0, 3).map((c) => candidate(inventory.find((p) => p.id === c.id)!)),
-  trace: {
-    events: [{ atMs: 0, kind: "todo", agent: "casting-director", label: "Read the mission", status: "completed" }],
-  },
-  source: "fixture",
-} satisfies CastingResult;
+/** The shortlist the Casting Director would write for `mission` on the fixture inventory. */
+function shortlist(mission: Mission) {
+  const { steps, ranked } = funnel(mission.casting, inventory);
+  return {
+    missionId: mission.id,
+    funnel: steps,
+    finalists: ranked.slice(0, 3).map((c) => candidate(inventory.find((p) => p.id === c.id)!)),
+    trace: {
+      events: [{ atMs: 0, kind: "todo", agent: "casting-director", label: "Read the mission", status: "completed" }],
+    },
+    source: "fixture",
+  } satisfies CastingResult;
+}
+
+const result = shortlist(romaine);
 
 describe("Casting", () => {
   it("rejects a filter kind given twice", () => {
@@ -139,8 +149,9 @@ describe("Casting", () => {
 });
 
 describe("CastingResult", () => {
-  it("accepts the romaine-1974 shortlist", () => {
-    expect(CastingResult.safeParse(result).success).toBe(true);
+  it.each(missions.map((m) => [m.id, m] as const))("accepts the %s shortlist", (id, mission) => {
+    const parsed = CastingResult.parse(shortlist(mission));
+    expect(parsed.finalists.map((c) => c.id)).toEqual(EXPECTED[id]);
   });
 
   it("wants exactly three finalists", () => {

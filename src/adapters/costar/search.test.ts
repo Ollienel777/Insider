@@ -2,6 +2,7 @@
 // in the repo (SPEC §4.5).
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type CastingFilter, InventorySearch, Mission, SEARCH_TOP } from "@/domain";
+import finalists from "../../../fixtures/inventory-finalists.json";
 import missionsRaw from "../../../fixtures/missions.json";
 import { FIXTURE_INVENTORY, createFakeCoStar } from "./fake";
 import { getCoStar, resetCoStar } from "./index";
@@ -9,6 +10,7 @@ import { CoStarKitNotMappedError, createLiveCoStar } from "./live";
 
 const missions = Mission.array().parse(missionsRaw);
 const romaine = missions.find((m) => m.id === "romaine-1974")!;
+const ROMAINE: string[] = finalists["romaine-1974"];
 
 describe("searchInventory on the fake adapter", () => {
   const costar = createFakeCoStar();
@@ -33,7 +35,7 @@ describe("searchInventory on the fake adapter", () => {
       const sf = step.top.map((c) => c.vacantFloor?.sf ?? 0);
       expect(sf).toEqual([...sf].sort((a, b) => b - a));
     }
-    expect(steps.at(-1)!.top.map((c) => c.id)).toEqual(["F1", "L01", "L02"]);
+    expect(steps.at(-1)!.top.map((c) => c.id)).toEqual(ROMAINE);
   });
 
   it("gives each candidate its floor with the most available area, and no tenant field", async () => {
@@ -48,7 +50,7 @@ describe("searchInventory on the fake adapter", () => {
     const reversed = [...romaine.casting].reverse();
     const { steps } = await costar.searchInventory(reversed);
     expect(steps.map((s) => s.label).slice(1)).toEqual(reversed.map((f) => f.label));
-    expect(steps.at(-1)!.top.map((c) => c.id)).toEqual(["F1", "L01", "L02"]);
+    expect(steps.at(-1)!.top.map((c) => c.id)).toEqual(ROMAINE);
     const one = await costar.searchInventory(romaine.casting.slice(0, 1));
     expect(one.steps).toHaveLength(2);
   });
@@ -65,6 +67,14 @@ describe("searchInventory on the fake adapter", () => {
     steps[0].top[0].vacantFloor!.suites.length = 0;
     const again = await costar.searchInventory([]);
     expect(again.steps[0].top[0]).not.toEqual(steps[0].top[0]);
+  });
+});
+
+describe.each(missions.map((m) => m.id))("searchInventory for %s", (id) => {
+  it("ends with the mission's expected three finalists, best first", async () => {
+    const mission = missions.find((m) => m.id === id)!;
+    const { steps } = await createFakeCoStar().searchInventory(mission.casting);
+    expect(steps.at(-1)!.top.map((c) => c.id)).toEqual((finalists as Record<string, string[]>)[id]);
   });
 });
 
@@ -93,7 +103,7 @@ describe("searchInventory live (the kit is not mapped yet, #27)", () => {
     resetCoStar();
     expect(getCoStar().mode).toBe("live");
     const { steps } = await getCoStar().adapter.searchInventory(romaine.casting);
-    expect(steps.at(-1)!.top.map((c) => c.id)).toEqual(["F1", "L01", "L02"]);
+    expect(steps.at(-1)!.top.map((c) => c.id)).toEqual(ROMAINE);
     expect(getCoStar()).toMatchObject({ mode: "fake" });
     expect(getCoStar().fallback).toBeDefined();
   });
