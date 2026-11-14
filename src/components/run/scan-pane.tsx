@@ -125,7 +125,12 @@ export function ScanFrame({
             look === "after-hours" ? "scan-after-hours" : null,
           )}
         />
-        {status === "connecting" ? <Skeleton className="absolute inset-0 rounded-none bg-surface-2" /> : null}
+        {status === "connecting" ? (
+          // Opaque under the skeleton's pulse, so the player's own loading ring never shows through it.
+          <div className="absolute inset-0 bg-surface-1">
+            <Skeleton className="absolute inset-0 rounded-none" />
+          </div>
+        ) : null}
         {status === "failed" ? (
           <p className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-text-2">{FAILED_LINE}</p>
         ) : null}
@@ -164,6 +169,14 @@ export function ScanPane({
   useEffect(() => {
     onStatus(status);
   }, [status, onStatus]);
+  // A click in the player takes key focus into its frame, and the window loses it. At this size
+  // the pointer often stays over the scan, so the pane does not wait for it to leave: focus goes
+  // back to the board at once. The click and the drag still reach the player; the keys stay the game's.
+  useEffect(() => {
+    const onBlur = () => setTimeout(() => returnFocus(pane.current), 0);
+    window.addEventListener("blur", onBlur);
+    return () => window.removeEventListener("blur", onBlur);
+  }, []);
   return (
     <ScanFrame status={status} look={look} host={host} pane={pane} className={className} frameClassName={frameClassName} />
   );

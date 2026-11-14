@@ -203,6 +203,18 @@ What happens at each step:
 The banner, the cones and the guards are readable from three metres: the
 board fills at least 65% of the 1440 width and pieces are at least 28px.
 
+**On a live scan the stage splits.** The board keeps the left of the stage
+and the building's Matterport scan takes the larger right, in one frame with
+a head row and a seam between the halves, so each hop on the board moves a
+camera through the real floor. Below `lg` the halves stack, board first. A
+switch in the head row shows Split, Board or Scan; the choice is kept per
+browser. The scan is tinted after hours by default, to the board's slate (a
+filter on the player's frame, `.scan-after-hours` in `globals.css`), with a
+toggle to see it as scanned. Nothing is drawn over the player. If the player
+does not open, the head row says so and the board takes the whole stage. The
+65% rule is the fixture board's, and Board mode's: the demo path runs on
+fixtures, which have no scan and so no stage.
+
 ## The other demo screens
 
 - **Map.** A dark static basemap of the city, desaturated to `--n-800`

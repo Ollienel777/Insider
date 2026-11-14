@@ -64,6 +64,22 @@ export function stageShown(mode: StageMode, status: InsideStatus): StageMode {
 }
 
 /**
+ * Choosing `next` on the switch while `mode` shows: the choice is stored for
+ * the next visit, and the answer is what the stage does now. With the board
+ * alone there is no pane and no player, so the way back to the scan opens a
+ * new one (`reopen`). Null when `next` is already showing.
+ */
+export function chooseStage(
+  mode: StageMode,
+  next: StageMode,
+  storage?: Pick<Storage, "setItem">,
+): { mode: StageMode; reopen: boolean } | null {
+  if (next === mode) return null;
+  saveStageMode(next, storage);
+  return { mode: next, reopen: mode === "board" };
+}
+
+/**
  * The stage drawn for a mode and a player status. One frame holds a head row
  * (the switch, and the scan's head) over the halves, with a seam between
  * them. Below `lg` everything stacks in reading order: switch, board, scan.
@@ -118,7 +134,7 @@ export function StageView({
           data-testid="stage-board"
           className={cn(
             "relative min-h-0 min-w-0 lg:h-auto",
-            shown === "split" ? "max-lg:h-56 max-lg:border-b max-lg:border-border" : "max-lg:h-96",
+            shown === "split" ? "max-lg:h-56 max-lg:border-b max-lg:border-border" : "max-lg:h-72",
           )}
         >
           {board}
@@ -162,11 +178,10 @@ function LiveStage({
     [],
   );
   const choose = (next: StageMode) => {
-    if (next === mode) return;
-    saveStageMode(next);
-    setMode(next);
-    // With the board alone the pane is gone and its player let go; the way back opens it again.
-    if (mode === "board") reopen();
+    const chosen = chooseStage(mode, next);
+    if (!chosen) return;
+    setMode(chosen.mode);
+    if (chosen.reopen) reopen();
   };
   const shown = stageShown(mode, player.status);
   return (
