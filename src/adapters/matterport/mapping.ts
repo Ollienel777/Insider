@@ -2,8 +2,8 @@
 // the one place scan data becomes a `FloorGraph`.
 //
 // Not verified against Matterport: there is no SDK key yet (open question Q2,
-// SPEC §11). The embed URL, the SDK script, the connect call and the shapes of
-// `Sweep.data` and `Room.data` below are taken from the Showcase SDK's
+// SPEC §11). The embed URL, the SDK script, the connect call, `Sweep.moveTo`
+// (the Inside view, live.ts) and the shapes of `Sweep.data` and `Room.data` below are taken from the Showcase SDK's
 // public documentation as remembered, not from a recorded response. When a
 // key arrives (#26), this is the file to check; live.ts only connects and
 // reads.
@@ -75,8 +75,28 @@ type RawRoom = z.infer<typeof RawRoom>;
 
 /** The room id given to sweeps the scan places in no room. */
 export const UNASSIGNED_ROOM = "unassigned";
-const UNLABELLED = "Unlabelled area";
+/** The label of the unassigned room: sweeps the scan puts in no room are mostly circulation. */
+export const UNASSIGNED_LABEL = "Corridor";
 const MIN_SIDE = 0.5;
+
+/**
+ * Game-fiction names for a room the scan left unlabelled, by floor area in
+ * square metres (issue 28): the first band the area falls under. The board
+ * needs a name to print and the crew a name to say; these say how big a room
+ * is, never what the scan says it is.
+ */
+export const FICTION_BANDS: readonly { under: number; label: string }[] = [
+  { under: 4, label: "Closet" },
+  { under: 12, label: "Office" },
+  { under: 30, label: "Meeting Room" },
+  { under: 80, label: "Workroom" },
+  { under: Infinity, label: "Open Floor" },
+];
+
+/** The game-fiction name for an unlabelled room of `areaM2` square metres. */
+export function fictionLabel(areaM2: number): string {
+  return FICTION_BANDS.find((band) => areaM2 < band.under)!.label;
+}
 
 const STAIR = /\bstair/i;
 const LIFT = /\b(elevator|lift)/i;
@@ -86,6 +106,30 @@ function roomTags(label: string): NodeTag[] {
   if (STAIR.test(label)) tags.push("stair");
   if (LIFT.test(label)) tags.push("lift");
   return tags;
+}
+
+/**
+ * One landing per room: the sweep with the most edges out of the room (where
+ * the door is), a tie to the lower id. A scan has several sweeps in a
+ * stairwell, and the drill, the placer and the drill board each count a
+ * tagged node as one stair or lift, so only the landing carries the room's
+ * `stair` or `lift` tag; tagging every sweep would turn one stairwell into
+ * several.
+ */
+function landings(nodes: { id: string; roomId: string }[], edges: { a: string; b: string }[]): Map<string, string> {
+  const room = new Map(nodes.map((n) => [n.id, n.roomId]));
+  const outward = new Map<string, number>();
+  for (const { a, b } of edges) {
+    if (room.get(a) === room.get(b)) continue;
+    outward.set(a, (outward.get(a) ?? 0) + 1);
+    outward.set(b, (outward.get(b) ?? 0) + 1);
+  }
+  const best = new Map<string, string>();
+  for (const n of [...nodes].sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0))) {
+    const current = best.get(n.roomId);
+    if (current === undefined || (outward.get(n.id) ?? 0) > (outward.get(current) ?? 0)) best.set(n.roomId, n.id);
+  }
+  return best;
 }
 
 /** The floor with the most enabled sweeps; a tie goes to the lower floor. */
@@ -144,8 +188,10 @@ function largestComponent(nodes: string[], edges: { a: string; b: string }[]): S
  *   part of the walk graph, since the engine needs a connected board.
  * - Doors are never lockable here. Which doors lock is game fiction from the
  *   rules table (SPEC §4.3), not something a scan says.
- * - `stair` and `lift` tags come from room labels. `entry` tags are left to
- *   the placer, which chooses entries from the Vexcel tags (SPEC §4.3).
+ * - `stair` and `lift` tags come from room labels, one landing per room.
+ *   `entry` tags are left to the placer, which chooses entries from the
+ *   Vexcel tags (SPEC §4.3).
+ * - A room the scan left unlabelled gets a game-fiction name by its size.
  */
 export function toFloorGraph(sweepCollection: Record<string, unknown>, roomCollection: Record<string, unknown>): FloorGraph {
   const all = Object.values(sweepCollection).map((s) => RawSweep.parse(s));
@@ -162,8 +208,9 @@ export function toFloorGraph(sweepCollection: Record<string, unknown>, roomColle
     const id = s.roomInfo?.id;
     return id && rawRooms.has(id) ? id : UNASSIGNED_ROOM;
   };
-  const labelOf = (roomId: string) =>
-    roomId === UNASSIGNED_ROOM ? UNLABELLED : rawRooms.get(roomId)?.label?.trim() || UNLABELLED;
+  /** The scan's own label, or "" when it has none (`withFictionLabels` names those). */
+  const scanLabel = (roomId: string) =>
+    roomId === UNASSIGNED_ROOM ? UNASSIGNED_LABEL : (rawRooms.get(roomId)?.label?.trim() ?? "");
 
   const ids = new Set(sweeps.map((s) => s.sid));
   const pairs = new Map<string, { a: string; b: string }>();
@@ -176,9 +223,14 @@ export function toFloorGraph(sweepCollection: Record<string, unknown>, roomColle
   }
   const keep = largestComponent([...ids], [...pairs.values()]);
 
-  const nodes: FloorNode[] = sweeps
+  const kept = sweeps
     .filter((s) => keep.has(s.sid))
-    .map((s) => ({ id: s.sid, x: s.position.x, y: s.position.z, roomId: roomOf(s), tags: roomTags(labelOf(roomOf(s))) }));
+    .map((s) => ({ id: s.sid, x: s.position.x, y: s.position.z, roomId: roomOf(s) }));
+  const landing = landings(kept, [...pairs.values()].filter(({ a }) => keep.has(a)));
+  const nodes: FloorNode[] = kept.map((n) => ({
+    ...n,
+    tags: landing.get(n.roomId) === n.id ? roomTags(scanLabel(n.roomId)) : [],
+  }));
   const nodeRoom = new Map(nodes.map((n) => [n.id, n.roomId]));
 
   const edges: FloorEdge[] = [...pairs.values()]
@@ -188,13 +240,13 @@ export function toFloorGraph(sweepCollection: Record<string, unknown>, roomColle
     );
 
   const roomIds = [...new Set(nodes.map((n) => n.roomId))];
-  const rooms: Room[] = roomIds.map((id) => {
+  const boxed: Room[] = roomIds.map((id) => {
     const raw = rawRooms.get(id);
     if (raw) {
       const { min, max } = raw.bounds;
       return {
         id,
-        label: labelOf(id),
+        label: scanLabel(id),
         rect: { x: min.x, y: min.z, w: Math.max(max.x - min.x, MIN_SIDE), h: Math.max(max.z - min.z, MIN_SIDE) },
       };
     }
@@ -205,10 +257,11 @@ export function toFloorGraph(sweepCollection: Record<string, unknown>, roomColle
     const y = Math.min(...ys);
     return {
       id,
-      label: UNLABELLED,
+      label: UNASSIGNED_LABEL,
       rect: { x, y, w: Math.max(Math.max(...xs) - x, MIN_SIDE), h: Math.max(Math.max(...ys) - y, MIN_SIDE) },
     };
   });
+  const rooms = withFictionLabels(boxed);
 
   const sightlines: Record<string, string[]> = {};
   for (const n of nodes) {
@@ -216,4 +269,29 @@ export function toFloorGraph(sweepCollection: Record<string, unknown>, roomColle
   }
 
   return FloorGraph.parse({ nodes, edges, rooms, sightlines, source: "matterport" });
+}
+
+/**
+ * Rooms with the scan's blank labels filled in by size (`fictionLabel`). Two
+ * rooms given the same name are numbered, north-west first (board y, then x),
+ * so the crew can tell them apart: "Office 1", "Office 2". A label the scan
+ * gave is kept as it is.
+ */
+export function withFictionLabels(rooms: Room[]): Room[] {
+  const named = new Map<string, Room[]>();
+  for (const room of rooms) {
+    if (room.label) continue;
+    const label = fictionLabel(room.rect.w * room.rect.h);
+    named.set(label, [...(named.get(label) ?? []), room]);
+  }
+  const labels = new Map<string, string>();
+  for (const [name, group] of named) {
+    if (group.length === 1) {
+      labels.set(group[0].id, name);
+      continue;
+    }
+    const ordered = [...group].sort((p, q) => p.rect.y - q.rect.y || p.rect.x - q.rect.x || (p.id < q.id ? -1 : 1));
+    ordered.forEach((room, i) => labels.set(room.id, `${name} ${i + 1}`));
+  }
+  return rooms.map((room) => (room.label ? room : { ...room, label: labels.get(room.id)! }));
 }

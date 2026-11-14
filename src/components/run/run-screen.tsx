@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getMatterport } from "@/adapters/matterport";
+import { getMatterport, insideViewFor } from "@/adapters/matterport";
 import { BuildingScreen } from "@/components/shell/building-screen";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -30,7 +30,8 @@ import { LensLegend, LensToggle, useLayerLens } from "./layer-lens";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
 import { loadCrewPlan, type StoredCrewPlan } from "./crew-plan-store";
-import { clearRunLog, runLogOf, saveRunLog } from "./run-log-store";
+import { InsideViewPanel } from "./inside-view";
+import { clearRunLog, keepRunLogInMemory, runLogOf, saveRunLog } from "./run-log-store";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -111,6 +112,8 @@ export function RunScreen({
           if (!live) return;
           if (!floor) return setLoad({ status: "no-floor" });
           const placed = placeLevel(manifest, floor, RUN_SEED);
+          // A board from the scan names its sweeps: its log stays out of storage (SPEC §4.5).
+          keepRunLogInMemory(building.id, floor.source === "matterport");
           setLoad({ status: "ready", placed, live: floor.source === "matterport" });
           startRun(placed.level);
           setStatus(`You're in at the ${placed.entries[0].label.toLowerCase()}. Pick a number to move.`);
@@ -130,6 +133,9 @@ export function RunScreen({
   const load: Load = manifest ? loaded : { status: "no-floor" };
   const placed = load.status === "ready" ? load.placed : null;
   const zones = useMemo(() => (placed ? chiefZones(placed) : null), [placed]);
+  // The Inside view: only on a floor that came from a live scan (never on fixtures, so the demo path is unchanged).
+  const liveScan = load.status === "ready" && load.live;
+  const openInside = useMemo(() => (liveScan ? insideViewFor(building, heistMode) : null), [liveScan, building, heistMode]);
 
   // The crew's plan from the Plan screen, read after mount (storage is the browser's).
   const [crewPlan, setCrewPlan] = useState<StoredCrewPlan | null>(null);
@@ -348,6 +354,7 @@ export function RunScreen({
           crewPlan={crewPlan}
           loading={load.status === "loading" || (load.status === "ready" && !run)}
           awaiting={hidden}
+          inside={openInside && run ? <InsideViewPanel open={openInside} sweepId={run.playerNode} /> : null}
           chief={<ChiefPanel state={chief} revealed={revealed} zoneName={(id) => (placed ? zoneName(placed, id) : id)} onRetry={retryChief} />}
         />
       }
@@ -372,6 +379,7 @@ function RunPanel({
   crewPlan,
   loading,
   awaiting,
+  inside,
   chief,
 }: {
   manifest: LevelManifest | null;
@@ -383,6 +391,8 @@ function RunPanel({
   loading: boolean;
   /** Guards whose Chief order is still streaming in: their row waits for it. */
   awaiting: ReadonlySet<string>;
+  /** The Inside view, on a live scan only. */
+  inside: ReactNode;
   chief: ReactNode;
 }) {
   if (!manifest || !placed || !run) {
@@ -421,6 +431,8 @@ function RunPanel({
       {run.status !== "playing" ? <Outcome placed={placed} run={run} /> : null}
 
       {chief}
+
+      {inside}
 
       <section aria-labelledby="objective-label" className="flex flex-col gap-2">
         <h2 id="objective-label" className="label-caps text-text-3">
