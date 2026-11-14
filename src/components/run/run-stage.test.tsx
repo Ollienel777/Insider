@@ -13,6 +13,7 @@ import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.romaine-1974.json";
 import { choices } from "./board";
 import { BoardView } from "./board-view";
+import { RunLayout } from "./live-layout";
 import { RUN_SEED } from "./run-screen";
 import { chooseStage, RunStage, SPLIT_COLUMNS, stageShown, StageSwitch, StageView, stageVisualClass } from "./run-stage";
 import { FAILED_LINE, FOLLOWS_LINE, ScanFailed, ScanFrame, ScanHead } from "./scan-pane";
@@ -369,5 +370,34 @@ describe("on fixtures the stage changes nothing", () => {
     const staged = stageVisualClass(true).split(" ");
     expect(staged).toEqual(expect.arrayContaining(["flex", "flex-col", "lg:absolute", "lg:inset-0"]));
     expect(staged).not.toContain("absolute");
+  });
+
+  it.each(["tactical", "live"] as const)("gives the Run screen's layout that frame in %s: its own unless told a stage is on the board", (mode) => {
+    const layout = (staged?: boolean) =>
+      renderToStaticMarkup(
+        <RunLayout
+          mode={mode}
+          details={false}
+          onDetails={() => {}}
+          hud={null}
+          loading={mode === "live"}
+          onTake={() => {}}
+          onRestart={() => {}}
+          canRestart={false}
+          bar={null}
+          board={<div data-testid="board-area" />}
+          legend={null}
+          footer={null}
+          panel={null}
+          staged={staged}
+        />,
+      );
+    // The visual is the first element inside the screen's visual section.
+    const visualClass = (markup: string) => markup.match(/<section[^>]*aria-label="Run board"[^>]*><div class="([^"]*)"/)![1];
+    expect(visualClass(layout())).toBe("absolute inset-0 flex flex-col");
+    expect(visualClass(layout(false))).toBe("absolute inset-0 flex flex-col");
+    expect(visualClass(layout(true))).toBe(stageVisualClass(true));
+    // Nothing else in the layout depends on it.
+    expect(layout(true).replace(stageVisualClass(true), "absolute inset-0 flex flex-col")).toBe(layout(false));
   });
 });
