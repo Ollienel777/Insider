@@ -1,11 +1,14 @@
 # Devpost write-up: Heist Anywhere
 
 Paste each section into the Devpost field of the same name. Links are
-absolute, so they work from Devpost, but only once the repository is public:
-today it is private, and they return 404 to anyone without access. Everything
-here describes `main` as it is: the app runs in fake mode, on fixture
-buildings and recorded model turns, and no live service has been called.
-Change that wording only after a live run.
+absolute, into `Ollienel777/Insider`, so they work from Devpost, but only once
+the repository is public: today it is private, and they return 404 to anyone
+without access. EVENT.md requires a public repo before submission. Everything
+here describes `main` as it is: the app runs in fake mode by default, on
+fixture buildings and recorded model turns; Anthropic is the only service that
+has been run live, for the crew, the Security Chief and the Level Builder.
+Casting and Owner Mode are in open pull requests and are described as
+planned; change that wording only once they merge.
 
 **Tagline.** A heist game whose levels an AI agent builds from a building's
 data, and the same floor as a fire drill.
@@ -30,8 +33,8 @@ also says how many people are on a floor and which stairs they would use.
 
 Heist Anywhere is a turn-based stealth game in the browser. On `main` the
 demo building is Halvorsen Tower, an invented Class A tower in Bunker Hill,
-built 1974. The other four fixture buildings are on the map, marked "Level in
-prep".
+built 1974, with the mission "The Romaine Street Papers". The other four
+fixture buildings are on the map, marked "Level in prep".
 
 1. **Map.** Five fixture buildings in Los Angeles and Houston, each pin with
    three layer dots: CoStar, Vexcel, Matterport.
@@ -39,9 +42,11 @@ prep".
    with the five tagged ways in: loading dock, garage ramp, main lobby, Stair
    B exit and roof hatch. It is a drawing, not an aerial photo.
 3. **Dossier.** The Level Builder's recorded run replays as a checklist of
-   todos, subagent tasks and tool calls, and the Data → Level table fills in:
-   1974 → Analog era; Class A → 4 guards; the loading dock → entry and exit.
-   Then the Game Master's mission briefing.
+   todos, subagent tasks and tool calls; each task and tool opens to what it
+   was given and what it returned. The Data → Level table fills in: why the
+   building was cast for the mission (built 1974, Class A, floor 22 on the
+   market, dock on the aerial); 1974 → Analog era; Class A → 4 guards; the
+   loading dock → entry and exit. Then the Game Master's mission briefing.
 4. **Plan.** Brief the crew in plain English ("Go in through the dock, wait
    for the 2 am round to pass, take the records room"). The crew answers with
    a numbered plan and pushes back, and the board checks the plan and warns
@@ -52,9 +57,11 @@ prep".
    **Why card**: guard G4 is at the dock because of a Vexcel entry tag, and the
    4th guard comes from Class A. Press `L` for the **Layer lens**, which tints
    every element by the data layer that produced it.
-6. **Debrief.** A grade, three stats, a scrubbable replay of the run, and the
-   Chief's decisions as a timeline.
-7. **Drill.** The same engine on the same floor as an evacuation drill:
+6. **Debrief.** A grade, three stats, a scrubbable replay of the run, the
+   Chief's decisions as a timeline, and Try again for a fresh run.
+7. **Drill (on hold).** Off the demo path while the team decides whether it
+   stays, but still reachable from the step rail. The same engine on the same
+   floor as an evacuation drill:
    occupants from CoStar's occupied area, one stair blocked as the scenario,
    the time to clear, the bottleneck, and warden posts at the ways out people
    leave their rooms by. The scenario blocks the stair the most occupants
@@ -65,16 +72,19 @@ prep".
    prints that rule, and says it is a planning aid, not a life-safety
    calculation.
 
-Every model answer on screen is labelled Recorded or Rule-based, and the top
-bar's `FIXTURES` chip says the data is fixtures.
+Every model answer on screen says where it came from: in fake mode,
+Recorded or Rule-based; a live Chief answer says the model wrote it. The top
+bar's `FIXTURES` chip says when the data is fixtures.
 
-**Planned, not built yet.** "Print drill plan" is on the Drill screen but
-disabled; the printable plan for a fire safety director is in progress
-([#34](https://github.com/Ollienel777/heist-anywhere/issues/34)). Expanding
-each tool call in the Dossier's trace to its input and output is planned
-([#79](https://github.com/Ollienel777/heist-anywhere/issues/79)), and so is a
-Chief that adapts between runs
-([#35](https://github.com/Ollienel777/heist-anywhere/issues/35)).
+**Planned, not on `main` yet.** Casting: pick a heist from history first, and
+a `deepagents` Casting Director searches CoStar's inventory for a building of
+the right era and class with a floor empty tonight, a scan and a way in, and
+shows three finalists ([#24](https://github.com/Ollienel777/Insider/issues/24),
+[#25](https://github.com/Ollienel777/Insider/issues/25)). Owner Mode: an owner enters their own building's
+security and the AI crew tries about 50 ways in
+([#34](https://github.com/Ollienel777/Insider/issues/34)). A Chief that adapts between runs
+([#7](https://github.com/Ollienel777/Insider/issues/7)). "Print drill plan" is on the Drill screen but disabled
+([#6](https://github.com/Ollienel777/Insider/issues/6), held with Drill Mode).
 
 ## How we built it
 
@@ -83,18 +93,21 @@ route handlers talk to CoStar, Vexcel and the model; Matterport runs only in
 the browser.
 
 - **The rules table decides the numbers.**
-  [`deriveSecurityProfile`](https://github.com/Ollienel777/heist-anywhere/blob/main/src/level/rules.ts)
+  [`deriveSecurityProfile`](https://github.com/Ollienel777/Insider/blob/main/src/level/rules.ts)
   maps CoStar's year built, class and available space, and Vexcel's entry
   tags, to the level's security era, guard force, staged floor, zones and
   entries. Every output carries a provenance entry naming its layer, field,
   value and rule, and the Why card and the Layer lens read those entries.
 - **The Level Builder is a LangChain `deepagents` agent**
-  ([`builder.ts`](https://github.com/Ollienel777/heist-anywhere/blob/main/src/agents/builder/builder.ts)):
+  ([`builder.ts`](https://github.com/Ollienel777/Insider/blob/main/src/agents/builder/builder.ts)):
   `createDeepAgent` with a todo list, two subagents (`data-analyst`,
   `game-master`) and six tools. It runs ahead of the demo and writes a
-  manifest and a trace per building, so the demo never waits on a model.
-  Without a key, the real agent runs, graph, todos, subagent dispatch and
-  tools included, and only the model's turns are replayed from a recording.
+  manifest and a trace per building and mission, so the demo never waits on
+  a model. Without a key, the real agent runs, graph, todos, subagent
+  dispatch and tools included, and only the model's turns are replayed from
+  a script. It has run live on Claude twice on F1, and a live run can be
+  saved as a replayable script
+  ([`dd0d2ae`](https://github.com/Ollienel777/Insider/commit/dd0d2ae2da3145aa3a9436335b3080d6bec74185)); the demo replays a hand-written one.
 - **The engine is authoritative.** The engine is pure, seeded TypeScript.
   Crew plans and Chief orders are parsed against a zod schema and clamped to
   legal moves, and guards move on the engine's own decision before any model
@@ -102,21 +115,26 @@ the browser.
   a 4 s timeout and a recorded or rule-based fallback.
 - **Every external service sits behind an adapter with a fake.** CoStar,
   Vexcel, Matterport and the model each have a live adapter and a
-  fixture-backed fake, chosen from the environment. The live adapters are
-  written and unit-tested against stubs; none has been run against the real
-  service.
+  fixture-backed fake, chosen from the environment. The live model path has
+  run against Anthropic for the crew, the Chief and the Level Builder; the
+  CoStar, Vexcel and Matterport adapters are written and unit-tested against
+  stubs, and none has been run against the real service.
 - **The gate.** Lint, typecheck, unit tests, a production build and a
-  Playwright walk of all seven screens run on every pull request.
+  Playwright walk of the demo path, map to Debrief, run on every pull
+  request, in fake mode.
 
-The [README](https://github.com/Ollienel777/heist-anywhere#sponsor-technology-and-where-it-lives)
+The [README](https://github.com/Ollienel777/Insider#sponsor-technology-and-where-it-lives)
 lists each sponsor's technology and the exact files that use it.
 
 ## Challenges we ran into
 
-- **No keys.** The event's CoStar, Vexcel and Matterport keys and our
-  Anthropic key were not in the build environment. We built every path
-  against fixtures, and made the screens say so, rather than let a recording
-  pass for a live answer.
+- **Building before the keys.** The event's CoStar, Vexcel and Matterport
+  data has not reached the build, and the Anthropic key arrived partway
+  through. We built every path against fixtures first, and made the screens
+  say so, rather than let a recording pass for a live answer. Once the key
+  arrived, the crew and the Chief ran live; the crew's median of about 3.6 s
+  misses our 3 s target, so a slow call falls back to the recording at 4 s
+  ([`40ebd5a`](https://github.com/Ollienel777/Insider/commit/40ebd5a5fdf0508a51d67a793719a06efd6eac97)).
 - **A live re-plan that never stalls.** A model answer can take seconds; a
   guard cannot wait. The engine moves the guards first and the Chief's orders
   are clamped onto them when they arrive.
@@ -124,15 +142,15 @@ lists each sponsor's technology and the exact files that use it.
   reads as decoration. Tying every guard, camera, lock and zone to the field
   that produced it, and showing it on a click, took the rules table, the Why
   card and the Layer lens.
-- **Saying only what is true.** The README went through seven review rounds
-  ([#81](https://github.com/Ollienel777/heist-anywhere/pull/81)), and every
-  Critical finding the reviews upheld was corrected before it merged. A Nit
-  left open at merge, that the Chief is called on "every alarm transition",
-  has since been made exact in the README: it is called once after each
-  player action that logs an alarm event, with that action's latest event.
-  One Critical, taken from the plan, said the live Vexcel path proxies
+- **Saying only what is true.** The README went through review rounds
+  before it merged ([`1de0ea9`](https://github.com/Ollienel777/Insider/commit/1de0ea99ab062321f969124ddc3ee51e31a747c8)), and its claims were cut back to what
+  the code does. One, taken from the plan, said the live Vexcel path proxies
   imagery; the code has no proxy, and the README now says it passes Vexcel's
-  image URLs through.
+  image URLs through. Another, that the Chief is called on "every alarm
+  transition", has since been made exact: it is called once after each
+  player action that logs an alarm event, with that action's latest event.
+  When the crew and the Chief first ran live, the README's "no live path has
+  run" was corrected in the same change ([`40ebd5a`](https://github.com/Ollienel777/Insider/commit/40ebd5a5fdf0508a51d67a793719a06efd6eac97)).
 
 ## Accomplishments that we're proud of
 
@@ -141,7 +159,7 @@ lists each sponsor's technology and the exact files that use it.
 - The Why card: click any guard and see the CoStar or Vexcel field behind it.
 - One engine, two uses: the same floor runs a heist and an evacuation drill.
 - The whole demo runs with no keys, and the gate walks it end to end on every
-  change.
+  change; with a key, the same agents run live on Claude.
 
 ## What we learned
 
@@ -154,12 +172,15 @@ lists each sponsor's technology and the exact files that use it.
 
 ## What's next
 
+- **Casting**, in review: the Casting Director and the cast screen, so the
+  player picks a heist from history and the agent casts the building.
+- **Owner Mode**, in review: the owner's own security, about 50 AI crew
+  attempts, and the fix that the Chief proposes.
 - **Live data.** Run each adapter against the real CoStar, Vexcel and
-  Matterport services, correct each mapping, and record a live Level Builder
-  run on Claude.
+  Matterport services and correct each mapping. Re-record the live Level
+  Builder run for the mission-aware builder, so the demo can replay it.
 - **Aerial photos in Scout**, in place of the massing.
 - **More buildings.** Floors and levels for the other four fixture buildings.
-- **The printable drill plan** for the fire safety director.
 - **A Chief that learns** from the player's earlier runs.
 - **Rebuild from the UI**: run the Level Builder live from the Dossier.
 
@@ -172,8 +193,9 @@ zod, vitest, playwright, lucide, openstreetmap, costar, vexcel, matterport,
 anthropic, claude, amazon-bedrock, claude-code
 
 CoStar, Vexcel and Matterport are used through adapters that ran on fixtures
-only. Anthropic Claude and Amazon Bedrock are wired in as model providers and
-have not been called. OpenStreetMap is the data for the static basemap.
+only. Anthropic Claude has run live for the crew, the Security Chief and the
+Level Builder; Amazon Bedrock is wired in as a model provider and has not
+been called. OpenStreetMap is the data for the static basemap.
 
 ## Prizes
 
@@ -183,21 +205,23 @@ have not been called. OpenStreetMap is the data for the static basemap.
   CoStar sets the era, guards and zones, Vexcel the ways in, Matterport the
   board, and the Why card and Layer lens show which made each piece. It runs
   on fixtures; no real CoStar, Vexcel or Matterport data has been read yet.
+  Casting, the location scout's search over CoStar's inventory, is in
+  review; its search code is on `main`.
 - **LangChain "Best use of deepagents":** the Level Builder is a
   `createDeepAgent` agent with a todo list, two subagents and six tools, whose
-  trace replays in the product. The agent graph, todos, subagent dispatch and
-  tools run for real, but the model's turns are replayed from a recording; it
-  has not yet run on Claude.
+  trace replays in the product. It has run live on Claude; in the demo the
+  agent graph, todos, subagent dispatch and tools run for real while the
+  model's turns are replayed from a script. A second deep agent, the Casting
+  Director, is in review.
 - **Amazon "Best Practical AI Innovation":** the Security Chief re-plans the
   guards once after each player action that logs an alarm event (a change of
   level, or, at Lockdown, a sighting in a new zone or after a turn unseen),
-  with that action's latest event, and says why; and Drill Mode turns a
-  building record into a drill scenario for a fire safety director. The Chief answers
-  from recordings or rules, with no live model yet; Amazon Bedrock is wired in
-  as an alternative provider but has never been called.
+  with that action's latest event, and says why. It has run live on Claude;
+  in fake mode it answers from recordings or rules. Amazon Bedrock is wired
+  in as an alternative provider but has never been called.
 
 Each prize's requirement, evidence and status:
-[`prizes.md`](https://github.com/Ollienel777/heist-anywhere/blob/main/hackathon/submission/prizes.md).
+[`prizes.md`](https://github.com/Ollienel777/Insider/blob/main/hackathon/submission/prizes.md).
 
 ## Use of AI
 
@@ -213,6 +237,7 @@ Claude agents wrote the product's code, tests and docs, as pull requests that
 separate Claude reviewer agents reviewed before they merged.
 
 In the product, Anthropic Claude is the model for every agent (the Level
-Builder, the crew, the Security Chief and the drill narrator). In this repo
-those agents answer from recordings or rules, because no API key was
-available, and the screens label each answer accordingly.
+Builder, the crew, the Security Chief and the drill narrator). The crew, the
+Chief and the Level Builder have run live on Claude; the drill narrator has
+not. The committed demo and CI run in fake mode, where those agents answer
+from recordings or rules, and the screens label each answer accordingly.

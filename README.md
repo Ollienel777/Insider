@@ -12,8 +12,8 @@ CoStar "AI for the Built World", LangChain "Best use of deepagents", Amazon
 re-plans the guards and says why, once after each player action that logs
 an alarm event (a change of level, or, at Lockdown, a sighting in a new zone or
 after a turn unseen), with that action's latest event
-([`replanChief`](src/agents/chief/chief.ts)); in this repo its answers are
-recorded or rule-based, and the engine clamps its orders to legal moves ([`applyChiefOrders`](src/engine/orders.ts)). Amazon Bedrock is
+([`replanChief`](src/agents/chief/chief.ts)); it has run live on Claude, in
+fake mode its answers are recorded or rule-based, and the engine clamps its orders to legal moves ([`applyChiefOrders`](src/engine/orders.ts)). Amazon Bedrock is
 wired in as an alternative model provider
 ([`bedrock.ts`](src/adapters/llm/bedrock.ts)) but has never been run: there
 are no AWS credentials here.
@@ -240,8 +240,8 @@ stubbed `fetch` or SDK.
 You need Node 22.12 or later. No keys, no `.env.local`, no database.
 
 ```sh
-git clone https://github.com/Ollienel777/heist-anywhere.git
-cd heist-anywhere
+git clone https://github.com/Ollienel777/Insider.git
+cd Insider
 npm ci
 npm run dev
 ```
