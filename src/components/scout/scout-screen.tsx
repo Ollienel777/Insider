@@ -209,13 +209,13 @@ export function ScoutScreen({ building, initialLoad }: { building: ScoutBuilding
       }
       action={
         isFactsOnly(building.source) ? (
-          // A kit building has no level, so there is no job to plan (Plan, Run, Debrief, Drill would 404).
+          // A kit building's level is built on demand from its Dossier (#93); until then Plan, Run, Debrief and Drill would 404.
           <div className="flex items-center gap-3">
             <p data-testid="facts-only" className="text-sm text-text-2">
               {FACTS_ONLY_NOTE}
             </p>
-            <Link href="/map" className={buttonVariants({ variant: "secondary" })}>
-              Pick another building
+            <Link href={buildingHref(building.id, "dossier", missionId)} className={buttonVariants({ variant: "primary" })}>
+              Build a level
             </Link>
           </div>
         ) : (

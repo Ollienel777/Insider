@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
-import { readCachedLevel, type CachedLevel } from "@/agents/builder/cache";
-import { findMission } from "@/agents/builder/missions";
+import type { CachedLevel } from "@/agents/builder/cache";
+import { buildState, buildsOnDemand, canBuildFor, levelFor } from "@/agents/builder/live-levels";
+import { findMission, missionsFor } from "@/agents/builder/missions";
 import { dataToLevelRows } from "@/components/dossier/data-to-level";
 import { DossierScreen } from "@/components/dossier/dossier-screen";
 import { DossierUnavailable } from "@/components/dossier/dossier-unavailable";
@@ -26,17 +27,26 @@ export default async function DossierPage({
   if (!building) notFound();
 
   const missionId = await optionalMissionParam(building.id, "dossier", searchParams);
-  // No mission (a kit building from the map): no level to read, only its facts.
-  if (!missionId) return <DossierUnavailable buildingId={building.id} missionId={null} name={building.name} reason="missing" facts={dossierFacts(building)} source={building.source} />;
+  // A kit building's level is built on demand (#93): it offers its city's missions, then the build.
+  const onDemand = buildsOnDemand(building);
+  const missions = onDemand ? missionsFor(building.city).map(({ id, title }) => ({ id, title })) : undefined;
+  const state = onDemand && missionId ? buildState(building.id, missionId) : null;
+  const kitProps = {
+    missions,
+    buildable: Boolean(onDemand && missionId && canBuildFor(building, missionId)),
+    buildError: state?.status === "failed" ? state.error : undefined,
+  };
+  // No mission (a kit building from the map): no level to read, only its facts and its missions.
+  if (!missionId) return <DossierUnavailable buildingId={building.id} missionId={null} name={building.name} reason="missing" facts={dossierFacts(building)} source={building.source} {...kitProps} />;
 
   let level: CachedLevel | null;
   try {
-    level = await readCachedLevel(building.id, missionId);
+    level = await levelFor(building, missionId);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return <DossierUnavailable buildingId={building.id} missionId={missionId} name={building.name} reason="invalid" detail={message} source={building.source} />;
   }
-  if (!level) return <DossierUnavailable buildingId={building.id} missionId={missionId} name={building.name} reason="missing" facts={dossierFacts(building)} source={building.source} />;
+  if (!level) return <DossierUnavailable buildingId={building.id} missionId={missionId} name={building.name} reason="missing" facts={dossierFacts(building)} source={building.source} {...kitProps} />;
 
   // Why this building was cast for the mission: the table's first row (beat 4).
   const mission = findMission(level.manifest.missionId);

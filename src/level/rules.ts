@@ -121,6 +121,12 @@ const CLASSES: Readonly<Record<BuildingClass, ClassRule>> = {
 /** Entry kinds the level always offers, in this order, ahead of the rest. */
 const ALWAYS_OFFERED: readonly EntryKind[] = ["dock", "roof"];
 
+/** The entries offered when no aerial tags any: the roof (always offered) and the street lobby. */
+const NO_AERIAL_ENTRIES: readonly LevelEntry[] = [
+  { id: "roof", kind: "roof", label: "Roof hatch" },
+  { id: "lobby", kind: "lobby", label: "Street lobby" },
+];
+
 const ENTRY_RULES: Readonly<Record<EntryKind, string>> = {
   dock: "a loading dock is always offered as a way in and out",
   roof: "the roof is always offered as a way in and out",
@@ -312,6 +318,21 @@ export function deriveSecurityProfile(building: Building, aerial: Aerial | null)
       });
       return { id: tag.id, kind: tag.kind, label: tag.label };
     });
+  // No aerial tags (Vexcel holds a massing only for the prepared buildings, so
+  // a CoStar kit building has none, #93): a level needs a way in, so the rules
+  // offer the two every office building has, the roof and the street lobby.
+  if (entries.length === 0) {
+    for (const entry of NO_AERIAL_ENTRIES) {
+      provenance.push({
+        elementRole: `entry:${entry.id}`,
+        layer: "fiction",
+        field: "entries.kind",
+        value: entry.kind,
+        rule: `No Vexcel aerial tags this building's ways in, so the rules offer its ${entry.label.toLowerCase()}: ${ENTRY_RULES[entry.kind]}`,
+      });
+      entries.push({ ...entry });
+    }
+  }
 
   const securityProfile: SecurityProfile = {
     era: era.era,

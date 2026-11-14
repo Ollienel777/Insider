@@ -12,6 +12,10 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: root,
   outputFileTracingExcludes: { "*": [".claude/**"] },
   turbopack: { root },
+  // The Level Builder's agent packages load optional modules (langsmith's
+  // `ws`) that a bundle can't resolve; the on-demand build route (#93)
+  // loads them from node_modules at run time instead.
+  serverExternalPackages: ["deepagents", "langsmith"],
 };
 
 export default nextConfig;
