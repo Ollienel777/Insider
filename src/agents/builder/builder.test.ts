@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { DEFAULT_SUBAGENT_PROMPT } from "deepagents";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { resetCoStar } from "@/adapters/costar";
 import { createFakeCoStar } from "@/adapters/costar/fake";
 import { loadScript, ScriptedChatModel } from "@/adapters/llm";
 import type { ScriptInput } from "@/adapters/llm/scripted";
@@ -409,6 +410,18 @@ describe("the builder's guard rails", () => {
     expect(error.trace.events[0].output).toMatch(/^Error: the general-purpose subagent's run failed: /);
   });
 
+  it("records a task naming a subagent the builder lacks as an unknown subagent, under the builder (#72)", async () => {
+    const script = builder([
+      { toolCalls: [{ name: "task", args: { subagent_type: "made-up", description: "Look around F1." } }] },
+      { content: "Giving up." },
+    ]);
+    const error = (await buildLevel("F1", "romaine-1974", { model: new ScriptedChatModel({ script }) }).catch((e: unknown) => e)) as LevelBuildError;
+    expect(error.trace.events).toEqual([
+      expect.objectContaining({ kind: "subagent", agent: "level-builder", status: "failed", failure: "unknown" }),
+    ]);
+    expect(error.trace.events[0].output).toMatch(/^Error: unknown subagent "made-up"; /);
+  });
+
   it("keeps live adapters' data out of the trace: no input or output on any event (SPEC §4.5, M1)", async () => {
     const adapters = spiedAdapters();
     // The same fixture data, but passed with no modes, so treated as live.
@@ -443,6 +456,30 @@ describe("the builder's guard rails", () => {
     });
     expect(vexcelLive.trace.liveData).toBe(true);
     expect(vexcelLive.trace.events.some((e) => e.input !== undefined || e.output !== undefined)).toBe(false);
+  });
+
+  it("with no adapters passed, reads live mode from the environment and keeps the data out of the trace (#72)", async () => {
+    // `npm run build:levels` with COSTAR_MODE=live: the adapter's own mode
+    // decides. The stubbed fetch refuses every call, so nothing leaves the
+    // process; the breaker answers from the fixtures after the mode is read.
+    const fetch = vi.fn(() => Promise.reject(new Error("no network in tests")));
+    vi.stubGlobal("fetch", fetch);
+    vi.stubEnv("COSTAR_MODE", "live");
+    vi.stubEnv("COSTAR_API_BASE", "https://costar.invalid");
+    vi.stubEnv("COSTAR_API_KEY", "test-key");
+    resetCoStar();
+    try {
+      const built = await buildLevel("F1", "romaine-1974", {
+        model: new ScriptedChatModel({ script: await loadScript("builder-F1-romaine-1974") }),
+      });
+      expect(fetch).toHaveBeenCalled();
+      expect(built.trace.liveData).toBe(true);
+      expect(built.trace.events.some((e) => e.input !== undefined || e.output !== undefined)).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.stubEnv("COSTAR_MODE", "fake");
+      resetCoStar();
+    }
   });
 
   it("offers general-purpose to the task tool exactly once, beside the two subagents, and lists all three in the trace (R1-M2)", async () => {
