@@ -48,7 +48,7 @@ import { createDistanceMaterial, SLOTS } from "./projection";
 const KEEP = 3;
 /** Panoramas whose small faces, and whose full-size faces, are being fetched at once. */
 const LOW_FETCHES = 6;
-const SHARP_FETCHES = 3;
+const SHARP_FETCHES = 2;
 /** How quickly a panorama's share follows its target, per second. */
 const SHARE_RATE = 7;
 /** How quickly a slot fades between its small cube and its sharp one, per second. */
