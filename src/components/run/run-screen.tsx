@@ -540,7 +540,8 @@ function RunPanel({
   );
 }
 
-function Outcome({ placed, run }: { placed: PlacedLevel; run: RunState }) {
+/** The run's outcome line: the win names the mission's objective (#70). Exported for its test. */
+export function Outcome({ placed, run }: { placed: PlacedLevel; run: RunState }) {
   const won = run.status === "won";
   return (
     <section

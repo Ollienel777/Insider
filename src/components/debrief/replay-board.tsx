@@ -2,10 +2,9 @@
 
 import { useMemo } from "react";
 import { cameraMount } from "@/components/run/board";
-import { CameraPiece, DISC, Pawn, shortLabel } from "@/components/run/board-view";
+import { CameraPiece, DISC, markerLabel, Pawn, shortLabel } from "@/components/run/board-view";
 import { frameOf, LABEL_FONT, pointsAttr, project, projectRect, roomLabelTransform, round, TILE_DEPTH, type Point } from "@/components/run/iso";
 import type { PlacedLevel } from "@/level/placer";
-import { objectiveLabel } from "@/lib/objective-noun";
 import type { Frame } from "./debrief";
 
 /** How far apart, in board units, pieces sharing a node stand (as on the run board). */
@@ -45,7 +44,6 @@ export function ReplayBoard({
     nodes: dedupe(shown.map((f) => f.guards.find((g) => g.guardId === id)!.nodeId)),
   }));
   const exitNodes = new Set(placed.level.exits);
-  const entryLabel = new Map(placed.entries.map((e) => [e.nodeId, e.label]));
 
   const pieces = [
     ...now.guards.map((g) => ({ kind: "guard" as const, id: g.guardId, nodeId: g.nodeId })),
@@ -141,7 +139,7 @@ export function ReplayBoard({
                   letterSpacing="0.06em"
                   style={{ fill: "var(--text-1)" }}
                 >
-                  {isObjective ? objectiveLabel(placed.level.missionId) : (entryLabel.get(node.id) ?? "EXIT").toUpperCase()}
+                  {markerLabel(placed, node.id)}
                 </text>
               ) : null}
             </g>

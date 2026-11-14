@@ -16,10 +16,9 @@ import f3Cached from "../../../data/levels/F3.night-desk.json";
 import { act, createRun, type Action, type RunState } from "@/engine";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { quietRoute } from "@/level/quiet-route";
-import { objectiveLabel } from "@/lib/objective-noun";
 import cached from "../../../data/levels/F1.romaine-1974.json";
 import { actionForKey, cameraMount, choices as choicesOf } from "./board";
-import { DISC, fixedLabels, movingLabels, standingOf, type GhostPlan } from "./board-view";
+import { DISC, fixedLabels, markerLabel, movingLabels, standingOf, type GhostPlan } from "./board-view";
 import { project } from "./iso";
 import { box, MARK_FONT, PIECE_FONT, quadsOverlap, textBox, type Quad } from "./labels";
 import { RUN_SEED } from "./run-screen";
@@ -47,12 +46,11 @@ function drawn(run: RunState, ghost: GhostPlan | null = null, level: PlacedLevel
   const standing = standingOf(run, atNode);
   const moving = movingLabels(fixed, atNode, choices, standing, ghost);
   const { floor, objective, exits } = level.level;
-  const entryLabel = new Map(level.entries.map((e) => [e.nodeId, e.label]));
   const labels: { name: string; quad: Quad }[] = [
     ...fixed.rooms.map((r) => ({ name: r.text, quad: r.quad })),
     ...[objective, ...exits].map((id) => {
       const p = atNode(id);
-      const text = id === objective ? objectiveLabel(level.level.missionId) : (entryLabel.get(id) ?? "EXIT");
+      const text = markerLabel(level, id);
       return { name: text, quad: textBox(p.x, p.y + DISC.ry + 14, text.length, MARK_FONT, "middle", 0) };
     }),
     ...run.board.cameras.map((camera) => {

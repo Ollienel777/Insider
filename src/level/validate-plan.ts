@@ -13,6 +13,7 @@ import type { CrewPlan, FloorGraph } from "@/domain";
 import { act, createRun, shortestPath, type Action, type AlarmEvent, type RunState } from "@/engine";
 import type { PlacedLevel } from "./placer";
 import { quietRoute } from "./quiet-route";
+import { objectiveNoun } from "@/lib/objective-noun";
 
 /** A step of the crew's plan that the board could place, with the turns it covers. */
 export interface CheckedStep {
@@ -344,8 +345,8 @@ export function validatePlan(placed: PlacedLevel, plan: CrewPlan): CheckedPlan {
       room,
       outbound: played.run.carrying,
       text: played.run.carrying
-        ? `The plan ends in the ${room} with the files, short of an exit.`
-        : `The plan never takes the files: it ends in the ${room}.`,
+        ? `The plan ends in the ${room} with the ${objectiveNoun(placed.level.missionId)}, short of an exit.`
+        : `The plan never takes the ${objectiveNoun(placed.level.missionId)}: it ends in the ${room}.`,
     });
   }
 

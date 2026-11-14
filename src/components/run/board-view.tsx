@@ -27,6 +27,17 @@ import { ProvenanceThread } from "./provenance-thread";
 import { CARD_WIDTH, liveSubtitle, placeCard, threadColour, toScreen, whyKey, whyTargets } from "./why";
 import { WhyCard } from "./why-card";
 
+/**
+ * The label under an objective or exit node, as the board draws it: the
+ * mission's objective noun on the objective (#70), else the entry's label,
+ * else "EXIT", upper-case. The Run board, its label layout and the Debrief's
+ * replay all read it here, so what is sized is what is drawn.
+ */
+export function markerLabel(placed: PlacedLevel, nodeId: string): string {
+  if (nodeId === placed.level.objective) return objectiveLabel(placed.level.missionId);
+  return (placed.entries.find((e) => e.nodeId === nodeId)?.label ?? "EXIT").toUpperCase();
+}
+
 /** A node disc's radii on the board (a circle seen at the isometric angle). */
 export const DISC = { rx: 13, ry: 7.5 };
 /** How far apart, in board units, pieces sharing a node stand. */
@@ -211,7 +222,6 @@ export function BoardView({
     (id, i, all) => i === 0 || id !== all[i - 1],
   );
   const exitNodes = new Set(placed.level.exits);
-  const entryLabel = new Map(placed.entries.map((e) => [e.nodeId, e.label]));
   const entryAt = new Map(placed.entries.map((e) => [e.nodeId, e.entryId]));
   const lockedEdges = floor.edges.filter((e) => e.door && run.locked.includes(e.door.id));
 
@@ -458,7 +468,7 @@ export function BoardView({
                     letterSpacing="0.06em"
                     style={{ fill: "var(--text-1)" }}
                   >
-                    {isObjective ? objectiveLabel(placed.level.missionId) : (entryLabel.get(node.id) ?? "EXIT").toUpperCase()}
+                    {markerLabel(placed, node.id)}
                   </text>
                 ) : null}
                 {layers ? (
@@ -877,14 +887,13 @@ export function fixedLabels(placed: PlacedLevel, cameras: RunState["board"]["cam
     const n = floor.nodes.find((node) => node.id === id)!;
     return project(n.x, n.y);
   };
-  const entryLabel = new Map(placed.entries.map((e) => [e.nodeId, e.label]));
   const named = [objective, ...exits.filter((id) => id !== objective)];
   const doorNodes = new Set(floor.edges.filter((e) => e.door).flatMap((e) => [e.a, e.b]));
   // Without the nodes: the labels that move keep clear only of the ones a choice stands on.
   const taken: Taken = { text: [], marks: [] };
   for (const id of named) {
     const p = point(id);
-    const text = id === objective ? objectiveLabel(placed.level.missionId) : (entryLabel.get(id) ?? "EXIT");
+    const text = markerLabel(placed, id);
     taken.text.push(textBox(p.x, p.y + DISC.ry + 14, text.length, MARK_FONT, "middle"));
   }
   for (const camera of cameras) {
