@@ -15,8 +15,9 @@ function StepLink({ href, label, state }: { href: string; label: string; state: 
       data-state={state}
       className={cn(
         // The 2px underline sits on the rail's bottom edge, over its border.
-        "relative inline-flex h-11 items-center gap-2 rounded-sm px-2 text-sm md:px-3 transition-colors duration-fast",
-        "after:absolute after:inset-x-2 md:after:inset-x-3 after:-bottom-px after:h-0.5 after:rounded-full after:transition-colors after:duration-fast",
+        // Tighter below md, so the rail with five steps done (Drill) fits 390px without scrolling the page (#71).
+        "relative inline-flex h-11 items-center gap-1 rounded-sm px-1 text-sm md:gap-2 md:px-3 transition-colors duration-fast",
+        "after:absolute after:inset-x-1 md:after:inset-x-3 after:-bottom-px after:h-0.5 after:rounded-full after:transition-colors after:duration-fast",
         state === "current"
           ? "font-medium text-text-1 after:bg-accent"
           : "text-text-2 after:bg-transparent hover:text-text-1",

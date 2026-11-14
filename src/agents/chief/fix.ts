@@ -36,9 +36,9 @@ export type FixRecording = z.infer<typeof FixRecording>;
 
 export interface FixAnswer {
   fix: ChiefFix;
-  /** True when no live model answered: fake mode, a timeout or a failure. */
+  /** True when no live model answered: fake mode, no configured provider, a timeout or a failure. */
   recorded: boolean;
-  reason?: "fake mode" | "timeout" | "error";
+  reason?: "fake mode" | "configuration" | "timeout" | "error";
   /** Who wrote `fix`: the model, the recording, or the template (when nothing else gave a change that fits). */
   source: ChiefSource;
   /** A change left out, and why: it named an element or zone this level does not have. */

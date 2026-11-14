@@ -18,9 +18,10 @@ import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { quietRoute } from "@/level/quiet-route";
 import cached from "../../../data/levels/F1.romaine-1974.json";
 import { actionForKey, cameraMount, choices as choicesOf } from "./board";
-import { DISC, fixedLabels, movingLabels, standingOf, type GhostPlan } from "./board-view";
+import { CHOICE_HIT, DISC, fixedLabels, fixedLensMarks, fixedLensRings, GHOST_REACH, movingLabels, PICK_HIT, standingOf, type GhostPlan } from "./board-view";
 import { project } from "./iso";
-import { box, MARK_FONT, PIECE_FONT, quadsOverlap, textBox, type Quad } from "./labels";
+import { box, boxReach, MARK_FONT, PIECE_FONT, quadsOverlap, textBox, type Quad } from "./labels";
+import { lensElements } from "./lens";
 import { RUN_SEED } from "./run-screen";
 
 const manifest = LevelManifest.parse(structuredClone(cached));
@@ -39,9 +40,9 @@ function play(run: RunState, actions: readonly Action[]): RunState {
 }
 
 /** Every label the board draws on this frame, by its text, as its glyph box (no padding). */
-function drawn(run: RunState, ghost: GhostPlan | null = null, level: PlacedLevel = placed): { name: string; quad: Quad }[] {
+function drawn(run: RunState, ghost: GhostPlan | null = null, level: PlacedLevel = placed, lens = false): { name: string; quad: Quad }[] {
   const atNode = at(run);
-  const fixed = fixedLabels(level, run.board.cameras);
+  const fixed = fixedLabels(level, run.board.cameras, lens);
   const choices = choicesOf(run);
   const standing = standingOf(run, atNode);
   const moving = movingLabels(fixed, atNode, choices, standing, ghost);
@@ -115,6 +116,87 @@ describe("the board's labels (#68)", () => {
     const ghost: GhostPlan = ghostOf(validatePlan(placed, demo));
     expect(ghost.marks.map((m) => m.label)).toEqual(expect.arrayContaining(["C2 · T12", "WAIT · T12"]));
     expect(collisions(drawn(createRun(placed.level), ghost))).toEqual([]);
+  });
+
+  it("keeps the rooms' names clear of the Layer lens's marks on the cameras, locks and entries (PR #83 R1-M1)", () => {
+    const marks = fixedLensMarks(placed, createRun(placed.level).board.cameras);
+    // C1, C2 (CoStar), both locks (CoStar), the dock and the roof (Vexcel).
+    expect(marks).toHaveLength(6);
+    // Each guard's and cleaner's marks too, where the board places them (`movingLabels` with the lens on).
+    const layers = lensElements(placed, placed.level.lockedDoors);
+    const count = (kind: "guard" | "cleaner", id: string) => layers.find((e) => e.key === `${kind}:${id}`)?.layers.length ?? 0;
+    const guardMarks = (run: RunState) => {
+      const standing = standingOf(run, at(run));
+      const moving = movingLabels(fixedLabels(placed, run.board.cameras, true), at(run), choicesOf(run), standing, null, count);
+      return standing.flatMap((s) => {
+        const spot = moving.marks.get(s.id);
+        if (!spot || s.kind === "player") return [];
+        const n = count(s.kind, s.id);
+        return [{ name: `${s.id} lens marks`, quad: box(s.p.x + spot.x, s.p.y + spot.y, s.p.x + spot.x + 14 * n + 3 * (n - 1), s.p.y + spot.y + 14) }];
+      });
+    };
+    const lensed = (run: RunState) => [
+      ...drawn(run, null, placed, true),
+      ...marks.map((quad, i) => ({ name: `lens mark ${i}`, quad })),
+      ...guardMarks(run),
+    ];
+    // The four guards and the night cleaner K1: a cleaner's marks are placed like a guard's.
+    expect(guardMarks(createRun(placed.level)).map((m) => m.name)).toContain("K1 lens marks");
+    expect(guardMarks(createRun(placed.level))).toHaveLength(5);
+    expect(collisions(lensed(createRun(placed.level)))).toEqual([]);
+    const wow = play(createRun(placed.level), [{ kind: "move", to: "fl-lobby" }, { kind: "move", to: "dc-west" }]);
+    expect(collisions(lensed(wow))).toEqual([]);
+  });
+
+  it("keeps the plan's marks clear of the Layer lens's marks and rings on beat 4, beside their own nodes (#138 R2)", () => {
+    const demo = CrewPlan.parse(crewF1.replies.find((r) => r.id === "dock-wait")!.plan);
+    const ghost: GhostPlan = ghostOf(validatePlan(placed, demo));
+    const run = createRun(placed.level);
+    const lensed = [...drawn(run, ghost, placed, true), ...fixedLensMarks(placed, run.board.cameras).map((quad, i) => ({ name: `lens mark ${i}`, quad }))];
+    expect(collisions(lensed)).toEqual([]);
+    // No plan mark covers a camera's, lock's or entry's ring.
+    const rings = fixedLensRings(placed, run.board.cameras);
+    expect(rings).toHaveLength(6);
+    const plan = new Set(ghost.marks.map((m) => m.label));
+    const onRings = lensed.filter((l) => plan.has(l.name)).flatMap((l) => rings.filter((r) => quadsOverlap(l.quad, r)).map(() => l.name));
+    expect(onRings).toEqual([]);
+    // Each stays beside its own node, lens on and off.
+    for (const lens of [false, true]) {
+      const moving = movingLabels(fixedLabels(placed, run.board.cameras, lens), at(run), choicesOf(run), standingOf(run, at(run)), ghost);
+      ghost.marks.forEach((mark, i) => {
+        const p = at(run)(mark.nodeId);
+        const spot = moving.ghost[i];
+        const quad = textBox(p.x + spot.x, p.y + spot.y, mark.label.length, MARK_FONT, spot.anchor, 0);
+        expect(boxReach(quad, p), `${mark.label}, lens ${lens}`).toBeLessThanOrEqual(GHOST_REACH);
+      });
+    }
+  });
+
+  it("never lets a PICK badge's hit area reach a move badge's, at the server closet and the records door (#37 S1)", () => {
+    const rect = (p: { x: number; y: number }, r: { x: number; y: number; width: number; height: number }) =>
+      box(p.x + r.x, p.y + r.y, p.x + r.x + r.width, p.y + r.y + r.height);
+    const overlaps = (run: RunState) => {
+      const choices = choicesOf(run);
+      return choices
+        .filter((c) => c.kind === "pick")
+        .flatMap((pick) =>
+          choices
+            .filter((c) => c !== pick)
+            .filter((c) => quadsOverlap(rect(at(run)(pick.nodeId), PICK_HIT), rect(at(run)(c.nodeId), CHOICE_HIT)))
+            .map((c) => `PICK ${pick.nodeId} × ${c.key} ${c.nodeId}`),
+        );
+    };
+    // Every turn of the quiet route (the records door from dc-east), and the server closet's from dc-west.
+    let run = createRun(placed.level);
+    const seen = new Set<string>();
+    const steps = ["fl-lobby", "W", "dc-west", "dc-mid", "dc-east", "rr-door", "rr-door", "rr-door", "rr-files", " ", "rr-door", "dc-east", "W", "dc-mid", "dc-west", "fl-lobby"];
+    for (const step of steps) {
+      for (const c of choicesOf(run)) if (c.kind === "pick") seen.add(c.nodeId);
+      expect(overlaps(run), `turn ${run.turn}`).toEqual([]);
+      const action = step.length === 1 ? actionForKey(step, run) : choicesOf(run).find((c) => c.nodeId === step)?.action;
+      run = play(run, [action!]);
+    }
+    expect([...seen].sort()).toEqual(["rr-door", "sc-rack"]);
   });
 
   // Lays out and pair-checks every label on 17 frames, the wow beat and each
