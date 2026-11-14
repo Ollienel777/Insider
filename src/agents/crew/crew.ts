@@ -13,7 +13,7 @@ export interface CrewAnswer {
   plan: CrewPlan;
   /** True when a recorded reply answered, not a live model. */
   recorded: boolean;
-  reason?: "fake mode" | "timeout" | "error";
+  reason?: "fake mode" | "configuration" | "timeout" | "error";
   /** The recorded reply's id, when one answered. */
   recording?: string;
 }

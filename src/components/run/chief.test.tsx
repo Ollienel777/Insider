@@ -280,6 +280,18 @@ describe("the Chief's panel", () => {
       expect(out).not.toContain("no model was called");
     });
 
+    it("live, with a setting that refuses every live call: no model was called, and the recorded orders stand in", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      vi.stubEnv("HEIST_MODE", "live");
+      vi.stubEnv("LLM_MODE", "live");
+      vi.stubEnv("LLM_PROVIDER", "openai");
+      const { answer, out } = await ready();
+      expect(answer).toMatchObject({ source: "recorded", reason: "configuration" });
+      expect(note(out)).toBe("No model was called: a setting refuses live calls, so recorded orders stand in.");
+      expect(out).toContain('data-testid="chief-recorded-chip"');
+      expect(out).not.toContain("The model was called");
+    });
+
     it("a live call that timed out, or failed where no recording exists: says so for the rule-based orders too", () => {
       expect(chiefSourceNote({ source: "recorded", reason: "timeout" })).toBe(
         "The model was called but didn't answer in time, so recorded orders stand in.",
@@ -289,6 +301,9 @@ describe("the Chief's panel", () => {
       );
       expect(chiefSourceNote({ source: "template", reason: "error" })).toBe(
         "The model was called but the call failed, so rule-based orders stand in.",
+      );
+      expect(chiefSourceNote({ source: "recorded", reason: "configuration" })).toBe(
+        "No model was called: a setting refuses live calls, so recorded orders stand in.",
       );
       expect(chiefSourceNote({ source: "template", reason: "fake mode" })).toBe(
         "Rule-based orders: no recording for this moment, and no model was called.",

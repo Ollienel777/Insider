@@ -190,7 +190,7 @@ describe("structuredCall", () => {
     warn.mockRestore();
   });
 
-  it("answers with the recording when a setting refuses every live call", async () => {
+  it("answers with the recording, reason configuration, when a setting refuses every live call", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     for (const [name, value] of [
       ["LLM_PROVIDER", "openai"],
@@ -202,7 +202,7 @@ describe("structuredCall", () => {
       for (const [k, v] of Object.entries({ ...LIVE, LLM_MODE: "live" })) vi.stubEnv(k, v);
       vi.stubEnv(name, value);
       const answer = await structuredCall(Answer, PROMPT, { fake: FAKE });
-      expect(answer, `${name}=${value}`).toEqual({ value: FAKE, recorded: true, reason: "error" });
+      expect(answer, `${name}=${value}`).toEqual({ value: FAKE, recorded: true, reason: "configuration" });
     }
     warn.mockRestore();
   });

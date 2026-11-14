@@ -63,6 +63,8 @@ describe("fallbacks", () => {
 
   it("are added to a model answer only for a timeout or an error", () => {
     expect(withLlmFallback({ reason: "fake mode" }).fallback).toBeUndefined();
+    // A setting that refuses live calls made no call; the chip already reads fixtures.
+    expect(withLlmFallback({ reason: "configuration" }).fallback).toBeUndefined();
     expect(withLlmFallback({ reason: undefined }).fallback).toBeUndefined();
     expect(withLlmFallback({ reason: "timeout" }).fallback?.message).toBe("The model didn't answer in time, so a recorded reply stands in.");
     expect(withLlmFallback({ reason: "error" }).fallback?.service).toBe("llm");
