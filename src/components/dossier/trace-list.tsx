@@ -116,6 +116,7 @@ function StepRow({ step }: { step: StepView }) {
   const running = step.status === "in_progress";
   const failed = step.status === "failed";
   const subagent = step.kind === "subagent";
+  const unknown = step.failure === "unknown";
   const toggle = {
     type: "button" as const,
     "aria-expanded": open,
@@ -138,11 +139,11 @@ function StepRow({ step }: { step: StepView }) {
         <span className="block min-w-0 flex-1">
           <span className="flex items-baseline justify-between gap-2">
             <span className="font-mono text-text-1">
-              <span className="text-text-2">task</span> <span data-testid="trace-subagent">{step.agent}</span>
+              <span className="text-text-2">task</span> <span data-testid="trace-subagent">{unknown ? "(unknown)" : step.agent}</span>
             </span>
             <span className="flex shrink-0 items-baseline gap-2">
               {failed ? (
-                <span className="font-mono text-xs text-danger">{step.failure === "returned" ? "task error" : "subagent failed"}</span>
+                <span className="font-mono text-xs text-danger">{failedTag(step.failure)}</span>
               ) : null}
               <Duration step={step} />
               <Chevron open={open} />
@@ -180,6 +181,13 @@ function StepRow({ step }: { step: StepView }) {
   );
 }
 
+/** What a failed task row says: an error result, an unknown subagent, or a failed run. */
+function failedTag(failure: StepView["failure"]): string {
+  if (failure === "returned") return "task error";
+  if (failure === "unknown") return "unknown subagent";
+  return "subagent failed";
+}
+
 function Chevron({ open }: { open: boolean }) {
   return (
     <ChevronDown
@@ -199,6 +207,7 @@ export function StepDetail({ id, step }: { id: string; step: StepView }) {
   const failed = step.status === "failed";
   let outputLabel = subagent ? "Answer" : "Output";
   if (failed && !subagent) outputLabel = "Tool error";
+  else if (failed && step.failure === "unknown") outputLabel = "No such subagent";
   else if (failed) outputLabel = step.failure === "returned" ? "Task returned an error" : "Subagent run failed";
   return (
     <div id={id} data-testid="trace-step-detail" className={cn("mt-2 flex flex-col gap-3 rounded-sm border border-border bg-surface-2 p-3", subagent && "ml-6")}>
