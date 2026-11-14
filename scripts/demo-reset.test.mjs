@@ -15,6 +15,8 @@ function repo() {
   git("init", "-q");
   git("config", "user.email", "test@example.invalid");
   git("config", "user.name", "test");
+  // Hermetic line endings: a global core.autocrlf=true would restore CRLF.
+  git("config", "core.autocrlf", "false");
   mkdirSync(path.join(root, "data", "levels"), { recursive: true });
   writeFileSync(path.join(root, "data", "levels", "F1.json"), '{"buildingId":"F1"}\n');
   writeFileSync(path.join(root, "data", "levels", "F1.trace.json"), '{"steps":[]}\n');
