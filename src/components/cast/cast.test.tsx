@@ -269,7 +269,11 @@ describe("what the page hands the browser", () => {
       expect(e).not.toHaveProperty("output");
     }
     expect(JSON.stringify(trace)).not.toContain('"filter":"city"');
-    expect(trace.events[0]).toEqual({ atMs: 82, kind: "tool", agent: "casting-director", label: "get_mission", status: "completed", durationMs: 2 });
+    const first: Record<string, unknown> = { ...romaine.trace.events[0] };
+    delete first.input;
+    delete first.output;
+    expect(trace.events[0]).toEqual(first);
+    expect(trace.events[0]).toMatchObject({ kind: "tool", agent: "casting-director", label: "get_mission", status: "completed" });
   });
 
   it("gives a thumbnail to each finalist with a fixture aerial only", () => {
@@ -279,7 +283,7 @@ describe("what the page hands the browser", () => {
 
   it("calls a non-scripted run a recorded run", () => {
     expect(castRunHeader({ recordedAt: "2026-11-14T04:28:16.140Z", model: "claude-sonnet-4-6" })).toBe(
-      "Recorded run · Nov 14, 2026, 04:28 UTC · claude-sonnet-4-6",
+      "Recorded replay · Nov 14, 2026, 04:28 UTC · model turns: claude-sonnet-4-6",
     );
   });
 });

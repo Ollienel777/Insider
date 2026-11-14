@@ -50,7 +50,7 @@ const isScripted = (model: string | undefined) => model?.startsWith("ScriptedCha
 /**
  * The trace's header line: "Scripted run · <timestamp> · <model>" for a
  * ScriptedChatModel run (hand-written turns replayed by a scripted model),
- * else the Dossier's "Recorded run · …".
+ * else the Dossier's "Recorded replay · …".
  */
 export function castRunHeader(trace: { recordedAt?: string; model?: string }): string {
   return isScripted(trace.model)
