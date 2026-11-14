@@ -1,0 +1,129 @@
+{
+  "id": "builder-900101-romaine-1974",
+  "agents": [
+    {
+      "agent": "level-builder",
+      "systemIncludes": "You are the Level Builder for Heist Anywhere.",
+      "turns": [
+        {
+          "content": "Planning the level for 900101.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  { "content": "Read 900101's CoStar record and Vexcel aerial, and derive its security", "status": "in_progress" },
+                  { "content": "Write the briefing for mission romaine-1974", "status": "pending" },
+                  { "content": "Write the level manifest", "status": "pending" }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "The analyst reads the building first; the mission depends on what it finds.",
+          "toolCalls": [
+            {
+              "name": "task",
+              "args": {
+                "subagent_type": "data-analyst",
+                "description": "Read building 900101's CoStar record, available space and aerial entries, then derive its security profile with the rules table."
+              }
+            }
+          ]
+        },
+        {
+          "content": "Analog era, three guards, staged on floor 6. Handing that and the mission to the game master.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  { "content": "Read 900101's CoStar record and Vexcel aerial, and derive its security", "status": "completed" },
+                  { "content": "Write the briefing for mission romaine-1974", "status": "in_progress" },
+                  { "content": "Write the level manifest", "status": "pending" }
+                ]
+              }
+            },
+            {
+              "name": "task",
+              "args": {
+                "subagent_type": "game-master",
+                "description": "Building 900101, Testwood Exchange, LA, built 1968. Analog era: key locks, sweeping analog CCTV, 2 cameras. Class B: 3 guards. Staged on floor 6, quiet suites 610 and 640. No aerial, so the roof hatch and the street lobby are the ways in. Mission romaine-1974: write its briefing."
+              }
+            }
+          ]
+        },
+        {
+          "content": "Writing the manifest with The Romaine Street Papers.",
+          "toolCalls": [
+            {
+              "name": "write_manifest",
+              "args": {
+                "buildingId": "900101",
+                "missionId": "romaine-1974",
+                "briefing": "Testwood Exchange, a 1968 office block with the security of its day: key locks, analog cameras that sweep, three guards on their rounds. Suites 610 and 640 on floor 6 are empty, so that floor is dark and quiet tonight. Come down through the roof hatch, take the files from the records room, and leave by the roof or the street lobby. Nobody gets hurt and nothing leaves but paper. The security here is game fiction, drawn from the building's class and era.",
+                "objective": {
+                  "name": "Records room",
+                  "rule": "The files are here: take them, then reach an exit"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "content": "Manifest written.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  { "content": "Read 900101's CoStar record and Vexcel aerial, and derive its security", "status": "completed" },
+                  { "content": "Write the briefing for mission romaine-1974", "status": "completed" },
+                  { "content": "Write the level manifest", "status": "completed" }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "Level built for 900101: analog era, 3 guards, staged on floor 6, mission romaine-1974, in through the roof hatch."
+        }
+      ]
+    },
+    {
+      "agent": "data-analyst",
+      "systemIncludes": "You are the data analyst of the Level Builder.",
+      "turns": [
+        {
+          "content": "Reading the record, the vacancies and the aerial together.",
+          "toolCalls": [
+            { "name": "get_building", "args": { "buildingId": "900101" } },
+            { "name": "get_available_space", "args": { "buildingId": "900101" } },
+            { "name": "get_aerial_entries", "args": { "buildingId": "900101" } }
+          ]
+        },
+        {
+          "content": "Built 1968, Class B, 12 stories; floor 6 carries most of the vacancy. No aerial. Applying the rules table.",
+          "toolCalls": [{ "name": "derive_security_profile", "args": { "buildingId": "900101" } }]
+        },
+        {
+          "content": "Built 1968 (before 1980): Analog era, key locks pickable in 2 turns, analog CCTV that sweeps, 2 cameras. Class B: 3 guards. Floor 6 has the most available area, suites 610 and 640, so the level is staged there and those suites are quiet zones; the rest of the floor is crowded. With no aerial, the roof hatch and the street lobby are offered as the ways in and out."
+        }
+      ]
+    },
+    {
+      "agent": "game-master",
+      "systemIncludes": "You are the game master of the Level Builder.",
+      "turns": [
+        {
+          "content": "Reading the mission.",
+          "toolCalls": [{ "name": "get_mission", "args": { "missionId": "romaine-1974" } }]
+        },
+        {
+          "content": "Mission: romaine-1974, The Romaine Street Papers, staged in a 1968 analog building. Objective zone: Records room, take the files, then reach an exit. Briefing: Testwood Exchange, a 1968 office block with the security of its day: key locks, analog cameras that sweep, three guards on their rounds. Suites 610 and 640 on floor 6 are empty, so that floor is dark and quiet tonight. Come down through the roof hatch, take the files from the records room, and leave by the roof or the street lobby. Nobody gets hurt and nothing leaves but paper. The security here is game fiction, drawn from the building's class and era."
+        }
+      ]
+    }
+  ]
+}

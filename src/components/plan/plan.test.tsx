@@ -103,7 +103,7 @@ describe("the ghost path", () => {
 describe("PlanScreen", () => {
   it("renders the board skeleton, the order box and Start the run before the floor loads", () => {
     const html = renderToStaticMarkup(
-      <PlanScreen building={{ id: "F1", name: "Halvorsen Tower" }} manifest={manifest} heistMode="fake" />,
+      <PlanScreen building={{ id: "F1", name: "Halvorsen Tower" }} manifest={manifest} heistMode="fake" source="fixture" />,
     );
     expect(html).toContain('data-testid="board-skeleton"');
     expect(html).toContain('placeholder="Tell the crew how you want to play it"');
@@ -111,7 +111,7 @@ describe("PlanScreen", () => {
   });
 
   it("says a building with no level has no board", () => {
-    const html = renderToStaticMarkup(<PlanScreen building={{ id: "F2", name: "Figueroa Exchange" }} manifest={null} />);
+    const html = renderToStaticMarkup(<PlanScreen building={{ id: "F2", name: "Figueroa Exchange" }} manifest={null} source="fixture" />);
     expect(html).toContain("This building&#x27;s level isn&#x27;t ready yet.");
   });
 });

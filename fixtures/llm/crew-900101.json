@@ -1,0 +1,20 @@
+{
+  "buildingId": "900101",
+  "note": "Recorded crew reply for Testwood Exchange, the fictional test kit's building (src/adapters/costar/test-kit.ts), so the kit-path smoke can brief the crew in fake mode. Zone ids are those the rules derive for its level (roof and lobby entries, quiet suites 610 and 640, the objective); the level itself is built in memory from fixtures/llm/scripts/builder-900101-romaine-1974.json.",
+  "replies": [
+    {
+      "id": "default",
+      "when": [],
+      "plan": {
+        "steps": [
+          { "zoneId": "roof", "action": "Down through the roof hatch" },
+          { "zoneId": "quiet-610", "action": "Into vacant suite 610, and wait there in the dark" },
+          { "zoneId": "objective", "action": "Across to the records room, pick the lock, and take the files" },
+          { "zoneId": "roof", "action": "Back up and out the roof hatch" }
+        ],
+        "pushback": "The floor outside the suites is occupied. Keep to the dark suite and wait for the round to pass before you cross.",
+        "confidence": 0.6
+      }
+    }
+  ]
+}

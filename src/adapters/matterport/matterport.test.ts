@@ -3,7 +3,7 @@ import { FloorGraph } from "@/domain";
 import raw from "../../../fixtures/floors/F1.json";
 import { FIXTURE_BUILDINGS } from "../costar/fake";
 import { checkFloor } from "../../../scripts/check-floor.mjs";
-import { F1_DEMO, FIXTURE_FLOORS, createFakeMatterport } from "./fake";
+import { F1_DEMO, FIXTURE_FLOORS, STAND_IN_FLOOR, createFakeMatterport } from "./fake";
 import { insideViewFor, matterportEnv, modelOverride, scanModelId, selectMatterport, withFixtureFloor } from "./index";
 
 const f1 = FloorGraph.parse(raw);
@@ -193,6 +193,15 @@ describe("the fake adapter", () => {
     expect(await matterport.loadFloor({ id: "F1" })).toEqual(FIXTURE_FLOORS.F1);
     expect(await matterport.loadFloor({ id: "F9" })).toBeNull();
     expect(await matterport.loadFloor({ id: "toString" })).toBeNull();
+  });
+
+  it("gives a CoStar kit building (an integer id) the stand-in floor, a fixture, never a scan (#95)", async () => {
+    const floor = await matterport.loadFloor({ id: "900101", matterportModelId: "mpTestEEEE001" });
+    expect(floor).toEqual(FIXTURE_FLOORS[STAND_IN_FLOOR]);
+    expect(floor?.source).toBe("fixture");
+    // A fixture building with no floor of its own still has none (F4, F5: "Level in prep").
+    expect(await matterport.loadFloor({ id: "F4" })).toBeNull();
+    expect(await matterport.loadFloor({ id: "12a" })).toBeNull();
   });
 
   it("hands out copies, so a caller cannot change the fixture", async () => {
