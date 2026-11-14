@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
+import type { Building } from "@/domain";
 import type { RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
 import { objectiveLabel } from "@/lib/objective-noun";
+import { recordNote } from "@/lib/record-label";
 import { cameraMount, cones, coverage, guardOrders, roomName, sprintWay, type Choice, type Cone } from "./board";
 import { useHop } from "./hop";
 import { frameOf, hull, LABEL_FONT, matrixAttr, pointsAttr, project, projectRect, round, TILE_DEPTH, type Point } from "./iso";
@@ -73,6 +75,8 @@ interface BoardViewProps {
   initialWhy?: string | null;
   /** The Layer lens (#33): every element tinted by the layers its provenance records (the screen draws the legend). */
   lens?: boolean;
+  /** The building's source: a CoStar kit building's Why cards cite its real record (#95); a fixture's are unchanged. */
+  source?: Building["source"];
 }
 
 /** The props that mark an element the lens tints, for the legend's counts to be checked against. */
@@ -108,6 +112,7 @@ export function BoardView({
   testId = "run-board",
   initialWhy = null,
   lens = false,
+  source,
 }: BoardViewProps) {
   const { floor } = placed.level;
   const patternId = useId().replace(/:/g, "");
@@ -657,6 +662,7 @@ export function BoardView({
             key={target.key}
             target={target}
             subtitle={liveSubtitle(placed, run, target)}
+            note={recordNote(source, target.provenance)}
             onClose={close}
             style={
               placement && size

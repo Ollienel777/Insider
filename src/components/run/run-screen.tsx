@@ -4,7 +4,6 @@ import Link from "next/link";
 import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getMatterport, insideViewFor } from "@/adapters/matterport";
-import { BuildingScreen } from "@/components/shell/building-screen";
 import { buildingHref } from "@/lib/building-href";
 import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
@@ -14,6 +13,7 @@ import type { Building, FloorGraph, LateChief, LevelManifest } from "@/domain";
 import { act, applyChiefOrders, createRun, type Action, type RunState } from "@/engine";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { objectiveNoun } from "@/lib/objective-noun";
+import { floorLabel, placedFloor, RECORD_LABEL, recordLabel } from "@/lib/record-label";
 import { cn } from "@/lib/utils";
 import { AlarmBanner } from "./alarm-banner";
 import {
@@ -33,13 +33,20 @@ import {
 } from "./board";
 import { BoardView } from "./board-view";
 import { LensLegend, LensToggle, useLayerLens } from "./layer-lens";
+import { LiveControls } from "./live-controls";
+import { panelsOpen, RunLayout, useDetails } from "./live-layout";
+import { usePlayHud } from "./play-hud";
+import { usePlayMode } from "./play-mode";
+import { useTurnClock } from "./turn-clock";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
 import { loadCrewPlan, type StoredCrewPlan } from "./crew-plan-store";
 import { InsideViewPanel } from "./inside-view";
 import { clearRunLog, keepRunLogInMemory, runLogOf, saveRunLog } from "./run-log-store";
 import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postureOf, runRecordOf, type RunRecord } from "./run-history";
+import { MuteToggle, useRunSound } from "./run-sound";
 import { placeOrFixture } from "./scan-fallback";
+import { firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, ViewSwitch } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -50,25 +57,31 @@ export const RUN_SEED = 7;
 export { runLogKey } from "./run-log-store";
 
 /**
- * The level placed on `floor`, and whether the floor is a live scan. A board
- * from the scan names its sweeps, so before any run on it writes its log, the
- * log is kept out of storage (SPEC §4.5). Call this before `startRun`.
+ * The level placed on `floor`, whether the floor is a live scan, and whether
+ * the runs on it stay out of browser storage (`inMemory`). A board from the
+ * scan names its sweeps (SPEC §4.5), and a CoStar kit building's level is
+ * derived from its real record, which stays in memory (#93), on any floor
+ * (#95). So for either, before any run writes its log, the log is kept in
+ * memory, and no run joins the stored history. Call this before `startRun`.
  */
 export function boardOn(
   buildingId: string,
   manifest: LevelManifest,
   floor: FloorGraph,
-  posture?: Parameters<typeof placeLevel>[4],
-  missionId?: string | null,
-): { placed: PlacedLevel; live: boolean } {
+  posture: Parameters<typeof placeLevel>[4] | undefined,
+  missionId: string | null | undefined,
+  // Required: a caller that left it out would store a kit building's runs.
+  source: Building["source"],
+): { placed: PlacedLevel; live: boolean; inMemory: boolean } {
   const live = floor.source === "matterport";
-  keepRunLogInMemory(buildingId, live, undefined, missionId);
-  return { placed: placeLevel(manifest, floor, RUN_SEED, undefined, posture), live };
+  const inMemory = live || source === "costar";
+  keepRunLogInMemory(buildingId, inMemory, undefined, missionId);
+  return { placed: placeLevel(manifest, floor, RUN_SEED, undefined, posture), live, inMemory };
 }
 
 type Load =
   | { status: "loading" }
-  | { status: "ready"; placed: PlacedLevel; floor: FloorGraph; live: boolean; history: readonly RunRecord[] }
+  | { status: "ready"; placed: PlacedLevel; floor: FloorGraph; live: boolean; inMemory: boolean; history: readonly RunRecord[] }
   | { status: "no-floor" }
   | { status: "error"; message: string };
 
@@ -79,16 +92,22 @@ type Load =
  * browser (SPEC §4.5), the placer turns the cached manifest into a level on
  * it, and the engine plays it. Keys: 1–9 a neighbour, W wait, Space take,
  * S sprint (the numbers then mark nodes two open hops away; S or Esc walks).
+ * In Live (issue 99) a turn the player lets run out is played by the clock; P pauses it.
+ * Live also changes what shows (issue 100, live-layout.tsx): the objective line, the danger
+ * meter and the radio line around the board, and the rest closed until Details (D) opens it.
  */
 export function RunScreen({
   building,
   manifest,
   heistMode,
+  source,
 }: {
   building: RunBuilding;
   /** The cached manifest; null when the building has no level yet. */
   manifest: LevelManifest | null;
   heistMode?: string;
+  /** The building's source: a CoStar kit building is labelled with its real record and its floor, and its runs stay out of storage (#95). */
+  source: Building["source"];
 }) {
   const [loaded, setLoad] = useState<Load>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
@@ -96,10 +115,12 @@ export function RunScreen({
   const [storedRuns, setStoredRuns] = useState(0);
   const [run, setRun] = useState<RunState | null>(null);
   const [status, setStatus] = useState<string>("");
-  const [lens, toggleLens] = useLayerLens();
+  const [muted, toggleMute] = useRunSound(run);
   const missionId = useMissionId();
   /** Walking or sprinting (issue 121): `S` switches; any action, and Restart, go back to walking. */
   const [mode, setMode] = useState<Mode>("walk");
+  /** The board or first person (issue 115): first person hands its actions to `play`, like a key. */
+  const runView = useRunView();
 
   // The Security Chief: one call per alarm event, answered between turns.
   // Nothing waits on it: the engine already has the guards converging.
@@ -140,15 +161,16 @@ export function RunScreen({
   const placeAndStart = useCallback(
     (level: LevelManifest, floor: FloorGraph): PlacedLevel => {
       // Earlier runs here set the guards' starting posture (#35): the placer takes it as an input.
-      const history = loadRunHistory(building.id, undefined, missionId);
-      const { placed, live } = boardOn(building.id, level, floor, postureOf(history), missionId);
-      setLoad({ status: "ready", placed, floor, live, history });
+      // A kit building has none stored, and one stored before #95 is removed here.
+      const history = loadRunHistory(building.id, undefined, missionId, source === "costar");
+      const { placed, live, inMemory } = boardOn(building.id, level, floor, postureOf(history), missionId, source);
+      setLoad({ status: "ready", placed, floor, live, inMemory, history });
       setStoredRuns(history.length);
       watchEntry.current = placed.watch?.entryId;
       startRun(placed.level);
       return placed;
     },
-    [building.id, startRun, missionId],
+    [building.id, startRun, missionId, source],
   );
 
   useEffect(() => {
@@ -190,14 +212,16 @@ export function RunScreen({
   const zones = useMemo(() => (placed ? chiefZones(placed) : null), [placed]);
   // The Inside view: only on a floor that came from a live scan (never on fixtures, so the demo path is unchanged).
   const liveScan = load.status === "ready" && load.live;
+  // Runs that stay out of storage: on a live scan, and for a kit building on any floor (`boardOn`).
+  const inMemory = load.status === "ready" && load.inMemory;
   const openInside = useMemo(() => (liveScan ? insideViewFor(building, heistMode) : null), [liveScan, building, heistMode]);
 
   // The crew's plan from the Plan screen, read after mount (storage is the browser's).
   const [crewPlan, setCrewPlan] = useState<StoredCrewPlan | null>(null);
   useEffect(() => {
-    const timer = setTimeout(() => setCrewPlan(loadCrewPlan(building.id, undefined, missionId)), 0);
+    const timer = setTimeout(() => setCrewPlan(loadCrewPlan(building.id, undefined, missionId, source === "costar")), 0);
     return () => clearTimeout(timer);
-  }, [building.id, missionId]);
+  }, [building.id, missionId, source]);
 
   useEffect(() => {
     latestRun.current = run;
@@ -273,9 +297,10 @@ export function RunScreen({
       setStatus(describeTurn(placed, run, result.run));
       if (result.run.alarmEvents.length > run.alarmEvents.length) callChief(result.run, result.run.alarmEvents.length - 1);
       // A run that just ended joins the history; the next visit's guards start from it. Not on a
-      // live scan: a record names the scan's rooms, and SPEC §4.5 keeps scan data out of storage.
+      // live scan (a record names the scan's rooms, and SPEC §4.5 keeps scan data out of storage),
+      // nor for a kit building, whose level comes from its real record (#95): `inMemory`.
       try {
-        const record = run.status === "playing" && !liveScan ? runRecordOf(result.run) : null;
+        const record = run.status === "playing" && !inMemory ? runRecordOf(result.run) : null;
         if (record) {
           appendRunHistory(building.id, record, undefined, missionId);
           // The Forget button counts what is stored now, not what this run was placed from.
@@ -286,8 +311,20 @@ export function RunScreen({
       }
       saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current, watchEntry.current), undefined, missionId);
     },
-    [placed, run, callChief, building.id, missionId, liveScan],
+    [placed, run, callChief, building.id, missionId, inMemory],
   );
+
+  // Live mode (issue 99): the clock plays its turns through `play`, like a key. A clock turn is
+  // not the player's own action, so it leaves them sprinting if they were.
+  const [playMode, setPlayMode] = usePlayMode();
+  const clock = useTurnClock({
+    live: playMode === "live",
+    run,
+    play: (action) => {
+      play(action);
+      setMode(mode);
+    },
+  });
 
   const retryChief = useCallback(() => {
     const current = latestRun.current;
@@ -325,6 +362,22 @@ export function RunScreen({
 
   const revealed = useChiefStream(chief);
   const hidden = useMemo(() => hiddenRoutes(chief, revealed), [chief, revealed]);
+
+  // Live's layout (issue 100): the HUD around the board, and everything else behind Details.
+  const [details, toggleDetails] = useDetails(playMode === "live");
+  const open = panelsOpen(playMode, details);
+  // The lens is put away with the bar: its key does nothing until Details opens it again.
+  const [lens, toggleLens] = useLayerLens(open);
+  const hud = usePlayHud({
+    live: playMode === "live",
+    placed,
+    run,
+    mission: manifest?.mission ?? null,
+    crewPlan,
+    chief,
+    revealed,
+    status,
+  });
 
   useEffect(() => {
     if (!run) return;
@@ -370,20 +423,49 @@ export function RunScreen({
 
   const options = useMemo(() => (run ? choicesOf(run, mode) : []), [run, mode]);
   const over = run !== null && run.status !== "playing";
+  // A kit building's label, once the board is placed: it names the scan only when the board stands on it.
+  const placedOn = load.status === "ready" ? placedFloor(load.floor.source) : null;
+  const label = placedOn ? recordLabel(source, placedOn) : null;
+  const record =
+    label && placedOn ? (
+      <span
+        data-testid="record-label"
+        title={label}
+        className="flex min-w-0 rounded-sm border border-border px-1.5 py-0.5 label-caps text-text-2 md:shrink-0"
+      >
+        {/* On a narrow screen the record part gives way first: the floor is the part that matters. */}
+        <span className="truncate">{RECORD_LABEL}</span>
+        <span className="shrink-0 whitespace-pre">{` · ${floorLabel(placedOn)}`}</span>
+      </span>
+    ) : null;
+  /** The board is still being set up. A board that will not come (no floor, an error) is not loading. */
+  const settingUp = load.status === "loading" || (load.status === "ready" && !run);
 
   return (
-    <BuildingScreen
-      visualLabel="Run board"
-      visual={
-        <div className="absolute inset-0 flex flex-col">
+    <RunLayout
+      mode={playMode}
+      details={details}
+      onDetails={toggleDetails}
+      hud={hud}
+      loading={settingUp}
+      onTake={() => play({ kind: "take" })}
+      onRestart={restart}
+      canRestart={run !== null && run.turn > 0}
+      record={record}
+      bar={
           <div className="flex h-14 shrink-0 items-center gap-3 px-6">
             <span className="flex items-center gap-2 label-caps text-text-2">
               <LayerDot layer="matterport" decorative />
               Matterport
-              <span className="max-md:hidden">
-                {load.status === "ready" && load.live ? " · floor plan from the scan" : " · floor plan from fixtures"}
-              </span>
+              {/* A kit building's label (below) names its floor, so the line doesn't say it twice. */}
+              {source === "costar" ? null : (
+                <span className="max-md:hidden">
+                  {load.status === "ready" && load.live ? " · floor plan from the scan" : " · floor plan from fixtures"}
+                </span>
+              )}
             </span>
+            {/* Closed with the bar in Live, where the HUD carries it instead: one label on the page. */}
+            {open ? record : null}
             <span aria-hidden className="h-4 w-px bg-border" />
             <span className="truncate text-sm text-text-1">{manifest?.mission.title}</span>
             <div className="ml-auto flex items-center gap-2">
@@ -405,8 +487,10 @@ export function RunScreen({
               </Button>
             </div>
           </div>
-
+      }
+      board={
           <div className="relative min-h-0 flex-1">
+            {run && placed ? <ViewSwitch state={runView} floor={placed.level.floor} /> : null}
             {load.status === "loading" ? (
               <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
             ) : load.status === "no-floor" ? (
@@ -438,6 +522,17 @@ export function RunScreen({
                   </Button>
                 }
               />
+            ) : run && placed && manifest && firstPersonOn(runView, placed.level.floor) ? (
+              <FirstPersonView
+                placed={placed}
+                run={run}
+                objective={manifest.mission.objective}
+                onAct={play}
+                onUnavailable={() => {
+                  runView.fail();
+                  setStatus(FP_UNAVAILABLE);
+                }}
+              />
             ) : run && placed ? (
               <BoardView
                 placed={placed}
@@ -445,18 +540,23 @@ export function RunScreen({
                 choices={options}
                 onChoose={(c: Choice) => play(c.action)}
                 hiddenRoutes={hidden}
-                lens={lens}
+                lens={lens && open}
+                source={source}
               />
             ) : null}
+            {/* Only over a board with a run on it: not over the loading or error state. Below md the
+                Live mode switch takes the top-right corner, so the mute button sits under it there. */}
+            {run ? <MuteToggle muted={muted} onToggle={toggleMute} className="absolute top-2 right-8 max-md:top-16 max-md:right-6" /> : null}
+            {run ? <LiveControls mode={playMode} onChange={setPlayMode} clock={clock} /> : null}
           </div>
-
-          {lens && run && placed ? <LensLegend placed={placed} locked={run.locked} /> : null}
-
+      }
+      legend={lens && run && placed ? <LensLegend placed={placed} locked={run.locked} /> : null}
+      footer={
           <div className="flex h-16 shrink-0 items-center justify-between gap-6 px-6">
             <p data-testid="run-status" aria-live="polite" className="min-w-0 text-sm text-text-1 md:truncate">
               {status}
             </p>
-            <div className="flex shrink-0 items-center gap-4 text-sm text-text-2 max-md:hidden">
+            <div className={cn("flex shrink-0 items-center gap-4 text-sm text-text-2 max-md:hidden", placed && firstPersonOn(runView, placed.level.floor) ? "hidden" : null)}>
               <span className="flex items-center gap-2">
                 <Kbd>1–9</Kbd> {mode === "sprint" ? "sprint" : "move"}
               </span>
@@ -475,7 +575,6 @@ export function RunScreen({
               </span>
             </div>
           </div>
-        </div>
       }
       panel={
         <RunPanel
@@ -483,7 +582,7 @@ export function RunScreen({
           placed={placed}
           run={run}
           crewPlan={crewPlan}
-          loading={load.status === "loading" || (load.status === "ready" && !run)}
+          loading={settingUp}
           awaiting={hidden}
           inside={openInside && run ? <InsideViewPanel open={openInside} sweepId={run.playerNode} /> : null}
           chief={<ChiefPanel state={chief} revealed={revealed} zoneName={(id) => (placed ? zoneName(placed, id) : id)} onRetry={retryChief} />}

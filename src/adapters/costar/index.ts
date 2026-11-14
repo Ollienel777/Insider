@@ -15,7 +15,9 @@ import { missingForLive, serviceModes, type ServiceMode } from "@/lib/mode";
 import { resetServerSlot, serverSlot } from "@/lib/server-breakers";
 import type { Building, PropertyType } from "@/domain";
 import { createFakeCoStar } from "./fake";
+import { loadKitIndex } from "./kit";
 import { createLiveCoStar } from "./live";
+import { smokeFictionalKit } from "./test-kit";
 import type { CoStarAdapter } from "./types";
 
 export type { CoStarAdapter } from "./types";
@@ -39,6 +41,9 @@ export interface CoStarSelection {
 export function selectCoStar(env: Env): CoStarSelection {
   const requested = serviceModes(env).costar;
   if (requested === "fake") {
+    if (env.HEIST_TEST_KIT === "1") {
+      return { adapter: withTestKit(createFakeCoStar()), mode: "fake", reason: "CoStar: fixtures (fake mode), and the fictional test kit by id" };
+    }
     return { adapter: createFakeCoStar(), mode: "fake", reason: "CoStar: fixtures (fake mode)" };
   }
   const missing = missingForLive("costar", env);
@@ -87,6 +92,23 @@ export function onlyShowcase(live: CoStarAdapter, ids: Set<string> | null): CoSt
     getBuilding: async (id) => (ids.has(id) ? live.getBuilding(id) : null),
     getAvailableSpace: async (id) => (ids.has(id) ? live.getAvailableSpace(id) : null),
     searchInventory: (filters) => live.searchInventory(filters),
+  };
+}
+
+/**
+ * `fixtures`, plus the fictional test kit's building by id only (#95): the
+ * recorded kit path in the smoke (`HEIST_TEST_KIT=1`, set by
+ * playwright.config.ts alone) plays a kit building with no real kit and no
+ * keys. The kit is read through the real kit mapping, from records invented
+ * in test-kit.ts, written to a temporary directory on first use. The map,
+ * the search and every fixture answer exactly as without it.
+ */
+function withTestKit(fixtures: CoStarAdapter): CoStarAdapter {
+  const kit = createLiveCoStar({ kitDir: "(fictional test kit)", load: () => loadKitIndex(smokeFictionalKit()) });
+  return {
+    ...fixtures,
+    getBuilding: async (id) => (await fixtures.getBuilding(id)) ?? kit.getBuilding(id),
+    getAvailableSpace: async (id) => (await fixtures.getAvailableSpace(id)) ?? kit.getAvailableSpace(id),
   };
 }
 

@@ -53,9 +53,23 @@ export function runRecordOf(run: RunState): RunRecord | null {
   };
 }
 
-export function loadRunHistory(buildingId: string, storage?: Pick<Storage, "getItem">, missionId?: string | null): RunRecord[] {
+/**
+ * The building's stored runs. `inMemory` (a CoStar kit building, whose runs are never stored, #95)
+ * reads none and removes any stored before that rule.
+ */
+export function loadRunHistory(
+  buildingId: string,
+  storage?: Pick<Storage, "getItem"> & Partial<Pick<Storage, "removeItem">>,
+  missionId?: string | null,
+  inMemory = false,
+): RunRecord[] {
   try {
-    const raw = (storage ?? browserStorage())?.getItem(runHistoryKey(buildingId, missionId));
+    const store = storage ?? browserStorage();
+    if (inMemory) {
+      store?.removeItem?.(runHistoryKey(buildingId, missionId));
+      return [];
+    }
+    const raw = store?.getItem(runHistoryKey(buildingId, missionId));
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];

@@ -27,11 +27,13 @@ export const WhyCard = forwardRef<
     target: WhyTarget;
     /** The subtitle as the run stands now (`liveSubtitle`); the placed one when left out. */
     subtitle?: string;
+    /** For a CoStar kit building: the line naming the real record fields the rows cite (`recordNote`, #95). */
+    note?: string | null;
     style?: React.CSSProperties;
     className?: string;
     onClose: () => void;
   }
->(function WhyCard({ target, subtitle = target.subtitle, style, className, onClose }, ref) {
+>(function WhyCard({ target, subtitle = target.subtitle, note = null, style, className, onClose }, ref) {
   const titleId = useId();
   const rows = whyRows(target);
   return (
@@ -71,6 +73,11 @@ export const WhyCard = forwardRef<
         <p data-testid="why-placement" className="shrink-0 border-t border-border px-4 py-3 text-sm text-text-2">
           <span className="label-caps mr-2 text-text-3">Placer</span>
           {target.placement}.
+        </p>
+      ) : null}
+      {note ? (
+        <p data-testid="why-record" className="shrink-0 border-t border-border px-4 py-3 text-sm text-text-2">
+          {note}
         </p>
       ) : null}
     </div>

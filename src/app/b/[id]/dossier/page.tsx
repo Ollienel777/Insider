@@ -9,6 +9,7 @@ import { dossierFacts } from "@/components/dossier/facts";
 import { MODEL_FIXTURES_NOTE, MODEL_FORCED_NOTE } from "@/components/shell/steps";
 import { findBuilding } from "@/lib/building";
 import { configuredModes } from "@/lib/mode";
+import { dossierLabel } from "@/lib/record-label";
 import { forcedServices } from "@/lib/forced-server";
 import { castFinalist } from "@/lib/cast-because";
 import { optionalMissionParam, type SearchParams } from "@/lib/mission-param";
@@ -34,6 +35,7 @@ export default async function DossierPage({
   const onDemand = buildsOnDemand(building);
   // The build route refuses while the model is on fixtures, configured or forced in the demo settings.
   const modelForced = onDemand && (await forcedServices()).has("llm");
+  // Deliberately not the route's test-kit exception (HEIST_TEST_KIT=1): the smoke builds the test building by POSTing to the route directly, so no player is offered a build the model can't run.
   const modelLive = configuredModes(process.env).llm === "live" && !modelForced;
   const missions = onDemand ? missionsFor(building.city).map(({ id, title }) => ({ id, title })) : undefined;
   const state = onDemand && missionId ? buildState(building.id, missionId) : null;
@@ -85,6 +87,8 @@ export default async function DossierPage({
       rows={dataToLevelRows(level.manifest, cast)}
       mission={level.manifest.mission}
       trace={level.trace}
+      // A kit building's real record (#95); only the Run, which places the level, names its floor.
+      recordLabel={dossierLabel(building.source)}
     />
   );
 }

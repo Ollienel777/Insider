@@ -466,3 +466,31 @@ test("Restart in sprint mode puts the board back to walking (#160)", async ({ pa
   await expect(page.getByTestId("choice").first()).toHaveAttribute("data-kind", "move");
   await expect(page.getByTestId("choice").first()).toHaveAttribute("data-node", "fl-lobby");
 });
+
+test("a click on the mute or lens button leaves Space to the board, not the button (#101 review)", async ({ page }) => {
+  await open(page);
+  const mute = page.getByTestId("mute-toggle");
+  await mute.click();
+  await expect(mute).toHaveAttribute("aria-pressed", "true");
+  // Space on a focused button presses it; on Run, Space is the board's (take the files).
+  expect(await mute.evaluate((el) => el === document.activeElement)).toBe(false);
+  await page.keyboard.press(" ");
+  await expect(mute).toHaveAttribute("aria-pressed", "true");
+  const lens = page.getByTestId("lens-toggle");
+  await lens.click();
+  expect(await lens.evaluate((el) => el === document.activeElement)).toBe(false);
+  await mute.click();
+  await expect(mute).toHaveAttribute("aria-pressed", "false");
+});
+
+test("the mute button and the play mode switch never cover each other, at 1440 and at phone width (#101 review)", async ({ page }) => {
+  for (const size of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(size);
+    await page.goto("/b/F1/run");
+    await expect(board(page)).toBeVisible();
+    const mute = (await page.getByTestId("mute-toggle").boundingBox())!;
+    const mode = (await page.getByTestId("play-mode").boundingBox())!;
+    const apart = mute.x + mute.width <= mode.x || mode.x + mode.width <= mute.x || mute.y + mute.height <= mode.y || mode.y + mode.height <= mute.y;
+    expect(apart, `${size.width}px: mute ${JSON.stringify(mute)} vs mode ${JSON.stringify(mode)}`).toBe(true);
+  }
+});
