@@ -6,7 +6,9 @@ import type { OwnerDoorLock, OwnerSetup } from "@/domain/owner-setup";
 import type { OwnerSetupError } from "@/level/owner-setup";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { MeasureLines } from "./measure-lines";
 import type { Selection } from "./owner-board";
+import type { SetupMeasure } from "./setup-measure";
 import {
   CAMERA_KINDS,
   clearCleanerRound,
@@ -79,6 +81,7 @@ export function SetupPanel({
   onDelete,
   onReset,
   extra,
+  measure = null,
 }: {
   floor: FloorGraph;
   draft: Draft;
@@ -97,6 +100,8 @@ export function SetupPanel({
   onReset: () => void;
   /** Shown after the saved setups: the prepared demo setups and the compare picker. */
   extra?: ReactNode;
+  /** The setup's coverage and unwatched routes as it stands (issue 120): they follow every edit, no batch needed. */
+  measure?: SetupMeasure | null;
 }) {
   const { setup } = draft;
   const [pick, setPick] = useState<string>("");
@@ -131,6 +136,7 @@ export function SetupPanel({
           {count(setup.guards.length, "guard")} · {count(setup.cleaners?.length ?? 0, "cleaner")} · {count(setup.cameras.length, "camera")} · {count(locked, "locked door")} ·{" "}
           {count(setup.desks.length, "desk")}
         </p>
+        {measure ? <MeasureLines measure={measure} testId="owner-setup-measure" /> : null}
         <p data-testid="owner-setup-note" className="text-sm text-text-2">
           {draft.state === "untouched"
             ? "This is the building's generated security in your terms. Change it to match what you really have."

@@ -10,7 +10,15 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
+import { MeasureChange, MeasureChips, MeasureLines } from "./measure-lines";
 import { describeFix } from "./owner-edit";
+import type { SetupMeasure } from "./setup-measure";
+
+/** Coverage and unwatched routes for the batch's setup, and for the setup after the Chief's fix once there is one. */
+export interface BatchMeasures {
+  before: SetupMeasure;
+  after: SetupMeasure | null;
+}
 import type { OwnerBatch, OwnerFix } from "./use-owner-batch";
 
 export type Side = "before" | "after";
@@ -86,6 +94,7 @@ export function BatchPanel({
   fixedSaved,
   side = "after",
   board,
+  measures = null,
   onEdit,
   onRetry,
   onOpenFixed,
@@ -103,6 +112,8 @@ export function BatchPanel({
   side?: Side;
   /** The level the board draws (the after level on the After side); `generated` by default. */
   board?: PlacedLevel;
+  /** What the floor plan says about the setup (issue 120), beside the count. */
+  measures?: BatchMeasures | null;
   onEdit: () => void;
   onRetry: () => void;
   onOpenFixed: () => void;
@@ -183,6 +194,7 @@ export function BatchPanel({
         </p>
         <Count summary={summary} testId="owner-count" big />
         <Strip summary={summary} testId="owner-strip" />
+        {measures ? <MeasureLines measure={measures.before} testId="owner-measure" /> : null}
       </section>
 
       <section aria-labelledby="owner-strategies-label" className="flex flex-col gap-2">
@@ -247,6 +259,7 @@ export function BatchPanel({
         fix={fix}
         zoneName={zoneName}
         fixedSaved={fixedSaved}
+        measures={measures}
         onOpenFixed={onOpenFixed}
       />
 
@@ -350,11 +363,13 @@ function ChiefSection({
   fix,
   zoneName,
   fixedSaved,
+  measures,
   onOpenFixed,
 }: {
   fix: OwnerFix;
   zoneName: (id: string) => string;
   fixedSaved: { ok: boolean; setup: OwnerSetup } | null;
+  measures: BatchMeasures | null;
   onOpenFixed: () => void;
 }) {
   const answer = fix.status === "suggested" || fix.status === "applied" ? fix.answer : null;
@@ -405,7 +420,7 @@ function ChiefSection({
         </>
       ) : null}
       {fix.status === "applied" ? (
-        <BeforeAfter fix={fix} zoneName={zoneName} fixedSaved={fixedSaved} onOpenFixed={onOpenFixed} />
+        <BeforeAfter fix={fix} zoneName={zoneName} fixedSaved={fixedSaved} measures={measures} onOpenFixed={onOpenFixed} />
       ) : null}
     </section>
   );
@@ -415,15 +430,19 @@ function BeforeAfter({
   fix,
   zoneName,
   fixedSaved,
+  measures,
   onOpenFixed,
 }: {
   fix: Extract<OwnerFix, { status: "applied" }>;
   zoneName: (id: string) => string;
   fixedSaved: { ok: boolean; setup: OwnerSetup } | null;
+  measures: BatchMeasures | null;
   onOpenFixed: () => void;
 }) {
   const { before, after, dropped } = fix.rerun;
   const delta = before.escaped - after.escaped;
+  // A dropped change ran the setup unchanged, so the after side measures the same as the before.
+  const measureOf = (id: Side) => (!measures ? null : id === "before" || dropped ? measures.before : measures.after);
   return (
     <div data-testid="owner-compare" className="flex flex-col gap-3 rounded-md border border-border bg-surface-2 p-4">
       <div className="grid grid-cols-2 gap-4">
@@ -445,6 +464,7 @@ function BeforeAfter({
               <span className="text-text-2"> / {summary.total}</span>
             </p>
             <Strip summary={summary} testId={`owner-${id}-strip`} small />
+            {measureOf(id) ? <MeasureChips measure={measureOf(id)!} testId={`owner-${id}-measure`} /> : null}
           </div>
         ))}
       </div>
@@ -460,6 +480,7 @@ function BeforeAfter({
             <span className="font-mono tabular-nums">{delta > 0 ? `${delta} fewer got out` : delta < 0 ? `${-delta} more got out` : "no change"}</span>.
           </p>
         )}
+        {measures?.after && !dropped ? <MeasureChange from={measures.before} to={measures.after} testId="owner-measure-change" /> : null}
       </div>
       {fixedSaved ? (
         fixedSaved.ok ? (

@@ -8,6 +8,8 @@ import type { PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
 import { detectorName, leftOut, routeRooms, Strip } from "./batch-panel";
 import type { DemoSetup } from "./demo-setups";
+import { MeasureChange, MeasureChips } from "./measure-lines";
+import type { SetupMeasure } from "./setup-measure";
 import { setupChanges } from "./owner-edit";
 import type { OwnerPair } from "./use-owner-compare";
 
@@ -154,11 +156,14 @@ export function ComparePanel({
   boards,
   madeUp,
   side,
+  measures = null,
   onSide,
   onRetry,
   onBack,
 }: {
   pair: OwnerPair;
+  /** Each side's coverage and unwatched routes, from the floor plan (issue 120). */
+  measures?: [SetupMeasure, SetupMeasure] | null;
   floor: FloorGraph;
   /** Each side's setup on the board, for room names along its route. */
   boards: [PlacedLevel, PlacedLevel] | null;
@@ -257,6 +262,7 @@ export function ComparePanel({
                   <span className="text-text-2"> / {s.summary.total}</span>
                 </span>
                 <Strip summary={s.summary} testId={`owner-pair-${id}-strip`} small />
+                {measures ? <MeasureChips measure={measures[i]} testId={`owner-pair-${id}-measure`} /> : null}
                 <Button
                   variant={selected ? "secondary" : "ghost"}
                   data-testid={`owner-pair-show-${id}`}
@@ -300,6 +306,7 @@ export function ComparePanel({
         <p data-testid="owner-pair-delta" data-delta={delta} className="text-sm text-text-1">
           <span className="font-mono tabular-nums">{deltaLine(a.summary, b.summary)}</span>
         </p>
+        {measures ? <MeasureChange from={measures[0]} to={measures[1]} testId="owner-pair-measure-change" /> : null}
       </section>
 
       <section aria-labelledby="owner-pair-route-label" className="flex flex-col gap-2">

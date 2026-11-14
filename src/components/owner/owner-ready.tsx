@@ -9,7 +9,8 @@ import { BuildingScreen } from "@/components/shell/building-screen";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
-import { BatchPanel, type Side } from "./batch-panel";
+import { BatchPanel, type BatchMeasures, type Side } from "./batch-panel";
+import { measureSetup, type SetupMeasure } from "./setup-measure";
 import { compareOptions, ComparePanel, ComparePicker, defaultPick, DemoList, type PairId } from "./compare-panel";
 import { demoSetups, isDemoSetup } from "./demo-setups";
 import { ownerZones } from "./owner-batch";
@@ -148,6 +149,18 @@ export function OwnerReady({
     if (fix.status !== "applied" || side === "before" || fix.rerun.dropped || !fix.rerun.fixed) return batchBefore;
     return boardOf(manifest, floor, fix.rerun.fixed, OWNER_SEED) ?? batchBefore;
   }, [batchBefore, fix, side, manifest, floor]);
+
+  // Coverage and unwatched routes (issue 120): measured on each setup's board, so they follow every edit with no batch.
+  const editMeasure = useMemo(() => measureSetup(editBoard), [editBoard]);
+  const batchMeasures = useMemo<BatchMeasures | null>(() => {
+    if (!batchBefore) return null;
+    const fixed = fix.status === "applied" && !fix.rerun.dropped && fix.rerun.fixed ? boardOf(manifest, floor, fix.rerun.fixed, OWNER_SEED) : null;
+    return { before: measureSetup(batchBefore), after: fixed ? measureSetup(fixed) : null };
+  }, [batchBefore, fix, manifest, floor]);
+  const pairMeasures = useMemo<[SetupMeasure, SetupMeasure] | null>(
+    () => (pairBoards ? [measureSetup(pairBoards[0]), measureSetup(pairBoards[1])] : null),
+    [pairBoards],
+  );
 
   // An edit that changed nothing (the same object back) leaves the draft as it was.
   const edit = (next: OwnerSetup) => {
@@ -405,6 +418,7 @@ export function OwnerReady({
               onLoad={load}
               onDelete={remove}
               onReset={reset}
+              measure={editMeasure}
               extra={
                 <>
                   <DemoList demos={demos} onLoad={loadDemo} />
@@ -425,6 +439,7 @@ export function OwnerReady({
               boards={pairBoards}
               madeUp={pair.status === "done" ? [isDemoSetup(pair.sides[0].setup), isDemoSetup(pair.sides[1].setup)] : [false, false]}
               side={pairSide}
+              measures={pairMeasures}
               onSide={setPairSide}
               onRetry={runCompare}
               onBack={() => setView("setup")}
@@ -440,6 +455,7 @@ export function OwnerReady({
               fixedSaved={fixedSaved}
               side={side}
               board={batchBoard ?? undefined}
+              measures={batchMeasures}
               onEdit={() => setView("setup")}
               onRetry={runBatch}
               onOpenFixed={openFixed}
