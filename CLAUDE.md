@@ -37,26 +37,53 @@ session, so it covers only what is easy to get wrong.
 
 ## Working alongside the build loop
 
-The loop and you post as the same GitHub account, so it relies on conventions to
-tell its work from yours.
+The loop runs on Nelson's VM and posts as his account, Ollienel777, so it
+relies on conventions to tell its work from his. It reads no other account's
+comments.
 
-- **It touches only PRs labelled `loop`.** Your own PRs are left alone unless
-  you add that label.
-- **`hold` is your veto.** On a PR or an issue, it stops the loop acting on it
-  until you remove the label.
+- **It touches only PRs labelled `loop`.** Other PRs are left alone until
+  someone adds that label.
+- **`hold` is the veto.** On a PR or an issue, from any account, it stops the
+  loop acting on it until the label comes off.
 - **Its comments start with a machine prefix**: `cold:`, `semi-cold:`, `fix:`,
   `checks:`, `settled:`, `unsettled:`, `reopened:`, `claimed:`, `released:` or
-  `loop:`. **A comment without one is read as yours, and acted on.** Never start
-  a comment of your own with one of those prefixes.
-- **To answer a decision**, comment, then remove `needs-decision` from the
-  issue, or `unsettled` from the PR.
-- **Changes to the harness wait for your merge**: `.claude/`, this file,
+  `loop:`. **A comment from Ollienel777 without one is read as Nelson's, and
+  acted on.** Never start a comment with one of those prefixes. From any other
+  account a comment is not read at all: steer the loop with labels, or through
+  Nelson.
+- **To answer a decision**, Nelson comments, then removes `needs-decision` from
+  the issue, or `unsettled` from the PR.
+- **Changes to the harness wait for Nelson's merge**: `.claude/`, this file,
   `.github/`, and the profile's `harness paths`. The loop cannot relax its own
   rules — and its rules are not in this repo at all.
 - **Merge with `--match-head-commit`, as the loop does.** A squash-merge from
   the UI takes the head as it stands; a commit still being pushed lands on the
   branch afterwards, off `main`, and nothing flags it.
   `gh pr merge NUM --squash --match-head-commit FULL_SHA` refuses instead.
+
+## Taking a ticket
+
+Several people's sessions work this repo beside the loop, and the issue tracker
+is all they share. A ticket nobody has visibly claimed is open to everyone, the
+loop included. The loop starts only tickets labelled `loop-ok` that carry none
+of `in-progress`, `hold` or `needs-decision`, and that no open PR closes.
+
+- **Claim before writing code**: assign yourself and add `in-progress`, then
+  read the ticket again. Labels are not a lock, so two claims seconds apart
+  both succeed. If another claim or a PR closing the ticket appears, the
+  earlier one keeps it.
+- **Open a draft PR with `Closes #NUM` early.** An open PR keeps the loop off
+  the ticket even after your session ends.
+- **Release what you drop**: remove `in-progress`, unassign yourself, and say
+  why on the ticket. Nothing else clears a person's claim, so an abandoned one
+  blocks the ticket until someone notices. Never remove a claim you did not
+  make; the loop's carry a `claimed:` comment.
+- **Hand a finished PR to the loop by adding `loop`.** It reviews, fixes and
+  merges it, one PR at a time over a green `main`. From then on it pushes to
+  your branch: add `hold` before pushing to it yourself, and remove it after.
+- **Tickets without `loop-ok` are left to people.** Each waits on a key or an
+  answer, which the status issue (#1) names. Answering one and adding
+  `loop-ok` hands it to the loop instead.
 
 ## Things that bite
 
