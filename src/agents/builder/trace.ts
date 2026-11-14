@@ -10,7 +10,11 @@
 //
 // A tool that throws is answered with an error ToolMessage instead of ending
 // the run, so a live model sees what went wrong and can call again.
-import { ToolMessage } from "@langchain/core/messages";
+//
+// The same middleware also keeps every model turn (`turns`): what each agent
+// was asked and what it answered. `npm run record:builds` saves them as a
+// ScriptedChatModel script (record.ts).
+import { type BaseMessage, type MessageContent, ToolMessage } from "@langchain/core/messages";
 import { createMiddleware } from "langchain";
 import type { BuilderAgent, BuildTrace, BuildTraceEvent } from "@/domain";
 
@@ -26,8 +30,18 @@ export interface TraceRecorderOptions {
   now?: () => number;
 }
 
+/** One model call, in the order the calls returned. */
+export interface RecordedTurn {
+  agent: BuilderAgent;
+  /** The task message the agent was answering: the user's request, or the subagent's task. */
+  task: string;
+  content: string;
+  toolCalls: { name: string; args: Record<string, unknown> }[];
+}
+
 export class TraceRecorder {
   readonly events: BuildTraceEvent[] = [];
+  readonly turns: RecordedTurn[] = [];
   private readonly now: () => number;
   private readonly startedAt: number;
 
@@ -66,6 +80,16 @@ export class TraceRecorder {
   middleware(agent: BuilderAgent) {
     return createMiddleware({
       name: "BuildTraceMiddleware",
+      wrapModelCall: async (request, handler) => {
+        const response = await handler(request);
+        this.turns.push({
+          agent,
+          task: lastTask(request.messages),
+          content: text(response.content),
+          toolCalls: (response.tool_calls ?? []).map(({ name, args }) => ({ name, args: { ...args } })),
+        });
+        return response;
+      },
       wrapToolCall: async (request, handler) => {
         const { name, args, id } = request.toolCall;
         if (name === "write_todos") {
@@ -97,6 +121,20 @@ export class TraceRecorder {
       .map(({ event }) => ({ ...event }));
     return { buildingId, ...extra, events };
   }
+}
+
+/** The text blocks of a message, joined. */
+function text(content: MessageContent): string {
+  if (typeof content === "string") return content;
+  return content
+    .map((block) => (block.type === "text" && typeof block.text === "string" ? block.text : ""))
+    .join("\n");
+}
+
+/** The last human message: what the agent is working on. */
+function lastTask(messages: BaseMessage[]): string {
+  const human = messages.filter((m) => m.getType() === "human").at(-1);
+  return human ? text(human.content) : "";
 }
 
 function subagentName(args: Record<string, unknown>): BuilderAgent {

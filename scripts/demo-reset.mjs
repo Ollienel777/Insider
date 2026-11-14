@@ -17,7 +17,7 @@
 //
 // No restart is needed. Node built-ins and git only.
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -73,6 +73,9 @@ function main() {
   return 0;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Both sides are realpath'd, as in gate.mjs, so a drive-letter case or symlink
+// difference still runs main() instead of silently exiting 0.
+const real = (p) => realpathSync.native(p);
+if (process.argv[1] && real(process.argv[1]) === real(fileURLToPath(import.meta.url))) {
   process.exitCode = main();
 }

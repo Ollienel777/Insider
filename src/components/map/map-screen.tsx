@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useState, type KeyboardEvent } from "react";
 import { LAYERS, LayerDot, type Layer } from "@/components/shell/layer-dot";
 import { BuildingScreen } from "@/components/shell/building-screen";
@@ -29,7 +30,12 @@ interface MapScreenProps {
  * pin's card.
  */
 export function MapScreen({ buildings, initialCity }: MapScreenProps) {
-  const [city, setCity] = useState<City>(initialCity);
+  // The address is the one record of the open tab, so the tab follows it
+  // both ways: a tab click writes `?city=`, and any navigation (the wordmark
+  // to `/`, Back, a shared link) moves the tab. Outside the router (unit
+  // tests) the page's `initialCity` stands in.
+  const params = useSearchParams();
+  const city = params ? cityFromParam(params.get("city")) : initialCity;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
@@ -38,9 +44,9 @@ export function MapScreen({ buildings, initialCity }: MapScreenProps) {
   const cardId = hoveredId ?? selected?.id ?? null;
 
   function switchCity(next: City) {
-    setCity(next);
     setHoveredId(null);
-    // Keep the tab in the address, so a reload or a shared link opens it.
+    // Next keeps useSearchParams in step with the History API, so writing the
+    // address is what switches the tab; a reload or a shared link opens it.
     window.history.replaceState(null, "", next === "LA" ? "/" : `/?city=${next}`);
   }
 
@@ -112,6 +118,12 @@ export function MapScreen({ buildings, initialCity }: MapScreenProps) {
       }
     />
   );
+}
+
+/** `?city=` as a city; anything missing or unknown is LA, as the page reads it. */
+export function cityFromParam(value: string | null): City {
+  const parsed = City.safeParse(value);
+  return parsed.success ? parsed.data : "LA";
 }
 
 function countByCity(buildings: MapBuilding[]): Record<City, number> {

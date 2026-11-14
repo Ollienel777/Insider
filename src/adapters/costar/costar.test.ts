@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Building } from "@/domain";
 import raw from "../../../fixtures/costar/buildings.json";
 import { FIXTURE_BUILDINGS, createFakeCoStar } from "./fake";
-import { selectCoStar } from "./index";
+import { getCoStar, resetCoStar, selectCoStar } from "./index";
 
 // SPEC §7's table of fixture buildings.
 const TABLE = [
@@ -157,5 +157,47 @@ describe("selectCoStar (the mode switch)", () => {
   it("is live with COSTAR_MODE=live and both variables, or HEIST_MODE=live alone", () => {
     expect(selectCoStar({ ...KEYS, COSTAR_MODE: "live" })).toMatchObject({ mode: "live", reason: "CoStar: live" });
     expect(selectCoStar({ ...KEYS, HEIST_MODE: "live" }).mode).toBe("live");
+  });
+});
+
+describe("a building live CoStar does not know (#93)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    resetCoStar();
+  });
+
+  function liveAnswering404() {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("HEIST_MODE", "");
+    vi.stubEnv("COSTAR_MODE", "live");
+    vi.stubEnv("COSTAR_API_BASE", "https://costar.test/api");
+    vi.stubEnv("COSTAR_API_KEY", "test-key");
+    vi.stubGlobal("fetch", async () => new Response("", { status: 404 }));
+    resetCoStar();
+  }
+
+  it("falls back to the fixture building, and the mode chip says fixtures", async () => {
+    liveAnswering404();
+    expect(getCoStar().mode).toBe("live");
+    expect((await getCoStar().adapter.getBuilding("F1"))?.name).toBe("Halvorsen Tower");
+    const after = getCoStar();
+    expect(after.mode).toBe("fake");
+    expect(after.fallback?.message).toBe("CoStar doesn't know this building, so buildings use fixtures.");
+  });
+
+  it("does the same for its available space", async () => {
+    liveAnswering404();
+    expect(await getCoStar().adapter.getAvailableSpace("F1")).toHaveLength(13);
+    expect(getCoStar().mode).toBe("fake");
+  });
+
+  it("stays not found, and live, for an id the fixtures do not know either", async () => {
+    liveAnswering404();
+    expect(await getCoStar().adapter.getBuilding("NOPE")).toBeNull();
+    expect(getCoStar()).toMatchObject({ mode: "live" });
+    expect(getCoStar().fallback).toBeUndefined();
   });
 });
