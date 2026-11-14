@@ -5,7 +5,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
-import { ChiefFix, LevelManifest, type Strategy } from "@/domain";
+import { ChiefFix, LevelManifest, type DroppedStrategy, type Strategy } from "@/domain";
 import { OwnerSetup } from "@/domain/owner-setup";
 import { applyFix, BATCH_SEEDS, rerunWithFix, runBatch, summariseBatch as sum, varyLevel, type Level } from "@/engine";
 import { applyOwnerSetup, validateOwnerSetup } from "@/level/owner-setup";
@@ -17,7 +17,7 @@ import { BatchPanel } from "./batch-panel";
 import { toEngineFix, type FixAnswer } from "./chief-fix";
 import { compareOptions, ComparePanel, ComparePicker, defaultPick, DemoList, type CompareOption } from "./compare-panel";
 import { demoSetups, isDemoSetup } from "./demo-setups";
-import { compareOwnerSetups, ownerZones, playOwnerBatch, rerunOwner } from "./owner-batch";
+import { compareOwnerSetups, ownerZones, playOwnerBatch, rerunOwner, type PairSide } from "./owner-batch";
 import { boardCaption, pairCaption, setupKey } from "./owner-ready";
 import {
   addCleaner,
@@ -630,6 +630,60 @@ describe("the compare", () => {
     expect(pairCaption("b", moved.name, sides[1].summary)).toBe(
       "B, Demo: night shift, C2 moved: 1 of 50 got out. The way most got out is drawn.",
     );
+    // The prepared pair plays every strategy: 50 on each, and nothing left out.
+    expect(a).toContain("Same crew strategies, same ten nights: 50 attempts on each.");
+    expect(a).toContain("7 → 1 of 50: 6 fewer got out.");
+    expect(a).not.toContain("Left out:");
+  });
+
+  it("counts the attempts each side played, not 50, and names the strategy a side left out", () => {
+    // A live answer with one strategy the board could not play: four strategies, 40 attempts.
+    const short: { strategies: Strategy[]; dropped: DroppedStrategy[] } = {
+      strategies: strategies.slice(0, 4),
+      dropped: [{ strategyId: "dock-in-roof-out", reason: "no roof exit on this floor" }],
+    };
+    const side = (setup: OwnerSetup, played: typeof short): PairSide => {
+      const result = playOwnerBatch(manifest, floor, setup, played);
+      return { setup, result, summary: sum(result) };
+    };
+    const boards: [PlacedLevel, PlacedLevel] = [boardOf(manifest, floor, night, 1)!, boardOf(manifest, floor, moved, 1)!];
+    const html = (sides: [PairSide, PairSide]) =>
+      renderToStaticMarkup(
+        <ComparePanel
+          pair={{ status: "done", sides, recorded: false }}
+          floor={floor}
+          boards={boards}
+          madeUp={[true, true]}
+          side="a"
+          onSide={noop}
+          onRetry={noop}
+          onBack={noop}
+        />,
+      );
+
+    // Only A left it out: each side's own number, in the count line and the delta.
+    const uneven = html([side(night, short), side(moved, { strategies, dropped: [] })]);
+    expect(uneven).toMatch(/data-testid="owner-pair-a-count" data-escaped="7" data-total="40"/);
+    expect(uneven).toMatch(/data-testid="owner-pair-b-count" data-escaped="1" data-total="50"/);
+    expect(uneven).toContain("Same ten nights, but not the same strategies: 40 attempts on A, 50 on B.");
+    expect(uneven).toContain("7 of 40 → 1 of 50: 6 fewer got out.");
+    expect(uneven).toMatch(/data-testid="owner-pair-a-dropped"[^>]*>.*?Left out: dock-in-roof-out \(no roof exit on this floor\)\./);
+    expect(uneven).not.toContain('data-testid="owner-pair-b-dropped"');
+    expect(uneven).not.toContain("attempts on each");
+
+    // Both left it out: 40 on each, and a line for each side.
+    const both = html([side(night, short), side(moved, short)]);
+    expect(both).toContain("Same crew strategies, same ten nights: 40 attempts on each.");
+    expect(both).toContain("7 → 1 of 40: 6 fewer got out.");
+    expect(both.match(/Left out: dock-in-roof-out \(no roof exit on this floor\)\./g)).toHaveLength(2);
+    expect(both).not.toMatch(/50 attempts|of 50|data-total="50"/);
+  });
+
+  it("the picker promises no number of attempts before the crew has planned", () => {
+    const options = compareOptions(demos, [saved]);
+    const html = renderToStaticMarkup(<ComparePicker options={options} pick={defaultPick(options)} planning={false} onPick={noop} onCompare={noop} />);
+    expect(html).toContain("Both play the same strategies on the same nights.");
+    expect(html).not.toContain("50 attempts");
   });
 
   it("says when the crew didn't plan", () => {

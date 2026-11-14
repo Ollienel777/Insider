@@ -1,6 +1,6 @@
 "use client";
 
-import type { BatchSummary, DetectorFinding, OutcomeCell } from "@/domain";
+import type { BatchResult, BatchSummary, DetectorFinding, OutcomeCell } from "@/domain";
 import type { OwnerSetup } from "@/domain/owner-setup";
 import type { FixAnswer } from "@/agents/chief/fix";
 import type { ChiefZones } from "@/components/run/chief-request";
@@ -38,6 +38,11 @@ export function routeRooms(nodes: readonly string[], placed: PlacedLevel): strin
     return floor.rooms.find((r) => r.id === node?.roomId)?.label ?? id;
   };
   return nodes.map(label).filter((l, i, all) => i === 0 || l !== all[i - 1]);
+}
+
+/** "Left out: roof-quiet (no roof entry on this floor)." The strategies a batch could not play, and why. */
+export function leftOut(dropped: BatchResult["dropped"]): string {
+  return `Left out: ${dropped.map((d) => `${d.strategyId} (${d.reason})`).join("; ")}.`;
 }
 
 /**
@@ -207,7 +212,7 @@ export function BatchPanel({
         </ul>
         {result.dropped.length > 0 ? (
           <p data-testid="owner-dropped" className="text-sm text-text-2">
-            Left out: {result.dropped.map((d) => `${d.strategyId} (${d.reason})`).join("; ")}.
+            {leftOut(result.dropped)}
           </p>
         ) : null}
       </section>

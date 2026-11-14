@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
-import { detectorName, routeRooms, Strip } from "./batch-panel";
+import { detectorName, leftOut, routeRooms, Strip } from "./batch-panel";
 import type { DemoSetup } from "./demo-setups";
 import { setupChanges } from "./owner-edit";
 import type { OwnerPair } from "./use-owner-compare";
@@ -117,7 +117,7 @@ export function ComparePicker({
             <Button variant="secondary" data-testid="owner-pair-run" onClick={onCompare} disabled={same || planning}>
               {planning ? "The crew is planning…" : "Compare"}
             </Button>
-            <p className="text-sm text-text-2">{same ? "Pick two different setups." : "50 attempts on each, the same strategies and nights."}</p>
+            <p className="text-sm text-text-2">{same ? "Pick two different setups." : "Both play the same strategies on the same nights."}</p>
           </div>
         </>
       ) : (
@@ -129,8 +129,22 @@ export function ComparePicker({
   );
 }
 
+/** How many attempts each side played, from the batches themselves: a strategy left out plays none. */
+export function attemptsLine(a: number, b: number): string {
+  return a === b
+    ? `Same crew strategies, same ten nights: ${a} attempts on each.`
+    : `Same ten nights, but not the same strategies: ${a} attempts on A, ${b} on B.`;
+}
+
+/** "7 → 1 of 50: 6 fewer got out.", or each side's own total when the two played different numbers. */
+export function deltaLine(a: { escaped: number; total: number }, b: { escaped: number; total: number }): string {
+  const delta = a.escaped - b.escaped;
+  const counts = a.total === b.total ? `${a.escaped} → ${b.escaped} of ${b.total}` : `${a.escaped} of ${a.total} → ${b.escaped} of ${b.total}`;
+  return `${counts}: ${delta > 0 ? `${delta} fewer got out` : delta < 0 ? `${-delta} more got out` : "no change"}.`;
+}
+
 /**
- * The two setups side by side (issue 31): for each, the count and the 50-cell
+ * The two setups side by side (issue 31): for each, the count and the outcome
  * strip, the way most got out and what noticed the crew first; then what
  * changed from A to B. Choosing a side draws its way out on the board.
  */
@@ -209,7 +223,9 @@ export function ComparePanel({
             </span>
           ) : null}
         </div>
-        <p className="text-sm text-text-2">Same crew strategies, same ten nights: 50 attempts on each.</p>
+        <p data-testid="owner-pair-attempts" className="text-sm text-text-2">
+          {attemptsLine(a.summary.total, b.summary.total)}
+        </p>
         <div className="grid grid-cols-2 gap-3">
           {pair.sides.map((s, i) => {
             const id = ids[i];
@@ -254,6 +270,14 @@ export function ComparePanel({
             );
           })}
         </div>
+        {pair.sides.map((s, i) =>
+          s.result.dropped.length > 0 ? (
+            <p key={ids[i]} data-testid={`owner-pair-${ids[i]}-dropped`} className="flex gap-3 text-sm text-text-2">
+              <span className="label-caps w-4 shrink-0 pt-0.5 text-text-3">{ids[i].toUpperCase()}</span>
+              <span className="min-w-0">{leftOut(s.result.dropped)}</span>
+            </p>
+          ) : null,
+        )}
       </section>
 
       <section aria-labelledby="owner-pair-changed-label" className="flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-4">
@@ -274,11 +298,7 @@ export function ComparePanel({
           </p>
         )}
         <p data-testid="owner-pair-delta" data-delta={delta} className="text-sm text-text-1">
-          <span className="font-mono tabular-nums">
-            {a.summary.escaped} → {b.summary.escaped} of {b.summary.total}
-            {": "}
-            {delta > 0 ? `${delta} fewer got out` : delta < 0 ? `${-delta} more got out` : "no change"}.
-          </span>
+          <span className="font-mono tabular-nums">{deltaLine(a.summary, b.summary)}</span>
         </p>
       </section>
 
