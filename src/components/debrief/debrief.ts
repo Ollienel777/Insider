@@ -30,7 +30,7 @@ export interface Decision {
   orders: readonly { guardId: string; intent: GuardOrder["intent"]; zone: string }[];
   /** The zones it locked, by name. */
   locks: readonly string[];
-  /** What the engine refused: an unknown guard or zone, or a zone with no lockable door. */
+  /** What the engine refused: an unknown guard or zone, a zone with no lockable door, or everything given at Calm. */
   dropped: readonly { guardId: string; intent: string; reason: string }[];
   source: ChiefSource | null;
   /** It arrived after the run had ended: the Run screen showed it, but no guard ever got its orders. */
@@ -206,11 +206,16 @@ export function debriefOf(placed: PlacedLevel, log: RunLog, par: number | null =
 
   // The log keeps the orders as the Chief gave them; the engine's own clamp
   // says which it kept. It refuses unknown guards and zones, and zones with no
-  // lockable door, none of which depends on the turn; and everything given at
-  // Calm, which is the alarm of the frame the decision was given on.
+  // lockable door, none of which depends on the turn; and, under the rules the
+  // log was played by from #94 on, everything given at Calm, which is the alarm
+  // of the frame the decision was given on. A log with no rules was played by
+  // the engine before #94, which applied orders at any alarm, and its guards'
+  // positions show them carried out: it is clamped at an alarm, so that the
+  // timeline says what its replay shows.
+  const calmDrops = (log.rules ?? 1) >= 2;
   const fresh = createRun(level);
   const decisionOf = (turn: number, chief: ChiefOrders, source: ChiefSource | undefined, late: boolean): Decision => {
-    const alarm = frames[turn]?.alarm ?? "calm";
+    const alarm = calmDrops ? (frames[turn]?.alarm ?? "calm") : "alert";
     const { applied, locked, dropped } = applyChiefOrders({ ...fresh, alarm }, chief);
     return {
       turn,

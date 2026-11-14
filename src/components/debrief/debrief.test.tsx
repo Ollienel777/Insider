@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { F1_DEMO, FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { replanChief } from "@/agents/chief";
-import { LevelManifest, RunLog } from "@/domain";
+import { LevelManifest, RunLog, type ChiefOrders } from "@/domain";
 import { act, applyChiefOrders, createRun, toRunLog, type Action, type RunState } from "@/engine";
 import { placeLevel, quietRoute } from "@/level/placer";
 import { chiefRequest, chiefZones, toEngineOrders } from "@/components/run/chief-request";
@@ -208,6 +208,67 @@ describe("caught at the wow beat", () => {
 });
 
 /**
+ * A Chief answer applied while the alarm stood at Calm, as a live Chief
+ * answering the decay to Calm gives one (#94). The engine since #94 drops it;
+ * the engine before it applied it, and logs it wrote are still in browsers.
+ * Either way the Debrief's timeline must say what its replay shows.
+ */
+describe("orders given at Calm", () => {
+  const zones = chiefZones(placed);
+  const waits = Array.from({ length: 4 }, () => wait);
+  let chief: ChiefOrders;
+  /** The guards' positions, frame by frame, on a run where no Chief ever spoke. */
+  let patrol: Debrief["frames"][number]["guards"][];
+  beforeEach(async () => {
+    const tripped = play(createRun(placed.level), [{ kind: "move", to: F1_DEMO.freightLiftWait }, { kind: "move", to: "dc-west" }]);
+    const answer = (await replanChief(chiefRequest("F1", placed, zones, tripped, tripped.alarmEvents.at(-1)!)))!;
+    chief = toEngineOrders(answer.orders, zones);
+    expect(chief.orders.length).toBeGreaterThan(0);
+    expect(chief.lockZones.length).toBeGreaterThan(0);
+    const quiet = RunLog.parse(toRunLog(play(createRun(placed.level), waits)));
+    patrol = debriefOf(placed, quiet, PAR).frames.map((f) => f.guards);
+  });
+
+  it("are listed as dropped on a log the engine writes now, and the replay shows the guards on their rounds", () => {
+    const calm = createRun(placed.level);
+    expect(calm.alarm).toBe("calm");
+    const log = RunLog.parse(toRunLog(play(applyChiefOrders(calm, chief).run, waits)));
+    expect(log.rules).toBe(2);
+    expect(log.turns[0].chief).toEqual(chief);
+    const d = debriefOf(placed, log, PAR);
+    expect(d.decisions).toHaveLength(1);
+    const [decision] = d.decisions;
+    expect(decision.turn).toBe(0);
+    expect(d.frames[0].alarm).toBe("calm");
+    expect(decision.orders).toEqual([]);
+    expect(decision.locks).toEqual([]);
+    expect(decision.dropped).toEqual([
+      ...chief.orders.map((o) => ({ guardId: o.guardId, intent: o.intent, reason: "the alarm is calm" })),
+      ...chief.lockZones.map(() => ({ guardId: "", intent: "lock", reason: "the alarm is calm" })),
+    ]);
+    // What the replay shows: every guard where it would be had the Chief said nothing.
+    expect(d.frames.map((f) => f.guards)).toEqual(patrol);
+  });
+
+  it("are listed as carried out on a log from before #94, whose engine applied them, as its replay shows", () => {
+    // The old engine: the clamp ignored the alarm, so the orders took at Calm.
+    const calm = createRun(placed.level);
+    const applied = applyChiefOrders({ ...calm, alarm: "alert" }, chief);
+    const old: RunLog = RunLog.parse({ ...toRunLog(play({ ...applied.run, alarm: "calm" }, waits)), rules: undefined });
+    expect(old.rules).toBeUndefined();
+    expect(old.turns.every((t) => t.alarm === "calm")).toBe(true);
+    const d = debriefOf(placed, old, PAR);
+    const [decision] = d.decisions;
+    expect(decision.turn).toBe(0);
+    expect(decision.dropped).toEqual([]);
+    expect(decision.orders.map((o) => o.guardId)).toEqual(applied.applied.map((o) => o.guardId));
+    expect(decision.locks).toEqual(["Records room"]);
+    // What the replay shows: the guards off their rounds, walking the Chief's orders.
+    expect(d.frames.map((f) => f.guards)).not.toEqual(patrol);
+  });
+});
+
+/**
  * Opened from the step rail mid-run (R3-C1): the wow beat to the Chief's first
  * answer, applied to the guards, as the Run screen saves it then.
  */
@@ -356,7 +417,7 @@ describe("the run log in storage", () => {
     // A new run (opening the Run screen, or Restart) writes its own log at once.
     saveRunLog(runLogOf(createRun(placed.level), new Map()), storage);
     const fresh = loadRunLog("F1", storage)!;
-    expect(fresh).toEqual({ buildingId: "F1", missionId: placed.level.missionId, seed: RUN_SEED, turns: [], status: "playing", alarmEvents: [] });
+    expect(fresh).toEqual({ buildingId: "F1", missionId: placed.level.missionId, seed: RUN_SEED, rules: 2, turns: [], status: "playing", alarmEvents: [] });
     expect(notStarted(fresh)).toBe(true);
     clearRunLog("F1", { removeItem: (k: string) => void storage.map.delete(k) });
     expect(loadRunLog("F1", storage)).toBeNull();
