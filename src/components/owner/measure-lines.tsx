@@ -2,10 +2,26 @@
 // says about a setup, beside what the crew's attempts say. Read from
 // `measureSetup`, so it needs no batch and follows every edit.
 import { cn } from "@/lib/utils";
-import { coverageLine, measureChange, routesLine, type SetupMeasure } from "./setup-measure";
+import { coverageLine, measureChange, routesLine, timingLine, type SetupMeasure } from "./setup-measure";
 
-/** The two lines, each number in mono: "Coverage: 53% of the floor…" and "Unwatched routes: 0 of 2…". */
-export function MeasureLines({ measure, testId, className }: { measure: SetupMeasure; testId: string; className?: string }) {
+/**
+ * The two lines, "Coverage: 47% of the floor…" and "Unwatched routes: 0 of
+ * 2…", what they mean under them, and, beside a count where attempts got out
+ * with no route unwatched, how they did it.
+ */
+export function MeasureLines({
+  measure,
+  testId,
+  escaped,
+  className,
+}: {
+  measure: SetupMeasure;
+  testId: string;
+  /** The attempts that got out, when the lines sit under a count. */
+  escaped?: number;
+  className?: string;
+}) {
+  const timing = escaped === undefined ? null : timingLine(measure, escaped);
   return (
     <div
       data-testid={testId}
@@ -16,11 +32,19 @@ export function MeasureLines({ measure, testId, className }: { measure: SetupMea
     >
       <p data-testid={`${testId}-coverage`}>{coverageLine(measure)}</p>
       <p data-testid={`${testId}-routes`}>{routesLine(measure)}</p>
+      {timing ? (
+        <p data-testid={`${testId}-timing`} className="text-text-1">
+          {timing}
+        </p>
+      ) : null}
+      <p data-testid={`${testId}-note`} className="text-xs">
+        {MEASURE_NOTE(measure)}
+      </p>
     </div>
   );
 }
 
-/** One side's two numbers, short, for a card: "50% watched · 0/2 unwatched". */
+/** One side's two numbers, short, for a card: "43% watched · 0/2 ways in unwatched". */
 export function MeasureChips({ measure, testId }: { measure: SetupMeasure; testId: string }) {
   return (
     <p
@@ -30,12 +54,12 @@ export function MeasureChips({ measure, testId }: { measure: SetupMeasure; testI
       title={`${coverageLine(measure)} ${routesLine(measure)}`}
       className="font-mono text-xs text-text-2 tabular-nums"
     >
-      {measure.coverage}% watched · {measure.unwatched}/{measure.entries} unwatched
+      {measure.coverage}% watched · {measure.unwatched}/{measure.entries} ways in unwatched
     </p>
   );
 }
 
-/** "Coverage 50% → 57%, unwatched routes 0 → 0.", with what each means under it. */
+/** "Coverage 43% → 50%, unwatched routes 0 → 0.", with what each means under it. */
 export function MeasureChange({ from, to, testId }: { from: SetupMeasure; to: SetupMeasure; testId: string }) {
   return (
     <div className="flex flex-col gap-1">
@@ -54,6 +78,6 @@ export function MeasureChange({ from, to, testId }: { from: SetupMeasure; to: Se
   );
 }
 
-/** What the two numbers mean, in one line. */
+/** What the two numbers mean, in one line, and what they leave out. */
 export const MEASURE_NOTE = (m: Pick<SetupMeasure, "noun">) =>
-  `Coverage is the share of the floor a camera or guard watches at some point in a night; an unwatched route is a way in that reaches the ${m.noun} without passing anything that ever watches. From the floor plan alone: no attempts played.`;
+  `Coverage is the share of the floor a camera or guard watches at some point in every night the crew plays; an unwatched route is a way in with a path to the ${m.noun} that no camera or guard sees on any of those nights. From the floor plan alone, with no attempts played: it leaves out hearing and night cleaners, and being seen is not being caught.`;

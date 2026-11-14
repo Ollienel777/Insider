@@ -13,13 +13,13 @@ import { cn } from "@/lib/utils";
 import { MeasureChange, MeasureChips, MeasureLines } from "./measure-lines";
 import { describeFix } from "./owner-edit";
 import type { SetupMeasure } from "./setup-measure";
+import type { OwnerBatch, OwnerFix } from "./use-owner-batch";
 
 /** Coverage and unwatched routes for the batch's setup, and for the setup after the Chief's fix once there is one. */
 export interface BatchMeasures {
   before: SetupMeasure;
   after: SetupMeasure | null;
 }
-import type { OwnerBatch, OwnerFix } from "./use-owner-batch";
 
 export type Side = "before" | "after";
 
@@ -194,7 +194,7 @@ export function BatchPanel({
         </p>
         <Count summary={summary} testId="owner-count" big />
         <Strip summary={summary} testId="owner-strip" />
-        {measures ? <MeasureLines measure={measures.before} testId="owner-measure" /> : null}
+        {measures ? <MeasureLines measure={measures.before} escaped={summary.escaped} testId="owner-measure" /> : null}
       </section>
 
       <section aria-labelledby="owner-strategies-label" className="flex flex-col gap-2">
