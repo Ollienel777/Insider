@@ -80,7 +80,10 @@ describe("on-demand levels for kit buildings (#93)", () => {
     expect(await levelFor(kit, "romaine-1974")).toBeNull();
 
     // Straight away, the same level is refused: a failed key does not retry in a loop (#97 M4).
-    await expect(buildKitLevel(kit, "romaine-1974", { build: fakeBuild as Build, now })).rejects.toBeInstanceOf(BuildRefused);
+    const refused = buildKitLevel(kit, "romaine-1974", { build: fakeBuild as Build, now });
+    await expect(refused).rejects.toBeInstanceOf(BuildRefused);
+    // The refusal still says why the build failed.
+    await expect(refused).rejects.toThrow(/^the Level Builder failed\. Try again in \d+ s$/);
     clock += RETRY_AFTER_MS;
     await buildKitLevel(kit, "romaine-1974", { build: fakeBuild as Build, now });
     expect(buildState(kit.id, "romaine-1974")).toEqual({ status: "built" });
@@ -120,6 +123,28 @@ describe("on-demand levels for kit buildings (#93)", () => {
     await Promise.all([...running, joined]);
     expect(slow).toHaveBeenCalledTimes(MAX_BUILDS);
     await buildKitLevel({ ...kit, id: ids[MAX_BUILDS] }, "romaine-1974", { build: fakeBuild as Build });
+  });
+
+  it("lets the showcase warm build past the cap, since it builds one at a time", async () => {
+    const held: (() => void)[] = [];
+    const slow = vi.fn(async (buildingId: string, missionId: string) => {
+      await new Promise<void>((resolve) => held.push(resolve));
+      return fakeBuild(buildingId, missionId);
+    });
+    const busy = ["900001", "900002"].map((id) => buildKitLevel({ ...kit, id }, "romaine-1974", { build: slow as Build }));
+    await buildKitLevel({ ...kit, id: "900003" }, "romaine-1974", { build: fakeBuild as Build, uncapped: true });
+    await vi.waitFor(() => expect(held).toHaveLength(2));
+    held.forEach((go) => go());
+    await Promise.all(busy);
+  });
+
+  it("ends a build that throws at once, with no deadline left running", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const throwsNow = (() => {
+      throw new Error("at once");
+    }) as unknown as Build;
+    await expect(buildKitLevel(kit, "romaine-1974", { build: throwsNow, deadlineMs: 10 })).rejects.toThrow("at once");
+    expect(buildState(kit.id, "romaine-1974")).toMatchObject({ status: "failed" });
   });
 
   it("serves a built level by id, for the Crew and the Chief, and a fixture's from disk", async () => {

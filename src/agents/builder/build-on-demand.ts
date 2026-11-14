@@ -51,6 +51,8 @@ export interface BuildKitOptions {
   build?: Build;
   deadlineMs?: number;
   now?: () => number;
+  /** Skip the cap on builds at once: the showcase warm at server start, which builds one at a time. */
+  uncapped?: boolean;
 }
 
 /**
@@ -65,7 +67,7 @@ export function buildKitLevel(
   missionId: string,
   options: BuildKitOptions = {},
 ): Promise<CachedLevel> {
-  const { build = buildLevel, deadlineMs = BUILD_DEADLINE_MS, now = Date.now } = options;
+  const { build = buildLevel, deadlineMs = BUILD_DEADLINE_MS, now = Date.now, uncapped = false } = options;
   if (!buildsOnDemand(building)) {
     return Promise.reject(new Error(`${building.id} is not a kit building; its level is built ahead of the demo`));
   }
@@ -78,10 +80,10 @@ export function buildKitLevel(
   if (entry?.status === "building") return entry.promise;
   if (entry?.status === "failed" && now() - entry.at < RETRY_AFTER_MS) {
     const wait = Math.ceil((RETRY_AFTER_MS - (now() - entry.at)) / 1000);
-    return Promise.reject(new BuildRefused(`this level's last build just failed; try again in ${wait} s`, wait));
+    return Promise.reject(new BuildRefused(`${entry.error}. Try again in ${wait} s`, wait));
   }
   const running = [...store.values()].filter((e) => e.status === "building").length;
-  if (running >= MAX_BUILDS) {
+  if (!uncapped && running >= MAX_BUILDS) {
     return Promise.reject(new BuildRefused(`${running} levels are already building; try again in a minute`, 60));
   }
 
@@ -93,7 +95,9 @@ export function buildKitLevel(
       reject(new BuildTimedOut(`the build of ${key} ran past ${deadlineMs} ms`));
     }, deadlineMs);
   });
-  const promise = Promise.race([build(building.id, missionId, { signal: stop.signal }), deadline])
+  // Through a `then`, so a build that throws at once still ends the race (and clears the timer).
+  const run = Promise.resolve().then(() => build(building.id, missionId, { signal: stop.signal }));
+  const promise = Promise.race([run, deadline])
     .then(
       ({ manifest, trace }) => {
         const level: CachedLevel = { manifest, trace };

@@ -38,7 +38,7 @@ export async function warmShowcase(options: WarmOptions = {}): Promise<number> {
         log(`Showcase: CoStar has no building ${buildingId}; skipped`);
         continue;
       }
-      await buildKitLevel(building, missionId, { build: options.build });
+      await buildKitLevel(building, missionId, { build: options.build, uncapped: true });
       built += 1;
       log(`Showcase: ${buildingId} (${missionId}) is ready, built in ${Math.round((Date.now() - started) / 1000)} s`);
     } catch (error) {
