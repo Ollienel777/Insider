@@ -9,3 +9,4 @@ export * from "./manifest";
 export * from "./agents";
 export * from "./run";
 export * from "./batch";
+export * from "./debrief";

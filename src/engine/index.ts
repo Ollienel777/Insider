@@ -16,6 +16,7 @@ export {
   type Resolution,
   type ResolvedStrategy,
 } from "./autoplay";
+export { applyFix, rerunWithFix, summariseBatch, type AppliedFix, type Rerun } from "./debrief";
 export { HOLD, LEVELS, setAlarm, type AlarmCause, type AlarmEvent } from "./alarm";
 export { moveGuards, orderGuard, plannedPath, type OrderResult } from "./guards";
 export { RUN_RULES, toRunLog } from "./log";
