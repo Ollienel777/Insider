@@ -12,7 +12,7 @@ import { createFakeVexcel } from "@/adapters/vexcel/fake";
 import { loadScript, ScriptedChatModel } from "@/adapters/llm";
 import type { ScriptInput } from "@/adapters/llm/scripted";
 import { MISSIONS } from "@/agents/builder/missions";
-import { CastingResult, type CastingTrace } from "@/domain";
+import { type CastingFilter, CastingResult, type CastingTrace } from "@/domain";
 import expected from "../../../fixtures/inventory-finalists.json";
 import { CASTING_DIR, readCachedCasting, writeCachedCasting } from "./cache";
 import { castMission, CastingError, type CastMission } from "./director";
@@ -281,7 +281,7 @@ describe("the scout's refusals", () => {
   function scout() {
     const run: CastRun = { mission: romaine, costar: createFakeCoStar(), vexcel: createFakeVexcel(), inventory: FIXTURE_INVENTORY, applied: [] };
     const tools = scoutTools(run);
-    const search = (filter: string) =>
+    const search = (filter: CastingFilter["kind"]) =>
       tools.find((t) => t.name === "search_inventory")!.invoke({ missionId: romaine.id, filter });
     const get = (id: string) => tools.find((t) => t.name === "get_candidate")!.invoke({ id });
     return { run, search, get };
