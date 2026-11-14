@@ -16,6 +16,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { LevelManifest } from "@/domain";
 import { createRun } from "@/engine";
+import { placeOrFixture } from "@/components/run/scan-fallback";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { validatePlan } from "@/level/validate-plan";
 import { askCrew, crewRequest, EXAMPLE_ORDER, type CrewAnswer } from "./crew-request";
@@ -71,12 +72,18 @@ export function PlanScreen({
     };
     matterport.adapter
       .loadFloor(building)
-      .then((floor) => {
+      .then(async (floor) => {
         if (!live) return;
         if (!floor) return setLoad({ status: "no-floor" });
         // The same posture the Run screen places with (#35), so the board the crew plans on is the one they run.
         const posture = postureOf(loadRunHistory(building.id, undefined, missionId));
-        setLoad({ status: "ready", placed: placeLevel(manifest, floor, RUN_SEED, undefined, posture), live: floor.source === "matterport" });
+        // A scan the level can't be placed on falls back to the fixture floor, as on the Run screen.
+        const ready = await placeOrFixture(building, floor, (on) => ({
+          placed: placeLevel(manifest, on, RUN_SEED, undefined, posture),
+          live: on.source === "matterport",
+        }));
+        if (!live) return;
+        setLoad(ready ? { status: "ready", ...ready } : { status: "no-floor" });
       }, fail)
       .catch(fail);
     return () => {

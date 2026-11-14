@@ -99,6 +99,9 @@ test("/b/F1/run renders F1's floor with 4 guards and its cameras, filling the bo
   await expect(page.getByTestId("objective")).toHaveText("Take the files from the records room");
   await expect(page.locator('[data-testid="plan"] li[data-state="next"]')).toHaveText(/Pick the records room door/);
   await expect(page.getByRole("link", { name: "See the debrief" })).toHaveCount(0);
+  // The Inside view is for a live scan only: on fixtures there is no panel and no Showcase player.
+  await expect(page.getByTestId("inside-view")).toHaveCount(0);
+  await expect(page.locator('iframe[src*="matterport.com"]')).toHaveCount(0);
 });
 
 test("pressing a neighbour's number moves the player, and then the guards", async ({ page }) => {
@@ -405,10 +408,15 @@ test("S sprints: the numbers mark nodes two hops on, a click sprints there in on
   await expect(hint).toHaveAttribute("data-on", "true");
   await expect(hint).toContainText("sprinting");
   await expect(page.getByTestId("run-status")).toContainText("Sprinting");
+  // The whole line fits at 1440×900, down to the way back to walking (#160).
+  await expect(page.getByTestId("run-status")).toContainText("S or Esc to walk");
+  const status = await page.getByTestId("run-status").evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+  expect(status.scroll, "the sprint status line is cut off").toBeLessThanOrEqual(status.client);
   await expect(choices).toHaveCount(1);
   await expect(choices.first()).toHaveAttribute("data-kind", "sprint");
   await expect(choices.first()).toHaveAttribute("data-node", "dc-west");
-  await expect(choices.first()).toHaveAttribute("aria-label", /^Sprint to /);
+  await expect(choices.first()).toHaveAttribute("aria-label", /^Sprint to Dock Corridor, through Freight Lift Lobby, loud/);
+  await expect(choices.first()).toHaveAttribute("data-via", "fl-lobby");
   await page.screenshot({ path: "test-results/run-sprint/sprint-mode.png" });
 
   // Esc walks again, and S comes back on.
@@ -442,4 +450,19 @@ test("in sprint mode, Esc with a Why card open closes only the card; the next Es
   await expect(page.getByTestId("choice").first()).toHaveAttribute("data-kind", "sprint");
   await page.keyboard.press("Escape");
   await expect(hint).not.toHaveAttribute("data-on", /.*/);
+});
+
+test("Restart in sprint mode puts the board back to walking (#160)", async ({ page }) => {
+  await open(page);
+  const hint = page.getByTestId("sprint-hint");
+  await pressFor(page, "fl-lobby");
+  await page.keyboard.press("s");
+  await expect(hint).toHaveAttribute("data-on", "true");
+  await expect(page.getByTestId("choice").first()).toHaveAttribute("data-kind", "sprint");
+  await page.getByRole("button", { name: "Restart" }).click();
+  await expect(page.getByTestId("turn")).toHaveText("0");
+  await expect(hint).not.toHaveAttribute("data-on", /.*/);
+  await expect(page.getByTestId("choice")).toHaveCount(1);
+  await expect(page.getByTestId("choice").first()).toHaveAttribute("data-kind", "move");
+  await expect(page.getByTestId("choice").first()).toHaveAttribute("data-node", "fl-lobby");
 });
