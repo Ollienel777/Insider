@@ -8,6 +8,8 @@
 // A build is a live model run. It is refused (409) while the model is on
 // fixtures, configured or forced in the demo settings, and refused (429, with
 // Retry-After) when too many are running or this level failed moments ago.
+// The one exception is the smoke server's fictional test kit, which replays a
+// recorded build.
 import { BuildRefused, buildKitLevel, publicBuildError } from "@/agents/builder/build-on-demand";
 import { buildsOnDemand, canBuildFor } from "@/agents/builder/live-levels";
 import { getCoStar } from "@/adapters/costar";
@@ -33,7 +35,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (forced.has("llm")) {
     return Response.json({ error: "the model is forced to fixtures in the demo settings, so the Level Builder can't run" }, { status: 409 });
   }
-  if (configuredModes(process.env).llm !== "live") {
+  // The smoke's fictional test kit (#95, `HEIST_TEST_KIT=1`, set by playwright.config.ts alone) builds
+  // from its recorded script with the model on fixtures: no model call is made, so the refusal has nothing to guard.
+  if (configuredModes(process.env).llm !== "live" && process.env.HEIST_TEST_KIT !== "1") {
     return Response.json({ error: "the model is on fixtures on this server, so the Level Builder can't run" }, { status: 409 });
   }
   try {
