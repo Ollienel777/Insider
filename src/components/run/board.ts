@@ -7,6 +7,7 @@ import type { FloorGraph, GuardIntent } from "@/domain";
 import {
   moveGuards,
   neighbours,
+  picksToOpen,
   plannedPath,
   visibleFrom,
   watched,
@@ -15,6 +16,7 @@ import {
   type RunState,
 } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
+import { objectiveNoun } from "@/lib/objective-noun";
 import { project } from "./iso";
 
 // ---- cones ------------------------------------------------------------------
@@ -128,6 +130,8 @@ export interface Choice {
   doorId?: string;
   /** For a pick: picks so far, and the picks it needs. */
   progress?: { done: number; of: number };
+  /** For a sprint: the node it runs through on the way. */
+  via?: string;
 }
 
 /**
@@ -154,7 +158,7 @@ export function choices(run: RunState, mode: Mode = "walk"): Choice[] {
         action: { kind: "pick", doorId },
         kind: "pick",
         doorId,
-        progress: { done, of: board.level.pickTurns },
+        progress: { done, of: picksToOpen(board.level, doorId) },
       };
     });
 }
@@ -177,9 +181,14 @@ function bearingFrom(run: RunState): (id: string) => number {
 
 /**
  * The sprint targets: every node exactly two open hops away (not the player's
- * node, not a neighbour), as the engine's `sprint` accepts them, each through
- * the first open middle node in board order. Numbered clockwise like moves; at
- * most nine. A locked door on either hop rules that way out.
+ * node, not a neighbour), as the engine's `sprint` accepts them. Numbered
+ * clockwise like moves; at most nine. A locked door on either hop rules that
+ * way out.
+ *
+ * When more than one neighbour leads to a target, the sprint goes through the
+ * first of them clockwise from twelve o'clock. The player does not choose the
+ * middle node; the badge names it (`Choice.via`), since that node decides
+ * which cameras and guards see the sprint.
  */
 export function sprintChoices(run: RunState): Choice[] {
   if (run.status !== "playing") return [];
@@ -200,7 +209,27 @@ export function sprintChoices(run: RunState): Choice[] {
   return [...via.keys()]
     .sort((a, b) => bearing(a) - bearing(b) || a.localeCompare(b))
     .slice(0, 9)
-    .map((to, i): Choice => ({ key: i + 1, nodeId: to, action: { kind: "sprint", to, via: via.get(to)! }, kind: "sprint" }));
+    .map((to, i): Choice => {
+      const middle = via.get(to)!;
+      return { key: i + 1, nodeId: to, action: { kind: "sprint", to, via: middle }, kind: "sprint", via: middle };
+    });
+}
+
+/** The status line when sprint mode comes on, and when it goes off again (issue 121). */
+export const SPRINT_STATUS = "Sprinting: two hops in one turn, loud. S or Esc to walk.";
+export const WALK_STATUS = "Walking again. Pick a number to move.";
+export const NO_SPRINT_STATUS = "Nowhere to sprint from here: nothing is two open hops away.";
+
+/**
+ * What `S` does (issue 121): from sprint mode, walk again; from walking,
+ * sprint if there is anywhere to sprint to, and otherwise stay walking and
+ * say why. Null when the run is over and `S` does nothing.
+ */
+export function toggleSprint(run: RunState, mode: Mode): { mode: Mode; status: string } | null {
+  if (run.status !== "playing") return null;
+  if (mode === "sprint") return { mode: "walk", status: WALK_STATUS };
+  if (sprintChoices(run).length === 0) return { mode: "walk", status: NO_SPRINT_STATUS };
+  return { mode: "sprint", status: SPRINT_STATUS };
 }
 
 /** Whether the player stands on the objective and can take it. */
@@ -239,6 +268,22 @@ export function roomName(floor: FloorGraph, nodeId: string): string {
   return floor.rooms.find((r) => r.id === roomId)?.label ?? nodeId;
 }
 
+/**
+ * How a sprint's badge names its way, true for the rooms of all three nodes:
+ * "through V" when the middle node's room is not the target's (the sprint
+ * passes through V, whether or not it starts there); "two hops within R" only
+ * when the player, the middle node and the target all stand in room R;
+ * otherwise, with the middle node in the target's room, "two hops from H",
+ * the player's room (the badge already names the target's).
+ */
+export function sprintWay(floor: FloorGraph, here: string, via: string, to: string): string {
+  const room = (id: string) => floor.nodes.find((n) => n.id === id)?.roomId ?? id;
+  const [h, v, t] = [room(here), room(via), room(to)];
+  if (v !== t) return `through ${roomName(floor, via)}`;
+  if (h === t) return `two hops within ${roomName(floor, to)}`;
+  return `two hops from ${roomName(floor, here)}`;
+}
+
 // ---- the plan and the guards' orders -------------------------------------------
 
 export interface PlanStep {
@@ -262,7 +307,7 @@ export function planSteps(placed: PlacedLevel, run: RunState, objective: string)
   ];
   if (lock) {
     steps.push({
-      label: `Pick the ${objectiveName.toLowerCase()} door, ${level.pickTurns} turns`,
+      label: `Pick the ${objectiveName.toLowerCase()} door, ${picksToOpen(level, lock.doorId)} turns`,
       done: !run.locked.includes(lock.doorId) || run.carrying,
     });
   }
@@ -369,17 +414,17 @@ export function describeTurn(placed: PlacedLevel, before: RunState, after: RunSt
   const { floor } = placed.level;
   const where = roomName(floor, after.playerNode);
   if (after.status === "caught") return `Caught in the ${where}.`;
-  if (after.status === "won") return `Out with the files in ${after.turn} turns.`;
+  if (after.status === "won") return `Out with the ${objectiveNoun(placed.level.missionId)} in ${after.turn} turns.`;
   const raised = after.alarmEvents.slice(before.alarmEvents.length).find((e) => e.cause.kind !== "decay");
   if (raised) {
     const by = raised.cause.id ?? "Someone";
     if (raised.cause.kind === "noise") return `${by} heard you in the ${where}.`;
     return `${by} saw you in the ${where}. The guards are converging.`;
   }
-  if (!before.carrying && after.carrying) return "You have the files. Get out.";
+  if (!before.carrying && after.carrying) return `You have the ${objectiveNoun(placed.level.missionId)}. Get out.`;
   const opened = before.locked.find((d) => !after.locked.includes(d));
   if (opened) return "The door is open.";
-  if (after.picking) return `Picking the lock, ${after.picking.progress} of ${placed.level.pickTurns}.`;
+  if (after.picking) return `Picking the lock, ${after.picking.progress} of ${picksToOpen(placed.level, after.picking.doorId)}.`;
   if (after.playerNode === before.playerNode) return `You wait in the ${where}.`;
   if (after.turns.at(-1)?.player.kind === "sprint") return `You sprint to the ${where}.`;
   return `You move to the ${where}.`;

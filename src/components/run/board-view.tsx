@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 import type { RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
-import { cameraMount, cones, coverage, guardOrders, roomName, type Choice, type Cone } from "./board";
+import { objectiveLabel } from "@/lib/objective-noun";
+import { cameraMount, cones, coverage, guardOrders, roomName, sprintWay, type Choice, type Cone } from "./board";
 import { useHop } from "./hop";
 import { frameOf, hull, LABEL_FONT, matrixAttr, pointsAttr, project, projectRect, round, TILE_DEPTH, type Point } from "./iso";
 import {
@@ -29,6 +30,17 @@ import { lensElements, lensKey, LENS_LAYERS, type LensLayer } from "./lens";
 import { ProvenanceThread } from "./provenance-thread";
 import { CARD_WIDTH, liveSubtitle, placeCard, threadColour, toScreen, whyKey, whyTargets } from "./why";
 import { WhyCard } from "./why-card";
+
+/**
+ * The label under an objective or exit node, as the board draws it: the
+ * mission's objective noun on the objective (#70), else the entry's label,
+ * else "EXIT", upper-case. The Run board, its label layout and the Debrief's
+ * replay all read it here, so what is sized is what is drawn.
+ */
+export function markerLabel(placed: PlacedLevel, nodeId: string): string {
+  if (nodeId === placed.level.objective) return objectiveLabel(placed.level.missionId);
+  return (placed.entries.find((e) => e.nodeId === nodeId)?.label ?? "EXIT").toUpperCase();
+}
 
 /** A node disc's radii on the board (a circle seen at the isometric angle). */
 export const DISC = { rx: 13, ry: 7.5 };
@@ -214,7 +226,6 @@ export function BoardView({
     (id, i, all) => i === 0 || id !== all[i - 1],
   );
   const exitNodes = new Set(placed.level.exits);
-  const entryLabel = new Map(placed.entries.map((e) => [e.nodeId, e.label]));
   const entryAt = new Map(placed.entries.map((e) => [e.nodeId, e.entryId]));
   const lockedEdges = floor.edges.filter((e) => e.door && run.locked.includes(e.door.id));
 
@@ -463,7 +474,7 @@ export function BoardView({
                     letterSpacing="0.06em"
                     style={{ fill: "var(--text-1)" }}
                   >
-                    {isObjective ? "FILES" : (entryLabel.get(node.id) ?? "EXIT").toUpperCase()}
+                    {markerLabel(placed, node.id)}
                   </text>
                 ) : null}
                 {layers ? (
@@ -608,6 +619,7 @@ export function BoardView({
               choice={choice}
               at={at(choice.nodeId)}
               room={roomName(floor, choice.nodeId)}
+              way={choice.via ? sprintWay(floor, run.playerNode, choice.via, choice.nodeId) : undefined}
               onChoose={onChoose}
             />
           ))}
@@ -930,7 +942,6 @@ export function fixedLabels(placed: PlacedLevel, cameras: RunState["board"]["cam
     const n = floor.nodes.find((node) => node.id === id)!;
     return project(n.x, n.y);
   };
-  const entryLabel = new Map(placed.entries.map((e) => [e.nodeId, e.label]));
   const named = [objective, ...exits.filter((id) => id !== objective)];
   const doorNodes = (edges: typeof floor.edges) => new Set(edges.filter((e) => e.door).flatMap((e) => [e.a, e.b]));
   const pickBox = (id: string) => {
@@ -941,7 +952,7 @@ export function fixedLabels(placed: PlacedLevel, cameras: RunState["board"]["cam
   const taken: Taken = { text: [], marks: [] };
   for (const id of named) {
     const p = point(id);
-    const text = id === objective ? "FILES" : (entryLabel.get(id) ?? "EXIT");
+    const text = markerLabel(placed, id);
     taken.text.push(textBox(p.x, p.y + DISC.ry + 14, text.length, MARK_FONT, "middle"));
   }
   for (const camera of cameras) {
@@ -1335,18 +1346,22 @@ function ChoiceHint({
   choice,
   at,
   room,
+  way,
   onChoose,
 }: {
   choice: Choice;
   at: Point;
   room: string;
+  /** For a sprint: the way it runs, from `sprintWay`. */
+  way?: string;
   onChoose: (choice: Choice) => void;
 }) {
   const label =
     choice.kind === "pick"
       ? `Pick the door to ${room}, ${choice.progress!.done} of ${choice.progress!.of} (${choice.key})`
       : choice.kind === "sprint"
-        ? `Sprint to ${room}, two hops, loud (${choice.key})`
+        ? // Rooms are the finest names the board has; `sprintWay` keeps the way true for all three nodes.
+          `Sprint to ${room}, ${way ?? "two hops"}, loud (${choice.key})`
         : `Move to ${room} (${choice.key})`;
   const onKey = (event: KeyboardEvent) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -1363,11 +1378,14 @@ function ChoiceHint({
       data-key={choice.key}
       data-node={choice.nodeId}
       data-kind={choice.kind}
+      data-via={choice.via}
       className="group cursor-pointer outline-none"
       transform={`translate(${round(at.x)}, ${round(at.y)})`}
       onClick={() => onChoose(choice)}
       onKeyDown={onKey}
     >
+      {/* On hover, the label says the way: for a sprint, the room it runs through. */}
+      <title>{label}</title>
       <rect {...CHOICE_HIT} fill="transparent" />
       <ellipse
         cx="0"

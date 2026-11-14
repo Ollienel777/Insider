@@ -8,7 +8,7 @@
 // Pure: no DOM. Where the card and its thread sit is worked out here too, from
 // the board's viewBox and the size it is drawn at.
 import type { GuardIntent, Provenance, ProvenanceLayer } from "@/domain";
-import type { RunState } from "@/engine";
+import { picksToOpen, type RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
 import { roomName, zoneName } from "./board";
 import type { Frame, Point } from "./iso";
@@ -104,7 +104,7 @@ export function whyTargets(placed: PlacedLevel): WhyTarget[] {
       key: whyKey.lock(lock.doorId),
       kind: "lock",
       title: `${room} door`,
-      subtitle: `Locked, ${placed.level.pickTurns} turns to pick`,
+      subtitle: `Locked, ${picksToOpen(placed.level, lock.doorId)} turns to pick`,
       provenance: lock.provenance,
       placement: null,
     });
