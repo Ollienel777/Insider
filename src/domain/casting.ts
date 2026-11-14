@@ -120,14 +120,30 @@ export const Candidate = InventoryProperty.pick({
 });
 export type Candidate = z.infer<typeof Candidate>;
 
-export const CastingAgent = z.enum(["casting-director", "location-scout"]);
+export const CastingAgent = z.enum(["casting-director", "location-scout", "general-purpose"]);
 export type CastingAgent = z.infer<typeof CastingAgent>;
 
-/** One line of the Casting Director's trace, shaped like the Level Builder's. */
-export const CastingTraceEvent = BuildTraceEvent.extend({ agent: CastingAgent });
+/**
+ * One line of the Casting Director's trace, shaped like the Level Builder's,
+ * plus what went into a tool or task and what came back (`input`, `output`),
+ * recorded only when the run read fixtures alone (SPEC §4.5: no kit record,
+ * nor anything derived from one, enters a trace).
+ */
+export const CastingTraceEvent = BuildTraceEvent.extend({
+  agent: CastingAgent,
+  input: z.string().optional(),
+  output: z.string().optional(),
+});
 export type CastingTraceEvent = z.infer<typeof CastingTraceEvent>;
 
 export const CastingTrace = BuildTrace.omit({ buildingId: true }).extend({
+  /** The subagents the director could dispatch, whether or not it did. */
+  subagents: z.array(Id).optional(),
+  /**
+   * True when the run read data that is not the fixtures: the trace then
+   * holds no tool or task payloads and no labels the model wrote.
+   */
+  liveData: z.boolean().optional(),
   events: z.array(CastingTraceEvent).min(1),
 });
 export type CastingTrace = z.infer<typeof CastingTrace>;
