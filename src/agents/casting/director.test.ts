@@ -109,6 +109,29 @@ describe("castMission on the recorded scripts, every mission", () => {
     expect(tools.at(-1)).toMatchObject({ agent: "casting-director", label: "write_shortlist" });
   });
 
+  it.each(MISSION_IDS)("%s: get_candidate's scan flag and the entry fit line agree with the trace", (id) => {
+    const { trace, finalists } = runs.get(id)!.cast.result;
+    const outputs = (label: string) =>
+      trace.events.filter((e) => e.kind === "tool" && e.label === label).map((e) => JSON.parse(e.output!));
+    const candidates = new Map(outputs("get_candidate").map((o) => [o.id, o]));
+    const aerials = trace.events
+      .filter((e) => e.kind === "tool" && e.label === "get_aerial_entries")
+      .map((e) => ({ id: JSON.parse(e.input!).id as string, out: JSON.parse(e.output!) }));
+    const mission = MISSIONS.find((m) => m.id === id)!;
+    const entryLabel = mission.casting.find((f) => f.kind === "needsEntry")?.label;
+    for (const c of finalists) {
+      const got = candidates.get(c.id);
+      expect(got, `get_candidate ran for ${c.id}`).toBeDefined();
+      expect(got.scanned).toBe(got.layers.matterport);
+      expect(got.scanned).toBe(true);
+      if (!entryLabel) continue;
+      const fit = String(c.fit.find((f) => f.criterion === entryLabel)!.value);
+      const aerial = aerials.find((a) => a.id === c.id)?.out;
+      const fellBack = !aerial || aerial.source === "inventory";
+      expect(fit.endsWith("(inventory tag; no aerial loaded)"), `${c.id}: ${fit}`).toBe(fellBack);
+    }
+  });
+
   it.each(MISSION_IDS)("%s: the scout's scripted answer quotes the funnel counts the search returned", async (id) => {
     const script = await loadScript(`casting-${id}`);
     const answer = script.agents.find((a) => a.agent === "location-scout")!.turns.at(-1)!.content;

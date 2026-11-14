@@ -88,7 +88,7 @@ export function getCoStar(options: { forced?: boolean } = {}): CoStarSelection {
     if (chosen.mode === "live") {
       const guarded = withFallback(knownToFixtures(chosen.adapter, fake), fake, slot.breaker);
       // The search stays outside the breaker while it has no live
-      // implementation (#27): it answers from the fixtures anyway, and a
+      // implementation (#2): it answers from the fixtures anyway, and a
       // caller's malformed filter is not a CoStar failure.
       slot.selected = { ...chosen, adapter: { ...guarded, searchInventory: (filters) => chosen.adapter.searchInventory(filters) } };
     } else {

@@ -145,7 +145,7 @@
         },
         {
           "criterion": "a dock on the aerial",
-          "value": "dock"
+          "value": "dock (inventory tag; no aerial loaded)"
         }
       ],
       "reason": "A 1981 downtown oil tower with floor 27 on the market and a dock: the same era and street, a little less empty space."
@@ -202,18 +202,18 @@
         },
         {
           "criterion": "a dock on the aerial",
-          "value": "dock"
+          "value": "dock (inventory tag; no aerial loaded)"
         }
       ],
       "reason": "A 1999 Uptown tower with floor 18 on the market and a dock: newer card-era security, just before the 2001 shredding."
     }
   ],
   "trace": {
-    "recordedAt": "2026-11-14T04:28:16.358Z",
+    "recordedAt": "2026-11-14T08:38:32.937Z",
     "model": "ScriptedChatModel (script casting-paper-trail-2001, no LLM)",
     "events": [
       {
-        "atMs": 12,
+        "atMs": 10,
         "kind": "tool",
         "agent": "casting-director",
         "label": "get_mission",
@@ -223,38 +223,38 @@
         "output": "{\n  \"id\": \"paper-trail-2001\",\n  \"city\": \"Houston\",\n  \"type\": \"prevent\",\n  \"title\": \"Paper Trail\",\n  \"inspiredBy\": {\n    \"event\": \"The Andersen document shredding, 1400 Smith St, Houston\",\n    \"date\": \"Oct 23 – Nov 9, 2001\",\n    \"sourceUrl\": \"https://en.wikipedia.org/wiki/1400_Smith_Street\"\n  },\n  \"objective\": \"Keep the audit files out of the shredding room\",\n  \"exitCondition\": \"Get the files to the dock before the shredders run, or hold the records room until dawn\",\n  \"casting\": [\n    {\n      \"kind\": \"city\",\n      \"label\": \"in Houston\",\n      \"city\": \"Houston\"\n    },\n    {\n      \"kind\": \"yearBuilt\",\n      \"label\": \"built 2001 or earlier\",\n      \"yearBuilt\": {\n        \"max\": 2001\n      }\n    },\n    {\n      \"kind\": \"propertyTypes\",\n      \"label\": \"office\",\n      \"propertyTypes\": [\n        \"office\"\n      ]\n    },\n    {\n      \"kind\": \"buildingClass\",\n      \"label\": \"Class A\",\n      \"buildingClass\": [\n        \"A\"\n      ]\n    },\n    {\n      \"kind\": \"minVacantFloorSf\",\n      \"label\": \"a floor with 10,000 SF or more on the market\",\n      \"minVacantFloorSf\": 10000\n    },\n    {\n      \"kind\": \"needsScan\",\n      \"label\": \"a Matterport scan\"\n    },\n    {\n      \"kind\": \"needsEntry\",\n      \"label\": \"a dock on the aerial\",\n      \"needsEntry\": [\n        \"dock\"\n      ]\n    }\n  ]\n}"
       },
       {
-        "atMs": 19,
+        "atMs": 16,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Read mission paper-trail-2001 and its casting needs",
         "status": "completed"
       },
       {
-        "atMs": 19,
+        "atMs": 16,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Narrow the inventory with the location scout, one filter at a time",
         "status": "in_progress"
       },
       {
-        "atMs": 19,
+        "atMs": 16,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Pick three finalists and write the shortlist",
         "status": "pending"
       },
       {
-        "atMs": 23,
+        "atMs": 20,
         "kind": "subagent",
         "agent": "location-scout",
         "label": "Mission paper-trail-2001: apply its casting filters with search_inventory in this order: city, yearBuilt, propertyTypes, buildingClass, minVacantFloorSf, needsScan, needsEntry. Then check the candidates left with get_candidate and get_aerial_entries, and report the funnel's counts and each candidate's year, class, vacant floor and matching entries.",
         "status": "completed",
-        "durationMs": 67,
+        "durationMs": 50,
         "input": "Mission paper-trail-2001: apply its casting filters with search_inventory in this order: city, yearBuilt, propertyTypes, buildingClass, minVacantFloorSf, needsScan, needsEntry. Then check the candidates left with get_candidate and get_aerial_entries, and report the funnel's counts and each candidate's year, class, vacant floor and matching entries.",
         "output": "Funnel: 61 in the inventory -> 29 (in Houston) -> 17 (built 2001 or earlier) -> 11 (office) -> 7 (Class A) -> 5 (a floor with 10,000 SF or more on the market) -> 4 (a Matterport scan) -> 3 (a dock on the aerial). Left: F4 Smith Street Center: built 1983, Class A office, floor 19 has 13,155 SF on the market, scanned, dock; H01 Calder Petroleum Tower: built 1981, Class A office, floor 27 has 11,320 SF on the market, scanned, dock; H02 Ridgeway Tower: built 1999, Class A office, floor 18 has 10,870 SF on the market, scanned, dock."
       },
       {
-        "atMs": 32,
+        "atMs": 25,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_mission",
@@ -264,7 +264,7 @@
         "output": "{\n  \"id\": \"paper-trail-2001\",\n  \"city\": \"Houston\",\n  \"type\": \"prevent\",\n  \"title\": \"Paper Trail\",\n  \"inspiredBy\": {\n    \"event\": \"The Andersen document shredding, 1400 Smith St, Houston\",\n    \"date\": \"Oct 23 – Nov 9, 2001\",\n    \"sourceUrl\": \"https://en.wikipedia.org/wiki/1400_Smith_Street\"\n  },\n  \"objective\": \"Keep the audit files out of the shredding room\",\n  \"exitCondition\": \"Get the files to the dock before the shredders run, or hold the records room until dawn\",\n  \"casting\": [\n    {\n      \"kind\": \"city\",\n      \"label\": \"in Houston\",\n      \"city\": \"Houston\"\n    },\n    {\n      \"kind\": \"yearBuilt\",\n      \"label\": \"built 2001 or earlier\",\n      \"yearBuilt\": {\n        \"max\": 2001\n      }\n    },\n    {\n      \"kind\": \"propertyTypes\",\n      \"label\": \"office\",\n      \"propertyTypes\": [\n        \"office\"\n      ]\n    },\n    {\n      \"kind\": \"buildingClass\",\n      \"label\": \"Class A\",\n      \"buildingClass\": [\n        \"A\"\n      ]\n    },\n    {\n      \"kind\": \"minVacantFloorSf\",\n      \"label\": \"a floor with 10,000 SF or more on the market\",\n      \"minVacantFloorSf\": 10000\n    },\n    {\n      \"kind\": \"needsScan\",\n      \"label\": \"a Matterport scan\"\n    },\n    {\n      \"kind\": \"needsEntry\",\n      \"label\": \"a dock on the aerial\",\n      \"needsEntry\": [\n        \"dock\"\n      ]\n    }\n  ]\n}"
       },
       {
-        "atMs": 36,
+        "atMs": 28,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
@@ -274,7 +274,7 @@
         "output": "{\n  \"applied\": \"in Houston\",\n  \"left\": 29,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in Houston\",\n      \"count\": 29\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"H21\",\n      \"name\": \"Harrisburg Logistics Center\",\n      \"yearBuilt\": 2022,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 38000\n      }\n    },\n    {\n      \"id\": \"H14\",\n      \"name\": \"Greens Point Distribution Center\",\n      \"yearBuilt\": 2001,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 22000\n      }\n    },\n    {\n      \"id\": \"H25\",\n      \"name\": \"Energy Corridor West Campus\",\n      \"yearBuilt\": 2020,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 8,\n        \"sf\": 21100\n      }\n    },\n    {\n      \"id\": \"H22\",\n      \"name\": \"Avenida Tower\",\n      \"yearBuilt\": 2018,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 30,\n        \"sf\": 19500\n      }\n    },\n    {\n      \"id\": \"H07\",\n      \"name\": \"Westheimer Court\",\n      \"yearBuilt\": 1985,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 8,\n        \"sf\": 14600\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"yearBuilt\",\n    \"propertyTypes\",\n    \"buildingClass\",\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
       },
       {
-        "atMs": 40,
+        "atMs": 31,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
@@ -284,7 +284,7 @@
         "output": "{\n  \"applied\": \"built 2001 or earlier\",\n  \"left\": 17,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in Houston\",\n      \"count\": 29\n    },\n    {\n      \"label\": \"built 2001 or earlier\",\n      \"count\": 17\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"H14\",\n      \"name\": \"Greens Point Distribution Center\",\n      \"yearBuilt\": 2001,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 22000\n      }\n    },\n    {\n      \"id\": \"H07\",\n      \"name\": \"Westheimer Court\",\n      \"yearBuilt\": 1985,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 8,\n        \"sf\": 14600\n      }\n    },\n    {\n      \"id\": \"H03\",\n      \"name\": \"Ashford Greenway Plaza\",\n      \"yearBuilt\": 1976,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 12,\n        \"sf\": 14200\n      }\n    },\n    {\n      \"id\": \"H04\",\n      \"name\": \"Brandt Memorial Tower\",\n      \"yearBuilt\": 1997,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 9,\n        \"sf\": 13500\n      }\n    },\n    {\n      \"id\": \"F4\",\n      \"name\": \"Smith Street Center\",\n      \"yearBuilt\": 1983,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 19,\n        \"sf\": 13155\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"propertyTypes\",\n    \"buildingClass\",\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
       },
       {
-        "atMs": 46,
+        "atMs": 34,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
@@ -294,7 +294,7 @@
         "output": "{\n  \"applied\": \"office\",\n  \"left\": 11,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in Houston\",\n      \"count\": 29\n    },\n    {\n      \"label\": \"built 2001 or earlier\",\n      \"count\": 17\n    },\n    {\n      \"label\": \"office\",\n      \"count\": 11\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"H07\",\n      \"name\": \"Westheimer Court\",\n      \"yearBuilt\": 1985,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 8,\n        \"sf\": 14600\n      }\n    },\n    {\n      \"id\": \"H03\",\n      \"name\": \"Ashford Greenway Plaza\",\n      \"yearBuilt\": 1976,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 12,\n        \"sf\": 14200\n      }\n    },\n    {\n      \"id\": \"H04\",\n      \"name\": \"Brandt Memorial Tower\",\n      \"yearBuilt\": 1997,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 9,\n        \"sf\": 13500\n      }\n    },\n    {\n      \"id\": \"F4\",\n      \"name\": \"Smith Street Center\",\n      \"yearBuilt\": 1983,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 19,\n        \"sf\": 13155\n      }\n    },\n    {\n      \"id\": \"H01\",\n      \"name\": \"Calder Petroleum Tower\",\n      \"yearBuilt\": 1981,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 27,\n        \"sf\": 11320\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"buildingClass\",\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
       },
       {
-        "atMs": 50,
+        "atMs": 38,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
@@ -304,7 +304,7 @@
         "output": "{\n  \"applied\": \"Class A\",\n  \"left\": 7,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in Houston\",\n      \"count\": 29\n    },\n    {\n      \"label\": \"built 2001 or earlier\",\n      \"count\": 17\n    },\n    {\n      \"label\": \"office\",\n      \"count\": 11\n    },\n    {\n      \"label\": \"Class A\",\n      \"count\": 7\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"H03\",\n      \"name\": \"Ashford Greenway Plaza\",\n      \"yearBuilt\": 1976,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 12,\n        \"sf\": 14200\n      }\n    },\n    {\n      \"id\": \"H04\",\n      \"name\": \"Brandt Memorial Tower\",\n      \"yearBuilt\": 1997,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 9,\n        \"sf\": 13500\n      }\n    },\n    {\n      \"id\": \"F4\",\n      \"name\": \"Smith Street Center\",\n      \"yearBuilt\": 1983,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 19,\n        \"sf\": 13155\n      }\n    },\n    {\n      \"id\": \"H01\",\n      \"name\": \"Calder Petroleum Tower\",\n      \"yearBuilt\": 1981,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 27,\n        \"sf\": 11320\n      }\n    },\n    {\n      \"id\": \"H02\",\n      \"name\": \"Ridgeway Tower\",\n      \"yearBuilt\": 1999,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 18,\n        \"sf\": 10870\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
       },
       {
-        "atMs": 56,
+        "atMs": 41,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
@@ -314,7 +314,7 @@
         "output": "{\n  \"applied\": \"a floor with 10,000 SF or more on the market\",\n  \"left\": 5,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in Houston\",\n      \"count\": 29\n    },\n    {\n      \"label\": \"built 2001 or earlier\",\n      \"count\": 17\n    },\n    {\n      \"label\": \"office\",\n      \"count\": 11\n    },\n    {\n      \"label\": \"Class A\",\n      \"count\": 7\n    },\n    {\n      \"label\": \"a floor with 10,000 SF or more on the market\",\n      \"count\": 5\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"H03\",\n      \"name\": \"Ashford Greenway Plaza\",\n      \"yearBuilt\": 1976,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 12,\n        \"sf\": 14200\n      }\n    },\n    {\n      \"id\": \"H04\",\n      \"name\": \"Brandt Memorial Tower\",\n      \"yearBuilt\": 1997,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 9,\n        \"sf\": 13500\n      }\n    },\n    {\n      \"id\": \"F4\",\n      \"name\": \"Smith Street Center\",\n      \"yearBuilt\": 1983,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 19,\n        \"sf\": 13155\n      }\n    },\n    {\n      \"id\": \"H01\",\n      \"name\": \"Calder Petroleum Tower\",\n      \"yearBuilt\": 1981,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 27,\n        \"sf\": 11320\n      }\n    },\n    {\n      \"id\": \"H02\",\n      \"name\": \"Ridgeway Tower\",\n      \"yearBuilt\": 1999,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 18,\n        \"sf\": 10870\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
       },
       {
-        "atMs": 62,
+        "atMs": 45,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
@@ -324,7 +324,7 @@
         "output": "{\n  \"applied\": \"a Matterport scan\",\n  \"left\": 4,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in Houston\",\n      \"count\": 29\n    },\n    {\n      \"label\": \"built 2001 or earlier\",\n      \"count\": 17\n    },\n    {\n      \"label\": \"office\",\n      \"count\": 11\n    },\n    {\n      \"label\": \"Class A\",\n      \"count\": 7\n    },\n    {\n      \"label\": \"a floor with 10,000 SF or more on the market\",\n      \"count\": 5\n    },\n    {\n      \"label\": \"a Matterport scan\",\n      \"count\": 4\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"H03\",\n      \"name\": \"Ashford Greenway Plaza\",\n      \"yearBuilt\": 1976,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 12,\n        \"sf\": 14200\n      }\n    },\n    {\n      \"id\": \"F4\",\n      \"name\": \"Smith Street Center\",\n      \"yearBuilt\": 1983,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 19,\n        \"sf\": 13155\n      }\n    },\n    {\n      \"id\": \"H01\",\n      \"name\": \"Calder Petroleum Tower\",\n      \"yearBuilt\": 1981,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 27,\n        \"sf\": 11320\n      }\n    },\n    {\n      \"id\": \"H02\",\n      \"name\": \"Ridgeway Tower\",\n      \"yearBuilt\": 1999,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 18,\n        \"sf\": 10870\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"needsEntry\"\n  ]\n}"
       },
       {
-        "atMs": 67,
+        "atMs": 48,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
@@ -334,17 +334,17 @@
         "output": "{\n  \"applied\": \"a dock on the aerial\",\n  \"left\": 3,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in Houston\",\n      \"count\": 29\n    },\n    {\n      \"label\": \"built 2001 or earlier\",\n      \"count\": 17\n    },\n    {\n      \"label\": \"office\",\n      \"count\": 11\n    },\n    {\n      \"label\": \"Class A\",\n      \"count\": 7\n    },\n    {\n      \"label\": \"a floor with 10,000 SF or more on the market\",\n      \"count\": 5\n    },\n    {\n      \"label\": \"a Matterport scan\",\n      \"count\": 4\n    },\n    {\n      \"label\": \"a dock on the aerial\",\n      \"count\": 3\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"F4\",\n      \"name\": \"Smith Street Center\",\n      \"yearBuilt\": 1983,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 19,\n        \"sf\": 13155\n      }\n    },\n    {\n      \"id\": \"H01\",\n      \"name\": \"Calder Petroleum Tower\",\n      \"yearBuilt\": 1981,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 27,\n        \"sf\": 11320\n      }\n    },\n    {\n      \"id\": \"H02\",\n      \"name\": \"Ridgeway Tower\",\n      \"yearBuilt\": 1999,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 18,\n        \"sf\": 10870\n      }\n    }\n  ],\n  \"filtersLeft\": []\n}"
       },
       {
-        "atMs": 71,
+        "atMs": 52,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_candidate",
         "status": "completed",
         "durationMs": 0,
         "input": "{\"id\":\"F4\"}",
-        "output": "{\n  \"id\": \"F4\",\n  \"name\": \"Smith Street Center\",\n  \"city\": \"Houston\",\n  \"neighbourhood\": \"Downtown\",\n  \"yearBuilt\": 1983,\n  \"buildingClass\": \"A\",\n  \"propertyType\": \"office\",\n  \"stories\": 50,\n  \"rbaSf\": 1237846,\n  \"typicalFloorSf\": 25410,\n  \"vacantFloors\": [\n    {\n      \"floor\": 19,\n      \"sf\": 13155,\n      \"suites\": [\n        \"1910\",\n        \"1975\"\n      ]\n    },\n    {\n      \"floor\": 33,\n      \"sf\": 12081,\n      \"suites\": [\n        \"3320\"\n      ]\n    },\n    {\n      \"floor\": 44,\n      \"sf\": 4641,\n      \"suites\": [\n        \"4430\",\n        \"4460\"\n      ]\n    },\n    {\n      \"floor\": 14,\n      \"sf\": 3286,\n      \"suites\": [\n        \"1450\"\n      ]\n    }\n  ],\n  \"scans\": 0,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
+        "output": "{\n  \"id\": \"F4\",\n  \"name\": \"Smith Street Center\",\n  \"city\": \"Houston\",\n  \"neighbourhood\": \"Downtown\",\n  \"yearBuilt\": 1983,\n  \"buildingClass\": \"A\",\n  \"propertyType\": \"office\",\n  \"stories\": 50,\n  \"rbaSf\": 1237846,\n  \"typicalFloorSf\": 25410,\n  \"vacantFloors\": [\n    {\n      \"floor\": 19,\n      \"sf\": 13155,\n      \"suites\": [\n        \"1910\",\n        \"1975\"\n      ]\n    },\n    {\n      \"floor\": 33,\n      \"sf\": 12081,\n      \"suites\": [\n        \"3320\"\n      ]\n    },\n    {\n      \"floor\": 44,\n      \"sf\": 4641,\n      \"suites\": [\n        \"4430\",\n        \"4460\"\n      ]\n    },\n    {\n      \"floor\": 14,\n      \"sf\": 3286,\n      \"suites\": [\n        \"1450\"\n      ]\n    }\n  ],\n  \"scanned\": true,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
       },
       {
-        "atMs": 74,
+        "atMs": 55,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_aerial_entries",
@@ -354,17 +354,17 @@
         "output": "{\n  \"source\": \"fixture\",\n  \"entries\": [\n    {\n      \"id\": \"lobby-E\",\n      \"kind\": \"lobby\",\n      \"label\": \"Smith Street lobby\",\n      \"view\": \"E\"\n    },\n    {\n      \"id\": \"tunnel-N\",\n      \"kind\": \"service\",\n      \"label\": \"Tunnel concourse\",\n      \"view\": \"N\"\n    },\n    {\n      \"id\": \"dock-S\",\n      \"kind\": \"dock\",\n      \"label\": \"Loading dock\",\n      \"view\": \"S\"\n    },\n    {\n      \"id\": \"garage-W\",\n      \"kind\": \"garage\",\n      \"label\": \"Skybridge to garage\",\n      \"view\": \"W\"\n    },\n    {\n      \"id\": \"roof\",\n      \"kind\": \"roof\",\n      \"label\": \"Roof hatch\",\n      \"view\": \"ortho\"\n    }\n  ]\n}"
       },
       {
-        "atMs": 77,
+        "atMs": 58,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_candidate",
         "status": "completed",
         "durationMs": 0,
         "input": "{\"id\":\"H01\"}",
-        "output": "{\n  \"id\": \"H01\",\n  \"name\": \"Calder Petroleum Tower\",\n  \"city\": \"Houston\",\n  \"neighbourhood\": \"Downtown\",\n  \"yearBuilt\": 1981,\n  \"buildingClass\": \"A\",\n  \"propertyType\": \"office\",\n  \"stories\": 44,\n  \"rbaSf\": 1017984,\n  \"typicalFloorSf\": 24100,\n  \"vacantFloors\": [\n    {\n      \"floor\": 27,\n      \"sf\": 11320,\n      \"suites\": [\n        \"2710\",\n        \"2720\",\n        \"2730\"\n      ]\n    },\n    {\n      \"floor\": 38,\n      \"sf\": 2240,\n      \"suites\": [\n        \"3810\"\n      ]\n    }\n  ],\n  \"scans\": 0,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
+        "output": "{\n  \"id\": \"H01\",\n  \"name\": \"Calder Petroleum Tower\",\n  \"city\": \"Houston\",\n  \"neighbourhood\": \"Downtown\",\n  \"yearBuilt\": 1981,\n  \"buildingClass\": \"A\",\n  \"propertyType\": \"office\",\n  \"stories\": 44,\n  \"rbaSf\": 1017984,\n  \"typicalFloorSf\": 24100,\n  \"vacantFloors\": [\n    {\n      \"floor\": 27,\n      \"sf\": 11320,\n      \"suites\": [\n        \"2710\",\n        \"2720\",\n        \"2730\"\n      ]\n    },\n    {\n      \"floor\": 38,\n      \"sf\": 2240,\n      \"suites\": [\n        \"3810\"\n      ]\n    }\n  ],\n  \"scanned\": true,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
       },
       {
-        "atMs": 81,
+        "atMs": 62,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_aerial_entries",
@@ -374,17 +374,17 @@
         "output": "{\n  \"source\": \"inventory\",\n  \"entryKinds\": [\n    \"dock\",\n    \"lobby\",\n    \"garage\"\n  ],\n  \"note\": \"no aerial yet; the inventory's entry tags\"\n}"
       },
       {
-        "atMs": 84,
+        "atMs": 64,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_candidate",
         "status": "completed",
         "durationMs": 0,
         "input": "{\"id\":\"H02\"}",
-        "output": "{\n  \"id\": \"H02\",\n  \"name\": \"Ridgeway Tower\",\n  \"city\": \"Houston\",\n  \"neighbourhood\": \"Uptown\",\n  \"yearBuilt\": 1999,\n  \"buildingClass\": \"A\",\n  \"propertyType\": \"office\",\n  \"stories\": 31,\n  \"rbaSf\": 666624,\n  \"typicalFloorSf\": 22400,\n  \"vacantFloors\": [\n    {\n      \"floor\": 18,\n      \"sf\": 10870,\n      \"suites\": [\n        \"1810\",\n        \"1820\"\n      ]\n    },\n    {\n      \"floor\": 25,\n      \"sf\": 3120,\n      \"suites\": [\n        \"2510\"\n      ]\n    }\n  ],\n  \"scans\": 0,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
+        "output": "{\n  \"id\": \"H02\",\n  \"name\": \"Ridgeway Tower\",\n  \"city\": \"Houston\",\n  \"neighbourhood\": \"Uptown\",\n  \"yearBuilt\": 1999,\n  \"buildingClass\": \"A\",\n  \"propertyType\": \"office\",\n  \"stories\": 31,\n  \"rbaSf\": 666624,\n  \"typicalFloorSf\": 22400,\n  \"vacantFloors\": [\n    {\n      \"floor\": 18,\n      \"sf\": 10870,\n      \"suites\": [\n        \"1810\",\n        \"1820\"\n      ]\n    },\n    {\n      \"floor\": 25,\n      \"sf\": 3120,\n      \"suites\": [\n        \"2510\"\n      ]\n    }\n  ],\n  \"scanned\": true,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
       },
       {
-        "atMs": 87,
+        "atMs": 67,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_aerial_entries",
@@ -394,28 +394,28 @@
         "output": "{\n  \"source\": \"inventory\",\n  \"entryKinds\": [\n    \"dock\",\n    \"service\"\n  ],\n  \"note\": \"no aerial yet; the inventory's entry tags\"\n}"
       },
       {
-        "atMs": 93,
+        "atMs": 74,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Read mission paper-trail-2001 and its casting needs",
         "status": "completed"
       },
       {
-        "atMs": 93,
+        "atMs": 74,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Narrow the inventory with the location scout, one filter at a time",
         "status": "completed"
       },
       {
-        "atMs": 93,
+        "atMs": 74,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Pick three finalists and write the shortlist",
         "status": "in_progress"
       },
       {
-        "atMs": 99,
+        "atMs": 81,
         "kind": "tool",
         "agent": "casting-director",
         "label": "write_shortlist",
@@ -425,21 +425,21 @@
         "output": "Shortlist written for paper-trail-2001: F4, H01, H02, from a funnel of 8 rows."
       },
       {
-        "atMs": 106,
+        "atMs": 85,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Read mission paper-trail-2001 and its casting needs",
         "status": "completed"
       },
       {
-        "atMs": 106,
+        "atMs": 85,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Narrow the inventory with the location scout, one filter at a time",
         "status": "completed"
       },
       {
-        "atMs": 106,
+        "atMs": 85,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Pick three finalists and write the shortlist",

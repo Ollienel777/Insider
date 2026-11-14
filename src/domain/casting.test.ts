@@ -19,7 +19,7 @@ const missions = Mission.array().parse(missionsRaw);
 const inventory = Inventory.parse(inventoryRaw);
 const buildings = Building.array().parse(buildingsRaw);
 
-// The funnel is the app's own: `searchInventory` (src/adapters/costar/search.ts, #116).
+// The funnel is the app's own: `searchInventory` (src/adapters/costar/search.ts, #23).
 function funnel(filters: CastingFilter[], all: InventoryProperty[]) {
   const { steps } = searchInventory(all, filters, "fixture");
   return { steps: steps.map(({ label, count }) => ({ label, count })), ranked: steps[steps.length - 1].top };
