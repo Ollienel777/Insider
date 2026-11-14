@@ -46,7 +46,7 @@ import { clearRunLog, keepRunLogInMemory, runLogOf, saveRunLog } from "./run-log
 import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postureOf, runRecordOf, type RunRecord } from "./run-history";
 import { MuteToggle, useRunSound } from "./run-sound";
 import { placeOrFixture } from "./scan-fallback";
-import { FIRST_PERSON_TURN_MS, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, ViewSwitch, type HeldAction } from "./fp/run-view";
+import { FIRST_PERSON_PACE, FIRST_PERSON_TURN_MS, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, ViewSwitch, type HeldAction } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -388,6 +388,8 @@ export function RunScreen({
     chief,
     revealed,
     status,
+    // First person is played in real time: the HUD says seconds and plain words, not hops and turns.
+    pace: fpOn ? FIRST_PERSON_PACE : null,
   });
 
   useEffect(() => {

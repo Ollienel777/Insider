@@ -203,6 +203,7 @@ export function RunLayout({
                   label={objective.label}
                   goal={objective.goal}
                   hops={objective.hops}
+                  seconds={objective.seconds}
                   locks={objective.locks}
                   taken={objective.taken}
                   tone={objective.outcome ? OUTCOME_TONE[objective.outcome] : "plain"}
