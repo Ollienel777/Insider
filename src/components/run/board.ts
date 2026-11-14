@@ -268,6 +268,22 @@ export function roomName(floor: FloorGraph, nodeId: string): string {
   return floor.rooms.find((r) => r.id === roomId)?.label ?? nodeId;
 }
 
+/**
+ * How a sprint's badge names its way, true for the rooms of all three nodes:
+ * "through V" when the middle node's room is not the target's (the sprint
+ * passes through V, whether or not it starts there); "two hops within R" only
+ * when the player, the middle node and the target all stand in room R;
+ * otherwise, with the middle node in the target's room, "two hops from H",
+ * the player's room (the badge already names the target's).
+ */
+export function sprintWay(floor: FloorGraph, here: string, via: string, to: string): string {
+  const room = (id: string) => floor.nodes.find((n) => n.id === id)?.roomId ?? id;
+  const [h, v, t] = [room(here), room(via), room(to)];
+  if (v !== t) return `through ${roomName(floor, via)}`;
+  if (h === t) return `two hops within ${roomName(floor, to)}`;
+  return `two hops from ${roomName(floor, here)}`;
+}
+
 // ---- the plan and the guards' orders -------------------------------------------
 
 export interface PlanStep {

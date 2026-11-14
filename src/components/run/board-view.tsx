@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type FocusEve
 import type { RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
 import { objectiveLabel } from "@/lib/objective-noun";
-import { cameraMount, cones, coverage, guardOrders, roomName, type Choice, type Cone } from "./board";
+import { cameraMount, cones, coverage, guardOrders, roomName, sprintWay, type Choice, type Cone } from "./board";
 import { useHop } from "./hop";
 import { frameOf, hull, LABEL_FONT, matrixAttr, pointsAttr, project, projectRect, round, TILE_DEPTH, type Point } from "./iso";
 import {
@@ -619,7 +619,7 @@ export function BoardView({
               choice={choice}
               at={at(choice.nodeId)}
               room={roomName(floor, choice.nodeId)}
-              via={choice.via ? roomName(floor, choice.via) : undefined}
+              way={choice.via ? sprintWay(floor, run.playerNode, choice.via, choice.nodeId) : undefined}
               onChoose={onChoose}
             />
           ))}
@@ -1346,22 +1346,22 @@ function ChoiceHint({
   choice,
   at,
   room,
-  via,
+  way,
   onChoose,
 }: {
   choice: Choice;
   at: Point;
   room: string;
-  /** For a sprint: the room of the node it runs through. */
-  via?: string;
+  /** For a sprint: the way it runs, from `sprintWay`. */
+  way?: string;
   onChoose: (choice: Choice) => void;
 }) {
   const label =
     choice.kind === "pick"
       ? `Pick the door to ${room}, ${choice.progress!.done} of ${choice.progress!.of} (${choice.key})`
       : choice.kind === "sprint"
-        ? // Rooms are the finest names the board has: a sprint inside one room says so.
-          `Sprint to ${room}, ${via && via !== room ? `through ${via}` : `two hops within ${room}`}, loud (${choice.key})`
+        ? // Rooms are the finest names the board has; `sprintWay` keeps the way true for all three nodes.
+          `Sprint to ${room}, ${way ?? "two hops"}, loud (${choice.key})`
         : `Move to ${room} (${choice.key})`;
   const onKey = (event: KeyboardEvent) => {
     if (event.key === "Enter" || event.key === " ") {
