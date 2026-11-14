@@ -148,7 +148,7 @@ export function PlanScreen({
                 title="This building's level isn't ready yet."
                 body="Only Halvorsen Tower has a board so far. Pick it on the map to plan the job."
                 action={
-                  <Link href="/" className={buttonVariants({ variant: "secondary" })}>
+                  <Link href="/map" className={buttonVariants({ variant: "secondary" })}>
                     Back to the map
                   </Link>
                 }

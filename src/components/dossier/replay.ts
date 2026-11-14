@@ -65,7 +65,8 @@ export interface StepView {
   /** Index into `trace.events`. */
   index: number;
   kind: "subagent" | "tool";
-  agent: BuildTraceEvent["agent"];
+  /** The Level Builder's agents, or the Casting Director's. */
+  agent: string;
   label: string;
   /** False until the replay reaches it: the row is laid out, under a skeleton. */
   shown: boolean;
@@ -87,7 +88,12 @@ export interface TraceView {
  * What the trace shows once the events `shown` accepts have played. Every
  * row is listed from the start, so the list never changes height.
  */
-export function traceView(trace: BuildTrace, shown: (index: number) => boolean): TraceView {
+export function traceView(
+  trace: { events: readonly (Omit<BuildTraceEvent, "agent"> & { agent: string })[] },
+  shown: (index: number) => boolean,
+  /** The agent the run belongs to; the tools any other agent calls indent under its task. */
+  root = "level-builder",
+): TraceView {
   const todos = new Map<string, TodoStatus | null>();
   const steps: StepView[] = [];
 
@@ -106,7 +112,7 @@ export function traceView(trace: BuildTrace, shown: (index: number) => boolean):
       shown: visible,
       status: event.status,
       durationMs: event.durationMs,
-      depth: event.kind === "tool" && event.agent !== "level-builder" ? 1 : 0,
+      depth: event.kind === "tool" && event.agent !== root ? 1 : 0,
     });
   });
 
@@ -133,7 +139,7 @@ export function formatRecordedAt(iso: string | undefined): string {
 }
 
 /** The TraceList's header line (#17, R1-M2): "Recorded run · <timestamp> · <model>". */
-export function recordedRunHeader(trace: Pick<BuildTrace, "recordedAt" | "model">): string {
+export function recordedRunHeader(trace: { recordedAt?: string; model?: string }): string {
   return ["Recorded run", formatRecordedAt(trace.recordedAt), trace.model ?? "model not recorded"].join(" · ");
 }
 

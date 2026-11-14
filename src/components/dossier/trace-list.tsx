@@ -10,7 +10,16 @@ interface TraceListProps {
   header: string;
   /** Skip or Replay, beside the header. */
   control: ReactNode;
+  /** The agent whose run this is. */
+  title?: string;
+  /** The one line that says what this replay is and is not. */
+  notice?: string;
+  /** Shown between the plan and the subagents and tools (the cast screen's funnel). */
+  afterPlan?: ReactNode;
 }
+
+/** The dossier's notice: its trace was recorded on fixtures, and replays without a model. */
+export const FIXTURE_REPLAY_NOTICE = "A replay of a run recorded on fixtures. Nothing on this screen calls a model.";
 
 /**
  * The Level Builder's run as the dossier replays it (DESIGN.md, Dossier): the
@@ -18,13 +27,20 @@ interface TraceListProps {
  * calls read in mono with their recorded duration. Every row is laid out
  * from the start under a skeleton, so the list holds its height.
  */
-export function TraceList({ view, header, control }: TraceListProps) {
+export function TraceList({
+  view,
+  header,
+  control,
+  title = "Level Builder",
+  notice = FIXTURE_REPLAY_NOTICE,
+  afterPlan,
+}: TraceListProps) {
   return (
     <section aria-labelledby="trace-title" data-testid="trace-list" className="flex flex-col gap-4">
       <div>
         <div className="flex items-center justify-between gap-3">
           <h2 id="trace-title" className="text-lg font-semibold text-text-1">
-            Level Builder
+            {title}
           </h2>
           {control}
         </div>
@@ -32,7 +48,7 @@ export function TraceList({ view, header, control }: TraceListProps) {
             {/* Each part keeps together, so a line breaks only between parts. */}
             {header.split(" · ").map((part, i, parts) => (
               <Fragment key={part}>
-                <span className="whitespace-nowrap">
+                <span className={part.length > 40 ? "break-words" : "whitespace-nowrap"}>
                   {part}
                   {i < parts.length - 1 ? " ·" : null}
                 </span>
@@ -41,8 +57,8 @@ export function TraceList({ view, header, control }: TraceListProps) {
             ))}
           </p>
       </div>
-      <p className="rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm text-text-2">
-        A replay of a run recorded on fixtures. Nothing on this screen calls a model.
+      <p data-testid="replay-notice" className="rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm text-text-2">
+        {notice}
       </p>
 
       <div>
@@ -65,6 +81,8 @@ export function TraceList({ view, header, control }: TraceListProps) {
           ))}
         </ol>
       </div>
+
+      {afterPlan}
 
       <div>
         <h3 className="label-caps text-text-3">Subagents and tools</h3>

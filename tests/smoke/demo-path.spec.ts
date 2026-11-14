@@ -46,9 +46,11 @@ test("the demo path: beats 1 to 7 on F1, in fake mode", async ({ page }) => {
   // fails on that beat's own outcome wait, not on this.
   test.setTimeout(90_000);
   // Beat 1: the map. Five prepared buildings, three in LA and two in Houston.
+  // The mission picker took `/` (#118); #120 walks the new beats 1-2 from it.
+  // Until then this walk starts on the map at its new address.
   // The rows stream in a hidden copy before React swaps out the skeleton, and a
   // count also matches that copy: count once the skeleton has gone (#75).
-  await page.goto("/");
+  await page.goto("/map");
   await expect(page.getByTestId("map-skeleton")).toHaveCount(0);
   const rows = page.getByTestId("building-row");
   await expect(rows).toHaveCount(3);

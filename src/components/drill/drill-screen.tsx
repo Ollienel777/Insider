@@ -91,7 +91,7 @@ export function DrillScreen({ building, heistMode }: { building: Building; heist
         title="This building has no board to drill on yet."
         body="Only Halvorsen Tower has a floor plan so far. Pick it on the map to run its drill."
         action={
-          <Link href="/" className={buttonVariants({ variant: "secondary" })}>
+          <Link href="/map" className={buttonVariants({ variant: "secondary" })}>
             Back to the map
           </Link>
         }
