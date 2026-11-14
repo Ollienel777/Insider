@@ -330,7 +330,7 @@ export function varyLevel(level: Level, seed: number = level.seed): Level {
 }
 
 /** A patrol loop as every node it walks, in order, the way back to the first waypoint included. */
-function roundOf(board: Board, patrol: readonly string[]): string[] {
+export function roundOf(board: Board, patrol: readonly string[]): string[] {
   if (patrol.length < 2) return [...patrol];
   const round: string[] = [];
   for (let i = 0; i < patrol.length; i++) {

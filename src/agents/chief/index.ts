@@ -5,3 +5,16 @@ export { CHIEF_PROMPT_HEAD, chiefMessages, chiefSystemPrompt, chiefUserPrompt } 
 export { ChiefRecording, loadChiefRecording, matchTurn, RecordedTurn } from "./recorded";
 export { ChiefRequest, ChiefTransition, type ChiefAnswer, type ChiefSource } from "./request";
 export { chiefTemplate } from "./template";
+export {
+  clampFix,
+  FIX_PROMPT_HEAD,
+  fixMessages,
+  FixRecording,
+  fixRoster,
+  fixTemplate,
+  loadFixRecording,
+  suggestFix,
+  type FixAnswer,
+  type FixOptions,
+  type FixRoster,
+} from "./fix";
