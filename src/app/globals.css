@@ -226,11 +226,31 @@ body {
   }
 }
 
+/* The Live turn timer's bar drains from full to empty over one turn. Linear,
+   because it measures time. Its duration (LIVE_TURN_MS) and its play state
+   are set inline by the timer (src/components/run/live-controls.tsx). */
+.turn-drain {
+  transform-origin: left center;
+  animation: turn-drain linear both;
+}
+
+@keyframes turn-drain {
+  to {
+    transform: scaleX(0);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     transition-duration: 0ms !important;
     animation-duration: 0ms !important;
+  }
+
+  /* A drain cut to 0ms would show an empty bar. The timer's bar stands still,
+     full, and the timer says its state in a word instead. */
+  .turn-drain {
+    animation: none !important;
   }
 }
