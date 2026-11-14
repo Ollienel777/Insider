@@ -49,9 +49,11 @@ export function watcherPhrase(watchers: readonly Watcher[]): string {
 }
 
 /**
- * The meter. The level word is announced as it changes; the block flashes
- * once in the level's colour when it does (`.alarm-change`, globals.css), and
- * not at all under `prefers-reduced-motion`.
+ * The meter. The level word is an alert: a change of level is announced at
+ * once, over whatever else is being read, since in Live the clock does not
+ * wait for it. The block flashes once in the level's colour when it changes
+ * (`.alarm-change`, globals.css), and not at all under
+ * `prefers-reduced-motion`.
  */
 export function DangerMeter({
   alarm,
@@ -85,7 +87,7 @@ export function DangerMeter({
         </span>
       </div>
       <p className="flex flex-wrap items-baseline gap-x-2 text-base">
-        <span role="status" aria-live="assertive" data-testid="danger-level" className={cn("text-lg font-semibold", style.text)}>
+        <span role="alert" data-testid="danger-level" className={cn("text-lg font-semibold", style.text)}>
           {style.label}
         </span>
         <span data-testid="danger-watchers" data-noticed={noticed ? "true" : "false"} className={noticed ? "text-text-1" : "text-text-2"}>

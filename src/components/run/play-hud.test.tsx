@@ -10,6 +10,8 @@ import { LevelManifest, type FloorGraph } from "@/domain";
 import { act, createRun, neighbours, shortestPath, zoneOf, type Action, type Level, type RunState } from "@/engine";
 import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.romaine-1974.json";
+import cachedF2 from "../../../data/levels/F2.sunset-1986.json";
+import cachedF3 from "../../../data/levels/F3.night-desk.json";
 import { choices, describeTurn, sprintChoices } from "./board";
 import { BoardView } from "./board-view";
 import { ChiefPanel, type ChiefState } from "./chief-panel";
@@ -26,6 +28,7 @@ import {
   noticedBy,
   noticeOf,
   objectiveInfo,
+  radioFacts,
   routeLeft,
   sprintVia,
   usePlayHud,
@@ -253,6 +256,38 @@ describe("who noticed the player", () => {
     expect(noticedBy(hiding, found)).toEqual([{ id: "G2", sense: "sees" }]);
   });
 
+  it("looks for the player on a sprint's middle node when two nodes could have been it, as the engine does", () => {
+    // Four turns in, G1's round looks into the west suites' north-east corner, not their south-west one.
+    const run = play(start(), [wait, wait, wait, wait]);
+    const there: RunState = { ...run, playerNode: "s1-se" };
+    // Two neighbours lead to the far corner, in this order on the floor's edge list.
+    const middles = neighbours(there.board, "s1-se")
+      .map((first) => first.to)
+      .filter((mid) => neighbours(there.board, mid).some((second) => second.to === "s1-w"));
+    expect(middles).toEqual(["s1-sw", "s1-ne"]);
+    // The board's choice says which of the two the sprint takes: the first clockwise, not the first on the
+    // edge list. That is the action a key or a click plays, and the middle node read back.
+    const sprint = sprintChoices(there).find((c) => c.nodeId === "s1-w")!;
+    expect(sprint.action).toEqual({ kind: "sprint", to: "s1-w", via: "s1-ne" });
+    expect(sprintVia(there, "s1-w")).toBe("s1-ne");
+
+    // At Lockdown, last seen there a turn ago: the engine sees the player on the way and raises no event for it.
+    const before: RunState = { ...there, alarm: "lockdown", lastKnown: zoneOf(run.board, "s1-ne"), lastSeen: { nodeId: "s1-ne", turn: 3 } };
+    const after = play(before, [sprint.action]);
+    expect(after.playerNode).toBe("s1-w");
+    expect(after.status).toBe("playing");
+    expect(after.lastSeen).toEqual({ nodeId: "s1-ne", turn: 4 });
+    expect(after.alarmEvents).toHaveLength(before.alarmEvents.length);
+    expect(noticedBy(before, after)).toEqual([{ id: "G1", sense: "sees" }]);
+  });
+
+  it("reads no middle node into a sprint a guard stopped on its first hop", () => {
+    // The player ends on a neighbour: that node is where the engine looked, and there is no second.
+    expect(sprintVia(start(), "fl-lobby")).toBeNull();
+    // A sprint the board offers, with one way through.
+    expect(sprintVia(start(), "dc-west")).toBe("fl-lobby");
+  });
+
   it("is nobody across anything but one turn of the same run", () => {
     const run = start();
     const later = play(run, [move("fl-lobby"), move("dc-west")]);
@@ -261,15 +296,20 @@ describe("who noticed the player", () => {
     expect(noticedBy(start(), play(start(), [move("fl-lobby")]))).toEqual([]);
   });
 
-  it("agrees with the engine on every turn of 200 seeded walks: somebody is named exactly when the engine detected the player", () => {
+  it.each([
+    ["F1", cached],
+    ["F2", cachedF2],
+    ["F3", cachedF3],
+  ] as const)("agrees with the engine on every turn of 400 seeded walks on %s: somebody is named exactly when the engine detected the player", (id, level) => {
+    const floorPlaced = placeLevel(LevelManifest.parse(structuredClone(level)), structuredClone(FIXTURE_FLOORS[id]), RUN_SEED);
     const random = (seed: number) => {
       let s = seed >>> 0;
       return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 2 ** 32;
     };
-    const seen = { turns: 0, noticed: 0, sprints: 0, noise: 0 };
-    for (let seed = 1; seed <= 200; seed++) {
+    const seen = { turns: 0, noticed: 0, sprints: 0, noise: 0, twoWays: 0, twoWaysNoticed: 0 };
+    for (let seed = 1; seed <= 400; seed++) {
       const next = random(seed);
-      let run = start();
+      let run = createRun(floorPlaced.level);
       for (let i = 0; i < 80 && run.status === "playing"; i++) {
         const pool: Action[] = [...choices(run), ...sprintChoices(run)].map((c) => c.action);
         pool.push(wait, wait);
@@ -286,16 +326,19 @@ describe("who noticed the player", () => {
           expect(named, `seed ${seed} turn ${before.turn}: ${cause.kind} ${cause.id}`).toBeDefined();
           if (cause.kind !== "noise") expect(named!.sense, `seed ${seed} turn ${before.turn}`).toBe("sees");
         }
-        // The engine marks the turn it last detected the player on. A sprint whose middle node could
-        // be one of several is left out: its log does not say which, so only its events are checked.
-        const stopped = neighbours(before.board, before.playerNode).some((e) => e.to === after.playerNode);
-        if (kind !== "sprint" || stopped || sprintVia(before, after.playerNode) !== null) {
-          expect(watchers.length > 0, `seed ${seed} turn ${before.turn} (${kind})`).toBe(after.lastSeen?.turn === before.turn);
-        }
+        // The engine marks the turn it last detected the player on: every turn, every kind of action.
+        expect(watchers.length > 0, `seed ${seed} turn ${before.turn} (${kind})`).toBe(after.lastSeen?.turn === before.turn);
+        // A sprint that two different middle nodes could have carried.
+        const ways = neighbours(before.board, before.playerNode).filter(
+          (first) => first.to !== after.playerNode && neighbours(before.board, first.to).some((second) => second.to === after.playerNode),
+        );
+        const twoWays = kind === "sprint" && ways.length > 1;
         seen.turns += 1;
         seen.noticed += watchers.length > 0 ? 1 : 0;
         seen.sprints += kind === "sprint" ? 1 : 0;
         seen.noise += events.filter((e) => e.cause.kind === "noise").length;
+        seen.twoWays += twoWays ? 1 : 0;
+        seen.twoWaysNoticed += twoWays && watchers.length > 0 ? 1 : 0;
         run = after;
       }
     }
@@ -304,7 +347,12 @@ describe("who noticed the player", () => {
     expect(seen.noticed).toBeGreaterThan(100);
     expect(seen.turns - seen.noticed).toBeGreaterThan(100);
     expect(seen.sprints).toBeGreaterThan(100);
-    expect(seen.noise).toBeGreaterThan(0);
+    // F1's open office and west suites have nodes two ways apart, and its guards hear a sprint there.
+    if (id === "F1") {
+      expect(seen.noise).toBeGreaterThan(0);
+      expect(seen.twoWays).toBeGreaterThan(0);
+      expect(seen.twoWaysNoticed).toBeGreaterThan(0);
+    }
   });
 
   it("says who in words, sightings first, each watcher once", () => {
@@ -322,6 +370,9 @@ describe("the danger meter", () => {
   it("shows the alarm level as a word and as steps, and who noticed the player", () => {
     const calm = renderToStaticMarkup(<DangerMeter alarm="calm" watchers={[]} />);
     expect(calm).toMatch(/data-testid="danger-level"[^>]*>Calm</);
+    // One kind of live region for the level: an alert, with no second, politer one beside it.
+    expect(calm).toMatch(/<span role="alert" data-testid="danger-level"/);
+    expect(calm).not.toMatch(/aria-live|role="status"/);
     expect(calm).toContain('data-reached="1"');
     expect(calm).toContain(UNSEEN);
     // Calm is quiet: nothing in an alarm colour, and no flash.
@@ -344,7 +395,10 @@ describe("the danger meter", () => {
 const STEP = "Pick the records room door, 2 turns";
 const SIGHTING = { turn: 3, kind: "sighting", text: "C2 sees you in the Dock Corridor." } as const;
 const CHIEF = ["C2 has them in the dock corridor.", "G1 and G4, up through the elevator lobby and converge.", "Lock the records room."];
-const facts = (over: Partial<RadioFacts> = {}): RadioFacts => ({ step: STEP, note: null, callout: null, chief: null, ...over });
+/** One run, as the radio tells runs apart; `ANOTHER_RUN` is the run after Restart. */
+const THIS_RUN = { run: "this one" };
+const ANOTHER_RUN = { run: "the next" };
+const facts = (over: Partial<RadioFacts> = {}): RadioFacts => ({ run: THIS_RUN, step: STEP, note: null, callout: null, chief: null, ...over });
 const answer = { id: "an answer" };
 const chief = (lines: number, done = lines === CHIEF.length) => ({ answer, lines: CHIEF.slice(0, lines), done, tag: "Recorded" });
 
@@ -450,6 +504,70 @@ describe("the radio's order", () => {
     const { heard } = listen(state, { ...rising, chief: second }, 600);
     expect(heard.map((h) => h.line?.text)).toEqual([rising.callout!.text, second.lines[0], second.lines[1], rising.callout!.text]);
     expect(heard[1].at).toBe(500 + radioHold(rising.callout!.text));
+  });
+
+  it("starts a new run from silence: neither a callout still holding the air nor the Chief's read-out carries over", () => {
+    const BACK = "Back at the start. The guards are on their rounds.";
+    // Seen, and the Chief's first line on the air.
+    const seen = facts({ callout: SIGHTING, chief: chief(3) });
+    let state = tuneRadio(RADIO_SILENT, facts({ callout: SIGHTING }), 0);
+    state = tuneRadio(state, seen, radioHold(SIGHTING.text));
+    expect(radioLine(state, seen)).toMatchObject({ kind: "chief", text: CHIEF[0] });
+
+    // Restart, well inside the sighting's hold: the same remembered state, the fresh run's facts.
+    // Nobody has noticed the player, no Chief has answered, and the status line says where they are.
+    const fresh = facts({ run: ANOTHER_RUN, note: BACK });
+    expect(radioLine(state, fresh)).toEqual({ kind: "note", text: BACK });
+    // The Chief's old answer object turning up again on the new run is not read out either.
+    expect(radioLine(state, { ...fresh, chief: chief(3) })).toEqual({ kind: "note", text: BACK });
+
+    // A callout alone, restarted 200 ms after it took the air, with over a second of its hold left.
+    const held = tuneRadio(RADIO_SILENT, facts({ callout: SIGHTING }), 0);
+    expect(held.callout!.until).toBeGreaterThan(1200);
+    expect(radioLine(held, fresh)).toEqual({ kind: "note", text: BACK });
+    const tuned = tuneRadio(held, fresh, 200);
+    expect(tuned).toEqual({ run: ANOTHER_RUN, callout: null, chief: null });
+    expect(radioLine(tuned, fresh)).toEqual({ kind: "note", text: BACK });
+    // Nothing of the old run is left to wake for.
+    expect(radioWake(held, fresh)).toBeNull();
+    expect(radioWake(tuned, fresh)).toBeNull();
+
+    // The same turn number and the same words on the new run are a new callout, with its own hold.
+    const again = facts({ run: ANOTHER_RUN, callout: SIGHTING });
+    expect(tuneRadio(held, again, 5000).callout).toEqual({ ...SIGHTING, until: 5000 + radioHold(SIGHTING.text) });
+    // On the run it belongs to, the memory is kept as before.
+    expect(tuneRadio(held, facts({ callout: SIGHTING }), 200)).toBe(held);
+  });
+
+  it("drops a sighting on Restart, on the board: seen by C2, then a fresh run, and the radio says where the player is", () => {
+    const hud = (run: RunState, before: RunState | null, status: string) =>
+      radioFacts({
+        placed,
+        run,
+        before,
+        watchers: before ? noticedBy(before, run) : [],
+        mission,
+        crewPlan: null,
+        chief: IDLE,
+        revealed: { words: 0, done: false },
+        status,
+      });
+    const inLobby = play(start(), [move("fl-lobby")]);
+    const seen = play(inLobby, [move("dc-west")]);
+    const seenFacts = hud(seen, inLobby, describeTurn(placed, inLobby, seen));
+    const state = tuneRadio(RADIO_SILENT, seenFacts, 0);
+    expect(radioLine(state, seenFacts)).toEqual({ kind: "sighting", text: "C2 sees you in the Dock Corridor." });
+    // A later state of the same run is the same run to the radio.
+    expect(hud(play(seen, [wait]), seen, "").run).toBe(seenFacts.run);
+
+    // Restart, 200 ms later: a fresh run on a fresh board, and the status line's word for it.
+    const BACK = "Back at the start. The guards are on their rounds.";
+    const fresh = start();
+    const freshFacts = hud(fresh, null, BACK);
+    expect(freshFacts.run).not.toBe(seenFacts.run);
+    expect(freshFacts.callout).toBeNull();
+    expect(radioLine(state, freshFacts)).toEqual({ kind: "note", text: BACK });
+    expect(radioLine(tuneRadio(state, freshFacts, 200), freshFacts)).toEqual({ kind: "note", text: BACK });
   });
 
   it("joins a run under way without reading out what the Chief has already said", () => {

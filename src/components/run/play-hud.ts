@@ -23,7 +23,7 @@ import {
 } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
 import { objectiveNoun } from "@/lib/objective-noun";
-import { canTake, crewPlanSteps, describeTurn, planSteps, roomName } from "./board";
+import { canTake, crewPlanSteps, describeTurn, planSteps, roomName, sprintChoices } from "./board";
 import type { ChiefState, Revealed } from "./chief-panel";
 import type { StoredCrewPlan } from "./crew-plan-store";
 import { watcherPhrase, type Watcher } from "./danger-meter";
@@ -77,9 +77,8 @@ const isAlert = (alarm: AlarmState) => alarm === "alert" || alarm === "lockdown"
  * its own node ends the turn before anyone else looks. Empty when `after` is
  * not the turn after `before`.
  *
- * The log does not keep the middle node of a sprint. When only one node can
- * have been it, the player is looked for there first, as the engine did. When
- * several can, a sighting on the way is read from the alarm event it raised.
+ * A sprint enters two nodes, and the player is looked for on the middle one
+ * first, as the engine did (`sprintVia`).
  */
 export function noticedBy(before: RunState, after: RunState): Watcher[] {
   if (after.board !== before.board || after.turn !== before.turn + 1) return [];
@@ -102,7 +101,7 @@ export function noticedBy(before: RunState, after: RunState): Watcher[] {
     for (const guard of guards) if (visibleFrom(board, guard).includes(nodeId)) note(guard.id, "sees", true);
     for (const cleaner of cleaners) if (visibleFrom(board, cleaner).includes(nodeId)) note(cleaner.id, "sees", false);
   };
-  /** What the turn's alarm events name and the replay above did not reach: a sprint's middle node, when it could be one of several. */
+  /** Whoever the turn's alarm events name is named, whatever the replay found: the engine's own record comes first. */
   const withEvents = () => {
     for (const { cause } of after.alarmEvents.slice(before.alarmEvents.length)) {
       if (cause.id === undefined) continue;
@@ -135,20 +134,26 @@ export function noticedBy(before: RunState, after: RunState): Watcher[] {
 
 /**
  * The middle node of the sprint that took the player from where `before` has
- * them to `to`, when exactly one node can have been it: a neighbour of both,
- * through doors that were open. Null when several can, and when `to` is itself
- * a neighbour (a guard caught the player on the middle node, and the sprint
- * stopped there).
+ * them to `to`. The run's log keeps where a sprint ended, not what it ran
+ * through, so the middle node is read from where the sprint itself came from:
+ * the board's choice for that target (`sprintChoices`), whose action a key or
+ * a click plays as it is, `via` included. When two neighbours lead to the
+ * target, that is the one the sprint took, and the one the engine looked on.
+ * A sprint the board did not offer falls back on the engine's own default,
+ * the first open middle node in the floor's edge order (actions.ts).
+ *
+ * Null when `to` is itself a neighbour: a guard caught the player on the
+ * middle node, and the sprint stopped there.
  */
 export function sprintVia(before: RunState, to: string): string | null {
   const { board } = before;
-  const open = (exit: Exit) => exit.doorId === undefined || !before.locked.includes(exit.doorId);
   const firsts = neighbours(board, before.playerNode);
   if (firsts.some((exit) => exit.to === to)) return null;
-  const middles = firsts
-    .filter((first) => open(first) && neighbours(board, first.to).some((second) => second.to === to && open(second)))
-    .map((first) => first.to);
-  return middles.length === 1 ? middles[0] : null;
+  const offered = sprintChoices(before).find((choice) => choice.nodeId === to);
+  if (offered?.via !== undefined) return offered.via;
+  const open = (exit: Exit) => exit.doorId === undefined || !before.locked.includes(exit.doorId);
+  const first = firsts.find((exit) => open(exit) && neighbours(board, exit.to).some((second) => second.to === to && open(second)));
+  return first?.to ?? null;
 }
 
 /** The callout for a turn somebody noticed the player on: who, and the room. Null when nobody did. */
@@ -268,6 +273,51 @@ export function noticeOf(placed: PlacedLevel, before: RunState | null, after: Ru
   return before && status === describeTurn(placed, before, after) ? null : status;
 }
 
+/**
+ * What the radio could say on this render, read off the board. `run` is the
+ * run as it stands, `before` the state its last turn started from (null on a
+ * fresh run), `watchers` who noticed the player on that turn. The facts carry
+ * the run's board as their `run`: Restart makes a new board, and with it a
+ * radio that remembers nothing of the run before.
+ */
+export function radioFacts({
+  placed,
+  run,
+  before,
+  watchers,
+  mission,
+  crewPlan,
+  chief,
+  revealed,
+  status,
+}: {
+  placed: PlacedLevel;
+  run: RunState;
+  before: RunState | null;
+  watchers: readonly Watcher[];
+  mission: { objective: string };
+  crewPlan: StoredCrewPlan | null;
+  chief: ChiefState;
+  revealed: Pick<Revealed, "words" | "done">;
+  status: string;
+}): RadioFacts {
+  const playing = run.status === "playing";
+  const step = playing ? nextStep(placed, run, mission.objective, crewPlan) : null;
+  const notice = playing ? noticeOf(placed, before, run, status) : null;
+  // The Chief's own words, who it sends where and why, are read out to the end, after the run's too.
+  const reading = chief.status === "ready" ? chief : null;
+  return {
+    run: run.board,
+    step,
+    // The crew's opening line is the status line's own: said once, as the step. Once the run is over, the last word is how it went.
+    note: playing ? (notice === step ? null : notice) : endNote(run),
+    callout: playing ? calloutOf(watchers, run.turn - 1, roomName(placed.level.floor, run.playerNode)) : null,
+    chief: reading
+      ? { answer: reading, lines: chiefLines(reading.answer.orders.rationale, revealed.words), done: revealed.done, tag: chiefTag(reading) }
+      : null,
+  };
+}
+
 /** Everything the HUD shows on one render. */
 export interface PlayHud {
   objective: ObjectiveInfo;
@@ -329,25 +379,11 @@ export function usePlayHud({
   const on = live && placed !== null && run !== null && mission !== null;
   const watchers = useMemo(() => (on && before && after ? noticedBy(before, after) : []), [on, before, after]);
 
-  const playing = on && run.status === "playing";
-  const step = useMemo(
-    () => (playing ? nextStep(placed, run, mission.objective, crewPlan) : null),
-    [playing, placed, run, mission, crewPlan],
+  const { words, done } = revealed;
+  const facts = useMemo(
+    () => (on ? radioFacts({ placed, run, before, watchers, mission, crewPlan, chief, revealed: { words, done }, status }) : null),
+    [on, placed, run, before, watchers, mission, crewPlan, chief, words, done, status],
   );
-  // Once the run is over, the radio's last word is how it went.
-  const notice = playing ? noticeOf(placed, before, run, status) : null;
-  // The crew's opening line is the status line's own: said once, as the step.
-  const note = !on ? null : playing ? (notice === step ? null : notice) : endNote(run);
-  const callout = playing ? calloutOf(watchers, run.turn - 1, roomName(placed.level.floor, run.playerNode)) : null;
-  // The Chief's own words, who it sends where and why, are read out to the end, after the run's too.
-  const reading = on && chief.status === "ready" ? chief : null;
-  const lines = useMemo(
-    () => (reading ? chiefLines(reading.answer.orders.rationale, revealed.words) : []),
-    [reading, revealed.words],
-  );
-  const facts: RadioFacts | null = on
-    ? { step, note, callout, chief: reading ? { answer: reading, lines, done: revealed.done, tag: chiefTag(reading) } : null }
-    : null;
   const radio = useRadio(facts);
 
   const objective = useMemo(

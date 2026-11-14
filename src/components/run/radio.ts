@@ -14,6 +14,8 @@
 //   too fast to read one line at a time. These are the Chief's own words, who
 //   it sends where and why, so every sentence gets its turn. While the Chief
 //   is being read out, a later callout waits; the danger meter shows it.
+// - What it remembers belongs to one run. Restart starts from silence: a
+//   callout still holding the air from the run before is not said again.
 //
 // Two layers: `tuneRadio`, `radioLine` and `radioWake` are pure, with the time
 // passed in, so the order is tested without a timer; `useRadio` is the clock
@@ -62,6 +64,12 @@ export interface RadioChief {
 
 /** What the radio could say, read off the app's state on every render. */
 export interface RadioFacts {
+  /**
+   * Tells one run from the next: any value that is the same on every turn of
+   * a run and different after Restart (the Run screen passes the run's board).
+   * What the radio remembers belongs to one run, and is dropped with it.
+   */
+  run: unknown;
   /** The crew's next plan step; null when the plan has none left. */
   step: string | null;
   /** A line that stands in for the step while it applies; null otherwise. */
@@ -74,6 +82,8 @@ export interface RadioFacts {
 
 /** What the radio remembers between renders: what went on the air, and until when it keeps it. */
 export interface RadioState {
+  /** The run this memory is of (`RadioFacts.run`). Nothing in it is said on another run. */
+  run: unknown;
   /** The last callout to take the air, and when its hold ends. */
   callout: (RadioCallout & { until: number }) | null;
   /**
@@ -84,8 +94,8 @@ export interface RadioState {
   chief: { answer: unknown; index: number; until: number } | null;
 }
 
-/** A radio that has said nothing yet. */
-export const RADIO_SILENT: RadioState = { callout: null, chief: null };
+/** A radio that has said nothing yet, on no run. */
+export const RADIO_SILENT: RadioState = { run: null, callout: null, chief: null };
 
 /**
  * The radio as it joins a run already under way (the player chose Live
@@ -96,14 +106,23 @@ export function tuneIn(facts: RadioFacts, now: number): RadioState {
   const { callout, chief } = facts;
   const index = chief ? (chief.done ? chief.lines.length : chief.lines.length - 1) : -1;
   return {
+    run: facts.run,
     callout: callout ? { ...callout, until: now + radioHold(callout.text) } : null,
     chief: chief ? { answer: chief.answer, index, until: now + radioHold(chief.lines[index] ?? "") } : null,
   };
 }
 
-/** The radio's memory at time `now`, given what it could say. Returns `state` itself when nothing changed. */
+/**
+ * The radio's memory at time `now`, given what it could say. Returns `state`
+ * itself when nothing changed. A new run (Restart, a level placed again)
+ * starts from silence: a callout still holding the air from the run before,
+ * and the Chief's read-out, are dropped with that run.
+ */
 export function tuneRadio(state: RadioState, facts: RadioFacts, now: number): RadioState {
-  let callout = state.callout;
+  const sameRun = state.run === facts.run;
+  const was = sameRun ? state : { ...RADIO_SILENT, run: facts.run };
+
+  let callout = was.callout;
   if (facts.callout) {
     // A new turn's callout takes the air at once.
     if (callout?.turn !== facts.callout.turn || callout.text !== facts.callout.text) {
@@ -116,9 +135,9 @@ export function tuneRadio(state: RadioState, facts: RadioFacts, now: number): Ra
   let chief: RadioState["chief"] = null;
   if (facts.chief) {
     const { answer, lines, done } = facts.chief;
-    const was = state.chief;
+    const read = was.chief;
     // A new answer starts unread. Its first line waits for the callout on the air to have its hold.
-    const reading = was !== null && was.answer === answer ? was : { answer, index: -1, until: callout?.until ?? -Infinity };
+    const reading = read !== null && read.answer === answer ? read : { answer, index: -1, until: callout?.until ?? -Infinity };
     const next = reading.index + 1;
     if (now >= reading.until && next < lines.length) chief = { answer, index: next, until: now + radioHold(lines[next]) };
     // The last line has had its hold and no more are coming: the Chief is off the air.
@@ -126,20 +145,23 @@ export function tuneRadio(state: RadioState, facts: RadioFacts, now: number): Ra
     else chief = reading;
   }
 
-  return callout === state.callout && chief === state.chief ? state : { callout, chief };
+  return sameRun && callout === state.callout && chief === state.chief ? state : { run: facts.run, callout, chief };
 }
 
 /**
  * The one line on the air: the Chief's line being read out; else the callout
  * (this turn's, or the last one while it keeps its hold); else the note; else
  * the plan step. This turn's callout is read from `facts`, so it shows in the
- * same render as the turn, before the radio's clock has ticked.
+ * same render as the turn, before the radio's clock has ticked. What `state`
+ * remembers of another run is not said: a fresh run's first render already
+ * has none of the last run's lines.
  */
 export function radioLine(state: RadioState, facts: RadioFacts): RadioMessage | null {
-  const read = state.chief;
+  const mine = state.run === facts.run;
+  const read = mine ? state.chief : null;
   const reading = facts.chief && read && read.answer === facts.chief.answer ? facts.chief.lines[read.index] : undefined;
   if (facts.chief && reading !== undefined) return { kind: "chief", text: reading, tag: facts.chief.tag ?? null };
-  const callout = facts.callout ?? state.callout;
+  const callout = facts.callout ?? (mine ? state.callout : null);
   if (callout) return { kind: callout.kind, text: callout.text };
   if (facts.note) return { kind: "note", text: facts.note };
   return facts.step ? { kind: "step", text: facts.step } : null;
@@ -147,6 +169,8 @@ export function radioLine(state: RadioState, facts: RadioFacts): RadioMessage | 
 
 /** When `tuneRadio` next has something to change with the facts as they are; null when only new facts can change it. */
 export function radioWake(state: RadioState, facts: RadioFacts): number | null {
+  // A memory of another run is dropped on the next tune, whenever that is: nothing to wait for.
+  if (state.run !== facts.run) return null;
   const wakes: number[] = [];
   if (state.callout && !facts.callout) wakes.push(state.callout.until);
   if (state.chief && facts.chief && state.chief.answer === facts.chief.answer) {
@@ -169,6 +193,7 @@ export function useRadio(facts: RadioFacts | null): RadioMessage | null {
 
   // The facts by value, so the clock below starts over only when one of them changes.
   const on = facts !== null;
+  const run = facts?.run;
   const step = facts?.step ?? null;
   const note = facts?.note ?? null;
   const calloutTurn = facts?.callout?.turn;
@@ -186,8 +211,8 @@ export function useRadio(facts: RadioFacts | null): RadioMessage | null {
         : null;
     const chief =
       lines !== undefined && done !== undefined ? { answer, lines: lines === "" ? [] : lines.split("\n"), done, tag } : null;
-    return { step, note, callout, chief };
-  }, [on, step, note, calloutTurn, calloutKind, calloutText, answer, lines, done, tag]);
+    return { run, step, note, callout, chief };
+  }, [on, run, step, note, calloutTurn, calloutKind, calloutText, answer, lines, done, tag]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;

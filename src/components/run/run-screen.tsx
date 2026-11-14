@@ -103,7 +103,6 @@ export function RunScreen({
   const [storedRuns, setStoredRuns] = useState(0);
   const [run, setRun] = useState<RunState | null>(null);
   const [status, setStatus] = useState<string>("");
-  const [lens, toggleLens] = useLayerLens();
   const missionId = useMissionId();
   /** Walking or sprinting (issue 121): `S` switches; any action, and Restart, go back to walking. */
   const [mode, setMode] = useState<Mode>("walk");
@@ -348,6 +347,8 @@ export function RunScreen({
   // Live's layout (issue 100): the HUD around the board, and everything else behind Details.
   const [details, toggleDetails] = useDetails(playMode === "live");
   const open = panelsOpen(playMode, details);
+  // The lens is put away with the bar: its key does nothing until Details opens it again.
+  const [lens, toggleLens] = useLayerLens(open);
   const hud = usePlayHud({
     live: playMode === "live",
     placed,
