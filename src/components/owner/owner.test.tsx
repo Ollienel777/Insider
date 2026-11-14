@@ -1,20 +1,20 @@
 // The Owner screen (issue 128) on the cached F1 level and the F1 fixture floor:
 // the setup made from the generated security and its exact round trip, the
 // editor's states and inline reasons, and the before and after of the Chief's
-// recorded fix, 17 of 50 out before and none after, as PR 148 has it.
+// recorded fix, 17 of 50 out before and none after, as the batch debrief has it.
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { ChiefFix, LevelManifest, type Strategy } from "@/domain";
 import { OwnerSetup } from "@/domain/owner-setup";
-import { runBatch, summariseBatch as sum, varyLevel, type Level } from "@/engine";
+import { applyFix, BATCH_SEEDS, rerunWithFix, runBatch, summariseBatch as sum, varyLevel, type Level } from "@/engine";
 import { applyOwnerSetup, validateOwnerSetup } from "@/level/owner-setup";
-import { placeLevel } from "@/level/placer";
+import { placeLevel, type PlacedLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.romaine-1974.json";
 import fixRecording from "../../../fixtures/llm/fix-F1.json";
 import recording from "../../../fixtures/llm/strategies-F1.json";
 import { BatchPanel } from "./batch-panel";
-import { toEngineFix } from "./chief-fix";
+import { toEngineFix, type FixAnswer } from "./chief-fix";
 import { compareOptions, ComparePanel, ComparePicker, defaultPick, DemoList, type CompareOption } from "./compare-panel";
 import { demoSetups, isDemoSetup } from "./demo-setups";
 import { compareOwnerSetups, ownerZones, playOwnerBatch, rerunOwner } from "./owner-batch";
@@ -23,6 +23,7 @@ import {
   addGuard,
   boardOf,
   extendRound,
+  levelForSetup,
   moveGuard,
   playable,
   problemsOf,
@@ -36,7 +37,6 @@ import {
   toggleDesk,
   updateCamera,
 } from "./owner-edit";
-import type { PlacedLevel } from "@/level/placer";
 import type { Selection } from "./owner-board";
 import { SetupPanel, type Draft, type Tool } from "./setup-panel";
 import type { OwnerBatch, OwnerFix } from "./use-owner-batch";
@@ -221,6 +221,16 @@ describe("the round trip", () => {
     expect(turned.generated?.cameras).toEqual(["C1"]);
   });
 
+  it("a click that changes nothing leaves the camera generated, and the setup as it was", () => {
+    const c2 = starting.cameras.find((c) => c.id === "C2")!;
+    expect(starting.generated?.cameras).toContain("C2");
+    for (const change of [{ facing: c2.facing }, { kind: c2.kind }, { node: c2.node }, {}]) {
+      const same = updateCamera(starting, "C2", change);
+      expect(same).toBe(starting);
+      expect(same.generated?.cameras).toContain("C2");
+    }
+  });
+
   it("plays a setup saved before cleaners, covers and the generated list as it did: every camera's cover from its facing, all the owner's", () => {
     // As a setup was stored before them: no cleaners, no kept covers, no generated list.
     const older = OwnerSetup.parse({
@@ -280,6 +290,7 @@ describe("50 attempts, the fix, and the rerun", () => {
         setupName={null}
         stale={false}
         fixedSaved={null}
+        side="before"
         onEdit={noop}
         onRetry={noop}
         onOpenFixed={noop}
@@ -293,9 +304,7 @@ describe("50 attempts, the fix, and the rerun", () => {
     expect(html).toContain("17 fewer got out");
     expect(html).toContain('data-testid="owner-fix-recorded"');
     expect(html).toContain('data-testid="owner-crew-recorded"');
-    // The board shows After by default, and the route and detector follow it.
-    expect(html).toMatch(/data-testid="owner-route" data-side="after" data-count="0"/);
-    expect(html).toContain("The way most got out, after the fix");
+    expect(html).toMatch(/data-testid="owner-route" data-side="before" data-count="14"/);
     expect(boardCaption(rerun.after, "after")).toBe("After the fix: 0 of 50 got out. No way out to draw.");
   });
 
@@ -323,12 +332,13 @@ describe("50 attempts, the fix, and the rerun", () => {
 
     const shownBefore = panel(applied, "before");
     expect(shownBefore).toMatch(/data-testid="owner-route" data-side="before" data-count="14"/);
-    expect(shownBefore).toContain("The way most got out, before the fix");
+    expect(shownBefore).toContain("Before the fix: The way most got out");
     expect(shownBefore).toContain(`data-detector="${beforeTop.kind}:${beforeTop.id}"`);
-    expect(shownBefore).toContain("Noticed the crew first most often, before the fix");
+    expect(shownBefore).toContain("Before the fix: Noticed the crew first most often");
 
     const shownAfter = panel(applied, "after");
-    expect(shownAfter).toContain("No crew got out after the fix");
+    expect(shownAfter).toMatch(/data-testid="owner-route" data-side="after" data-count="0"/);
+    expect(shownAfter).toContain("After the fix: The way most got out");
     if (afterTop) {
       expect(shownAfter).toContain(`data-detector="${afterTop.kind}:${afterTop.id}"`);
       expect(shownAfter).toContain(`data-count="${afterTop.count}"`);
@@ -340,7 +350,7 @@ describe("50 attempts, the fix, and the rerun", () => {
     // Before any fix, the side does not apply: the batch itself, with no side named.
     const noFix = panel({ status: "idle" }, "after");
     expect(noFix).toMatch(/data-testid="owner-route" data-side="" data-count="14"/);
-    expect(noFix).not.toContain("before the fix");
+    expect(noFix).not.toContain("Before the fix:");
   });
 });
 
@@ -535,5 +545,260 @@ describe("the compare", () => {
     );
     expect(html).toContain('data-state="error"');
     expect(html).toContain("the crew route failed");
+  });
+});
+
+describe("the results panel says what the board shows, and who wrote the fix", () => {
+  const result = playOwnerBatch(manifest, floor, starting, answer);
+  const rerun = rerunOwner(manifest, floor, starting, result, recordedFix);
+  const batch: OwnerBatch = { status: "done", key: "generated", setup: starting, result, summary: sum(result), recorded: true, ms: 1 };
+  const panel = (props: { batch?: OwnerBatch; fix: OwnerFix; side?: "before" | "after"; board?: PlacedLevel }) =>
+    renderToStaticMarkup(
+      <BatchPanel
+        batch={props.batch ?? batch}
+        fix={props.fix}
+        zones={ownerZones(manifest, floor)}
+        generated={generated}
+        setupName={null}
+        stale={false}
+        fixedSaved={null}
+        side={props.side}
+        board={props.board}
+        onEdit={noop}
+        onRetry={noop}
+        onOpenFixed={noop}
+      />,
+    );
+  // The Chief's section alone: the crew's chip above says its own "no model was called".
+  const chief = (html: string) => html.slice(html.indexOf('data-testid="owner-chief"'));
+  const applied = (a: FixAnswer): OwnerFix => ({
+    status: "applied",
+    answer: a,
+    rerun,
+    ms: 1,
+  });
+  const recordedAnswer = { fix: recordedFix, recorded: true, source: "recorded" as const, reason: "fake mode" as const };
+
+  it("after the fix, the route and detector cards describe the after batch the board draws", () => {
+    const html = panel({ fix: applied(recordedAnswer), side: "after" });
+    expect(html).toMatch(/data-testid="owner-route" data-side="after" data-count="0"/);
+    expect(html).toContain("After the fix: The way most got out");
+    expect(html).not.toContain("It is drawn on the board");
+    const top = rerun.after.detectors[0];
+    if (top) expect(html).toContain(`data-detector="${top.kind}:${top.id ?? ""}"`);
+    else expect(html).not.toContain('data-testid="owner-detector"');
+  });
+
+  it("after the fix, the detector card names the Chief's fix as what placed the camera it moved, never the rules table", () => {
+    // The After board as the screen draws it: the setup the After batch played.
+    const board = boardOf(manifest, floor, rerun.fixed!, 1)!;
+    const html = panel({ fix: applied(recordedAnswer), side: "after", board });
+    const top = rerun.after.detectors[0]!;
+    expect(`${top.kind}:${top.id}`).toBe(`camera:${recordedFix.change.elementId}`);
+    expect(html).toContain("Placed by the Security Chief&#x27;s fix: C2 now covers the dock corridor.");
+    expect(html).not.toContain("Placed by the rules table");
+  });
+
+  it("on the Before side, they describe the batch before the fix", () => {
+    const html = panel({ fix: applied(recordedAnswer), side: "before" });
+    expect(html).toMatch(/data-testid="owner-route" data-side="before" data-count="14"/);
+    expect(html).toContain("Before the fix: The way most got out");
+    const top = rerun.before.detectors[0]!;
+    expect(html).toContain(`data-detector="${top.kind}:${top.id ?? ""}"`);
+  });
+
+  it("counts the attempts the batch played, not 50", () => {
+    const fewer = playOwnerBatch(manifest, floor, starting, { strategies: strategies.slice(0, 3), dropped: [] });
+    const html = panel({ batch: { ...batch, result: fewer, summary: sum(fewer) }, fix: { status: "idle" } });
+    expect(sum(fewer).total).toBe(30);
+    expect(html).toContain("The crew&#x27;s 30 attempts");
+    expect(html).not.toContain("50 attempts");
+  });
+
+  it("a model's own fix carries no chip", () => {
+    const html = chief(panel({ fix: { status: "suggested", answer: { fix: recordedFix, recorded: false, source: "model" } } }));
+    expect(html).not.toContain('data-testid="owner-fix-recorded"');
+    expect(html).not.toContain("no model was called");
+  });
+
+  it("a model's change that didn't fit: says a model was called, and shows the change left out", () => {
+    const html = chief(panel({
+      fix: {
+        status: "suggested",
+        answer: {
+          fix: recordedFix,
+          recorded: false,
+          source: "template",
+          dropped: { change: { kind: "move-camera", elementId: "C7", to: "dock-corridor" }, reason: 'no camera "C7"' },
+        },
+      },
+    }));
+    expect(html).toContain('data-testid="owner-fix-recorded"');
+    expect(html).not.toContain("no model was called");
+    expect(html).toContain("A model was called, but its change didn&#x27;t fit");
+    expect(html).toContain('data-testid="owner-fix-left-out"');
+    expect(html).toContain("The model suggested: C7 now covers the dock corridor (no camera &quot;C7&quot;)");
+  });
+
+  it("a recorded fix in fake mode says no model was called, and why", () => {
+    const html = panel({ fix: { status: "suggested", answer: recordedAnswer } });
+    expect(html).toContain('title="Recorded fix: no model was called (fake mode)."');
+    expect(html).not.toContain('data-testid="owner-fix-left-out"');
+  });
+
+  it("a timed-out model is not said to have gone uncalled", () => {
+    const html = chief(panel({ fix: { status: "suggested", answer: { fix: recordedFix, recorded: true, source: "template", reason: "timeout" } } }));
+    expect(html).toContain("the model didn&#x27;t answer (timeout)");
+    expect(html).not.toContain("no model was called");
+  });
+});
+
+describe("the saved fixed setup plays the After count it showed", () => {
+  const before = playOwnerBatch(manifest, floor, starting, answer);
+  // Replays a saved setup as the owner would: stored, read back and played over the same nights.
+  const replay = (setup: OwnerSetup) =>
+    sum(playOwnerBatch(manifest, floor, OwnerSetup.parse(JSON.parse(JSON.stringify(setup))), answer, before.seeds)).escaped;
+  const cases: [string, ChiefFix][] = [
+    ["the recorded camera move", recordedFix],
+    ["retiming G2 by one turn", { change: { kind: "retime-guard", elementId: "G2", byTurns: 1 }, rationale: "" }],
+    ["moving C1 to the freight lobby", { change: { kind: "move-camera", elementId: "C1", to: "freight-lobby" }, rationale: "" }],
+  ];
+  for (const [what, fix] of cases) {
+    it(`${what}: the setup the After batch played is the one saved, and replays to its count`, () => {
+      const rerun = rerunOwner(manifest, floor, starting, before, fix);
+      expect(rerun.dropped).toBeNull();
+      expect(rerun.fixed).not.toBeNull();
+      expect(validateOwnerSetup(rerun.fixed!, floor)).toEqual([]);
+      expect(rerun.fixed!.name).toBe("Generated security, after the fix");
+      expect(replay(rerun.fixed!)).toBe(rerun.after.escaped);
+    });
+  }
+
+  it("a change that doesn't fit saves nothing, and After replays Before", () => {
+    const rerun = rerunOwner(manifest, floor, starting, before, { change: { kind: "move-camera", elementId: "C9", to: "dock-corridor" }, rationale: "" });
+    expect(rerun.dropped).toMatch(/C9/);
+    expect(rerun.fixed).toBeNull();
+    expect(rerun.after.escaped).toBe(rerun.before.escaped);
+  });
+});
+
+describe("a retime plays the engine's retime, on every night", () => {
+  const level1 = levelForSetup(manifest, floor, starting, BATCH_SEEDS[0])!;
+  const patrols = (level: Level, seed: number) => varyLevel(level, seed).guards.map((g) => ({ id: g.id, patrol: g.patrol }));
+  // An owner's own guards: the same rounds, but none still generated, so each starts on its post.
+  const owned: OwnerSetup = { ...starting, name: "Owned", generated: { ...starting.generated, guards: [] } };
+  const retime = (elementId: string, byTurns: number): ChiefFix => ({ change: { kind: "retime-guard", elementId, byTurns }, rationale: "" });
+  const cases = ["G1", "G2"].flatMap((id) => [-3, -2, -1, 1, 2, 3].map((by) => [id, by] as const));
+
+  it("G2's round passes a node twice: the case a new post gets backwards", () => {
+    const g2 = starting.guards.find((g) => g.id === "G2")!;
+    expect(new Set(g2.round).size).toBeLessThan(g2.round.length);
+  });
+
+  for (const [id, by] of cases) {
+    it(`${id} ${by > 0 ? "+" : ""}${by}: the fixed setup's patrol on every seed is applyFix's, for a generated and an owner's guard`, () => {
+      for (const setup of [starting, owned]) {
+        const fixed = setupWithFix(setup, retime(id, by), level1, "fixed");
+        expect(validateOwnerSetup(fixed, floor)).toEqual([]);
+        for (const seed of BATCH_SEEDS) {
+          const level = levelForSetup(manifest, floor, setup, seed)!;
+          const engine = applyFix(level, retime(id, by).change);
+          if (!engine.ok) {
+            // A whole number of rounds: the engine refuses it, and the setup changes nothing either.
+            expect(patrols(levelForSetup(manifest, floor, fixed, seed)!, seed)).toEqual(patrols(level, seed));
+            continue;
+          }
+          expect(patrols(levelForSetup(manifest, floor, fixed, seed)!, seed)).toEqual(patrols(engine.level, seed));
+        }
+      }
+    });
+  }
+
+  it("on F1, the Chief's G2 +1 gives the engine's count: 16 of 50, one fewer than before", () => {
+    const before = playOwnerBatch(manifest, floor, starting, answer);
+    const fix = retime("G2", 1);
+    const owner = rerunOwner(manifest, floor, starting, before, fix);
+    const engine = rerunWithFix(
+      { buildingId: manifest.buildingId, strategies, levelFor: (seed) => placeLevel(manifest, floor, seed).level },
+      fix,
+    );
+    expect(engine.after.escaped).toBe(16);
+    expect(owner.after.escaped).toBe(16);
+    expect(owner.fixed!.guards.find((g) => g.id === "G2")!.retime).toBe(1);
+  });
+
+  it("a retimed generated guard keeps its nights' starts but says the owner's setup placed it", () => {
+    const fixed = setupWithFix(starting, retime("G1", 1), level1, "fixed");
+    expect(fixed.generated?.guards).toContain("G1");
+    const out = applyOwnerSetup(manifest, floor, fixed, 1);
+    if (!out.ok) throw new Error("does not fit");
+    expect(out.placed.guards.find((g) => g.id === "G1")!.provenance.every((p) => p.layer === "owner")).toBe(true);
+  });
+});
+
+describe("a change that let no fewer out is not saved as a fix", () => {
+  it("is named for the Chief's change, not \"after the fix\"", () => {
+    const before = playOwnerBatch(manifest, floor, starting, answer);
+    // G2 one turn earlier lets 19 out against 17.
+    const worse = rerunOwner(manifest, floor, starting, before, { change: { kind: "retime-guard", elementId: "G2", byTurns: -1 }, rationale: "" });
+    expect(worse.dropped).toBeNull();
+    expect([worse.before.escaped, worse.after.escaped]).toEqual([17, 19]);
+    expect(worse.fixed!.name).toBe("Generated security, with the Chief's change");
+  });
+});
+
+describe("edits that change nothing, and closing a round", () => {
+  it("closing a round on its first node adds nothing, and the round still fits", () => {
+    const guard = starting.guards.find((g) => g.round.length > 2)!;
+    expect(extendRound(starting, guard.id, guard.round[0])).toBe(starting);
+    const drawn = startRound(starting, guard.id);
+    const next = floor.edges.find((e) => e.a === guard.post || e.b === guard.post)!;
+    const other = next.a === guard.post ? next.b : next.a;
+    const out = extendRound(extendRound(drawn, guard.id, other), guard.id, guard.post);
+    expect(out.guards.find((g) => g.id === guard.id)!.round).toEqual([guard.post, other]);
+    expect(problemsOf(out, floor).all.filter((e) => e.code === "round-broken")).toEqual([]);
+  });
+
+  it("a door set to the lock it has, or a guard moved onto its own post, stays as generated", () => {
+    const [door, lock] = Object.entries(starting.doors)[0];
+    expect(setDoor(starting, door, lock)).toBe(starting);
+    expect(starting.generated!.doors).toContain(door);
+    const guard = starting.guards[0];
+    expect(moveGuard(starting, guard.id, guard.post)).toBe(starting);
+    expect(starting.generated!.guards).toContain(guard.id);
+    // A real change still takes the element off the list.
+    expect(setDoor(starting, door, lock === "key" ? "badge" : "key").generated!.doors).not.toContain(door);
+  });
+
+  it("an open door set open again changes nothing", () => {
+    const open = floor.edges.find((e) => e.door?.lockable && !starting.doors[e.door.id])?.door;
+    if (open) expect(setDoor(starting, open.id, "open")).toBe(starting);
+  });
+});
+
+describe("a fix that didn't fit", () => {
+  const result = playOwnerBatch(manifest, floor, starting, answer);
+  const rerun = rerunOwner(manifest, floor, starting, result, { change: { kind: "move-camera", elementId: "C9", to: "dock-corridor" }, rationale: "" });
+  const batch: OwnerBatch = { status: "done", key: "generated", setup: starting, result, summary: sum(result), recorded: true, ms: 1 };
+  it("shows the batch unchanged, never an After side, and says why", () => {
+    const fix: OwnerFix = { status: "applied", answer: { fix: recordedFix, recorded: true, source: "recorded" }, rerun, ms: 1 };
+    const html = renderToStaticMarkup(
+      <BatchPanel
+        batch={batch}
+        fix={fix}
+        zones={ownerZones(manifest, floor)}
+        generated={generated}
+        setupName={null}
+        stale={false}
+        fixedSaved={null}
+        side="after"
+        onEdit={noop}
+        onRetry={noop}
+        onOpenFixed={noop}
+      />,
+    );
+    expect(html).toContain('data-testid="owner-fix-dropped"');
+    expect(html).toMatch(/data-testid="owner-route" data-side=""/);
+    expect(html).not.toContain("After the fix:");
   });
 });

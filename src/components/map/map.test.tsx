@@ -1,9 +1,10 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { FIXTURE_BUILDINGS } from "@/adapters/costar/fake";
+import { FIXTURE_FLOORS, createFakeMatterport } from "@/adapters/matterport/fake";
+import { FLOOR_FIXTURES } from "@/lib/fixture-floors";
 import { buildingsWithLevel } from "@/lib/levels";
 import { ATTRIBUTION, BASEMAPS, project } from "./basemap";
 import { cardPlacement } from "./building-card";
@@ -13,7 +14,7 @@ import { MapSkeleton } from "./map-skeleton";
 import { toMapBuilding, type MapBuilding } from "./types";
 
 const root = path.resolve(import.meta.dirname, "../../..");
-const ready = buildingsWithLevel(path.join(root, "fixtures", "floors"));
+const ready = buildingsWithLevel();
 const buildings: MapBuilding[] = FIXTURE_BUILDINGS.map((b) => toMapBuilding(b, ready.has(b.id)));
 
 const pins = (html: string) => [...html.matchAll(/<div data-testid="map-pin"[^>]*data-building="(\w+)"/g)].map((m) => m[1]);
@@ -37,10 +38,28 @@ describe("project", () => {
     expect(se.y).toBeCloseTo(1, 10);
   });
 
-  it("is Web Mercator: the middle latitude sits slightly below the middle of the image", () => {
-    const { y } = project(bounds, 34.05, -118.25);
-    expect(y).toBeGreaterThan(0.5);
-    expect(y).toBeLessThan(0.501);
+  it("is Web Mercator, not linear in latitude: on wide bounds the two clearly differ", () => {
+    // From the equator to 60°N, Mercator puts 30°N at y ≈ 0.583 of the height;
+    // a linear projection would put it at 0.5.
+    const wide = { west: 0, east: 60, south: 0, north: 60 };
+    const { x, y } = project(wide, 30, 30);
+    expect(x).toBeCloseTo(0.5, 10);
+    expect(y).toBeCloseTo(0.5829, 4);
+  });
+
+  it("agrees with an independent Mercator formula on every city's basemap", () => {
+    // y = atanh(sin φ) is the same projection as the render script's
+    // ln(tan(π/4 + φ/2)), written another way, so a broken copy fails here.
+    const merc = (lat: number) => Math.atanh(Math.sin((lat * Math.PI) / 180));
+    for (const b of FIXTURE_BUILDINGS) {
+      const { north, south } = BASEMAPS[b.city].bounds;
+      const expected = (merc(north) - merc(b.lat)) / (merc(north) - merc(south));
+      const linear = (north - b.lat) / (north - south);
+      const { y } = project(BASEMAPS[b.city].bounds, b.lat, b.lng);
+      expect(y, b.id).toBeCloseTo(expected, 9);
+      // The test can tell the two apart: the gap is far wider than the tolerance.
+      expect(Math.abs(expected - linear), b.id).toBeGreaterThan(1e-6);
+    }
   });
 
   it("puts every fixture building on its city's basemap, clear of the edges", () => {
@@ -75,12 +94,17 @@ describe("buildingsWithLevel", () => {
     expect([...ready].sort()).toEqual(["F1", "F2", "F3"]);
   });
 
-  it("enables a building as soon as its floor file exists, and is empty without a floors directory", () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "floors-"));
-    writeFileSync(path.join(dir, "F4.json"), "{}");
-    writeFileSync(path.join(dir, "notes.txt"), "");
-    expect([...buildingsWithLevel(dir)]).toEqual(["F4"]);
-    expect(buildingsWithLevel(path.join(dir, "missing")).size).toBe(0);
+  it("is exactly the floors the Matterport fake can load", async () => {
+    const matterport = createFakeMatterport();
+    expect([...ready].sort()).toEqual(Object.keys(FIXTURE_FLOORS).sort());
+    for (const id of ready) expect(await matterport.loadFloor({ id }), id).not.toBeNull();
+  });
+
+  it("registers every floor file in fixtures/floors, and nothing else", () => {
+    const files = readdirSync(path.join(root, "fixtures", "floors"))
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => name.slice(0, -".json".length));
+    expect(Object.keys(FLOOR_FIXTURES).sort()).toEqual(files.sort());
   });
 });
 

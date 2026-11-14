@@ -64,6 +64,17 @@ test("Debrief to Owner Mode: 50 attempts, the Chief's fix, before and after", as
   await expect(page.getByTestId("owner-after-count")).toHaveAttribute("data-escaped", "0");
   await expect(page.getByTestId("owner-after-count")).toHaveAttribute("data-total", "50");
   await expect(page.getByTestId("owner-changed")).toContainText("17 fewer got out");
+  // The route and detector cards describe the side the board shows: After by default, then Before.
+  await expect(page.getByTestId("owner-route")).toHaveAttribute("data-side", "after");
+  await expect(page.getByTestId("owner-route")).toHaveAttribute("data-count", "0");
+  const ring = await page.getByTestId("owner-detector-ring").getAttribute("data-detector");
+  await expect(page.getByTestId("owner-detector")).toHaveAttribute("data-detector", ring ?? "");
+  await page.getByTestId("owner-side-before").click();
+  await expect(page.getByTestId("owner-route")).toHaveAttribute("data-side", "before");
+  await expect(page.getByTestId("owner-route")).toHaveAttribute("data-count", "14");
+  const ringBefore = await page.getByTestId("owner-detector-ring").getAttribute("data-detector");
+  await expect(page.getByTestId("owner-detector")).toHaveAttribute("data-detector", ringBefore ?? "");
+  await page.getByTestId("owner-side-after").click();
   await page.getByTestId("owner-compare").scrollIntoViewIfNeeded();
   await shot(page, "before-after");
 
@@ -200,10 +211,11 @@ test("after the Chief's fix, the route and the detector card follow the side the
   await page.getByTestId("owner-apply").click();
   await expect(page.getByTestId("owner-after-count")).toHaveAttribute("data-escaped", "0");
 
-  // After (the default): no way out, said as after the fix.
+  // After (the default): no way out, under a heading that names the side.
   await expect(page.getByTestId("owner-route")).toHaveAttribute("data-side", "after");
   await expect(page.getByTestId("owner-route")).toHaveAttribute("data-count", "0");
-  await expect(page.getByTestId("owner-route")).toContainText("No crew got out after the fix");
+  await expect(page.getByTestId("owner-route")).toContainText("No crew got out");
+  await expect(page.locator("#owner-route-label")).toHaveText("After the fix: The way most got out");
 
   // Before: the 14 crews' way out, and the card names the detector the board rings.
   await page.getByTestId("owner-side-before").click();

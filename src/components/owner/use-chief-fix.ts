@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BatchResult, BatchSummary, FloorGraph, LevelManifest } from "@/domain";
 import { summariseBatch } from "@/engine";
-import { placeLevel } from "@/level/placer";
+import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { askFix, fixSummaryOf, playFix, type FixAnswer, type Rerun } from "./chief-fix";
 
 export type ChiefFixState =
@@ -16,11 +16,16 @@ export type ChiefFixState =
   | { status: "done"; answer: FixAnswer; rerun: Rerun; ms: number }
   | { status: "error"; message: string };
 
-/** `summary` is the batch summed (null before a batch); `suggest()` asks and reruns, a new call cancelling the last. */
+/**
+ * `summary` is the batch summed (null before a batch); `suggest()` asks and reruns, a new call cancelling the last.
+ * Pass `placedFor` when the batch was played on a setup other than the generated one (an owner's): the
+ * summary and the rerun then read that setup. Keep it stable (memoised), or every render makes a new `suggest`.
+ */
 export function useChiefFix(
   manifest: LevelManifest | null,
   floor: FloorGraph | null,
   batch: BatchResult | null,
+  placedFor?: (seed: number) => PlacedLevel,
 ): { summary: BatchSummary | null; fix: ChiefFixState; suggest: () => void } {
   // Kept with the batch it answers, so a new batch reads as idle at once.
   const [held, setHeld] = useState<{ batch: BatchResult | null; state: ChiefFixState }>({ batch: null, state: { status: "idle" } });
@@ -40,20 +45,20 @@ export function useChiefFix(
     setFix({ status: "asking" });
     Promise.resolve()
       .then(() => {
-        const placed = placeLevel(manifest, floor, batch.seeds[0]);
+        const placed = placedFor ? placedFor(batch.seeds[0]) : placeLevel(manifest, floor, batch.seeds[0]);
         return askFix({ buildingId: manifest.buildingId, summary: fixSummaryOf(summary, placed) }, { signal: controller.signal });
       })
       .then((answer) => {
         if (controller.signal.aborted) return;
         const started = performance.now();
-        const rerun = playFix(manifest, floor, batch, answer.fix);
+        const rerun = playFix(manifest, floor, batch, answer.fix, placedFor);
         setFix({ status: "done", answer, rerun, ms: Math.round(performance.now() - started) });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         setFix({ status: "error", message: error instanceof Error ? error.message : String(error) });
       });
-  }, [manifest, floor, batch, summary]);
+  }, [manifest, floor, batch, summary, placedFor]);
 
   return { summary, fix, suggest };
 }

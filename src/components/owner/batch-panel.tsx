@@ -2,6 +2,7 @@
 
 import type { BatchSummary, DetectorFinding, OutcomeCell } from "@/domain";
 import type { OwnerSetup } from "@/domain/owner-setup";
+import type { FixAnswer } from "@/agents/chief/fix";
 import type { ChiefZones } from "@/components/run/chief-request";
 import { ProvenanceRow } from "@/components/run/why-card";
 import { whyRows, whyTargets } from "@/components/run/why";
@@ -13,20 +14,6 @@ import { describeFix } from "./owner-edit";
 import type { OwnerBatch, OwnerFix } from "./use-owner-batch";
 
 export type Side = "before" | "after";
-
-/**
- * The side the board shows: after the fix only once the fix is applied and
- * made (not dropped), else the batch itself, before any fix.
- */
-export function shownSide(fix: OwnerFix, side: Side): Side | null {
-  if (fix.status !== "applied" || fix.rerun.dropped) return null;
-  return side;
-}
-
-/** The summary of the side the board shows: the route it draws and the detector it rings come from it. */
-export function shownSummary(summary: BatchSummary, fix: OwnerFix, side: Side): BatchSummary {
-  return fix.status === "applied" && shownSide(fix, side) === "after" ? fix.rerun.after : summary;
-}
 
 const OUTCOME_CELL: Record<OutcomeCell["outcome"], string> = {
   escaped: "bg-danger",
@@ -54,6 +41,31 @@ export function routeRooms(nodes: readonly string[], placed: PlacedLevel): strin
 }
 
 /**
+ * What the Chief's chip says about who wrote the fix, truthfully: whether a
+ * model was called, whether its change stands, and the change left out when
+ * it did not fit (the server's `dropped`).
+ */
+export function chiefNote(answer: FixAnswer, zoneName: (id: string) => string): { chip: string | null; title: string; dropped: string | null } {
+  const why = answer.reason === "timeout" || answer.reason === "error" ? `the model didn't answer (${answer.reason})` : null;
+  const notCalled = answer.reason ? `no model was called (${answer.reason})` : "no model was called";
+  const left = answer.dropped ? `${describeFix({ change: answer.dropped.change, rationale: "" }, zoneName)} (${answer.dropped.reason})` : null;
+  if (answer.source === "model") return { chip: null, title: "The model's fix.", dropped: null };
+  if (!answer.recorded) {
+    return {
+      chip: "Rule-based",
+      title: "A model was called, but its change didn't fit: the rule-based fix stands in.",
+      dropped: left ? `The model suggested: ${left}. It didn't fit, so the rule-based fix stands in.` : null,
+    };
+  }
+  const head = answer.source === "recorded" ? "Recorded fix" : "Rule-based fix";
+  return {
+    chip: answer.source === "recorded" ? "Recorded" : "Rule-based",
+    title: `${head}: ${why ?? notCalled}.`,
+    dropped: left ? `The recorded change, ${left}, didn't fit, so the rule-based fix stands in.` : null,
+  };
+}
+
+/**
  * The batch's side of the Owner screen (issue 127's view, issue 128's compare):
  * the count, the 50-cell strip, each strategy's count, the way most crews got
  * out, what noticed them first most often, and the Chief's one change, then
@@ -68,14 +80,13 @@ export function BatchPanel({
   stale,
   fixedSaved,
   side = "after",
+  board,
   onEdit,
   onRetry,
   onOpenFixed,
 }: {
   batch: OwnerBatch;
   fix: OwnerFix;
-  /** The side the board shows once a fix is applied: the route and detector follow it. */
-  side?: Side;
   zones: ChiefZones;
   /** The batch's setup on the board: its Why rows explain each element still as generated. */
   generated: PlacedLevel;
@@ -83,6 +94,10 @@ export function BatchPanel({
   setupName: string | null;
   stale: boolean;
   fixedSaved: { ok: boolean; setup: OwnerSetup } | null;
+  /** The side the board shows once a fix is applied; the route and detector cards follow it. */
+  side?: Side;
+  /** The level the board draws (the after level on the After side); `generated` by default. */
+  board?: PlacedLevel;
   onEdit: () => void;
   onRetry: () => void;
   onOpenFixed: () => void;
@@ -120,17 +135,32 @@ export function BatchPanel({
   const { summary, result } = batch;
   const nameOf = (id: string) => result.strategies.find((s) => s.id === id)?.name ?? id;
   const zoneName = (id: string) => zones.zones.find((z) => z.id === id)?.name.toLowerCase() ?? id;
-  const which = shownSide(fix, side);
-  const shown = shownSummary(summary, fix, side);
+  // The route and detector cards describe the batch the board beside them shows.
+  const compared = fix.status === "applied" && !fix.rerun.dropped;
+  const shownSide: Side | null = compared ? side : null;
+  const shown = shownSide === "after" && fix.status === "applied" ? fix.rerun.after : summary;
+  const shownLevel = shownSide === "after" ? (board ?? generated) : generated;
+  const lead = shownSide === "after" ? "After the fix: " : shownSide === "before" ? "Before the fix: " : "";
   const top = shown.detectors[0] ?? null;
-  const sideNote = which === "after" ? ", after the fix" : which === "before" ? ", before the fix" : "";
+  // Who placed an element with no data rows. On the After side that is the Chief's fix for the element it
+  // changed, and the fixed setup for the rest: never the rules table, whose elements carry their rows.
+  const placedBy = (finding: DetectorFinding): string => {
+    if (shownSide === "after" && fix.status === "applied") {
+      const { change } = fix.rerun.fix;
+      if (change.kind !== "lock-door" && finding.id === change.elementId) {
+        return `Placed by the Security Chief's fix: ${describeFix(fix.answer.fix, zoneName)}.`;
+      }
+      if (fix.rerun.fixed) return `Placed by the fixed setup "${fix.rerun.fixed.name}".`;
+    }
+    return setupName ? `Placed by the owner's setup "${setupName}".` : "Placed by the rules table.";
+  };
 
   return (
     <div className="flex flex-col gap-6" data-testid="owner-batch" data-state="done">
       <section aria-labelledby="owner-count-label" className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <h2 id="owner-count-label" className="label-caps text-text-3">
-            The crew&apos;s 50 attempts
+            The crew&apos;s {summary.total} attempts
           </h2>
           {batch.recorded ? (
             <span
@@ -184,25 +214,25 @@ export function BatchPanel({
 
       <section aria-labelledby="owner-route-label" className="flex flex-col gap-2">
         <h2 id="owner-route-label" className="label-caps text-text-3">
-          The way most got out{sideNote}
+          {lead}The way most got out
         </h2>
         {shown.topRoute ? (
-          <p data-testid="owner-route" data-side={which ?? ""} data-count={shown.topRoute.count} className="text-sm text-text-1">
+          <p data-testid="owner-route" data-side={shownSide ?? ""} data-count={shown.topRoute.count} className="text-sm text-text-1">
             <span className="font-mono tabular-nums">
               {shown.topRoute.count} of {shown.escaped}
             </span>{" "}
-            went {routeRooms(shown.topRoute.nodes, generated).join(" → ")}. It is drawn on the board.
+            went {routeRooms(shown.topRoute.nodes, shownLevel).join(" → ")}. It is drawn on the board.
           </p>
         ) : (
-          <p data-testid="owner-route" data-side={which ?? ""} data-count={0} className="text-sm text-text-2">
-            No crew got out{which === "after" ? " after the fix" : ""}, so there is no way out to draw.
+          <p data-testid="owner-route" data-side={shownSide ?? ""} data-count={0} className="text-sm text-text-2">
+            No crew got out, so there is no way out to draw.
           </p>
         )}
       </section>
 
       {top ? (
-        <DetectorCard finding={top} total={shown.total} generated={generated} setupName={setupName} sideNote={sideNote} side={which} />
-      ) : which === "after" ? (
+        <DetectorCard finding={top} total={shown.total} generated={shownLevel} placedBy={placedBy(top)} lead={lead} side={shownSide} />
+      ) : shownSide === "after" ? (
         <p data-testid="owner-detector-none" className="text-sm text-text-2">
           After the fix, nothing noticed the crew.
         </p>
@@ -257,16 +287,17 @@ function DetectorCard({
   finding,
   total,
   generated,
-  setupName,
-  sideNote = "",
+  placedBy,
+  lead,
   side = null,
 }: {
   finding: DetectorFinding;
   total: number;
   generated: PlacedLevel | null;
-  setupName: string | null;
-  /** ", after the fix" when the board shows a side of the Chief's rerun. */
-  sideNote?: string;
+  /** The line shown when the element has no data rows: who placed it. */
+  placedBy: string;
+  lead: string;
+  /** The side of the Chief's rerun the board shows, null before any fix. */
   side?: Side | null;
 }) {
   const target = generated && finding.id ? whyTargets(generated).find((t) => t.key === `${finding.kind}:${finding.id}`) : undefined;
@@ -282,7 +313,7 @@ function DetectorCard({
     >
       <div className="flex items-baseline gap-2">
         <h2 id="owner-detector-label" className="label-caps text-text-3">
-          Noticed the crew first most often{sideNote}
+          {lead}Noticed the crew first most often
         </h2>
       </div>
       <p className="text-base text-text-1">
@@ -303,7 +334,7 @@ function DetectorCard({
         </div>
       ) : (
         <p className="border-t border-border pt-3 text-sm text-text-2">
-          {setupName ? `Placed by the owner's setup "${setupName}".` : "Placed by the rules table."}
+          {placedBy}
         </p>
       )}
     </section>
@@ -322,19 +353,20 @@ function ChiefSection({
   onOpenFixed: () => void;
 }) {
   const answer = fix.status === "suggested" || fix.status === "applied" ? fix.answer : null;
+  const note = answer ? chiefNote(answer, zoneName) : null;
   return (
     <section data-testid="owner-chief" data-state={fix.status} aria-labelledby="owner-chief-label" className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
         <h2 id="owner-chief-label" className="label-caps text-text-3">
           Security Chief
         </h2>
-        {answer && answer.source !== "model" ? (
+        {note?.chip ? (
           <span
             data-testid="owner-fix-recorded"
-            title={answer.reason ?? (answer.source === "recorded" ? "Recorded fix: no model was called." : "Rule-based fix: no model was called.")}
+            title={note.title}
             className="ml-auto rounded-sm border border-border px-1.5 py-0.5 label-caps text-text-2"
           >
-            {answer.source === "recorded" ? "Recorded" : "Rule-based"}
+            {note.chip}
           </span>
         ) : null}
       </div>
@@ -360,6 +392,11 @@ function ChiefSection({
           <p data-testid="owner-fix-rationale" className="text-base text-text-1">
             {answer.fix.rationale}
           </p>
+          {note?.dropped ? (
+            <p data-testid="owner-fix-left-out" className="border-l-2 border-border pl-3 text-sm text-text-2">
+              {note.dropped}
+            </p>
+          ) : null}
         </>
       ) : null}
       {fix.status === "applied" ? (

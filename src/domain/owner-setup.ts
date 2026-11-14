@@ -42,6 +42,13 @@ export const OwnerGuard = z.object({
   round: z.array(Id),
   /** Turns per hop along the round: 1 is the tightest. */
   tempo: z.int().positive(),
+  /**
+   * Turns later than it would otherwise walk its round (negative: earlier),
+   * as the Security Chief's retime says it: the guard starts that many nodes
+   * further back along the round on every night, from wherever it starts that
+   * night. Absent or 0: on time. A guard with no round ignores it.
+   */
+  retime: z.int().optional(),
 });
 export type OwnerGuard = z.infer<typeof OwnerGuard>;
 

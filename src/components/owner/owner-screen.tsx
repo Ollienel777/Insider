@@ -86,7 +86,7 @@ export function OwnerScreen({
           testId: "owner-no-floor",
           label: "No floor yet",
           title: "This building has no board to test on yet.",
-          body: "Only Halvorsen Tower has a floor plan so far.",
+          body: "Only the Los Angeles buildings have a floor plan so far.",
         }
       : null;
 
