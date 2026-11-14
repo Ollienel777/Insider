@@ -49,7 +49,7 @@
               "name": "task",
               "args": {
                 "subagent_type": "game-master",
-                "description": "Building F1, Halvorsen Tower, LA, built 1974. Analog era: key locks, sweeping analog CCTV, 2 cameras. Class A: 4 guards on tight rounds. Staged on floor 22, quiet suites 2202-2210. Entries: loading dock, roof hatch, garage ramp, main lobby, stair A exit. Pick the mission and write the briefing."
+                "description": "Building F1, Halvorsen Tower, LA, built 1974. Analog era: key locks, sweeping analog CCTV, 2 cameras. Class A: 4 guards on tight rounds. Staged on floor 22, quiet suites 2202-2210. Entries: loading dock, roof hatch, garage ramp, main lobby, stair B exit. Pick the mission and write the briefing."
               }
             }
           ]
@@ -108,7 +108,7 @@
           "toolCalls": [{ "name": "derive_security_profile", "args": { "buildingId": "F1" } }]
         },
         {
-          "content": "Built 1974 (before 1980): Analog era, key locks pickable in 2 turns, analog CCTV that sweeps, 2 cameras. Class A: 4 guards on tight rounds. Floor 22 has the most available area, suites 2202-2210, so the level is staged there and those suites are quiet zones; the rest of the floor is crowded. Entries from the aerial: loading dock and roof hatch first, then the garage ramp, the main lobby (with a desk guard) and the stair A exit."
+          "content": "Built 1974 (before 1980): Analog era, key locks pickable in 2 turns, analog CCTV that sweeps, 2 cameras. Class A: 4 guards on tight rounds. Floor 22 has the most available area, suites 2202-2210, so the level is staged there and those suites are quiet zones; the rest of the floor is crowded. Entries from the aerial: loading dock and roof hatch first, then the garage ramp, the main lobby (with a desk guard) and the stair B exit."
         }
       ]
     },

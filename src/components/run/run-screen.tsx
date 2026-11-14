@@ -188,8 +188,12 @@ export function RunScreen({
       if (event.altKey || event.ctrlKey || event.metaKey) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, select, [contenteditable=true]")) return;
-      // Space and Enter keep their meaning on a focused button or link; the game keys work everywhere else.
-      if ((event.key === " " || event.key === "Enter") && target?.closest("button, a")) return;
+      // Space and Enter keep their meaning on a focused button or link, and on a board choice. A Why
+      // piece (`data-why-target`) keeps them only when Tab put it in focus (`data-tabbed`): after a
+      // click, or the focus the board restores, Space still takes the files (R3-C1).
+      const owner = target?.closest("button, a, [role=button]");
+      const ownsKey = owner && (!owner.hasAttribute("data-why-target") || owner.hasAttribute("data-tabbed"));
+      if ((event.key === " " || event.key === "Enter") && ownsKey) return;
       const action = actionForKey(event.key, run!);
       if (event.key === " ") event.preventDefault();
       if (action) {
@@ -399,16 +403,18 @@ function RunPanel({
           {run.guards.map((guard) => {
             const order = orders.find((o) => o.guardId === guard.id);
             const waiting = awaiting.has(guard.id);
+            // A guard the placer posted (the dock post) stands its post until ordered.
+            const standing = placed.guards.find((g) => g.id === guard.id)?.post ? "post" : "round";
             return (
               <li
                 key={guard.id}
                 data-guard={guard.id}
-                data-intent={waiting ? "awaiting" : (order?.intent ?? "round")}
+                data-intent={waiting ? "awaiting" : (order?.intent ?? standing)}
                 className="grid grid-cols-[32px_88px_minmax(0,1fr)] items-baseline border-b border-border py-1.5 text-sm last:border-b-0"
               >
                 <span className="font-mono text-text-1">{guard.id}</span>
                 <span className={cn("font-mono text-xs uppercase", order && !waiting ? "text-danger" : "text-text-2")}>
-                  {waiting ? "…" : order ? order.intent : "round"}
+                  {waiting ? "…" : order ? order.intent : standing}
                 </span>
                 <span className="truncate text-text-2">
                   {waiting ? "Awaiting orders" : order ? order.zone : roomName(floor, guard.nodeId)}

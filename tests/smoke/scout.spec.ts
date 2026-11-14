@@ -76,7 +76,7 @@ test("the entry markers are visible and labelled, and clicking one shows its not
   await expect(markers).toHaveCount(5);
   for (const marker of await markers.all()) await expect(marker).toBeVisible();
   const labels = activeView(page).getByTestId("entry-label");
-  await expect(labels).toHaveText(["Loading dock", "Garage ramp", "Main lobby", "Stair A exit", "Roof hatch"]);
+  await expect(labels).toHaveText(["Loading dock", "Garage ramp", "Main lobby", "Stair B exit", "Roof hatch"]);
   for (const label of await labels.all()) await expect(label).toBeVisible();
   // An entry on a face this view can't see stays on screen, named as the far side.
   await expect(activeView(page).getByRole("button", { name: "Main lobby, far side" })).toBeVisible();

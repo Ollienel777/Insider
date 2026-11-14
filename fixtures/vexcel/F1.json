@@ -43,13 +43,13 @@
     {
       "id": "exit-W",
       "kind": "service",
-      "label": "Stair A exit",
+      "label": "Stair B exit",
       "view": "W",
       "at": {
         "lngLat": [-118.2531408, 34.0523141],
         "elevM": 0
       },
-      "note": "West face, onto Hope Street: a fire exit from stair A. Alarmed, and it opens outward only."
+      "note": "West face, onto Hope Street: a fire exit from stair B. Alarmed, and it opens outward only."
     },
     {
       "id": "roof",
@@ -60,7 +60,7 @@
         "lngLat": [-118.2529566, 34.0523231],
         "elevM": 160
       },
-      "note": "Beside the cooling towers. The hatch drops into the stair B core above the 42nd floor."
+      "note": "Beside the cooling towers. The hatch drops into the stair A core above the 42nd floor."
     }
   ],
   "footprint": [

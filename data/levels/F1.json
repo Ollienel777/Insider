@@ -214,7 +214,7 @@
     {
       "id": "exit-W",
       "kind": "service",
-      "label": "Stair A exit"
+      "label": "Stair B exit"
     }
   ],
   "mission": {
@@ -433,7 +433,7 @@
       "layer": "vexcel",
       "field": "entries.kind",
       "value": "service",
-      "rule": "The aerial tags \"Stair A exit\" (service): a service door is a way in and out"
+      "rule": "The aerial tags \"Stair B exit\" (service): a service door is a way in and out"
     },
     {
       "elementRole": "zone:objective",

@@ -5,7 +5,7 @@ import { F1_DEMO, FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { type FloorGraph, LevelManifest } from "@/domain";
 import { act, type Action, compileBoard, createRun, DEFAULT_HEARING, type RunState, watched } from "@/engine";
 import cached from "../../data/levels/F1.json";
-import { ENTRY_CLEARANCE, placeLevel, PlacementError, type PlacedLevel } from "./placer";
+import { ANCHORS, ENTRY_CLEARANCE, placeLevel, PlacementError, type PlacedLevel } from "./placer";
 import { quietRoute } from "./quiet-route";
 
 const manifest = (): LevelManifest => LevelManifest.parse(structuredClone(cached));
@@ -166,6 +166,74 @@ describe("placeLevel on F1 from the cached manifest", () => {
     expect(quietRoute(placeLevel(m, floor(), SEED))).toBeNull();
   });
 
+  it("posts G4 for the dock: the Vexcel dock entry's provenance first, then its own from Class A (#21)", () => {
+    const m = manifest();
+    const p = placeLevel(m, floor(), SEED);
+    const g4 = p.guards.find((g) => g.id === "G4")!;
+    expect(g4.post?.entryId).toBe("dock-N");
+    expect(g4.patrol).toEqual(["el-south"]);
+    expect(g4.roomId).toBe("elevator-lobby");
+    // The same objects the manifest holds, in this order: the dock tag, then the guard force.
+    const dockEntry = m.provenance.find((e) => e.elementRole === "entry:dock-N")!;
+    const fourth = m.provenance.find((e) => e.elementRole === "guard:G4")!;
+    expect(g4.provenance).toEqual([dockEntry, fourth]);
+    expect(g4.provenance[0]).toBe(dockEntry);
+    expect(g4.provenance[1]).toBe(fourth);
+    expect(dockEntry).toMatchObject({ layer: "vexcel", field: "entries.kind", value: "dock" });
+    expect(fourth).toMatchObject({ layer: "costar", field: "buildingClass", value: "A" });
+    // Only the post carries the dock entry; the other three walk rounds.
+    for (const guard of p.guards.filter((g) => g.id !== "G4")) {
+      expect(guard.post).toBeUndefined();
+      expect(guard.provenance.map((e) => e.elementRole)).not.toContain("entry:dock-N");
+    }
+    expect(p.level.guards.find((g) => g.id === "G4")?.patrol).toEqual(["el-south"]);
+  });
+
+  it("holds the dock post whatever the seed, out of sight of the way in and out of earshot of the records door", () => {
+    const nearStart = [...hopsFrom(floor(), [F1_DEMO.dockEntry])].filter(([, d]) => d <= ENTRY_CLEARANCE).map(([id]) => id);
+    for (const seed of SEEDS) {
+      const g4 = placeF1(seed).guards.find((g) => g.id === "G4")!;
+      expect(g4.patrol, `seed ${seed}`).toEqual(["el-south"]);
+    }
+    const sees = floor().sightlines["el-south"];
+    for (const id of nearStart) expect(sees, id).not.toContain(id);
+    expect(hopsFrom(floor(), ["dc-east"]).get("el-south")!).toBeGreaterThan(DEFAULT_HEARING);
+  });
+
+  it("moves the dock post off a node that sees the way in (R3-M2: the sightline rule)", () => {
+    // Give el-south, the post on F1, a line of sight to the dock entry itself.
+    const f = floor();
+    f.sightlines["el-south"] = [...(f.sightlines["el-south"] ?? []), F1_DEMO.dockEntry];
+    const nearStart = new Set([...hopsFrom(f, [F1_DEMO.dockEntry])].filter(([, d]) => d <= ENTRY_CLEARANCE).map(([id]) => id));
+    const g4 = placeLevel(manifest(), f, SEED).guards.find((g) => g.id === "G4")!;
+    expect(g4.post?.entryId).toBe("dock-N");
+    expect(g4.patrol).toHaveLength(1);
+    expect(g4.patrol[0]).not.toBe("el-south");
+    for (const id of f.sightlines[g4.patrol[0]] ?? []) expect(nearStart.has(id), `${g4.patrol[0]} sees ${id}`).toBe(false);
+  });
+
+  it("moves the dock post off a camera's cover (R3-M2: the camera-cover rule)", () => {
+    // Anchor C1 on el-south, the post on F1.
+    const anchors = { ...ANCHORS.F1, cameras: { ...ANCHORS.F1.cameras, C1: ["el-south"] } };
+    const p = placeLevel(manifest(), floor(), SEED, anchors);
+    expect(p.cameras.find((c) => c.id === "C1")?.cover).toEqual(["el-south"]);
+    const g4 = p.guards.find((g) => g.id === "G4")!;
+    expect(g4.post?.entryId).toBe("dock-N");
+    expect(g4.patrol).toHaveLength(1);
+    expect(g4.patrol[0]).not.toBe("el-south");
+    const covered = new Set(p.cameras.flatMap((c) => c.cover));
+    expect(covered.has(g4.patrol[0])).toBe(false);
+  });
+
+  it("posts no guard without a dock entry, and every guard walks a round", () => {
+    const m = manifest();
+    m.entries = m.entries.filter((e) => e.kind !== "dock");
+    const p = placeLevel(m, floor(), SEED);
+    expect(p.guards.map((g) => g.id)).toEqual(["G1", "G2", "G3", "G4"]);
+    expect(p.guards.every((g) => g.post === undefined)).toBe(true);
+    for (const guard of p.guards) expect(guard.provenance.map((e) => e.elementRole)).toContain("profile:patrolTempo");
+  });
+
   it("starts no guard's round within two moves of an entry node", () => {
     const fromEntries = hopsFrom(level.floor, entryNodes(level.floor));
     for (const guard of level.guards) {
@@ -216,7 +284,7 @@ describe("placeLevel on F1 from the cached manifest", () => {
     expect(role(p.guards[3])).toContain("guard:G4");
     expect(role(p.cameras.find((c) => c.id === "C2")!)).toContain("camera:C2");
     expect(role(p.entries[0])).toEqual(["entry:dock-N"]);
-    expect(role(p.locks.find((l) => l.doorId === F1_DEMO.recordsDoor)!)).toEqual(["zone:objective", "profile:lockKind"]);
+    expect(role(p.locks.find((l) => l.doorId === F1_DEMO.recordsDoor)!)).toEqual(["profile:lockKind", "zone:objective"]);
   });
 
   it("gives an engine run that starts calm on the dock, and plays", () => {

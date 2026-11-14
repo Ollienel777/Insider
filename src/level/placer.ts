@@ -3,7 +3,8 @@
 // floor: zones onto rooms (quiet = available suites, objective = the records
 // room, secure = the server closet), entries onto `entry` nodes, locks onto
 // the lockable doors of the objective and secure rooms, cameras onto corridor
-// nodes and guards onto patrol rounds. Every placed element carries the
+// nodes, one guard onto a post for the dock entry and the rest onto patrol
+// rounds. Every placed element carries the
 // manifest's provenance entries for it (the same objects, not copies), which
 // is what the Why card (#21) reads.
 //
@@ -46,10 +47,15 @@ export interface PlacedCamera extends CameraSpec {
 
 export interface PlacedGuard {
   id: string;
-  /** The room the round walks. */
+  /** The room the round walks, or the post stands in. */
   roomId: string;
-  /** Waypoints, as the engine's `GuardSpec.patrol`: the guard starts on the first. */
+  /** Waypoints, as the engine's `GuardSpec.patrol`: the guard starts on the first. A post has one. */
   patrol: readonly string[];
+  /**
+   * Set when the guard stands a post for an entry instead of walking a round:
+   * the entry, and how the placer chose the node (see `DOCK_POST_RULE`).
+   */
+  post?: { entryId: string; rule: string };
   provenance: readonly Provenance[];
 }
 
@@ -157,6 +163,15 @@ const ROOM_WORDS: Partial<Record<ZoneRole, readonly string[]>> = {
   objective: ["records", "archive", "vault"],
   secure: ["server", "secure", "security"],
 };
+
+/**
+ * How the dock post is chosen, in the words the Why card shows. The node is
+ * the nearest to the dock entry that keeps the quiet way in open: nothing in
+ * sight of it within ENTRY_CLEARANCE moves of the start, out of earshot of
+ * where the objective's door is picked (only that lock: the words say no
+ * more), off the cameras' covers, the quiet zones and the locked rooms.
+ */
+const DOCK_POST_RULE = "Posted on the nearest node to the dock that keeps out of sight of the way in and out of earshot of the door to the files";
 
 const CORRIDOR = /corridor|hall/i;
 const SUITE_ROOM = /suite|office/i;
@@ -388,7 +403,8 @@ export function placeLevel(
       .sort();
     if (doors.length === 0) unplaced.push({ elementRole: `lock:${zone.zoneId}`, reason: "the room has no lockable door" });
     for (const doorId of doors) {
-      locks.push({ doorId, zoneId: zone.zoneId, provenance: [...zone.provenance, ...lockProvenance] });
+      // The lock's kind (from the era) first, then the zone that puts it on this door.
+      locks.push({ doorId, zoneId: zone.zoneId, provenance: [...lockProvenance, ...zone.provenance] });
     }
   }
 
@@ -467,16 +483,42 @@ export function placeLevel(
       return [...hops(adj, [id])].filter(([, d]) => d <= range).map(([node]) => node);
     }),
   );
+  const covered = new Set(cameras.flatMap((c) => c.cover));
+
+  // The dock post (SPEC §2 beat 5): the last guard of the force holds the
+  // way in from the dock, on the nearest node to it that leaves the quiet
+  // way in open. It carries the dock entry's Vexcel provenance first, then
+  // its own from the guard force. With fewer than two guards, or no such
+  // node, every guard walks a round.
+  const { guardCount } = manifest.securityProfile;
+  const dock = entries.find((e) => e.kind === "dock");
+  let post: { node: string; entry: PlacedEntry } | null = null;
+  if (dock && guardCount >= 2) {
+    const fromDock = hops(adj, [dock.nodeId]);
+    const candidates = floor.nodes
+      .filter((n) => !lockedRooms.has(n.roomId) && !quietNodes.has(n.id) && !isEntry(n.id) && !covered.has(n.id))
+      .filter((n) => !nearStart.has(n.id) && !earshot.has(n.id) && (fromEntries.get(n.id) ?? Infinity) > ENTRY_CLEARANCE)
+      .filter((n) => !(floor.sightlines[n.id] ?? []).some((id) => nearStart.has(id)))
+      .filter((n) => fromDock.has(n.id))
+      .sort((a, b) => fromDock.get(a.id)! - fromDock.get(b.id)! || a.id.localeCompare(b.id));
+    if (candidates[0]) post = { node: candidates[0].id, entry: dock };
+  }
+  const roundCount = post ? guardCount - 1 : guardCount;
+
   let chains = floor.rooms
     .filter((r) => !lockedRooms.has(r.id))
     .filter((r) => !(roomNodes.get(r.id) ?? []).some((id) => nearStart.has(id) || earshot.has(id)))
     .map((r) => ({
       roomId: r.id,
-      chain: chainOf(adj, (roomNodes.get(r.id) ?? []).filter((id) => !quietNodes.has(id) && !isEntry(id)), fromStart),
+      chain: chainOf(
+        adj,
+        (roomNodes.get(r.id) ?? []).filter((id) => !quietNodes.has(id) && !isEntry(id) && id !== post?.node),
+        fromStart,
+      ),
     }))
     .filter((route) => route.chain.length > 0);
   // Too few rooms for the guard force: cut the longest round in two while both halves stay rounds.
-  while (chains.length > 0 && chains.length < manifest.securityProfile.guardCount) {
+  while (chains.length > 0 && chains.length < roundCount) {
     const longest = chains.reduce((best, c, i) => (c.chain.length > chains[best].chain.length ? i : best), 0);
     const { roomId, chain } = chains[longest];
     if (chain.length < 4) break;
@@ -495,17 +537,16 @@ export function placeLevel(
     }))
     .filter((route) => route.starts.length > 0)
     .sort((a, b) => b.chain.length - a.chain.length || a.chain[0].localeCompare(b.chain[0]));
-  const { guardCount } = manifest.securityProfile;
   const guards: PlacedGuard[] = [];
   const tempo = profileProvenance("patrolTempo");
-  for (let g = 0; g < guardCount; g++) {
+  for (let g = 0; g < roundCount; g++) {
     const id = `G${g + 1}`;
     if (routes.length === 0) {
       unplaced.push({ elementRole: `guard:${id}`, reason: "the floor has no room clear of the entries for a round" });
       continue;
     }
     const route = routes[g % routes.length];
-    const sharing = Math.ceil((guardCount - (g % routes.length)) / routes.length);
+    const sharing = Math.ceil((roundCount - (g % routes.length)) / routes.length);
     const nth = Math.floor(g / routes.length);
     const { chain, starts } = route;
     const turn = hash(seed, chain[0]) % starts.length;
@@ -520,6 +561,16 @@ export function placeLevel(
             ? [chain[last], chain[0]]
             : [chain[at], chain[last], chain[0]];
     guards.push({ id, roomId: route.roomId, patrol, provenance: [...provenanceOf(`guard:${id}`, "profile:guardCount"), ...tempo] });
+  }
+  if (post) {
+    const id = `G${guardCount}`;
+    guards.push({
+      id,
+      roomId: nodeById.get(post.node)!.roomId,
+      patrol: [post.node],
+      post: { entryId: post.entry.entryId, rule: DOCK_POST_RULE },
+      provenance: [...post.entry.provenance, ...provenanceOf(`guard:${id}`, "profile:guardCount")],
+    });
   }
 
   // The engine's zones: the placed zones, and each entry as a zone of its own node.

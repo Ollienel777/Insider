@@ -197,6 +197,22 @@ body {
   outline-offset: 2px;
 }
 
+/* The provenance thread draws from the piece to the Why card over --t-slow
+   (DESIGN.md "The signature element"); the line sets pathLength="1". */
+.thread-draw {
+  stroke-dashoffset: 0;
+  animation: thread-draw var(--t-slow) var(--ease) both;
+}
+
+@keyframes thread-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
