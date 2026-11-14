@@ -6,13 +6,18 @@
 // from its position, which says how far it could see in every direction.
 // Faces are fetched with `cache: "no-store"` and decoded straight to bitmaps:
 // they live in memory only, and are closed as soon as the GPU has them.
+//
+// A 2k panorama is 100 MB of texels. Handing all six faces to the GPU in one
+// go stalls the frame for a third of a second or more, which is a hitch every
+// few steps of a run. So the photo cube is filled by hand, one face a frame,
+// and its smaller copies are made on the frame after: no frame carries more
+// than one face.
 import {
   BackSide,
   BoxGeometry,
   CubeTexture,
   HalfFloatType,
   LinearFilter,
-  LinearMipmapLinearFilter,
   Matrix3,
   Mesh,
   NoColorSpace,
@@ -27,7 +32,7 @@ import {
 } from "three";
 import { conjugate, quatToMat3 } from "@/lib/scan-mesh/coords";
 import { isAllowedAssetUrl, type ScanPano } from "@/lib/scan-mesh/manifest";
-import { CUBE_LOOKUP_FLIP, cubeLayout, panoDistance, panoWeights } from "@/lib/scan-mesh/skybox";
+import { alignToCube, CUBE_LOOKUP_FLIP, panoDistance, panoWeights } from "@/lib/scan-mesh/skybox";
 import { createDistanceMaterial, SLOTS } from "./projection";
 
 /** Panoramas loaded ahead of need, nearest first. */
@@ -47,12 +52,25 @@ interface Entry {
   index: number;
   status: Status;
   cube: CubeTexture | null;
+  /** The GPU texture behind `cube`: made and filled here, not by three.js. */
+  raw: WebGLTexture | null;
   depth: WebGLCubeRenderTarget | null;
   origin: Vector3;
   toPano: Matrix3;
   share: number;
   lastWanted: number;
   attempts: number;
+}
+
+/** A panorama's photos on their way into the GPU, a face a frame. */
+interface Upload {
+  entry: Entry;
+  raw: WebGLTexture;
+  /** One image per GPU cube slot. */
+  images: (ImageBitmap | HTMLCanvasElement)[];
+  bitmaps: ImageBitmap[];
+  /** The next slot to fill; 6 once only the smaller copies are left to make. */
+  next: number;
 }
 
 export interface PanoUse {
@@ -88,14 +106,17 @@ export class PanoStore {
   private entries: Entry[] = [];
   private loading = 0;
   private disposed = false;
-  private readonly layout = cubeLayout();
+  private readonly align = alignToCube();
+  private uploads: Upload[] = [];
   private readonly depthScene = new Scene();
   private readonly depthMaterial = createDistanceMaterial();
   private readonly depthCamera = new PerspectiveCamera(90, 1, 0.05, 4000);
   private readonly far: Mesh;
   private readonly abort = new AbortController();
-  /** Called when a face link is refused or has run out: the engine fetches new links. */
+  /** Called when a face link is refused: the engine fetches new links. */
   onStale: (() => void) | null = null;
+  /** Set by `update` when a panorama is waiting to load and the links have run out. */
+  needsLinks = false;
 
   constructor(
     private readonly renderer: WebGLRenderer,
@@ -113,15 +134,25 @@ export class PanoStore {
   setPanos(panos: readonly ScanPano[]): void {
     if (this.entries.length === 0) {
       this.entries = panos.map((pano, index) => {
-        const toPano = new Matrix3().fromArray(quatToMat3(conjugate(pano.rotation)));
-        // Row r of the matrix is scaled by the lookup's flip on axis r.
-        const e = toPano.elements;
-        for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) e[col * 3 + row] *= CUBE_LOOKUP_FLIP[row];
+        // World to the panorama's own frame, then the turn that lines the scan's
+        // faces up with the GPU's, then the lookup's flip.
+        const own = quatToMat3(conjugate(pano.rotation));
+        const { rotation } = this.align;
+        const elements: number[] = [];
+        for (let col = 0; col < 3; col++) {
+          const [x, y, z] = [own[col * 3], own[col * 3 + 1], own[col * 3 + 2]];
+          for (let row = 0; row < 3; row++) {
+            const r = rotation[row];
+            elements.push((r[0] * x + r[1] * y + r[2] * z) * CUBE_LOOKUP_FLIP[row]);
+          }
+        }
+        const toPano = new Matrix3().fromArray(elements);
         return {
           pano,
           index,
           status: "idle" as Status,
           cube: null,
+          raw: null,
           depth: null,
           origin: new Vector3(...pano.position),
           toPano,
@@ -173,8 +204,9 @@ export class PanoStore {
   /**
    * One frame: start what should be loading, move the shares toward their
    * targets, and write the four strongest panoramas into `materials`.
-   * `linksUsable` is false while the links have run out and new ones are on
-   * their way. Returns what is in use, strongest first.
+   * `linksUsable` is false once the links have run out; `needsLinks` then says
+   * whether anything is waiting on new ones. Returns what is in use, strongest
+   * first.
    */
   update(
     eye: readonly [number, number, number],
@@ -186,14 +218,18 @@ export class PanoStore {
   ): PanoUse[] {
     const entries = this.entries;
     if (entries.length === 0) return [];
+    this.pump();
     const ranked = entries
       .filter((e) => e.pano.faces !== null)
       .map((e) => ({ e, d: panoDistance(eye, e.pano.position) }))
       .sort((a, b) => a.d - b.d);
 
+    this.needsLinks = false;
     for (const { e } of ranked.slice(0, LOAD_AHEAD)) {
       e.lastWanted = now;
-      if (e.status === "idle" && this.loading < CONCURRENT && linksUsable) void this.load(e);
+      if (e.status !== "idle") continue;
+      if (!linksUsable) this.needsLinks = true;
+      else if (this.loading < CONCURRENT) void this.load(e);
     }
 
     const ready = ranked.filter(({ e }) => e.status === "ready");
@@ -245,9 +281,11 @@ export class PanoStore {
   }
 
   private release(e: Entry): void {
-    e.cube?.dispose();
+    if (e.cube) this.renderer.properties.remove(e.cube);
+    if (e.raw) this.renderer.getContext().deleteTexture(e.raw);
     e.depth?.dispose();
     e.cube = null;
+    e.raw = null;
     e.depth = null;
     e.share = 0;
   }
@@ -272,43 +310,81 @@ export class PanoStore {
             signal: this.abort.signal,
           });
           if (!response.ok) throw new Error(`face ${response.status}`);
-          return createImageBitmap(await response.blob());
+          // Decoded off the main thread, in the form the GPU takes as it is.
+          return createImageBitmap(await response.blob(), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
         }),
       );
-      if (this.disposed) return;
-      const images = this.layout.map((slot) => {
+      if (this.disposed) throw new Error("gone");
+      const size = bitmaps[0].width;
+      if (!bitmaps.every((b) => b.width === size && b.height === size)) throw new Error("faces differ in size");
+      const images = this.align.layout.map((slot) => {
         const source = bitmaps[slot.face];
         if (slot.identity) return source;
         const canvas = document.createElement("canvas");
-        canvas.width = source.width;
-        canvas.height = source.height;
+        canvas.width = size;
+        canvas.height = size;
         const context = canvas.getContext("2d");
         if (!context) throw new Error("no 2d canvas");
         const [a, b, c, d] = slot.transform;
-        context.setTransform(a, b, c, d, source.width / 2, source.height / 2);
-        context.drawImage(source, -source.width / 2, -source.height / 2);
+        context.setTransform(a, b, c, d, size / 2, size / 2);
+        context.drawImage(source, -size / 2, -size / 2);
         return canvas;
       });
-      const cube = new CubeTexture(images);
-      cube.colorSpace = NoColorSpace;
-      cube.generateMipmaps = true;
-      cube.minFilter = LinearMipmapLinearFilter;
-      cube.magFilter = LinearFilter;
-      cube.needsUpdate = true;
-      this.renderer.initTexture(cube);
-      e.cube = cube;
-      e.depth = this.renderDepth(e.origin);
-      e.share = 0;
-      e.status = "ready";
+      const gl = this.renderer.getContext() as WebGL2RenderingContext;
+      const raw = gl.createTexture();
+      if (!raw) throw new Error("no texture");
+      this.renderer.state.bindTexture(gl.TEXTURE_CUBE_MAP, raw);
+      gl.texStorage2D(gl.TEXTURE_CUBE_MAP, Math.floor(Math.log2(size)) + 1, gl.RGBA8, size, size);
+      gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      this.renderer.state.unbindTexture();
+      this.uploads.push({ entry: e, raw, images, bitmaps, next: 0 });
     } catch {
+      for (const bitmap of bitmaps) bitmap.close();
+      this.loading--;
       if (this.disposed) return;
       // Most likely a link that ran out: ask for new ones and try again.
       e.status = "failed";
       this.onStale?.();
-    } finally {
-      for (const bitmap of bitmaps) bitmap.close();
-      this.loading--;
     }
+  }
+
+  /** One step of the upload at the head of the queue: a face, or the smaller copies and the depth cube. */
+  private pump(): void {
+    const job = this.uploads[0];
+    if (!job) return;
+    const gl = this.renderer.getContext() as WebGL2RenderingContext;
+    const state = this.renderer.state;
+    state.bindTexture(gl.TEXTURE_CUBE_MAP, job.raw);
+    if (job.next < 6) {
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+      gl.texSubImage2D(gl.TEXTURE_CUBE_MAP_POSITIVE_X + job.next, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, job.images[job.next]);
+      state.unbindTexture();
+      job.next++;
+      return;
+    }
+    gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
+    state.unbindTexture();
+    this.uploads.shift();
+    for (const bitmap of job.bitmaps) bitmap.close();
+    this.loading--;
+
+    // three.js binds this texture and never uploads to it: it has no version.
+    const e = job.entry;
+    const cube = new CubeTexture();
+    cube.colorSpace = NoColorSpace;
+    const properties = this.renderer.properties.get(cube) as { __webglTexture?: WebGLTexture; __webglInit?: boolean };
+    properties.__webglTexture = job.raw;
+    properties.__webglInit = true;
+    e.cube = cube;
+    e.raw = job.raw;
+    e.depth = this.renderDepth(e.origin);
+    e.share = 0;
+    e.status = "ready";
   }
 
   /** How far the mesh is from `origin` in every direction, as a cube map. */
@@ -346,6 +422,11 @@ export class PanoStore {
   dispose(): void {
     this.disposed = true;
     this.abort.abort();
+    for (const job of this.uploads) {
+      this.renderer.getContext().deleteTexture(job.raw);
+      for (const bitmap of job.bitmaps) bitmap.close();
+    }
+    this.uploads = [];
     for (const e of this.entries) this.release(e);
     this.entries = [];
     this.depthMaterial.dispose();

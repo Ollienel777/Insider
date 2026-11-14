@@ -29,6 +29,7 @@ const HINTS: [string, string][] = [
   ["W A S D", "run"],
   ["Shift", "walk"],
   ["Mouse", "look"],
+  ["- =", "sensitivity"],
   ["T", "mesh / panoramas"],
   ["P", "nearest scan position"],
   ["N", "next scan position"],
@@ -122,6 +123,7 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, debug }: Props) {
             {hud?.position ? hud.position.map((v) => v.toFixed(1)).join(", ") + (hud.grounded ? "" : " · no floor") : "…"}
           </Row>
           <Row label="Speed">{hud ? `${hud.speed.toFixed(1)} m/s · ${Math.round(hud.fps)} fps` : "…"}</Row>
+          <Row label="Mouse">{hud ? `${hud.sensitivity.toFixed(2)}× sensitivity` : "…"}</Row>
           <Row label="View">{hud?.projection === false ? "Mesh only" : `Panoramas (${hud?.faces ?? faces})`}</Row>
           <Row label="In use">
             {hud && hud.panos.length > 0

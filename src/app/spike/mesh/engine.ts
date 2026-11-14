@@ -33,6 +33,8 @@ export interface WalkHud {
   grounded: boolean;
   speed: number;
   projection: boolean;
+  /** The player's mouse sensitivity, as a multiple of the default. */
+  sensitivity: number;
   panos: PanoUse[];
   panoCount: number;
   panosReady: number;
@@ -59,6 +61,8 @@ const FOV = 71;
 const HUD_EVERY = 0.2;
 /** Fetch new links when the current ones have this little time left, ms. */
 const LINK_MARGIN = 20_000;
+/** A mouse report longer than this, in counts, is a glitch, not a flick. */
+const MOUSE_JUMP = 600;
 /** Radians per second of turning on the arrow keys. */
 const KEY_TURN = 2.2;
 
@@ -98,6 +102,7 @@ export class ScanWalk {
   private pitch = 0;
   private bob = 0;
   private projection = true;
+  private sensitivity = 1;
   private projectionShown = 1;
   private locked = false;
   private disposed = false;
@@ -132,6 +137,7 @@ export class ScanWalk {
       grounded: false,
       speed: 0,
       projection: true,
+      sensitivity: 1,
       panos: [],
       panoCount: 0,
       panosReady: 0,
@@ -292,12 +298,10 @@ export class ScanWalk {
     }
   }
 
+  /** Whether the links in hand still have time on them. New ones are asked for only when a panorama needs one. */
   private linksUsable(): boolean {
     const until = this.manifest?.validUntil;
-    if (!until) return true;
-    if (Date.parse(until) - Date.now() > LINK_MARGIN) return true;
-    void this.refreshLinks();
-    return false;
+    return !until || Date.parse(until) - Date.now() > LINK_MARGIN;
   }
 
   // ---- input ----
@@ -326,7 +330,9 @@ export class ScanWalk {
 
   private readonly mouseMove = (event: MouseEvent): void => {
     if (!this.locked) return;
-    const look = applyLook(this.yaw, this.pitch, event.movementX, event.movementY);
+    // Some browsers report one huge jump as the pointer locks or the window regains focus.
+    if (Math.abs(event.movementX) > MOUSE_JUMP || Math.abs(event.movementY) > MOUSE_JUMP) return;
+    const look = applyLook(this.yaw, this.pitch, event.movementX, event.movementY, TUNING.lookSpeed * this.sensitivity);
     this.yaw = look.yaw;
     this.pitch = look.pitch;
   };
@@ -338,6 +344,8 @@ export class ScanWalk {
       event.preventDefault();
       return;
     }
+    if (event.code === "Minus" || event.code === "NumpadSubtract") this.setSensitivity(this.sensitivity / 1.1);
+    if (event.code === "Equal" || event.code === "NumpadAdd") this.setSensitivity(this.sensitivity * 1.1);
     if (event.repeat) return;
     if (event.code === "KeyT") this.setProjection(!this.projection);
     if (event.code === "KeyG") this.toggleWire();
@@ -353,6 +361,12 @@ export class ScanWalk {
   private readonly keyUp = (event: KeyboardEvent): void => {
     this.keys.delete(event.code);
   };
+
+  setSensitivity(value: number): void {
+    this.sensitivity = Math.min(5, Math.max(0.2, value));
+    this.hud.sensitivity = this.sensitivity;
+    this.push();
+  }
 
   setProjection(on: boolean): void {
     this.projection = on;
@@ -426,7 +440,7 @@ export class ScanWalk {
     const turn = (keys.has("ArrowLeft") ? 1 : 0) - (keys.has("ArrowRight") ? 1 : 0);
     const tilt = (keys.has("ArrowUp") ? 1 : 0) - (keys.has("ArrowDown") ? 1 : 0);
     if (turn !== 0 || tilt !== 0) {
-      const look = applyLook(this.yaw, this.pitch, (-turn * KEY_TURN * dt) / TUNING.lookSpeed, (-tilt * KEY_TURN * dt) / TUNING.lookSpeed);
+      const look = applyLook(this.yaw, this.pitch, -turn * KEY_TURN * dt, -tilt * KEY_TURN * dt, 1);
       this.yaw = look.yaw;
       this.pitch = look.pitch;
     }
@@ -465,6 +479,7 @@ export class ScanWalk {
         this.blank,
         this.linksUsable(),
       );
+      if (this.panos.needsLinks) void this.refreshLinks();
     }
 
     this.hud.position = [next.x, next.y, next.z];

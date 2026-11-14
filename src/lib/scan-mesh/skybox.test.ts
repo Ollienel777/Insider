@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Vec3 } from "./coords";
 import {
+  alignToCube,
   CUBE_LOOKUP_FLIP,
   CUBE_SLOTS,
   cubeLayout,
@@ -102,6 +103,40 @@ describe("cubeLayout", () => {
       expect(at.s).toBeCloseTo(gpu.s, 9);
       expect(at.t).toBeCloseTo(gpu.t, 9);
     }
+  });
+
+  it("needs no face redrawn for the scan's convention once the frame is turned", () => {
+    const { rotation, layout } = alignToCube(SCAN_FACES);
+    expect(layout.every((s) => s.identity)).toBe(true);
+    expect(new Set(layout.map((s) => s.face)).size).toBe(6);
+    // A proper turn: rows at right angles, right-handed, and up stays up.
+    const [x, y, z] = rotation;
+    expect(x[0] * y[0] + x[1] * y[1] + x[2] * y[2]).toBe(0);
+    expect([x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0]]).toEqual([...z]);
+    expect(y).toEqual([0, 1, 0]);
+  });
+
+  it("turned and laid out, every direction still finds its own pixel", () => {
+    for (const faces of [SCAN_FACES, CUBE_SLOTS]) {
+      const { rotation, layout } = alignToCube(faces);
+      for (const d of DIRECTIONS) {
+        const scan = faceLookup(faces, d);
+        const turned: Vec3 = [0, 1, 2].map((r) => rotation[r][0] * d[0] + rotation[r][1] * d[1] + rotation[r][2] * d[2]) as unknown as Vec3;
+        const gpu = gpuLookup(flip(turned));
+        expect(layout[gpu.slot].face).toBe(scan.face);
+        const at = drawn(layout[gpu.slot].transform, scan.u, scan.v);
+        expect(at.s).toBeCloseTo(gpu.s, 9);
+        expect(at.t).toBeCloseTo(gpu.t, 9);
+      }
+    }
+  });
+
+  it("leaves a cube already in GPU order unturned", () => {
+    expect(alignToCube(CUBE_SLOTS).rotation).toEqual([
+      [1, 0, 0],
+      [0, 1, 0],
+      [0, 0, 1],
+    ]);
   });
 
   it("refuses a set of faces that leaves a side of the cube empty", () => {

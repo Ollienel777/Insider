@@ -92,6 +92,55 @@ export function cubeLayout(faces: readonly FaceFrame[] = SCAN_FACES): SlotSource
   });
 }
 
+/** A rotation as three rows: row r dotted with a vector gives its turned component r. */
+export type Rows = readonly [Vec3, Vec3, Vec3];
+
+const turn = (rows: Rows, v: Vec3): Vec3 => [dot(rows[0], v), dot(rows[1], v), dot(rows[2], v)];
+
+/** The 24 rotations that take the axes to the axes. */
+function axisRotations(): Rows[] {
+  const axes: Vec3[] = [
+    [1, 0, 0],
+    [-1, 0, 0],
+    [0, 1, 0],
+    [0, -1, 0],
+    [0, 0, 1],
+    [0, 0, -1],
+  ];
+  const out: Rows[] = [];
+  for (const x of axes) {
+    for (const y of axes) {
+      if (dot(x, y) !== 0) continue;
+      out.push([x, y, cross(x, y)]);
+    }
+  }
+  // The identity first, so it wins a tie.
+  return out.sort((a, b) => Number(b[0][0] === 1 && b[1][1] === 1) - Number(a[0][0] === 1 && a[1][1] === 1));
+}
+
+/**
+ * The turn of the panorama's frame that lets the most scan faces go into the
+ * GPU cube as they are, and the layout once it is applied. A cube laid out
+ * like the scan's needs no face redrawn at all: turning the frame is one
+ * matrix in the shader, where redrawing is a canvas per face per panorama.
+ * Apply `rotation`, then `CUBE_LOOKUP_FLIP`, to a panorama-frame direction.
+ */
+export function alignToCube(faces: readonly FaceFrame[] = SCAN_FACES): { rotation: Rows; layout: SlotSource[] } {
+  let best: { rotation: Rows; layout: SlotSource[] } | null = null;
+  let most = -1;
+  for (const rotation of axisRotations()) {
+    const turned = faces.map((f) => ({ forward: turn(rotation, f.forward), up: turn(rotation, f.up) }));
+    const layout = cubeLayout(turned);
+    const asIs = layout.filter((s) => s.identity).length;
+    if (asIs > most) {
+      most = asIs;
+      best = { rotation, layout };
+    }
+  }
+  if (!best) throw new Error("a skybox has six faces");
+  return best;
+}
+
 /** Where a direction lands on a set of faces: which face, and (u right, v up) in [-1, 1]. */
 export function faceLookup(faces: readonly FaceFrame[], direction: Vec3): { face: number; u: number; v: number } {
   let best = 0;
@@ -123,7 +172,7 @@ export function panoDistance(player: Vec3, pano: Vec3): number {
  * exact whatever the mesh looks like. Shares sum to 1 (or are all 0 for no
  * panoramas).
  */
-export function panoWeights(distances: readonly number[], keep = 3, soft = 0.25): number[] {
+export function panoWeights(distances: readonly number[], keep = 3, soft = 0.12): number[] {
   if (distances.length === 0) return [];
   const sorted = [...distances].sort((a, b) => a - b);
   const cutoff = sorted.length > keep ? sorted[keep] : Infinity;

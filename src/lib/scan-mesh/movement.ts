@@ -33,7 +33,7 @@ export interface MoveTuning {
   /** View bob: metres up and down at run speed, and metres walked per cycle. */
   bobHeight: number;
   bobStride: number;
-  /** Radians of turn per pixel of mouse travel. */
+  /** Radians of turn per count of mouse travel, before the player's own sensitivity. */
   lookSpeed: number;
 }
 
@@ -49,7 +49,7 @@ export const TUNING: MoveTuning = {
   heightRate: 14,
   bobHeight: 0.022,
   bobStride: 2.4,
-  lookSpeed: 0.0022,
+  lookSpeed: 0.0014,
 };
 
 export interface MoveInput {
