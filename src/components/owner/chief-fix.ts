@@ -83,7 +83,8 @@ export async function askFix(
   const source = answer.source === "model" || answer.source === "template" ? answer.source : "recorded";
   return {
     fix: ChiefFix.parse(answer.fix),
-    recorded: answer.recorded === true || source !== "model",
+    // The server's own flag: a live answer clamped to the template is `source: "template"` and still not recorded.
+    recorded: answer.recorded === true,
     source,
     ...(answer.reason && { reason: answer.reason }),
     ...(answer.dropped && { dropped: answer.dropped }),
@@ -104,16 +105,24 @@ export function toEngineFix(fix: ChiefFix, zones: ChiefZones): ChiefFix {
 
 /**
  * Plays the batch's strategies on its seeds again with the change made to
- * each seed's level (placed afresh, as `playBatch` does), and sums both.
+ * each seed's level, and sums both. `placedFor` gives the setup the batch was
+ * played on (an owner's, say); without it each seed's level is placed afresh,
+ * as `playBatch` does. `after` is built from the same setup as `before`.
  */
-export function playFix(manifest: LevelManifest, floor: FloorGraph, before: BatchResult, fix: ChiefFix): Rerun {
-  const zones = chiefZones(placeLevel(manifest, floor, before.seeds[0]));
+export function playFix(
+  manifest: LevelManifest,
+  floor: FloorGraph,
+  before: BatchResult,
+  fix: ChiefFix,
+  placedFor: (seed: number) => PlacedLevel = (seed) => placeLevel(manifest, floor, seed),
+): Rerun {
+  const zones = chiefZones(placedFor(before.seeds[0]));
   return rerunWithFix(
     {
       buildingId: manifest.buildingId,
       strategies: before.strategies,
       seeds: before.seeds,
-      levelFor: (seed) => placeLevel(manifest, floor, seed).level,
+      levelFor: (seed) => placedFor(seed).level,
     },
     toEngineFix(fix, zones),
     before,

@@ -8,7 +8,8 @@ import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { BatchSummary, ChiefFix, LevelManifest, type BatchResult, type BatchRun, type Strategy } from "@/domain";
 import { placeLevel } from "@/level/placer";
 import cached from "../../data/levels/F1.romaine-1974.json";
-import { applyFix, createRun, rerunWithFix, runBatch, summariseBatch, varyLevel } from "./index";
+import { roundOf } from "./autoplay";
+import { applyFix, compileBoard, createRun, rerunWithFix, runBatch, summariseBatch, varyLevel } from "./index";
 
 const manifest = LevelManifest.parse(structuredClone(cached));
 const read = (file: string) => JSON.parse(readFileSync(path.join(process.cwd(), "fixtures", "llm", file), "utf8"));
@@ -119,6 +120,22 @@ describe("applyFix", () => {
     const g1 = applied.level.guards.find((g) => g.id === "G1")!;
     for (const waypoint of level.guards.find((g) => g.id === "G1")!.patrol) expect(g1.patrol).toContain(waypoint);
     expect(g1.patrol[0]).not.toBe(level.guards.find((g) => g.id === "G1")!.patrol[0]);
+  });
+
+  it("retimes later for a positive byTurns and earlier for a negative one", () => {
+    const round = roundOf(compileBoard(level), level.guards.find((g) => g.id === "G1")!.patrol);
+    expect(round.length).toBeGreaterThan(2);
+    const patrolOf = (byTurns: number) => {
+      const applied = applyFix(level, { kind: "retime-guard", elementId: "G1", byTurns });
+      expect(applied.ok).toBe(true);
+      return applied.level.guards.find((g) => g.id === "G1")!.patrol;
+    };
+    // The whole patrol, not only its start: an out-and-back round starts on the same node either way.
+    // Later by 1: it starts a node back along its round, so it reaches the round's first node a turn late.
+    expect(patrolOf(1)).toEqual([...round.slice(-1), ...round.slice(0, -1)]);
+    // Earlier by 1: it starts a node ahead.
+    expect(patrolOf(-1)).toEqual([...round.slice(1), round[0]]);
+    expect(patrolOf(1)).not.toEqual(patrolOf(-1));
   });
 
   it("adds a guard off the entries, and locks the doors into a zone", () => {
