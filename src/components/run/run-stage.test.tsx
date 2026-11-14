@@ -80,17 +80,28 @@ describe("the stage's three modes on a live scan", () => {
     expect(open).not.toHaveBeenCalled();
   });
 
-  it("stacks in reading order below that: the switch, the board, then the scan under its head", () => {
+  it("stacks in reading order below that: the switch, the board, then the scan under its head, then its caption", () => {
     const out = live();
-    const order = ["stage-switch", "stage-board", "inside-head", "inside-view"].map((id) => at(out, id));
+    const order = ["stage-switch", "stage-board", "inside-head", "inside-view", "inside-caption"].map((id) => at(out, id));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
-    // No column template below `lg`: every column class on the stage starts at that breakpoint.
-    const stage = out.match(/<div data-testid="run-stage"[^>]*class="([^"]*)"/)![1];
-    expect(stage.split(" ").filter((c) => c.includes("grid-cols") || c.includes("grid-flow"))).toEqual(
-      expect.arrayContaining([SPLIT_COLUMNS, "lg:grid-flow-col"]),
-    );
-    expect(stage.split(" ").some((c) => /^(grid-cols|grid-flow)/.test(c))).toBe(false);
+    // Nothing puts a cell in a column or a row below `lg`: every such class in the stage starts at that breakpoint.
+    const stage = out.slice(at(out, "run-stage"), at(out, "run-board"));
+    const scan = out.slice(at(out, "inside-head"));
+    const placing = [...(stage + scan).matchAll(/class="([^"]*)"/g)]
+      .flatMap((m) => m[1].split(" "))
+      .filter((c) => /(grid-cols|grid-rows|grid-flow|col-start|col-span|row-start|row-span)/.test(c));
+    expect(placing).toEqual(expect.arrayContaining([SPLIT_COLUMNS, "lg:col-start-2", "lg:row-start-1", "lg:row-start-2"]));
+    expect(placing.filter((c) => !c.startsWith("lg:"))).toEqual([]);
+  });
+
+  it("puts the board under the switch and the scan under its head, with the caption across the foot", () => {
+    const out = live();
+    const classOf = (testId: string) => out.match(new RegExp(`data-testid="${testId}"[^>]*class="([^"]*)"`))![1].split(" ");
+    expect(classOf("stage-board")).toEqual(expect.arrayContaining(["lg:col-start-1", "lg:row-start-2"]));
+    expect(classOf("inside-head")).toEqual(expect.arrayContaining(["lg:col-start-2", "lg:row-start-1"]));
+    expect(classOf("inside-view")).toEqual(expect.arrayContaining(["lg:col-start-2", "lg:row-start-2"]));
+    expect(classOf("inside-caption")).toEqual(expect.arrayContaining(["lg:col-span-2", "lg:row-start-3"]));
   });
 
   it("shows the board alone on Board: no scan pane, no head, and no player to open", () => {
@@ -101,6 +112,7 @@ describe("the stage's three modes on a live scan", () => {
     expect(has(out, "inside-view")).toBe(false);
     expect(has(out, "inside-head")).toBe(false);
     expect(has(out, "inside-frame")).toBe(false);
+    expect(has(out, "inside-caption")).toBe(false);
     expect(out).not.toContain(SPLIT_COLUMNS);
   });
 
@@ -202,10 +214,38 @@ describe("the scan pane says what it is", () => {
 
   it("draws nothing over the player: the frame is an empty element, covered only while it opens", () => {
     expect(renderToStaticMarkup(<ScanFrame status="ready" look="after-hours" />)).toMatch(
-      /<div data-testid="inside-frame"[^>]*><\/div><\/div><p/,
+      /<div data-testid="inside-frame"[^>]*><\/div><\/div><\/section>$/,
     );
     expect(renderToStaticMarkup(<ScanFrame status="connecting" look="after-hours" />)).toContain("animate-pulse");
     expect(renderToStaticMarkup(<ScanFrame status="ready" look="after-hours" />)).not.toContain("animate-pulse");
+  });
+});
+
+// The Live controls (live-controls.tsx) are laid over the corners of the board's area: 24 px in
+// from its sides, 12 px from its top (the play switch on a phone) or its bottom. What holds here is
+// the room the stage leaves them; that nothing overlaps was measured in a browser on a real scan.
+describe("room for the Live controls", () => {
+  const classOf = (out: string, testId: string) =>
+    out.match(new RegExp(`data-testid="${testId}"[^>]*class="([^"]*)"`))![1].split(" ");
+
+  it("stands 4 px outside where the controls land, so they sit inside the frame as its own buttons do", () => {
+    const stage = classOf(live(), "run-stage");
+    // 20 px in from the sides and 8 px short of the bottom at every width; 8 px down on a phone, for the switch at the top.
+    expect(stage).toEqual(expect.arrayContaining(["mx-5", "mb-2", "max-md:mt-2", "lg:inset-x-5", "lg:top-0", "lg:bottom-2", "lg:m-0"]));
+  });
+
+  it("keeps the caption clear of the timer on the left and, from md, the play switch on the right", () => {
+    const caption = classOf(live(), "inside-caption");
+    expect(caption).toEqual(expect.arrayContaining(["min-h-12", "max-md:pl-14", "md:pl-60", "md:pr-40"]));
+  });
+
+  it.each(STAGE_MODES)("has no foot row on Board, where the controls sit over the board's corners (stored: %s)", (mode) => {
+    storeChoice(mode);
+    expect(has(live(), "inside-caption")).toBe(mode !== "board");
+  });
+
+  it("keeps the failed line clear of the play switch a phone lays over the head row", () => {
+    expect(renderToStaticMarkup(<ScanFailed onRetry={() => {}} />)).toMatch(/data-status="failed" class="[^"]*\bmax-md:pr-24\b/);
   });
 });
 
@@ -237,6 +277,7 @@ describe("a player that does not open", () => {
     // Nothing of the scan's half is left: no frame, no head, no columns, and no switch to a pane that is not there.
     expect(has(out, "inside-frame")).toBe(false);
     expect(has(out, "inside-head")).toBe(false);
+    expect(has(out, "inside-caption")).toBe(false);
     expect(has(out, "stage-switch")).toBe(false);
     expect(out).not.toContain(SPLIT_COLUMNS);
     expect(out).not.toContain("lg:grid-cols-[auto");
@@ -268,7 +309,7 @@ describe("on fixtures the stage changes nothing", () => {
       </RunStage>,
     );
     expect(staged).toBe(alone);
-    for (const id of ["run-stage", "stage-switch", "stage-board", "inside-view", "inside-head", "inside-frame", "scan-look"]) {
+    for (const id of ["run-stage", "stage-switch", "stage-board", "inside-view", "inside-head", "inside-frame", "inside-caption", "scan-look"]) {
       expect(has(staged, id), id).toBe(false);
     }
   });

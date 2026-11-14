@@ -17,7 +17,7 @@ import { returnFocus, useInsideView, type InsideStatus } from "./inside-view";
 /** How the scan is shown: dimmed and cooled to the board's night, or as it was scanned. */
 export type ScanLook = "after-hours" | "as-scanned";
 
-/** The pane's caption: the line the side panel's Inside view carried. */
+/** The scan's caption, in the stage's foot row: the line the side panel's Inside view carried. */
 export const FOLLOWS_LINE = "The scan at your spot. It follows each hop.";
 /** What the stage says when the player does not open. */
 export const FAILED_LINE = "The scan's player didn't open. The board still plays on the scan.";
@@ -85,9 +85,9 @@ export function ScanHead({
 }
 
 /**
- * The pane itself, drawn for a status: the player's frame and the caption
- * under it. The frame is a plain element the player is opened in; the
- * after-hours look is a filter on that element, never anything over it.
+ * The pane itself, drawn for a status: the player's frame. The frame is a
+ * plain element the player is opened in; the after-hours look is a filter on
+ * that element, never anything over it.
  */
 export function ScanFrame({
   status,
@@ -135,9 +135,6 @@ export function ScanFrame({
           <p className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-text-2">{FAILED_LINE}</p>
         ) : null}
       </div>
-      <p className="flex min-h-10 shrink-0 items-center border-t border-border bg-surface-1 px-4 py-2 text-sm text-text-2">
-        {FOLLOWS_LINE}
-      </p>
     </section>
   );
 }
@@ -192,11 +189,11 @@ export function ScanFailed({ onRetry }: { onRetry: () => void }) {
       role="status"
       data-testid="inside-view"
       data-status="failed"
-      className="flex min-h-12 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-surface-1 py-1 pr-1 pl-4"
+      className="flex min-h-12 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-surface-1 py-1 pr-1 pl-4 max-md:pr-24"
     >
       <SourceChip />
       <p className="min-w-0 flex-1 basis-64 text-sm text-text-1">{FAILED_LINE}</p>
-      <Button variant="ghost" data-testid="inside-retry" onClick={onRetry}>
+      <Button data-testid="inside-retry" onClick={onRetry}>
         Try again
       </Button>
     </div>

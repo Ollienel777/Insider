@@ -11,7 +11,7 @@ import { useCallback, useState, type ReactNode } from "react";
 import type { InsideView } from "@/adapters/matterport";
 import { cn } from "@/lib/utils";
 import type { InsideStatus } from "./inside-view";
-import { ScanFailed, ScanHead, ScanPane, type ScanLook } from "./scan-pane";
+import { FOLLOWS_LINE, ScanFailed, ScanHead, ScanPane, type ScanLook } from "./scan-pane";
 import { loadStageMode, saveStageMode, STAGE_MODES, type StageMode } from "./stage-store";
 
 export const STAGE_LABEL: Readonly<Record<StageMode, string>> = { split: "Split", board: "Board", scan: "Scan" };
@@ -82,7 +82,16 @@ export function chooseStage(
 /**
  * The stage drawn for a mode and a player status. One frame holds a head row
  * (the switch, and the scan's head) over the halves, with a seam between
- * them. Below `lg` everything stacks in reading order: switch, board, scan.
+ * them, and under the scan a foot row with its caption. Below `lg`
+ * everything stacks in reading order: switch, board, scan.
+ *
+ * The Live controls (live-controls.tsx) are laid over the corners of the
+ * board's area, 24 px in from its sides and 12 px from its top or bottom. The
+ * frame stands 20 px in and 8 px short of those edges, so the controls land
+ * 4 px inside it, as the stage's own buttons sit in the head row: the timer
+ * and the Tactical / Live switch in the foot row's ends, clear of the
+ * caption, and on a phone the switch in the head row's free end. With the
+ * board alone they sit over the board's corners, as they do on fixtures.
  */
 export function StageView({
   mode,
@@ -115,10 +124,9 @@ export function StageView({
       data-testid="run-stage"
       data-stage={shown}
       className={cn(
-        "grid overflow-hidden rounded-md border border-border bg-surface-0 max-lg:mx-6",
-        "lg:absolute lg:inset-x-6 lg:inset-y-0 lg:grid-rows-[auto_minmax(0,1fr)]",
-        // Beside each other, the cells fill column by column: the switch over the board, the head over the scan.
-        shown === "split" ? cn("lg:grid-flow-col", SPLIT_COLUMNS) : null,
+        "mx-5 mb-2 grid overflow-hidden rounded-md border border-border bg-surface-0 max-md:mt-2",
+        "lg:absolute lg:inset-x-5 lg:top-0 lg:bottom-2 lg:m-0 lg:grid-rows-[auto_minmax(0,1fr)_auto]",
+        shown === "split" ? SPLIT_COLUMNS : null,
         shown === "scan" ? "lg:grid-cols-[auto_minmax(0,1fr)]" : null,
       )}
     >
@@ -134,16 +142,34 @@ export function StageView({
           data-testid="stage-board"
           className={cn(
             "relative min-h-0 min-w-0 lg:h-auto",
-            shown === "split" ? "max-lg:h-56 max-lg:border-b max-lg:border-border" : "max-lg:h-72",
+            // Beside the scan the board sits under the switch, in the first column.
+            shown === "split" ? "max-lg:h-56 max-lg:border-b max-lg:border-border lg:col-start-1 lg:row-start-2" : "max-lg:h-72",
           )}
         >
           {board}
         </div>
       ) : null}
       {shown !== "board" ? (
-        <ScanHead room={room} look={look} onLook={onLook} className={shown === "split" ? "lg:border-l" : undefined} />
+        <ScanHead
+          room={room}
+          look={look}
+          onLook={onLook}
+          className={shown === "split" ? "lg:col-start-2 lg:row-start-1 lg:border-l" : undefined}
+        />
       ) : null}
       {shown !== "board" ? pane : null}
+      {shown !== "board" ? (
+        <p
+          data-testid="inside-caption"
+          className={cn(
+            "flex min-h-12 items-center border-t border-border bg-surface-1 py-1 text-sm text-text-2 lg:col-span-2 lg:row-start-3",
+            // Room at the row's ends for the Live controls: the timer on the left, the play switch on the right from `md`.
+            "text-balance max-md:pr-4 max-md:pl-14 md:justify-end md:pr-40 md:pl-60 md:text-right",
+          )}
+        >
+          <span>{FOLLOWS_LINE}</span>
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -152,7 +178,7 @@ export function StageView({
 export function paneClasses(shown: StageMode): { className: string; frameClassName: string } {
   return shown === "scan"
     ? { className: "lg:col-span-2", frameClassName: "max-lg:aspect-[3/4]" }
-    : { className: "lg:border-l lg:border-border", frameClassName: "max-lg:aspect-[3/2]" };
+    : { className: "lg:col-start-2 lg:row-start-2 lg:border-l lg:border-border", frameClassName: "max-lg:aspect-[3/2]" };
 }
 
 /** The stage with its state: the mode from storage, the look, and how the scan's player stands. */
