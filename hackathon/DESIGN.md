@@ -129,7 +129,9 @@ pad 12 × 16; the gap between panels is 16; screen gutters 24.
 - **One primary action per screen**, always an accent button at the bottom
   of the side panel: Map "Scout this building", Scout "Plan the job",
   Dossier "Brief the crew", Plan "Start the run", Run (none until the end;
-  then "See the debrief"), Debrief "Run the drill", Drill "Print drill plan".
+  then "See the debrief"), Debrief "Try again" (a finished run; a run left
+  mid-way offers "Start the run over" in the panel instead), Drill "Print
+  drill plan" (Drill Mode is on hold, SPEC Q8).
 - **Keyboard.** Arrow keys orbit on Scout; on Run, number keys pick a
   neighbouring node (each neighbour shows its number), `W` waits, `Space`
   confirms; `?` shows the keys; `Esc` closes the Why card.
