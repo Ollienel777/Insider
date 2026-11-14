@@ -32,6 +32,10 @@ interface Case {
   objective: { node: string; door: string; room: string };
   /** What sees a player who walks straight to the objective from the start. */
   trip: { by: string; zone: string; to: string };
+  /** Each way in or out the mission's exit text or briefing names, and the aerial entry it is. */
+  exitNames: [string, string][];
+  /** Positions a recorded crew or Chief text states: the phrase, and the room its guard or camera is placed in. */
+  claims: { file: "crew" | "chief"; phrase: string; who: string; room: string }[];
   /** The recorded reply Plan shows clean, and the one it warns about. */
   clean: string;
   warns: { reply: string; text: RegExp };
@@ -47,6 +51,27 @@ const CASES: Case[] = [
     entries: [
       ["dock-W", "fl-car"],
       ["roof", "es-landing"],
+      ["lobby-E", "el-car"],
+      ["garage-N", "gl-car"],
+      ["exit-S", "ws-landing"],
+    ],
+    exitNames: [
+      ["the garage", "garage-N"],
+      ["the service entry", "exit-S"],
+      ["freight lift from the loading dock", "dock-W"],
+      ["garage shuttle lift", "garage-N"],
+      ["plaza stair", "exit-S"],
+      ["helipad", "roof"],
+    ],
+    claims: [
+      { file: "chief", phrase: "C2 has them in the west corridor", who: "C2", room: "west-corridor" },
+      { file: "chief", phrase: "G2, out of suites 4101 to 4118", who: "G2", room: "suites-4101-4118" },
+      { file: "chief", phrase: "G3, from the elevator lobby", who: "G3", room: "elevator-lobby" },
+      { file: "chief", phrase: "G1 leaves the mail room", who: "G1", room: "mail-room" },
+      { file: "crew", phrase: "Camera C2 covers the west corridor", who: "C2", room: "west-corridor" },
+      { file: "crew", phrase: "Camera C2 turns along the west corridor", who: "C2", room: "west-corridor" },
+      { file: "crew", phrase: "the service hall, and C1 turns along that hall", who: "C1", room: "service-hall" },
+      { file: "crew", phrase: "the service hall, where C1 turns", who: "C1", room: "service-hall" },
     ],
     objective: { node: "vt-boxes", door: "d-vault", room: "vault" },
     trip: { by: "C2", zone: "west-corridor", to: "alert" },
@@ -62,6 +87,20 @@ const CASES: Case[] = [
     entries: [
       ["dock-N", "sl-car"],
       ["roof", "es-landing"],
+    ],
+    exitNames: [
+      ["the service lift", "dock-N"],
+      ["the east stair", "roof"],
+      ["the loading dock", "dock-N"],
+    ],
+    claims: [
+      { file: "chief", phrase: "C1's analytics flagged someone in the north hall", who: "C1", room: "north-hall" },
+      { file: "chief", phrase: "G4, out of suite 2410", who: "G4", room: "suite-2410" },
+      { file: "chief", phrase: "G3, from the south hall", who: "G3", room: "south-hall" },
+      { file: "crew", phrase: "C1 and C2 watch it", who: "C1", room: "north-hall" },
+      { file: "crew", phrase: "C1 and C2 watch it", who: "C2", room: "north-hall" },
+      { file: "crew", phrase: "the north hall's C1 and C2", who: "C2", room: "north-hall" },
+      { file: "crew", phrase: "G3 walks that hall", who: "G3", room: "south-hall" },
     ],
     objective: { node: "lab-bench", door: "d-lab", room: "prototype-lab" },
     // IP cameras with analytics raise the alarm one step more: calm goes straight to lockdown.
@@ -181,6 +220,43 @@ describe.each(CASES)("$id on its fixture floor", (c) => {
         expect(zones.has(order.zoneId), `${t.id}: ${order.zoneId}`).toBe(true);
       }
       for (const zone of t.orders.lockZones) expect(zones.has(zone), `${t.id}: ${zone}`).toBe(true);
+    }
+  });
+
+  it("places every way in or out the mission's exit text, its briefing and the crew's replies name (#39 review)", () => {
+    const { mission } = manifest();
+    const text = `${mission.exitCondition} ${mission.briefing}`.toLowerCase();
+    const placedIds = new Set(placed.entries.map((e) => e.entryId));
+    for (const [phrase, entryId] of c.exitNames) {
+      expect(text, phrase).toContain(phrase.toLowerCase());
+      expect(placedIds.has(entryId), `${phrase} → ${entryId}`).toBe(true);
+    }
+    // An aerial entry the floor cannot place is never offered as a way out in the text.
+    for (const entry of manifest().entries.filter((e) => !placedIds.has(e.id))) {
+      expect(text, entry.id).not.toContain(entry.label.toLowerCase());
+      // By kind too ("the garage"), except where the word names a lift ("the service lift" is the dock's).
+      expect(mission.exitCondition.toLowerCase(), entry.id).not.toMatch(new RegExp(`\\b${entry.kind}\\b(?! lift)`));
+    }
+    // Every entry a recorded crew step goes to is a placed entry: no step is dropped.
+    const entryIds = new Set(manifest().entries.map((e) => e.id));
+    for (const r of c.crew.replies) {
+      for (const step of CrewPlan.parse(r.plan).steps) {
+        if (entryIds.has(step.zoneId)) expect(placedIds.has(step.zoneId), `${r.id}: ${step.zoneId}`).toBe(true);
+      }
+      expect(validatePlan(placed, reply(r.id)).dropped, r.id).toEqual([]);
+    }
+  });
+
+  it("puts each guard and camera a recorded crew or Chief text places where that text says (#39 review)", () => {
+    const texts = { crew: JSON.stringify(c.crew), chief: JSON.stringify(c.chief) };
+    const roomOf = new Map(placed.level.floor.nodes.map((n) => [n.id, n.roomId]));
+    for (const { file, phrase, who, room } of c.claims) {
+      expect(texts[file], phrase).toContain(phrase);
+      const guard = placed.guards.find((g) => g.id === who);
+      const camera = placed.cameras.find((cam) => cam.id === who);
+      const rooms = guard ? [guard.roomId] : (camera?.cover ?? []).map((id) => roomOf.get(id));
+      expect(rooms.length, who).toBeGreaterThan(0);
+      for (const r of rooms) expect(r, `${phrase}: ${who}`).toBe(room);
     }
   });
 });

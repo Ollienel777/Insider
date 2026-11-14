@@ -28,6 +28,12 @@ interface Walk {
   alarm: "alert" | "lockdown";
   status: string;
   chiefOrders: number;
+  /**
+   * The quiet route at the Run screen's seed, as src/level/la-fixtures.test.ts
+   * computes it with quietRoute: a node is a move, W a wait, PICK a pick of the
+   * locked door, and " " takes the objective.
+   */
+  quiet: string[];
 }
 
 const WALKS: Walk[] = [
@@ -49,6 +55,7 @@ const WALKS: Walk[] = [
     alarm: "alert",
     status: "C2 saw you in the West Corridor. The guards are converging.",
     chiefOrders: 3,
+    quiet: ["fl-hall", "W", "sh-w", "sh-mid", "sh-e", "ec-s", "ec-mid", "ec-n", "PICK", "PICK", "PICK", "vt-gate", "vt-boxes", " ", "vt-gate", "ec-n", "es-landing"],
   },
   {
     id: "F3",
@@ -68,6 +75,7 @@ const WALKS: Walk[] = [
     alarm: "lockdown",
     status: "C1 saw you in the North Hall. The guards are converging.",
     chiefOrders: 4,
+    quiet: ["sl-door", "s1-nw", "s1-mid", "s1-ne", "nh-e", "PICK", "PICK", "PICK", "PICK", "lab-door", "lab-bench", " ", "lab-door", "nh-e", "s1-ne", "s1-mid", "s1-nw", "sl-door", "sl-car"],
   },
 ];
 
@@ -178,5 +186,42 @@ for (const w of WALKS) {
     await expect(page.getByTestId("debrief-outcome")).toHaveAttribute("data-status", "caught");
     await expect(page.getByTestId("debrief-detail")).toContainText(`${w.warnedBy} saw you`);
     await shot(page, `${w.id}-debrief`);
+  });
+}
+
+for (const w of WALKS) {
+  test(`${w.id} × ${w.mission}: the quiet route plays by keys to a clean win, and the debrief says so`, async ({ page }) => {
+    // About 15 s on the gate's VM (one key and one outcome wait per turn); 60 s leaves room under load.
+    test.setTimeout(60_000);
+    await page.goto(`/b/${w.id}/run?m=${w.mission}`);
+    await expect(page.getByTestId("run-board")).toBeVisible();
+    await expect(page.getByTestId("player-piece")).toHaveAttribute("data-node", w.start);
+    for (const step of w.quiet) {
+      const turn = Number(await page.getByTestId("turn").textContent());
+      if (step === "W" || step === " ") {
+        await page.keyboard.press(step === "W" ? "w" : " ");
+      } else {
+        const selector = step === "PICK" ? '[data-testid="choice"][data-kind="pick"]' : `[data-testid="choice"][data-node="${step}"]`;
+        const key = await page.locator(selector).getAttribute("data-key");
+        expect(key, `${step} on turn ${turn}`).toMatch(/^[1-9]$/);
+        await page.keyboard.press(key!);
+      }
+      if (step === w.quiet[w.quiet.length - 1]) break;
+      await expect(page.getByTestId("turn")).toHaveText(String(turn + 1));
+      await expect(page.getByTestId("alarm-banner")).toHaveAttribute("data-state", "calm");
+    }
+    await expect(page.getByTestId("run-outcome")).toHaveAttribute("data-status", "won");
+    await expect(page.getByTestId("alarm-banner")).toHaveAttribute("data-state", "calm");
+    const log = await page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? "null"), `heist:run-log:${w.id}:${w.mission}`);
+    expect(log.status).toBe("won");
+    expect(log.alarmEvents).toEqual([]);
+    expect(log.turns).toHaveLength(w.quiet.length);
+    await page.getByRole("link", { name: "See the debrief" }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/b/${w.id}/debrief\\?m=${w.mission}$`), { timeout: 15_000 });
+    await expect(page.getByTestId("debrief-outcome")).toHaveAttribute("data-status", "won");
+    await expect(page.getByTestId("debrief-grade")).toHaveText("S");
+    await expect(page.getByTestId("debrief-detail")).toHaveText(new RegExp(`in ${w.quiet.length} turns, never seen\\.$`));
+    await shot(page, `${w.id}-debrief-won`);
   });
 }

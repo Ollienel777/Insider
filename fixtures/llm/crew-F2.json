@@ -10,6 +10,7 @@
           "wait"
         ],
         [
+          "freight",
           "wait"
         ]
       ],
@@ -109,7 +110,7 @@
         "steps": [
           {
             "zoneId": "lobby-E",
-            "action": "In through the Figueroa lobby"
+            "action": "Up the passenger lifts from the Figueroa lobby"
           },
           {
             "zoneId": "objective",
@@ -117,10 +118,10 @@
           },
           {
             "zoneId": "lobby-E",
-            "action": "Out through the lobby"
+            "action": "Back down the passenger lifts"
           }
         ],
-        "pushback": "The Figueroa lobby has two guards at the desk all night, and its lifts need a card. If you go that way, you walk past them twice.",
+        "pushback": "The passenger lifts come up from the Figueroa lobby, past two guards at the desk, and up here they open a step from the service hall, where C1 turns. If you go that way, you pass the desk twice.",
         "confidence": 0.3
       }
     },
@@ -135,7 +136,7 @@
         "steps": [
           {
             "zoneId": "garage-N",
-            "action": "Up from the garage"
+            "action": "Up the garage shuttle lift"
           },
           {
             "zoneId": "objective",
@@ -143,10 +144,10 @@
           },
           {
             "zoneId": "garage-N",
-            "action": "Back down to the garage"
+            "action": "Back down the garage shuttle lift"
           }
         ],
-        "pushback": "The garage has a guard booth at the bottom of the ramp, and I can't promise its lifts reach floor 41.",
+        "pushback": "The garage shuttle opens at the east end of the service hall, and C1 turns along that hall the whole way. Wait at the freight lift first, or go up the dock instead.",
         "confidence": 0.35
       }
     },

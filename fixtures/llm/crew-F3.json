@@ -81,19 +81,19 @@
       "plan": {
         "steps": [
           {
-            "zoneId": "lobby-S",
-            "action": "In through the Wilshire lobby"
+            "zoneId": "dock-N",
+            "action": "Up the service lift from the loading dock instead"
           },
           {
             "zoneId": "objective",
             "action": "Badge the lab door and take the prototype"
           },
           {
-            "zoneId": "lobby-S",
-            "action": "Out through the lobby"
+            "zoneId": "dock-N",
+            "action": "Back down the service lift"
           }
         ],
-        "pushback": "The Wilshire lobby has facial-recognition turnstiles past the desk. If you go that way, you walk past them twice.",
+        "pushback": "The Wilshire lobby has facial-recognition turnstiles past the desk, and its lifts don't stop on 24 at night. It's the service lift from the dock, and the north hall's C1 and C2 have analytics.",
         "confidence": 0.25
       }
     },
@@ -107,19 +107,19 @@
       "plan": {
         "steps": [
           {
-            "zoneId": "garage-W",
-            "action": "Up from the podium garage"
+            "zoneId": "dock-N",
+            "action": "Up the service lift from the loading dock instead"
           },
           {
             "zoneId": "objective",
             "action": "Badge the lab door and take the prototype"
           },
           {
-            "zoneId": "garage-W",
-            "action": "Back down to the garage"
+            "zoneId": "dock-N",
+            "action": "Back down the service lift"
           }
         ],
-        "pushback": "The garage gate reads plates, and I can't promise its lifts reach floor 24.",
+        "pushback": "The garage gate reads plates, and its lifts don't reach 24. It's the service lift from the dock, and the north hall's C1 and C2 have analytics.",
         "confidence": 0.3
       }
     },

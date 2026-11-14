@@ -80,7 +80,7 @@
               "args": {
                 "buildingId": "F2",
                 "missionId": "sunset-1986",
-                "briefing": "Figueroa Exchange, Financial District, a 1989 tower with card-era security: magstripe readers on the locked doors, three PTZ cameras on a three-turn cycle, three guards on tight rounds. Floor 41 is the quiet night: suite 4125 is vacant and dark, and the safe-deposit vault sits at the east end of the floor. Come up from below on the freight lift from the loading dock, work the vault door, take the boxes, and leave by the freight lift or the stair to the helipad. Nobody gets hurt and nothing leaves but the boxes. The security here is game fiction, drawn from the building's class and era.",
+                "briefing": "Figueroa Exchange, Financial District, a 1989 tower with card-era security: magstripe readers on the locked doors, three PTZ cameras on a three-turn cycle, three guards on tight rounds. Floor 41 is the quiet night: suite 4125 is vacant and dark, and the safe-deposit vault sits at the east end of the floor. Come up from below on the freight lift from the loading dock, work the vault door, take the boxes, and leave down the garage shuttle lift, by the plaza stair or up to the helipad. Nobody gets hurt and nothing leaves but the boxes. The security here is game fiction, drawn from the building's class and era.",
                 "objective": {
                   "name": "Safe-deposit vault",
                   "rule": "The boxes are here: open the vault door, take them, then reach an exit"
@@ -177,7 +177,7 @@
           ]
         },
         {
-          "content": "Mission: sunset-1986, Hole in the Ground, staged in a 1989 card-era building. Objective zone: Safe-deposit vault, open the vault door, take the boxes, then reach an exit. Briefing: Figueroa Exchange, Financial District, a 1989 tower with card-era security: magstripe readers on the locked doors, three PTZ cameras on a three-turn cycle, three guards on tight rounds. Floor 41 is the quiet night: suite 4125 is vacant and dark, and the safe-deposit vault sits at the east end of the floor. Come up from below on the freight lift from the loading dock, work the vault door, take the boxes, and leave by the freight lift or the stair to the helipad. Nobody gets hurt and nothing leaves but the boxes. The security here is game fiction, drawn from the building's class and era."
+          "content": "Mission: sunset-1986, Hole in the Ground, staged in a 1989 card-era building. Objective zone: Safe-deposit vault, open the vault door, take the boxes, then reach an exit. Briefing: Figueroa Exchange, Financial District, a 1989 tower with card-era security: magstripe readers on the locked doors, three PTZ cameras on a three-turn cycle, three guards on tight rounds. Floor 41 is the quiet night: suite 4125 is vacant and dark, and the safe-deposit vault sits at the east end of the floor. Come up from below on the freight lift from the loading dock, work the vault door, take the boxes, and leave down the garage shuttle lift, by the plaza stair or up to the helipad. Nobody gets hurt and nothing leaves but the boxes. The security here is game fiction, drawn from the building's class and era."
         }
       ]
     }
