@@ -155,6 +155,18 @@ describe("validatePlan on the other recorded replies", () => {
     expect(checked.warnings[0].text).toMatch(/^(Camera|Guard) [GC]\d (sees|hears) you in the .+ on turn \d+/);
   });
 
+  it("says that a plan going in by the roof is checked from the dock, where the run starts (PR #64 R1-M2)", () => {
+    const checked = validatePlan(placed, reply("roof"));
+    expect(checked.path[0]).toBe(placed.level.start);
+    expect(checked.startNote).toBe(
+      "The run starts at the loading dock, so the board checks the plan from there: the roof hatch is a stop on the way, not the way in.",
+    );
+    // A plan that goes in by the dock needs no note, nor does one that only leaves by the roof.
+    expect(validatePlan(placed, reply("dock-wait")).startNote).toBeNull();
+    const outByRoof = CrewPlan.parse({ ...reply("dock-wait"), steps: [...reply("dock-wait").steps.slice(0, 3), { zoneId: "roof", action: "Out by the roof" }] });
+    expect(validatePlan(placed, outByRoof).startNote).toBeNull();
+  });
+
   it("says when a plan never leaves with the files", () => {
     const plan: CrewPlan = { steps: [{ zoneId: "dock-N", action: "Wait one turn" }], pushback: "", confidence: 0.5 };
     const checked = validatePlan(placed, plan);

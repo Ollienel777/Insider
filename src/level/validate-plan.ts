@@ -89,6 +89,11 @@ export interface CheckedPlan {
   advice: Advice | null;
   /** True when the plan is not clean and the floor offers no quiet route either. */
   noQuietRoute: boolean;
+  /**
+   * Set when the plan's first step names another entry than the one the run starts at: the
+   * run, and so the check, always starts at the level's start (PR #64 R1-M2), and this says so.
+   */
+  startNote: string | null;
 }
 
 // ---- reading the crew's words ---------------------------------------------------
@@ -360,5 +365,15 @@ export function validatePlan(placed: PlacedLevel, plan: CrewPlan): CheckedPlan {
     outcome,
     advice,
     noQuietRoute: outcome !== "clean" && advice === null,
+    startNote: startNoteOf(placed, plan),
   };
+}
+
+/** What the check says when the crew means to go in by another entry than the run's start. */
+export function startNoteOf(placed: PlacedLevel, plan: CrewPlan): string | null {
+  const start = placed.entries.find((e) => e.nodeId === placed.level.start);
+  const first = plan.steps[0];
+  const named = first ? placed.entries.find((e) => e.entryId === first.zoneId) : undefined;
+  if (!start || !named || named.entryId === start.entryId) return null;
+  return `The run starts at the ${start.label.toLowerCase()}, so the board checks the plan from there: the ${named.label.toLowerCase()} is a stop on the way, not the way in.`;
 }

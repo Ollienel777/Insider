@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, CircleSlash } from "lucide-react";
+import { AlertTriangle, Check, CircleSlash, Info } from "lucide-react";
 import type { GhostPlan } from "@/components/run/board-view";
 import type { CheckedPlan } from "@/level/validate-plan";
 import { cn } from "@/lib/utils";
@@ -88,6 +88,13 @@ export function CrewReply({ answer, checked }: { answer: CrewAnswer; checked: Ch
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {checked.startNote ? (
+        <p data-testid="plan-start-note" role="note" className="flex items-start gap-2 text-sm text-text-2">
+          <Info aria-hidden className="mt-0.5 size-4 shrink-0 stroke-[1.5]" />
+          <span>{checked.startNote}</span>
+        </p>
       ) : null}
 
       {warning ? (
