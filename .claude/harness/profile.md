@@ -10,7 +10,15 @@ labels: yes
 pr scope: loop-label
 pack: hackathon
 merge policy: auto
-wip limit: 2                # the build VM has 2 vCPUs and 3.7 GB; raise on a bigger machine
+wip limit: 2                # local slots: the VM (2 vCPUs, 3.7 GB) runs only the orchestrator and local-only work
+min version: 0.13.0
+dispatch: mixed             # implementers, fixers and review rounds run as cloud jobs, except local-only work
+cloud environment: env_01P8m9FjvYdVJEGBt3tmMZsP   # "Insider": CI=1, no secrets; network allows npm, Playwright downloads and Google Fonts
+local only: tag:needs-credentials
+cloud wip limit: 6
+cloud repo cap: 6
+commit author: Nelson Kang <155183974+Ollienel777@users.noreply.github.com>
+cloud model: claude-opus-5-5
 round cap: 7
 settle rounds: 1
 mediums block: no
@@ -43,6 +51,10 @@ wins" section is the rule, read with a 2-minute slot. Weights, from
   experience, 25% each.
 
 ## The gate
+
+Cloud jobs run in fake mode only: they have no keys and no CoStar kit, and
+none may be given to them. Work that needs either carries the
+`needs-credentials` label and runs on the VM.
 
 Keyless: fake mode by default. `.env.local` holds live keys, copied into a
 worktree only for the rehearser and an M2 implementer.
