@@ -138,6 +138,13 @@ export const CASTING_FINALISTS = 3;
  * A mission's cached shortlist. `funnel` has one row per filter, after a
  * first row for the whole inventory, so its counts never rise; `finalists`
  * are exactly three, best first.
+ *
+ * The ranking: the properties left after the last filter, ordered by their
+ * largest vacant floor (the available suites on one floor, added up; the
+ * floor SPEC §4.3 would stage), largest first, ties broken by id; the first
+ * three are the finalists. On the fixture inventory this puts each mission's
+ * own fixture building first; `fixtures/inventory-finalists.json` records the
+ * three each mission's funnel ends with.
  */
 export const CastingResult = z
   .strictObject({
