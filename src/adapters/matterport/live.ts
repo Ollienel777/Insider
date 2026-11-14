@@ -380,30 +380,33 @@ export interface InsideView {
   rotate(dx: number, dy: number): Promise<void>;
   /**
    * Calls `listener` with the camera's pose each time it changes: about 55
-   * times a second while the camera moves, and not at all while it is still.
-   * A listener added once a pose has arrived hears that pose first. It is
+   * times a second while the camera moves. A still camera may send nothing,
+   * so a listener added once a pose has arrived hears that pose first. It is
    * never called before `onPose` returns, and hears each pose once. Returns
    * the unsubscribe: after it, and after `disconnect`, the listener hears
    * nothing more.
    */
   onPose(listener: (pose: InsidePose) => void): () => void;
   /**
-   * Each scan position's floor point, keyed by the board's node id. A
-   * position the scan gives no floor point is left out.
+   * Each scan position's floor point, keyed by the board's node id: every
+   * position the scan sends, whether or not the board uses it. A position
+   * the scan gives no floor point is left out.
    *
    * Every call reads the scan afresh and keeps nothing: the map is the
-   * caller's own. It resolves once the positions have stopped arriving (they
-   * can come over a few callbacks), or after `FLOOR_POINTS_MS` with what has
-   * arrived by then, which is an empty map if the scan sent nothing. Once the
-   * view is disconnected it resolves empty. It never rejects.
+   * caller's own, so ask once and hold on to it. It resolves once the
+   * positions have stopped arriving (they can come over a few callbacks), or
+   * after `FLOOR_POINTS_MS` with what has arrived by then, which is an empty
+   * map if the scan sent nothing. Once the view is disconnected it resolves
+   * empty.
    */
   floorPoints(): Promise<ReadonlyMap<string, ScanPoint>>;
   /**
    * Where `point` shows in the player's frame, by the latest pose and the
    * frame's size as it is laid out now. Null when the point is not in front
-   * of the camera, before any pose has arrived, and while the frame has no
-   * size. A point in front of the camera but outside the frame comes back
-   * with coordinates outside it: the caller clips.
+   * of the camera, before any pose has arrived (the first call, like the
+   * first `onPose`, starts the view reading the pose), and while the frame
+   * has no size. A point in front of the camera but outside the frame comes
+   * back with coordinates outside it: the caller clips.
    *
    * The frame is measured on every call, so project all of a drawing's
    * points before writing any styles.
@@ -463,7 +466,7 @@ function settleWithin<T>(promise: Promise<T>, ms: number): Promise<T> {
  * The scan's positions once they have stopped arriving: the latest non-empty
  * collection, `quietMs` after the last one came. At `timeoutMs` it answers
  * with what has arrived, which may be nothing; when `stop` aborts, with
- * nothing. It never rejects, and it cancels its subscription as it answers.
+ * nothing. It cancels its subscription as it answers.
  */
 function settledSweeps(
   data: ObservableCollection<unknown>,
@@ -481,22 +484,23 @@ function settledSweeps(
       clearTimeout(deadline);
       clearTimeout(quiet);
       stop.removeEventListener("abort", onStop);
-      // Only a timer or `stop` ends the wait, so `subscribe` has returned by now.
       subscription.cancel();
       resolve(answer);
     };
     const onStop = () => finish({});
-    const deadline = setTimeout(() => finish(sweeps), timeoutMs);
-    stop.addEventListener("abort", onStop, { once: true });
+    // The SDK may call back before `subscribe` returns, but only a timer or
+    // `stop` ends the wait, so the subscription is there to cancel by then.
     const subscription = data.subscribe({
       onCollectionUpdated(items) {
         // The player can call back with an empty collection before it is playing: not an answer.
         if (done || Object.keys(items).length === 0) return;
-        sweeps = { ...items };
+        sweeps = items;
         clearTimeout(quiet);
         quiet = setTimeout(() => finish(sweeps), quietMs);
       },
     });
+    const deadline = setTimeout(() => finish(sweeps), timeoutMs);
+    stop.addEventListener("abort", onStop, { once: true });
   });
 }
 
