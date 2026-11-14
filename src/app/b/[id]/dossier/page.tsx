@@ -7,7 +7,7 @@ import { DossierUnavailable } from "@/components/dossier/dossier-unavailable";
 import { dossierFacts } from "@/components/dossier/facts";
 import { findBuilding } from "@/lib/building";
 import { castFinalist } from "@/lib/cast-because";
-import { missionParam, type SearchParams } from "@/lib/mission-param";
+import { optionalMissionParam, type SearchParams } from "@/lib/mission-param";
 import { cityName } from "@/lib/cities";
 
 // The Dossier (SPEC §2 beat 4): the cached level for the building and the
@@ -25,7 +25,9 @@ export default async function DossierPage({
   const building = await findBuilding(id);
   if (!building) notFound();
 
-  const missionId = await missionParam(building.id, "dossier", searchParams);
+  const missionId = await optionalMissionParam(building.id, "dossier", searchParams);
+  // No mission (a kit building from the map): no level to read, only its facts.
+  if (!missionId) return <DossierUnavailable buildingId={building.id} missionId={null} name={building.name} reason="missing" facts={dossierFacts(building)} source={building.source} />;
 
   let level: CachedLevel | null;
   try {

@@ -3,7 +3,8 @@
 // the same screen with the building's own mission (F1 → `romaine-1974`), so
 // the address always says which level is on screen. A building that has no
 // own mission needs an `m`: without one it is a 404, as is an `m` that names
-// no mission. A repeated `m` reads its first value.
+// no mission, except on the screens that need no level (`optionalMissionParam`).
+// A repeated `m` reads its first value.
 import { notFound, redirect } from "next/navigation";
 import { defaultMissionId, findMission } from "@/agents/builder/missions";
 import { buildingHref } from "./building-href";
@@ -35,4 +36,19 @@ export async function missionParam(
   const own = defaultMissionId(buildingId);
   if (!own) notFound();
   redirect(buildingHref(buildingId, screen, own));
+}
+
+/**
+ * As `missionParam`, but a building with no own mission and no `m` (a kit
+ * building opened from the map) reads as null instead of a 404: for the
+ * screens such a building still has, Scout and the Dossier's facts. Every
+ * other address behaves exactly as `missionParam`.
+ */
+export async function optionalMissionParam(
+  buildingId: string,
+  screen: string,
+  searchParams: SearchParams,
+): Promise<string | null> {
+  if (!firstM((await searchParams).m) && !defaultMissionId(buildingId)) return null;
+  return missionParam(buildingId, screen, searchParams);
 }

@@ -6,7 +6,8 @@ import type { DossierFact } from "./dossier-screen";
 
 interface DossierUnavailableProps {
   buildingId: string;
-  missionId: string;
+  /** Null when the building was opened with no mission (a kit building from the map): no command then. */
+  missionId: string | null;
   name: string;
   /** `missing`: no cached level yet; `invalid`: the cached files fail their schema. */
   reason: "missing" | "invalid";
@@ -41,7 +42,7 @@ export function DossierUnavailable({ buildingId, missionId, name, reason, detail
                 ? "The Level Builder runs ahead of the demo, per building. Build this one, then reload."
                 : "The cached manifest or trace in data/levels/ does not match the schema. Rebuild it, then reload."}
           </p>
-          {kit ? null : (
+          {kit || !missionId ? null : (
             <code className="w-fit rounded-sm border border-border bg-surface-2 px-3 py-2 font-mono text-sm text-text-1">
               {command}
             </code>
