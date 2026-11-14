@@ -1,0 +1,185 @@
+{
+  "id": "builder-F2-sunset-1986",
+  "agents": [
+    {
+      "agent": "level-builder",
+      "systemIncludes": "You are the Level Builder for Heist Anywhere.",
+      "turns": [
+        {
+          "content": "Planning the level for F2.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  {
+                    "content": "Read F2's CoStar record and Vexcel aerial, and derive its security",
+                    "status": "in_progress"
+                  },
+                  {
+                    "content": "Write the briefing for mission sunset-1986",
+                    "status": "pending"
+                  },
+                  {
+                    "content": "Write the level manifest",
+                    "status": "pending"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "The analyst reads the building first; the mission depends on what it finds.",
+          "toolCalls": [
+            {
+              "name": "task",
+              "args": {
+                "subagent_type": "data-analyst",
+                "description": "Read building F2's CoStar record, available space and aerial entries, then derive its security profile with the rules table."
+              }
+            }
+          ]
+        },
+        {
+          "content": "Card and coax era, three guards, staged on floor 41. Handing that and the mission to the game master.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  {
+                    "content": "Read F2's CoStar record and Vexcel aerial, and derive its security",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Write the briefing for mission sunset-1986",
+                    "status": "in_progress"
+                  },
+                  {
+                    "content": "Write the level manifest",
+                    "status": "pending"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "task",
+              "args": {
+                "subagent_type": "game-master",
+                "description": "Building F2, Figueroa Exchange, LA, built 1989. Card and coax era: magstripe readers, PTZ cameras on a 3-turn cycle, 3 cameras. Class B: 3 guards on tight rounds. Staged on floor 41, quiet suite 4125. Entries: loading dock, helipad, Figueroa lobby, garage entrance, plaza stair exit. Mission sunset-1986: write its briefing."
+              }
+            }
+          ]
+        },
+        {
+          "content": "Writing the manifest with Hole in the Ground.",
+          "toolCalls": [
+            {
+              "name": "write_manifest",
+              "args": {
+                "buildingId": "F2",
+                "missionId": "sunset-1986",
+                "briefing": "Figueroa Exchange, Financial District, a 1989 tower with card-era security: magstripe readers on the locked doors, three PTZ cameras on a three-turn cycle, three guards on tight rounds. Floor 41 is the quiet night: suite 4125 is vacant and dark, and the safe-deposit vault sits at the east end of the floor. Come up from below on the freight lift from the loading dock, work the vault door, take the boxes, and leave down the garage shuttle lift, by the plaza stair or up to the helipad. Nobody gets hurt and nothing leaves but the boxes. The security here is game fiction, drawn from the building's class and era.",
+                "objective": {
+                  "name": "Safe-deposit vault",
+                  "rule": "The boxes are here: open the vault door, take them, then reach an exit"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "content": "Manifest written.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  {
+                    "content": "Read F2's CoStar record and Vexcel aerial, and derive its security",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Write the briefing for mission sunset-1986",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Write the level manifest",
+                    "status": "completed"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "Level built for F2: card and coax era, 3 guards, staged on floor 41, mission sunset-1986, up from the dock."
+        }
+      ]
+    },
+    {
+      "agent": "data-analyst",
+      "systemIncludes": "You are the data analyst of the Level Builder.",
+      "turns": [
+        {
+          "content": "Reading the record, the vacancies and the aerial together.",
+          "toolCalls": [
+            {
+              "name": "get_building",
+              "args": {
+                "buildingId": "F2"
+              }
+            },
+            {
+              "name": "get_available_space",
+              "args": {
+                "buildingId": "F2"
+              }
+            },
+            {
+              "name": "get_aerial_entries",
+              "args": {
+                "buildingId": "F2"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Built 1989, Class B, 52 stories; floor 41 carries the most vacancy. Applying the rules table.",
+          "toolCalls": [
+            {
+              "name": "derive_security_profile",
+              "args": {
+                "buildingId": "F2"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Built 1989 (1980-1999): Card and coax era, magstripe readers, PTZ cameras on a 3-turn cycle, 3 cameras. Class B: 3 guards on tight rounds. Floor 41 has the most available area, suite 4125, so the level is staged there and that suite is a quiet zone; the rest of the floor is crowded. Entries from the aerial: loading dock and helipad first, then the Figueroa lobby (with a desk guard), the garage entrance and the plaza stair exit."
+        }
+      ]
+    },
+    {
+      "agent": "game-master",
+      "systemIncludes": "You are the game master of the Level Builder.",
+      "turns": [
+        {
+          "content": "Reading the mission.",
+          "toolCalls": [
+            {
+              "name": "get_mission",
+              "args": {
+                "missionId": "sunset-1986"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Mission: sunset-1986, Hole in the Ground, staged in a 1989 card-era building. Objective zone: Safe-deposit vault, open the vault door, take the boxes, then reach an exit. Briefing: Figueroa Exchange, Financial District, a 1989 tower with card-era security: magstripe readers on the locked doors, three PTZ cameras on a three-turn cycle, three guards on tight rounds. Floor 41 is the quiet night: suite 4125 is vacant and dark, and the safe-deposit vault sits at the east end of the floor. Come up from below on the freight lift from the loading dock, work the vault door, take the boxes, and leave down the garage shuttle lift, by the plaza stair or up to the helipad. Nobody gets hurt and nothing leaves but the boxes. The security here is game fiction, drawn from the building's class and era."
+        }
+      ]
+    }
+  ]
+}

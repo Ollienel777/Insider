@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FloorGraph } from "@/domain";
 import raw from "../../../fixtures/floors/F1.json";
 import { FIXTURE_BUILDINGS } from "../costar/fake";
 import { checkFloor } from "../../../scripts/check-floor.mjs";
 import { F1_DEMO, FIXTURE_FLOORS, createFakeMatterport } from "./fake";
-import { selectMatterport } from "./index";
+import { insideViewFor, matterportEnv, modelOverride, scanModelId, selectMatterport, withFixtureFloor } from "./index";
 
 const f1 = FloorGraph.parse(raw);
 const node = (id: string) => f1.nodes.find((n) => n.id === id);
@@ -236,5 +236,85 @@ describe("selectMatterport (the mode switch)", () => {
       reason: "Matterport: live",
     });
     expect(selectMatterport({ ...KEY, HEIST_MODE: "live" }).mode).toBe("live");
+  });
+});
+
+describe("the dev-only model override (issue 3)", () => {
+  const VAR = "NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE";
+
+  it("points every building at a bare model id, outside production", () => {
+    expect(modelOverride({ [VAR]: " mOdel1 ", NODE_ENV: "development" })).toEqual({ all: "mOdel1", byBuilding: {} });
+    expect(scanModelId({ id: "F1" }, { [VAR]: "mOdel1" })).toBe("mOdel1");
+    expect(scanModelId({ id: "F2", matterportModelId: "own" }, { [VAR]: "mOdel1" })).toBe("mOdel1");
+  });
+
+  it("points named buildings only, with buildingId=modelId pairs", () => {
+    const env = { [VAR]: "F1=aaa, F3 = bbb,broken" };
+    expect(modelOverride(env).byBuilding).toEqual({ F1: "aaa", F3: "bbb" });
+    expect(scanModelId({ id: "F1" }, env)).toBe("aaa");
+    expect(scanModelId({ id: "F2" }, env)).toBeUndefined();
+    expect(scanModelId({ id: "F2", matterportModelId: "own" }, env)).toBe("own");
+  });
+
+  it("is ignored in a production build, and when unset", () => {
+    expect(scanModelId({ id: "F1" }, { [VAR]: "mOdel1", NODE_ENV: "production" })).toBeUndefined();
+    expect(scanModelId({ id: "F1", matterportModelId: "own" }, {})).toBe("own");
+  });
+
+  it("is what the live adapter connects to", async () => {
+    // The live adapter connects through a hidden iframe; with no document it rejects, so this
+    // checks the model id reached it by the error, without a network.
+    const s = selectMatterport({ NEXT_PUBLIC_MATTERPORT_MODE: "live", NEXT_PUBLIC_MATTERPORT_SDK_KEY: "k", [VAR]: "mOdel1" });
+    expect(s.mode).toBe("live");
+    await expect(s.adapter.loadFloor({ id: "F1" })).rejects.toThrow("runs only in the browser");
+  });
+});
+
+describe("the fixture fallback names a timeout as one (issue 3)", () => {
+  it("says Matterport didn't answer in time when the live load timed out", async () => {
+    const timeout = Object.assign(new Error("the Showcase connection did not arrive within 20000 ms"), { name: "TimeoutError" });
+    const messages: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const adapter = withFixtureFloor({ loadFloor: async () => Promise.reject(timeout) }, createFakeMatterport(), (f) =>
+      messages.push(f.message),
+    );
+    expect((await adapter.loadFloor({ id: "F1", matterportModelId: "m" }))?.source).toBe("fixture");
+    expect(messages).toEqual(["Matterport didn't answer in time, so the board uses the fixture floor."]);
+    warn.mockRestore();
+  });
+});
+
+describe("insideViewFor (the Run screen's Inside view)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("offers no Inside view in fake mode, so the demo path shows no panel", () => {
+    vi.stubEnv("NEXT_PUBLIC_MATTERPORT_MODE", "fake");
+    expect(insideViewFor({ id: "F1", matterportModelId: "m" })).toBeNull();
+  });
+
+  it("offers an opener in live mode with a key, for a building with a scan or an override", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_MATTERPORT_MODE", "live");
+    vi.stubEnv("NEXT_PUBLIC_MATTERPORT_SDK_KEY", "test-key");
+    vi.stubEnv("NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE", "F1=mOdel1");
+    vi.stubEnv("NODE_ENV", "development");
+    // A fresh module, so the page's adapter is chosen from this environment.
+    const fresh = await import("./index");
+    expect(fresh.getMatterport().mode).toBe("live");
+    expect(fresh.insideViewFor({ id: "48213", matterportModelId: "own" })).toBeTypeOf("function");
+    expect(fresh.insideViewFor({ id: "F1" })).toBeTypeOf("function");
+    expect(fresh.insideViewFor({ id: "F2" })).toBeNull();
+  });
+});
+
+describe("matterportEnv (what the browser bundle reads)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("drops the model override in a production build, so the bundle never holds it", () => {
+    vi.stubEnv("NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE", "F1=mOdel1");
+    vi.stubEnv("NODE_ENV", "production");
+    expect(matterportEnv().NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE).toBeUndefined();
+    vi.stubEnv("NODE_ENV", "development");
+    expect(matterportEnv().NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE).toBe("F1=mOdel1");
   });
 });

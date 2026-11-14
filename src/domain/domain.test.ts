@@ -4,6 +4,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 import {
+  BRIEFING_MAX_WORDS,
+  briefingProblems,
+  briefingWords,
   Aerial,
   Building,
   BuildTrace,
@@ -112,6 +115,7 @@ const yearBuilt = {
 
 const manifest = {
   buildingId: "F1",
+  missionId: "romaine-1974",
   securityProfile: {
     era: "analog",
     guardCount: 4,
@@ -138,7 +142,7 @@ const manifest = {
     },
   ],
   entries: [{ id: "dock", kind: "dock", label: "Loading dock" }],
-  mission: { ...mission, briefing: "Floor 22 is the quietest night in the building." },
+  mission: { ...mission, briefing: "Floor 22 is the quietest night in the building. Its security is game fiction." },
   provenance: [
     yearBuilt,
     {
@@ -322,6 +326,33 @@ describe("LevelManifest", () => {
     const zones = [manifest.zones[0], manifest.zones[0]];
     expect(LevelManifest.safeParse({ ...manifest, zones }).success).toBe(false);
   });
+
+  it("is keyed by building and mission: missionId must be the mission's own id", () => {
+    expect(LevelManifest.safeParse({ ...manifest, missionId: "sunset-1986" }).success).toBe(false);
+    const { missionId: _omit, ...noMission } = manifest;
+    void _omit;
+    expect(LevelManifest.safeParse(noMission).success).toBe(false);
+  });
+
+  it("counts the briefing's words and requires the game-fiction line (#119)", () => {
+    const fiction = " The security is game fiction.";
+    const words = (n: number) => Array.from({ length: n }, () => "word").join(" ");
+    expect(briefingWords("Floor 22 — dark, quiet; in by the dock.")).toBe(8);
+    expect(briefingProblems(words(BRIEFING_MAX_WORDS - 5) + fiction)).toEqual([]);
+    expect(briefingProblems(words(BRIEFING_MAX_WORDS) + fiction)).toEqual([
+      `the briefing is ${BRIEFING_MAX_WORDS + 5} words; the limit is ${BRIEFING_MAX_WORDS}`,
+    ]);
+    expect(briefingProblems("In by the dock, out by the roof.")).toEqual([
+      'the briefing must say its security is game fiction (the words "game fiction")',
+    ]);
+    expect(briefingProblems("All of it is game-fiction security.")).toEqual([]);
+  });
+
+  it("reads a manifest whatever its briefing: the rules are enforced on write, not on read", () => {
+    const withBriefing = (briefing: string) => ({ ...manifest, mission: { ...manifest.mission, briefing } });
+    expect(LevelManifest.safeParse(withBriefing(Array.from({ length: 200 }, () => "word").join(" "))).success).toBe(true);
+    expect(LevelManifest.safeParse(withBriefing("In by the dock.")).success).toBe(true);
+  });
 });
 
 describe("Aerial as a massing (keyless fake mode)", () => {
@@ -372,6 +403,20 @@ describe("Aerial as a massing (keyless fake mode)", () => {
     const bare = { ...aerial.entries[0], x: undefined, y: undefined };
     expect(Aerial.safeParse({ ...aerial, entries: [bare] }).success).toBe(false);
     expect(Aerial.safeParse({ ...aerial, entries: [{ ...bare, x: 820 }] }).success).toBe(false);
+  });
+
+  it("on a view with an image, requires a pixel even when the entry has `at`", () => {
+    const anchored = { ...aerial.entries[0], x: undefined, y: undefined, at: dock.at };
+    const result = Aerial.safeParse({ ...aerial, entries: [anchored] });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0].message).toContain("needs a pixel (x, y)");
+    // Both a pixel and `at` is fine.
+    expect(Aerial.safeParse({ ...aerial, entries: [{ ...aerial.entries[0], at: dock.at }] }).success).toBe(true);
+  });
+
+  it("rejects a pixel outside its view's image", () => {
+    const off = { ...aerial.entries[0], x: 1601 };
+    expect(Aerial.safeParse({ ...aerial, entries: [off] }).error?.issues[0].message).toContain("outside view");
   });
 
   it("rejects an anchor above the roof", () => {

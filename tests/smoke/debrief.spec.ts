@@ -22,7 +22,7 @@ interface Log {
 const choice = (page: Page, nodeId: string) => page.locator(`[data-testid="choice"][data-node="${nodeId}"]`);
 const banner = (page: Page) => page.getByTestId("alarm-banner");
 const storedLog = (page: Page): Promise<Log> =>
-  page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1") ?? "null"));
+  page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1:romaine-1974") ?? "null"));
 
 async function openRun(page: Page) {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -38,7 +38,7 @@ async function pressFor(page: Page, nodeId: string) {
 
 async function toDebrief(page: Page) {
   await page.getByRole("link", { name: "See the debrief" }).click();
-  await expect(page).toHaveURL(/\/b\/F1\/debrief$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/b\/F1\/debrief\?m=romaine-1974$/, { timeout: 15_000 });
   await expect(page.getByTestId("replay-board")).toBeVisible();
 }
 
@@ -81,10 +81,14 @@ test("with no run in storage, the debrief offers to start the run", async ({ pag
   const empty = page.getByTestId("debrief-empty");
   await expect(empty).toContainText("There's no run to debrief yet.");
   await empty.getByRole("link", { name: "Start the run" }).click();
-  await expect(page).toHaveURL(/\/b\/F1\/run$/);
+  await expect(page).toHaveURL(/\/b\/F1\/run\?m=romaine-1974$/);
 });
 
 test("beat 5 to 6: caught after the wow beat, the debrief says so, with the Chief's decision", async ({ page }) => {
+  // It plays to the catch, waits out each Chief answer's stream, then opens the debrief: 5.6 s alone,
+  // up to 14.9 s with the CPU oversubscribed twice over (#84), against the 30 s default. 60 s is #69's
+  // size, not measured on the 2-vCPU VM; a broken step still fails on its own wait, not on this.
+  test.setTimeout(60_000);
   await openRun(page);
   await pressFor(page, "fl-lobby");
   await pressFor(page, "dc-west");
@@ -219,10 +223,11 @@ test("beat 5 to 6: caught after the wow beat, the debrief says so, with the Chie
   // The heist ends here (#113): no hand-over to the drill, and Try again opens a fresh run.
   await expect(page.getByRole("link", { name: "Run the drill" })).toHaveCount(0);
   await expect(page.getByTestId("try-again-line")).toHaveText("Same floor, same rounds. Try another way in.");
-  await expect(page.getByTestId("debrief-to-map")).toHaveAttribute("href", "/");
+  await expect(page.getByTestId("debrief-to-map")).toHaveAttribute("href", "/map");
   await page.getByTestId("debrief-try-again").click();
-  await expect(page).toHaveURL(/\/b\/F1\/run$/, { timeout: 15_000 });
-  await expectFreshRun(page);
+  await expect(page).toHaveURL(/\/b\/F1\/run\?m=romaine-1974$/, { timeout: 15_000 });
+  // The caught run joined the history (#35): the fresh run is placed with its posture.
+  await expectFreshRun(page, "dock-N");
   await expect(page.getByTestId("player-piece")).toHaveAttribute("data-node", "fl-car");
   await railToDebrief(page);
   await expectNotStarted(page);
@@ -240,11 +245,11 @@ test("opened from the step rail mid-run, after the Chief's answer, the debrief l
   await expect(page.getByTestId("chief-late")).toHaveCount(0);
   // The applied orders are in storage now, before any turn's entry carries them.
   await expect.poll(async () => (await storedLog(page)).turns.length).toBe(2);
-  const pending = await page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1") ?? "null").pendingChief);
+  const pending = await page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1:romaine-1974") ?? "null").pendingChief);
   expect(pending).toMatchObject({ turn: 2, chief: { rationale: answered }, chiefSource: "recorded" });
 
   await page.getByRole("navigation", { name: "Steps" }).getByRole("link", { name: "Debrief", exact: true }).click();
-  await expect(page).toHaveURL(/\/b\/F1\/debrief$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/b\/F1\/debrief\?m=romaine-1974$/, { timeout: 15_000 });
   const outcome = page.getByTestId("debrief-outcome");
   await expect(outcome).toHaveAttribute("data-status", "playing");
   await expect(outcome).toContainText("Run not finished");
@@ -262,7 +267,7 @@ test("opened from the step rail mid-run, after the Chief's answer, the debrief l
 
   // The Run screen keeps no run it was left on: the link starts it over. Play it to the catch.
   await page.getByTestId("debrief-run-again").click();
-  await expect(page).toHaveURL(/\/b\/F1\/run$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/b\/F1\/run\?m=romaine-1974$/, { timeout: 15_000 });
   await expect(page.getByTestId("run-board")).toBeVisible();
   await pressFor(page, "fl-lobby");
   await pressFor(page, "dc-west");
@@ -291,20 +296,25 @@ test("opened from the step rail mid-run, after the Chief's answer, the debrief l
 /** The Debrief, opened from the step rail. */
 async function railToDebrief(page: Page) {
   await page.getByRole("navigation", { name: "Steps" }).getByRole("link", { name: "Debrief", exact: true }).click();
-  await expect(page).toHaveURL(/\/b\/F1\/debrief$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/b\/F1\/debrief\?m=romaine-1974$/, { timeout: 15_000 });
 }
 
-/** The board is on turn 0, and the log in storage is that run's: no turns, nothing pending, nothing late. */
-async function expectFreshRun(page: Page) {
+/**
+ * The board is on turn 0, and the log in storage is that run's: no turns, nothing pending, nothing late.
+ * A visit after a finished run places the level with that history's posture (#35), and logs it as `watchEntry`.
+ */
+async function expectFreshRun(page: Page, watchEntry?: string) {
   await expect(page.getByTestId("run-board")).toBeVisible();
   await expect(page.getByTestId("turn")).toHaveText("0");
   await expect.poll(async () => storedLog(page)).toEqual({
     buildingId: "F1",
     missionId: expect.any(String),
     seed: 7,
+    rules: 2,
     turns: [],
     status: "playing",
     alarmEvents: [],
+    ...(watchEntry && { watchEntry }),
   });
 }
 
@@ -325,17 +335,18 @@ test("Restart after a capture, before the late answer lands: the log is the new 
   await expect(page.getByTestId("run-outcome")).toHaveAttribute("data-status", "caught");
   // Restart at once: the Chief's answer to the catching turn's sighting is still out, and never lands on the new run.
   await page.getByRole("button", { name: "Restart" }).click();
-  await expectFreshRun(page);
+  // Restart after a finished run places the level with that run's history (#35), as a reload would.
+  await expectFreshRun(page, "dock-N");
   await expect(page.getByTestId("chief-panel")).toHaveAttribute("data-state", "idle");
   await page.waitForTimeout(3_000);
-  await expectFreshRun(page);
+  await expectFreshRun(page, "dock-N");
   await expect(page.getByTestId("chief-panel")).toHaveAttribute("data-state", "idle");
 
   await railToDebrief(page);
   await expectNotStarted(page);
   // Its link goes back to the run, and a first move makes it a run the debrief shows.
   await page.getByTestId("debrief-empty").getByRole("link", { name: "Back to the run" }).click();
-  await expectFreshRun(page);
+  await expectFreshRun(page, "dock-N");
   await pressFor(page, "fl-lobby");
   await expect.poll(async () => (await storedLog(page)).turns.length).toBe(1);
   await railToDebrief(page);
@@ -353,10 +364,10 @@ test('"Start the run over" from a mid-run debrief: the debrief opened next shows
   // A run left mid-way has no Try again: "Start the run over" says what the link does.
   await expect(page.getByTestId("debrief-try-again")).toHaveCount(0);
   await expect(page.getByTestId("try-again-line")).toHaveCount(0);
-  await expect(page.getByTestId("debrief-to-map")).toHaveAttribute("href", "/");
+  await expect(page.getByTestId("debrief-to-map")).toHaveAttribute("href", "/map");
 
   await page.getByTestId("debrief-run-again").click();
-  await expect(page).toHaveURL(/\/b\/F1\/run$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/b\/F1\/run\?m=romaine-1974$/, { timeout: 15_000 });
   await expectFreshRun(page);
   await railToDebrief(page);
   await expectNotStarted(page);
@@ -371,7 +382,7 @@ test("a fresh visit to the Run screen replaces a finished run's log with its own
   await expect.poll(async () => (await storedLog(page)).status).toBe("caught");
 
   await page.goto("/b/F1/run");
-  await expectFreshRun(page);
+  await expectFreshRun(page, "dock-N");
   await page.goto("/b/F1/debrief");
   await expectNotStarted(page);
 });
@@ -410,7 +421,7 @@ test("the quiet route to a clean exit: the debrief grades it S, never seen, with
   await expect(page.getByTestId("chief-none")).toHaveText("The alarm never moved, so the Chief never re-planned.");
   // On par already: the line asks for another way out, never to beat par (par is the shortest quiet route).
   await expect(page.getByTestId("try-again-line")).toHaveText("Clean exit. Run it again by a different way out.");
-  await expect(page.getByTestId("debrief-try-again")).toHaveAttribute("href", "/b/F1/run");
+  await expect(page.getByTestId("debrief-try-again")).toHaveAttribute("href", "/b/F1/run?m=romaine-1974");
 
   for (const frame of [0, 9, 10, 17]) {
     await scrubTo(page, frame);

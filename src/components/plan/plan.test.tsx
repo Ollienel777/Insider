@@ -10,7 +10,7 @@ import { CrewPlan, LevelManifest } from "@/domain";
 import { createRun } from "@/engine";
 import { placeLevel } from "@/level/placer";
 import { validatePlan } from "@/level/validate-plan";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import recording from "../../../fixtures/llm/crew-F1.json";
 import { askCrew, crewRequest, EXAMPLE_ORDER, type CrewAnswer } from "./crew-request";
 import { CrewReply, ghostOf } from "./crew-reply";
@@ -71,9 +71,8 @@ describe("CrewReply", () => {
 
   it("notes each dropped step", () => {
     const html = renderToStaticMarkup(<CrewReply answer={recorded("lobby")} checked={validatePlan(placed, plan("lobby"))} />);
-    expect(html).toContain("Dropped step 1: &quot;lobby-S&quot; is not a zone on this floor.");
-    expect(html).toContain("Dropped step 3:");
-    expect(html.match(/data-dropped="true"/g)).toHaveLength(2);
+    expect(html).toContain("Dropped step 3: &quot;lobby-S&quot; is not a zone on this floor.");
+    expect(html.match(/data-dropped="true"/g)).toHaveLength(1);
   });
 });
 

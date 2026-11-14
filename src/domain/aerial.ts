@@ -44,7 +44,8 @@ export type EntryAnchor = z.infer<typeof EntryAnchor>;
 /**
  * A tagged entry. `view` is the view it is best seen from. It is placed at
  * pixel (`x`, `y`) on that view's image, at `at` in space, or both. An entry
- * on a view with no image must have `at`.
+ * on a view with no image must have `at`; one on a view with an image must
+ * have a pixel inside it, since `at` alone cannot be drawn on a photo.
  */
 export const AerialEntry = z.object({
   id: Id,
@@ -98,8 +99,11 @@ export const Aerial = z
       const hasPixel = entry.x !== undefined && entry.y !== undefined;
       if (view.url === undefined && entry.at === undefined) {
         issue(["at"], `sits on view "${view.dir}", which has no image, so it needs \`at\``);
-      } else if (!hasPixel && entry.at === undefined) {
-        issue(["at"], "has neither a pixel (x, y) nor `at`");
+      } else if (view.url !== undefined && !hasPixel) {
+        // A photo is not a model: an `at` point alone cannot be drawn on it.
+        issue(["x"], `sits on view "${view.dir}", which has an image, so it needs a pixel (x, y)`);
+      } else if (view.url !== undefined && (entry.x! > view.width || entry.y! > view.height)) {
+        issue(["x"], `is at pixel (${entry.x}, ${entry.y}), outside view "${view.dir}" (${view.width}×${view.height})`);
       }
       if (entry.at && entry.at.elevM > aerial.heightM) {
         issue(["at", "elevM"], `is ${entry.at.elevM} m up, above the building's ${aerial.heightM} m`);

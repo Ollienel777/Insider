@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { F1_DEMO, FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { CrewPlan, LevelManifest } from "@/domain";
 import { act, createRun, type Action, type RunState } from "@/engine";
-import cached from "../../data/levels/F1.json";
+import cached from "../../data/levels/F1.romaine-1974.json";
 import recording from "../../fixtures/llm/crew-F1.json";
 import { placeLevel } from "./placer";
 import { adviceFor, validatePlan, waitTurns } from "./validate-plan";
@@ -79,7 +79,11 @@ describe("validatePlan on the demo order (SPEC §2 beat 4)", () => {
 });
 
 describe("the advised route, played end to end on F1 through the engine", () => {
-  it("stays unseen through the records door to the files and out, on every seed", () => {
+  // Places, validates and plays all 24 seeds, which is the claim: 0.5 s
+  // alone, 2.0 s pinned to one busy CPU, past the 5 s default with two gates
+  // on the 2-vCPU VM (#85). Fewer seeds would test less, so it gets a budget:
+  // 30 s, several times the worst seen.
+  it("stays unseen through the records door to the files and out, on every seed", { timeout: 30_000 }, () => {
     for (const seed of SEEDS) {
       const p = place(seed);
       const advice = validatePlan(p, reply("dock-wait")).advice!;
@@ -122,12 +126,10 @@ describe("validatePlan on the other recorded replies", () => {
 
   it("drops zones that are not on the floor, and notes each one", () => {
     const checked = validatePlan(placed, reply("lobby"));
-    expect(checked.dropped.map((d) => [d.number, d.zoneId])).toEqual([
-      [1, "lobby-S"],
-      [3, "lobby-S"],
-    ]);
+    // The lobby reply opens at the dock, where the run starts, and names the lobby as its way out (#89).
+    expect(checked.dropped.map((d) => [d.number, d.zoneId])).toEqual([[3, "lobby-S"]]);
     expect(checked.dropped[0].reason).toBe('"lobby-S" is not a zone on this floor');
-    expect(checked.steps.map((s) => s.zoneId)).toEqual(["objective"]);
+    expect(checked.steps.map((s) => s.zoneId)).toEqual(["dock-N", "objective"]);
     expect(checked.advice).not.toBeNull();
   });
 
@@ -153,6 +155,41 @@ describe("validatePlan on the other recorded replies", () => {
     expect(checked.outcome).toBe("seen");
     expect(checked.warnings[0].by).toMatch(/^(G|C)\d$/);
     expect(checked.warnings[0].text).toMatch(/^(Camera|Guard) [GC]\d (sees|hears) you in the .+ on turn \d+/);
+  });
+
+  // A plan that goes in by the roof hatch. The recorded `roof` reply opens at the dock now (#89), so
+  // the roof-first case is written out here: the steps the recording had on main at 5f37644.
+  const inByRoof: CrewPlan = {
+    steps: [
+      { zoneId: "roof", action: "Down the east stair from the roof hatch" },
+      { zoneId: "objective", action: "Along the main corridor and through office 2210, pick the records room door and take the files" },
+      { zoneId: "roof", action: "Back up to the roof" },
+    ],
+    pushback: "",
+    confidence: 0.5,
+  };
+
+  it("says that a plan going in by the roof is checked from the dock, where the run starts (PR #64 R1-M2)", () => {
+    const checked = validatePlan(placed, inByRoof);
+    expect(checked.path[0]).toBe(placed.level.start);
+    expect(checked.startNote).toBe(
+      "The run starts at the loading dock, so the board checks the plan from there: the roof hatch is a stop on the way, not the way in.",
+    );
+    // A plan that goes in by the dock needs no note, nor does one that only leaves by the roof.
+    expect(validatePlan(placed, reply("dock-wait")).startNote).toBeNull();
+    const outByRoof = CrewPlan.parse({ ...reply("dock-wait"), steps: [...reply("dock-wait").steps.slice(0, 3), { zoneId: "roof", action: "Out by the roof" }] });
+    expect(validatePlan(placed, outByRoof).startNote).toBeNull();
+  });
+
+  it("gives no roof note when the roof step is dropped for want of a way there (#138 R2)", () => {
+    // The roof hatch cut off from the rest of the floor: the first step has nowhere to go.
+    const roof = new Set(placed.level.zones!.roof);
+    const floor = placed.level.floor;
+    const cut = { ...placed, level: { ...placed.level, floor: { ...floor, edges: floor.edges.filter((e) => roof.has(e.a) === roof.has(e.b)) } } };
+    const checked = validatePlan(cut, inByRoof);
+    expect(checked.dropped[0]).toMatchObject({ number: 1, zoneId: "roof" });
+    expect(checked.dropped[0].reason).toMatch(/^no way from here/);
+    expect(checked.startNote).toBeNull();
   });
 
   it("says when a plan never leaves with the files", () => {

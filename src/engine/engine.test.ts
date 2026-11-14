@@ -281,6 +281,19 @@ describe("guards", () => {
     expect(g2).toEqual(["o-west", "o-north", "o-north", "o-east", "o-east", "o-southeast"]);
   });
 
+  it("hop at their own tempo when the level sets one, the rest at patrolTempo", () => {
+    let run = createRun(f1Level({ guardTempo: { G2: 2 } }));
+    const g1: string[] = [];
+    const g2: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      run = play(run, [{ kind: "wait" }]);
+      g1.push(where(run, "G1"));
+      g2.push(where(run, "G2"));
+    }
+    expect(g2).toEqual(["o-west", "o-north", "o-north", "o-east", "o-east", "o-southeast"]);
+    expect(g1).toEqual(["mc-1", "mc-2", "mc-3", "mc-4", "mc-e", "mc-4"]);
+  });
+
   it("reach an ordered zone by a shortest path, one hop per turn, and hold there", () => {
     const ordered = orderGuard(createRun(f1Level()), "G1", "records");
     if (!ordered.ok) throw new Error(ordered.reason);
@@ -435,5 +448,9 @@ describe("level checks", () => {
     expect(() => createRun(f1Level({ lockedDoors: ["d-freight-lobby"] }))).toThrow(/not lockable/);
     expect(() => createRun(f1Level({ guards: [{ id: "G1", patrol: [] }] }))).toThrow(/empty patrol/);
     expect(() => createRun(f1Level({ patrolTempo: 0 }))).toThrow(/patrolTempo/);
+    expect(() => createRun(f1Level({ doorPickTurns: { "d-nowhere": 3 } }))).toThrow(/not a door of the floor/);
+    expect(() => createRun(f1Level({ doorPickTurns: { [F1_DEMO.recordsDoor]: 0 } }))).toThrow(/pick turns 0/);
+    expect(() => createRun(f1Level({ guardTempo: { G9: 2 } }))).toThrow(/not a guard of the level/);
+    expect(() => createRun(f1Level({ guardTempo: { G2: 0 } }))).toThrow(/tempo 0/);
   });
 });

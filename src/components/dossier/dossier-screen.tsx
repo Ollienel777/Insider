@@ -5,11 +5,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { BuildingScreen } from "@/components/shell/building-screen";
+import { buildingHref } from "@/lib/building-href";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { BriefedMission, BuildTrace } from "@/domain";
 import type { DataToLevelRow } from "./data-to-level";
 import { ProvenanceRow } from "./provenance-row";
-import { recordedRunHeader, replaySchedule, traceView } from "./replay";
+import { recordedRunHeader, replaySchedule, traceBanner, traceView } from "./replay";
 import { Reveal } from "./reveal";
 import { TraceList } from "./trace-list";
 
@@ -146,7 +147,8 @@ export function DossierScreen(props: DossierScreenProps) {
                 <table data-testid="data-to-level" className="w-full min-w-[560px] table-fixed text-left">
                   <colgroup>
                     <col className="w-[104px]" />
-                    <col className="w-[128px]" />
+                    {/* Wide enough for a 14-letter field id in 14px mono, so none breaks mid-word. */}
+                    <col className="w-[152px]" />
                     <col className="w-[112px]" />
                     <col />
                   </colgroup>
@@ -211,9 +213,17 @@ export function DossierScreen(props: DossierScreenProps) {
           </article>
         </div>
       }
-      panel={<TraceList view={view} header={recordedRunHeader(trace)} control={control} />}
+      panel={
+        <TraceList
+          view={view}
+          header={recordedRunHeader(trace)}
+          control={control}
+          banner={traceBanner(trace)}
+          subagents={trace.subagents}
+        />
+      }
       action={
-        <Link href={`/b/${buildingId}/plan`} className={buttonVariants({ variant: "primary" })}>
+        <Link href={buildingHref(buildingId, "plan", mission.id)} className={buttonVariants({ variant: "primary" })}>
           Brief the crew
         </Link>
       }
