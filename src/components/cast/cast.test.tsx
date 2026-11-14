@@ -14,6 +14,9 @@ import { CAST_START_MS, castSchedule, countLeft, pinState, rowsLanded, startElap
 import { castThumbnails, clientTrace } from "./props";
 import { scoutHref } from "./scout-href";
 import { MISSION_DISCLAIMER } from "@/components/missions/mission-list";
+import { toKitProperty } from "@/adapters/costar/mapping";
+import { fictionalProperty } from "@/adapters/costar/test-kit";
+import { castReasons, type ShowcaseCast } from "@/lib/showcase-cast";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const cast = (id: string) =>
@@ -234,6 +237,77 @@ describe("CastScreen", () => {
     expect(text).not.toContain("Recorded run");
     expect(text).toContain("A replay of a run recorded on fixtures. Nothing on this screen calls a model.");
     expect(text).toContain("Funnel · CoStar · fixtures");
+  });
+
+  it("has no showcase card without a showcase building", () => {
+    expect(end).not.toContain('data-testid="showcase');
+  });
+});
+
+// Issue 103: a showcase kit building, from the fictional test kit only.
+describe("CastScreen with a showcase building", () => {
+  const { pins } = castPins(romaine, mission("romaine-1974"), FIXTURE_INVENTORY);
+  const mapped = toKitProperty(fictionalProperty(900001, { buildingClass: 2 }), {
+    spaces: () => [{ floor: 6, suite: "600", sf: 2410 }],
+    scans: () => ["mpTestAAAA001"],
+  });
+  if (typeof mapped === "string") throw new Error(mapped);
+  const b = mapped.building;
+  const showcase: ShowcaseCast = {
+    ...{ id: b.id, name: b.name, neighbourhood: b.neighbourhood, city: b.city, yearBuilt: b.yearBuilt },
+    ...{ buildingClass: b.buildingClass, stories: b.stories, layers: b.layers },
+    reasons: castReasons(b, mapped.propertyType, mission("night-desk")),
+    levelReady: false,
+  };
+  const screen = (startComplete: boolean, cast = showcase) =>
+    renderToStaticMarkup(
+      <CastScreen
+        mission={mission("night-desk")}
+        result={{ ...romaine, trace: clientTrace(romaine.trace) }}
+        pins={pins}
+        scoutable={["F1"]}
+        showcase={cast}
+        startComplete={startComplete}
+      />,
+    );
+  const end = screen(true);
+  const card = end.slice(end.indexOf('data-testid="showcase-card"'), end.indexOf('data-testid="finalists"'));
+
+  it("links to the building's Scout, Dossier, Plan and Run on the cast mission", () => {
+    const steps = card.slice(card.indexOf('data-testid="showcase-steps"'));
+    expect([...steps.matchAll(/href="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"))).toEqual(
+      ["scout", "dossier", "plan", "run"].map((s) => `/b/900001/${s}?m=night-desk`),
+    );
+    expect(textOf(card)).toContain("No level yet: its Dossier builds one before Plan and Run.");
+    expect(textOf(screen(true, { ...showcase, levelReady: true }))).toContain("Its level is built: Plan and Run are ready.");
+  });
+
+  it("says why it fits, and that a Class B building misses a mission that needs Class A", () => {
+    const text = textOf(card);
+    expect(text).toContain("Testwood Tower 900001");
+    expect(text).toContain("Doesn't match: Class B · needs Class A");
+    expect(text).toContain("Matches: office · fits office");
+    expect(text).toContain("Not on the record: no aerial on record · can't check a dock on the aerial");
+    expect(text).toMatch(/Because · Matches \d of 7 of the mission's needs/);
+    expect(card.match(/data-testid="showcase-reason" data-status="miss"/g)?.length).toBeGreaterThan(0);
+  });
+
+  it("is picked for Scout it from the start, once the cards show", () => {
+    expect(card).toContain('data-selected="true"');
+    expect(end).toMatch(/<a[^>]*href="\/b\/900001\/scout\?m=night-desk"[^>]*>Scout it<\/a>/);
+    expect(textOf(end)).toMatch(/Testwood Tower 900001 ?, Testville Scout it/);
+    // Mid-replay it is hidden, and Scout it waits.
+    const start = screen(false);
+    expect(start).toContain('data-testid="scout-off"');
+    expect(start).toMatch(/invisible opacity-0"><article data-testid="showcase-card"/);
+  });
+
+  it("keeps the three finalists under it, folded away, with the disclaimer still shown", () => {
+    expect(end).toMatch(/<details data-testid="finalists-fold"(?![^>]*open)/);
+    expect(end.indexOf('data-testid="finalists-fold"')).toBeLessThan(end.indexOf('data-testid="finalist-card"'));
+    expect(end.indexOf('data-testid="cast-disclaimer"')).toBeGreaterThan(end.indexOf("</details>"));
+    expect([...end.matchAll(/data-testid="finalist-card" data-building="(\w+)"/g)].map((m) => m[1])).toEqual(["F1", "L01", "L02"]);
+    expect(end.indexOf('data-testid="showcase-card"')).toBeLessThan(end.indexOf('data-testid="finalist-card"'));
   });
 });
 

@@ -13,7 +13,7 @@ import { withFallback, type Fallback } from "@/lib/fallback";
 import { showcaseIds } from "@/lib/showcase";
 import { missingForLive, serviceModes, type ServiceMode } from "@/lib/mode";
 import { resetServerSlot, serverSlot } from "@/lib/server-breakers";
-import type { Building } from "@/domain";
+import type { Building, PropertyType } from "@/domain";
 import { createFakeCoStar } from "./fake";
 import { createLiveCoStar } from "./live";
 import type { CoStarAdapter } from "./types";
@@ -32,6 +32,8 @@ export interface CoStarSelection {
   fallback?: Fallback;
   /** A live building already in memory, for the fixtures to serve after a fallback. */
   cached?: (id: string) => Building | null;
+  /** A live kit building's property type, which `Building` does not carry (#103's cast reasons). */
+  propertyType?: (id: string) => PropertyType | null;
 }
 
 export function selectCoStar(env: Env): CoStarSelection {
@@ -48,7 +50,13 @@ export function selectCoStar(env: Env): CoStarSelection {
     };
   }
   const live = createLiveCoStar({ kitDir: env.COSTAR_KIT_DIR });
-  return { adapter: live, mode: "live", reason: "CoStar: live (data kit)", cached: (id) => live.cached(id) };
+  return {
+    adapter: live,
+    mode: "live",
+    reason: "CoStar: live (data kit)",
+    cached: (id) => live.cached(id),
+    propertyType: (id) => live.propertyType(id),
+  };
 }
 
 /**

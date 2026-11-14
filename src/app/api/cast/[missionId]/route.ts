@@ -7,11 +7,17 @@
 // (`<HEIST_STATE_DIR>/casting/`) wins over the committed fake one
 // (data/casting/); a state dir that cannot be read falls through to it.
 // Errors carry fixed messages, never a stack or a schema dump.
+//
+// With CoStar live and the mission on the showcase list (`SHOWCASE_LEVELS`,
+// issue 103), the body also carries `showcase`: the kit building the mission is
+// cast onto, with its reasons. Otherwise the body is the shortlist alone.
 import { z } from "zod";
 import { getCoStar } from "@/adapters/costar";
+import { findMission } from "@/agents/builder/missions";
 import { CASTING_DIR, CastingReadError, liveCastingDir, readCachedCasting } from "@/agents/casting/cache";
 import type { CastingResult } from "@/domain";
 import { forcedFromRequest } from "@/lib/mode";
+import { showcaseCast } from "@/lib/showcase-cast";
 
 const MissionId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 
@@ -43,7 +49,9 @@ export async function GET(request: Request, context: { params: Promise<{ mission
     if (!result) {
       return Response.json({ error: "no cached shortlist for this mission; run npm run cast" }, { status: 404 });
     }
-    return Response.json(result);
+    const mission = findMission(missionId);
+    const showcase = mission ? await showcaseCast(mission, { forced }) : null;
+    return Response.json(showcase ? { ...result, showcase } : result);
   } catch (error) {
     console.error(`GET /api/cast/${missionId}: ${error instanceof Error ? error.message : String(error)}`);
     return Response.json({ error: "the cached shortlist for this mission is invalid" }, { status: 500 });

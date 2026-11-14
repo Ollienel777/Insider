@@ -13,6 +13,7 @@ import { FallbackReport } from "@/components/shell/demo-safety";
 import type { CastingResult } from "@/domain";
 import { findBuilding } from "@/lib/building";
 import { forcedServices } from "@/lib/forced-server";
+import { showcaseCast } from "@/lib/showcase-cast";
 
 // The cast screen (SPEC §2 beat 2): the mission's cached shortlist and the
 // trace the Casting Director recorded, read the way GET /api/cast/[missionId]
@@ -73,6 +74,8 @@ async function Cast({ mission }: { mission: (typeof MISSIONS)[number] }) {
   const scoutable = (
     await Promise.all(result.finalists.map(async (c) => ((await findBuilding(c.id).catch(() => null)) ? c.id : null)))
   ).filter((id): id is string => id !== null);
+  // Live, a mission on the showcase list is cast onto its kit building (issue 103).
+  const showcase = await showcaseCast(mission, { forced });
 
   return (
     <>
@@ -83,6 +86,7 @@ async function Cast({ mission }: { mission: (typeof MISSIONS)[number] }) {
         pins={pins}
         scoutable={scoutable}
         thumbnails={castThumbnails(result.finalists, FIXTURE_AERIALS)}
+        showcase={showcase}
       />
     </>
   );
