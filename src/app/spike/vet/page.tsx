@@ -17,6 +17,8 @@ interface Row {
   status: "waiting" | "loading" | "placed" | "unplaceable" | "failed";
   nodes?: number;
   rooms?: number;
+  /** Rooms the scan itself reports. With none, the mapping makes one room of the whole floor. */
+  scanRooms?: number;
   doors?: number;
   maxDegree?: number;
   /** Median length of an edge, in metres: small means the scan walks smoothly. */
@@ -113,6 +115,7 @@ export default function Vet() {
           const { sweeps, rooms } = await readScan(host.current!, row.id, key);
           row.ms = Math.round(performance.now() - t);
           if (Object.keys(sweeps).length === 0) throw new Error("the scan sent no positions");
+          row.scanRooms = Object.keys(rooms).length;
           const floor = toFloorGraph(sweeps, rooms);
           const at = new Map(floor.nodes.map((n) => [n.id, n]));
           const lengths = floor.edges.map((e) => Math.hypot(at.get(e.a)!.x - at.get(e.b)!.x, at.get(e.a)!.y - at.get(e.b)!.y)).sort((a, b) => a - b);
@@ -139,6 +142,8 @@ export default function Vet() {
           row.note = String(error?.message ?? error).slice(0, 160);
         }
         setRows([...all]);
+        // A player opened the moment the last one closes often stalls and sends nothing.
+        await wait(2_500);
       }
       w.__vet.done = true;
     })();
@@ -157,7 +162,9 @@ export default function Vet() {
               <td style={cell}>{r.id}</td>
               <td style={cell}>{r.status}</td>
               <td style={cell}>{r.nodes ?? ""} positions</td>
-              <td style={cell}>{r.rooms ?? ""} rooms</td>
+              <td style={cell}>
+                {r.rooms ?? ""} rooms ({r.scanRooms ?? ""} in the scan)
+              </td>
               <td style={cell}>{r.doors ?? ""} doors</td>
               <td style={cell}>most hops {r.maxDegree ?? ""}</td>
               <td style={cell}>hop {r.hopMetres ?? ""} m</td>
