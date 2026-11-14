@@ -43,6 +43,9 @@ test("first person runs in real time, and walking into the next node's area play
 
   await expect(page.getByTestId("run-board")).toHaveCount(0);
   await expect(view(page)).toHaveAttribute("data-node", "fl-car");
+  // A fixture board keeps our own renderer: the scan view is for live scans only (issue 118).
+  await expect(view(page)).toHaveAttribute("data-floor", "fixture");
+  await expect(page.getByTestId("fp-scan-canvas")).toHaveCount(0);
   await expect(page.getByTestId("fp-hint")).toContainText("hold");
   // The clock runs on its own: turns pass while the player stands still, and they stay put.
   const start = await turnOf(page);
