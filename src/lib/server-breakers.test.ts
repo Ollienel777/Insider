@@ -23,8 +23,26 @@ const LIVE = {
   VEXCEL_API_KEY: "test-key",
 };
 
+/**
+ * The bundles and route calls the current test has started. A test that times
+ * out keeps running; afterEach waits for its work to settle before unstubbing,
+ * or its next fetch lands on the following test's stub (#85).
+ */
+const pending = new Set<Promise<unknown>>();
+function track<T>(work: Promise<T>): Promise<T> {
+  pending.add(work);
+  const settled = () => pending.delete(work);
+  work.then(settled, settled);
+  return work;
+}
+
+const tracked =
+  <A extends unknown[], T>(call: (...args: A) => Promise<T>) =>
+  (...args: A) =>
+    track(call(...args));
+
 /** A fresh copy of every module, as a separate bundle of the build has. */
-async function bundle() {
+const bundle = tracked(async () => {
   vi.resetModules();
   const [aerialRoute, buildingsRoute, shell, status] = await Promise.all([
     import("@/app/api/buildings/[id]/aerial/route"),
@@ -33,11 +51,15 @@ async function bundle() {
     import("./demo-status"),
   ]);
   return {
-    aerial: async (id = "F1") =>
-      (await (
-        await aerialRoute.GET(new Request(`http://localhost/api/buildings/${id}/aerial`), { params: Promise.resolve({ id }) })
-      ).json()) as { mode: string; fallback?: Fallback },
-    buildings: async () => (await (await buildingsRoute.GET(new Request("http://localhost/api/buildings"))).json()) as { mode: string; fallback?: Fallback },
+    aerial: tracked(
+      async (id: string = "F1") =>
+        (await (
+          await aerialRoute.GET(new Request(`http://localhost/api/buildings/${id}/aerial`), { params: Promise.resolve({ id }) })
+        ).json()) as { mode: string; fallback?: Fallback },
+    ),
+    buildings: tracked(
+      async () => (await (await buildingsRoute.GET(new Request("http://localhost/api/buildings"))).json()) as { mode: string; fallback?: Fallback },
+    ),
     serverStatus: () => shell.serverStatus(new Set()),
     /** The chip the browser shows for a page AppShell rendered from this bundle. */
     chip: () => {
@@ -47,7 +69,7 @@ async function bundle() {
       return status.statusChip(status.getStatus());
     },
   };
-}
+});
 
 /** A throwaway git repo for `demo:reset` to reset, with its own `.heist/`. */
 function repo(): string {
@@ -79,16 +101,22 @@ beforeEach(() => {
   resetServerSlots();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // A timed-out test's work can start more as it settles: drain until none is left.
+  while (pending.size) await Promise.allSettled(pending);
   rmSync(root, { recursive: true, force: true });
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   resetServerSlots();
-});
+}, 30_000); // the drain can wait on a bundle's imports, as the test above does
 
 describe("the server's breakers, across bundles", () => {
-  it("a Vexcel failure in the aerial route shows in the chip a page renders from another bundle", async () => {
+  // Each new bundle re-imports the routes and the shell: about 0.5 s alone,
+  // 2.4 s pinned to one busy CPU, and past the 5 s default with two gates on
+  // the 2-vCPU VM (#85). 30 s is several times the worst seen; a broken
+  // breaker still fails on its assertions, not on this.
+  it("a Vexcel failure in the aerial route shows in the chip a page renders from another bundle", { timeout: 30_000 }, async () => {
     const pages = await bundle();
     expect(pages.serverStatus().configured.vexcel).toBe("live");
     expect(pages.chip().onFixtures).not.toContain("Vexcel");

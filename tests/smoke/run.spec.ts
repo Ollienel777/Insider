@@ -225,6 +225,11 @@ test("beats 4 to 5: the plan briefed on the Plan screen is the plan on the run",
 });
 
 test("the crew's quiet route plays by keys to a clean exit, then offers the debrief", async ({ page }) => {
+  // It plays the quiet route by keys, then opens the debrief: 1.0 s alone, 4.5 s
+  // with the gate pinned to one CPU, and up to 31 s in a full smoke run on the
+  // loaded 2-vCPU VM, against the 30 s default (#85). 60 s is about twice the
+  // worst seen; a broken step still fails on its own wait, not on this.
+  test.setTimeout(60_000);
   await open(page);
   const pick = async () => {
     const key = await page.locator('[data-testid="choice"][data-kind="pick"]').getAttribute("data-key");

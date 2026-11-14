@@ -103,6 +103,11 @@ test("the entry markers are visible and labelled, and clicking one shows its not
 });
 
 test("every marker stays inside the frame in every view", async ({ page }) => {
+  // It measures every marker in all five views, a cross-fade each: 1.3 s alone,
+  // 3.8 s with the gate pinned to one CPU, and up to 31 s in a full smoke run on
+  // the loaded 2-vCPU VM, against the 30 s default (#85). 60 s is about twice
+  // the worst seen; a broken step still fails on its own wait, not on this.
+  test.setTimeout(60_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, "F4");
   for (let i = 0; i < 5; i++) {

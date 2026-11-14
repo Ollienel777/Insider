@@ -147,7 +147,11 @@ describe("placeLevel on F1 from the cached manifest", () => {
     }
   });
 
-  it("has a quiet route from the dock to the files and back out, the crew's advice (beat 4)", () => {
+  // Places, routes and plays all 24 seeds, which is the claim: 0.6 s alone,
+  // 2.2 s pinned to one busy CPU, past the 5 s default with two gates on the
+  // 2-vCPU VM (#85). Fewer seeds would test less, so it gets a budget: 30 s,
+  // several times the worst seen.
+  it("has a quiet route from the dock to the files and back out, the crew's advice (beat 4)", { timeout: 30_000 }, () => {
     for (const seed of SEEDS) {
       const p = placeF1(seed);
       const route = quietRoute(p);

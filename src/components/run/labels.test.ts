@@ -112,7 +112,11 @@ describe("the board's labels (#68)", () => {
     expect(collisions(drawn(createRun(placed.level), ghost))).toEqual([]);
   });
 
-  it("keeps every label clear of every other at the wow beat, and on every turn of the quiet route", () => {
+  // Lays out and pair-checks every label on 17 frames, the wow beat and each
+  // turn of the quiet route: 0.9 s alone, 4.0 s pinned to one busy CPU, past the 5 s
+  // default with two gates on the 2-vCPU VM (#85). Skipping frames would test
+  // less, so it gets a budget: 30 s, several times the worst seen.
+  it("keeps every label clear of every other at the wow beat, and on every turn of the quiet route", { timeout: 30_000 }, () => {
     const start = createRun(placed.level);
     expect(collisions(drawn(play(start, [{ kind: "move", to: "fl-lobby" }, { kind: "move", to: "dc-west" }])))).toEqual([]);
     // The quiet route the player plays by keys, in and out (tests/smoke/run.spec.ts).

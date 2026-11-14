@@ -43,7 +43,8 @@ test("the demo path: beats 1 to 7 on F1, in fake mode", async ({ page }) => {
   // The walk takes about 25-30 s in the gate, and Playwright's default test
   // timeout is 30 s: with another gate on the 2-vCPU VM it ran out at 31-33 s
   // (#82). Its budget is #25's "under 90 seconds on CI". A broken beat still
-  // fails on that beat's own outcome wait, not on this.
+  // fails on its own line, not on this: on an outcome wait, or on the config's
+  // action or navigation timeout for a click or a goto that hangs (#85).
   test.setTimeout(90_000);
   // Beat 1: the map. Five prepared buildings, three in LA and two in Houston.
   // The rows stream in a hidden copy before React swaps out the skeleton, and a
