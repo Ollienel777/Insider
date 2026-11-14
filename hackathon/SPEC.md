@@ -578,3 +578,84 @@ works through casting.
 | O4 | #128 | feat: compare two setups, the usefulness beat | `area:debrief` | S | the smoke walks the beat in fake mode with the same result every run. Depends on O1, O3, Q9 |
 | O5 | #130 | docs: Owner Mode in the README and Devpost write-up | `area:docs` | S | the user, the practice it replaces and the guardrails. Coordinates with #86 |
 | O6 | #129 | feat: beat the crew and defend modes | `area:run` | S | stretch, first to cut (§9) |
+
+## 14. Live mode and the first-person scan view (proposed)
+
+Epic #98. A second way to play the Run screen, beside the board as it is. It
+changes two things and nothing else: **how a turn starts** (a clock, not only
+a click) and **what the player looks at** (three HUD elements and, on a
+scanned building, the scan itself). The engine, the rules table, the crew, the
+Chief, the Why cards, the replay and Owner Mode are unchanged.
+
+**Why.** Playing the Run screen on 14 November showed three problems. Nothing
+moves until the player clicks. The screen shows everything at once and never
+says what to do next. The board is abstract and silent. There is a data
+reason too: the app reads the Matterport scan and never shows it, so a judge
+scoring CoStar's data use (30%) never sees that layer. In first person the
+scan is the screen.
+
+**The two modes.** A switch on the Run screen, remembered per browser.
+
+- **Tactical** is §2 beat 6's board, unchanged, and the default. The smoke
+  walks it.
+- **Live** adds, in the order it is built:
+  1. **The turn clock.** A turn ends when the player acts, or after
+     `LIVE_TURN_MS` if they don't: the clock then plays a `wait`, or the next
+     `pick` when a pick is in progress. `P` pauses. The clock holds while a
+     Why card is open, while the tab is hidden, and once the run is over.
+     Every clock turn goes through `act`, so the log and the replay stay
+     exact.
+  2. **The play HUD.** An objective line (the goal and the hops left), a
+     danger meter (the alarm level, and who sees or hears the player), and
+     one radio line (the crew's next step, sightings, and the Chief's re-plan
+     as it streams). The Chief's panel, the lens and the legends open on
+     demand.
+  3. **Sound.** Web Audio only, so there are no audio files, and a mute
+     control. Sound plays in Tactical too.
+  4. **The scan view**, on a building with a live scan (§4.5). The Showcase
+     player is the Run view. Each engine node is a scan position, so a hop is
+     a camera move. The page takes the pointer and the keys and drives the
+     camera through the SDK (`Camera.rotate`, and `Sweep.moveTo` with a
+     500 ms travel time), because the player's own steps take 1.5 to 2.8 s,
+     too slow for the clock. Guards, cameras and watched positions are drawn
+     on a layer over the player, placed from the camera pose with
+     `Conversion.worldToScreen` and hidden by the engine's sightlines. A CSS
+     filter gives the scan its after-hours look. The board stays as the
+     minimap, and it is the view whenever the scan does not load.
+
+**Numbers (D12 owns them).** `LIVE_TURN_MS` is 1100. A camera hop takes
+500 ms. When the board is built from a scan, hops longer than about 6 m are
+dropped: a scan's own neighbour lists join most positions of an open room.
+
+**What a spike showed (14 November, localhost, a real scan).** `Sweep.current`
+reports each step. The pose streams at about 55 updates a second. Points
+projected onto the floor land 2 to 13 cm from the scan's own surface at 4 to
+11 m. The embed SDK has no `Scene` namespace, so nothing can be placed inside
+the player as a 3D object. The scan is playable about 11 s after the page
+opens, so the player should start loading on the Plan screen.
+
+**Terms.** §4.5 stands: the scan and everything read from it stay in browser
+memory, and the scan view stores nothing. Whether the sponsor accepts game
+elements drawn over the player, and the scan in the video, is an open
+question for a mentor.
+
+**Demo.** Beat 6 stays on the Tactical board unless the team says go at
+02:00 UTC on 15 November (T7). On a go, the run beat plays in Live on a
+scanned kit building, and the board is its fallback.
+
+**Cuts.** The whole epic is cut before anything in §9. Inside it, first cut
+first: the scan view's polish, the scan view (T4 to T6), the HUD, sound. The
+clock stays behind the switch.
+
+**Backlog.** Filed without `loop-ok` and built in Nelson's session. The loop
+reviews the PRs.
+
+| id | issue | title | area | size | acceptance |
+|---|---|---|---|---|---|
+| T1 | #99 | feat: Live mode and the turn clock | `area:run` | M | Tactical unchanged; in Live a `wait` every `LIVE_TURN_MS` with no input; pause; clock turns in the log; tests under fake timers |
+| T2 | #100 | feat: the play HUD and the radio line | `area:run` | M | three elements in Live, the panels behind Details; `ui-craft` rubric at 1440×900 and 390×844. Depends on T1 |
+| T3 | #101 | feat: sound cues for the run | `area:run` | S | `cuesFor` pure, with a test per cue; no audio files; mute |
+| T4 | to file | feat: the scan session | `area:adapter-matterport` | M | a visible player stays open; each position's floor point; long hops pruned |
+| T5 | to file | feat: the first-person scan view | `area:run` | L | the page owns look and step; the engine stays in step with the camera; board fallback. Depends on T4 |
+| T6 | to file | feat: guards and sight over the scan | `area:run` | M | the overlay tracks the pose; hidden by sightlines; the Why card opens. Depends on T4 |
+| T7 | to file | docs: the Live demo beat and the default mode | `area:docs` | S | the 02:00 decision recorded; the script and the smoke follow it |
