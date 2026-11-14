@@ -8,11 +8,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BatchResult, BatchSummary, FloorGraph, LevelManifest } from "@/domain";
 import type { OwnerSetup } from "@/domain/owner-setup";
-import { summariseBatch, type Rerun } from "@/engine";
+import { summariseBatch } from "@/engine";
 import { placeLevel } from "@/level/placer";
 import { askFix, fixSummaryOf, type FixAnswer } from "./chief-fix";
 import { askStrategies } from "./crew-batch";
-import { playOwnerBatch, rerunOwner } from "./owner-batch";
+import { playOwnerBatch, rerunOwner, type OwnerRerun } from "./owner-batch";
 
 export type OwnerBatch =
   | { status: "idle" }
@@ -34,7 +34,7 @@ export type OwnerFix =
   | { status: "idle" }
   | { status: "asking" }
   | { status: "suggested"; answer: FixAnswer }
-  | { status: "applied"; answer: FixAnswer; rerun: Rerun; ms: number }
+  | { status: "applied"; answer: FixAnswer; rerun: OwnerRerun; ms: number }
   | { status: "error"; message: string };
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));

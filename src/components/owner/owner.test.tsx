@@ -23,6 +23,7 @@ import {
   moveGuard,
   playable,
   problemsOf,
+  setDoor,
   setupFromPlaced,
   setupWithFix,
   startRound,
@@ -391,5 +392,90 @@ describe("the results panel says what the board shows, and who wrote the fix", (
     const html = chief(panel({ fix: { status: "suggested", answer: { fix: recordedFix, recorded: true, source: "template", reason: "timeout" } } }));
     expect(html).toContain("the model didn&#x27;t answer (timeout)");
     expect(html).not.toContain("no model was called");
+  });
+});
+
+describe("the saved fixed setup plays the After count it showed", () => {
+  const before = playOwnerBatch(manifest, floor, starting, answer);
+  // Replays a saved setup as the owner would: stored, read back and played over the same nights.
+  const replay = (setup: OwnerSetup) =>
+    sum(playOwnerBatch(manifest, floor, OwnerSetup.parse(JSON.parse(JSON.stringify(setup))), answer, before.seeds)).escaped;
+  const cases: [string, ChiefFix][] = [
+    ["the recorded camera move", recordedFix],
+    ["retiming G2 by one turn", { change: { kind: "retime-guard", elementId: "G2", byTurns: 1 }, rationale: "" }],
+    ["moving C1 to the freight lobby", { change: { kind: "move-camera", elementId: "C1", to: "freight-lobby" }, rationale: "" }],
+  ];
+  for (const [what, fix] of cases) {
+    it(`${what}: the setup the After batch played is the one saved, and replays to its count`, () => {
+      const rerun = rerunOwner(manifest, floor, starting, before, fix);
+      expect(rerun.dropped).toBeNull();
+      expect(rerun.fixed).not.toBeNull();
+      expect(validateOwnerSetup(rerun.fixed!, floor)).toEqual([]);
+      expect(rerun.fixed!.name).toBe("Generated security, after the fix");
+      expect(replay(rerun.fixed!)).toBe(rerun.after.escaped);
+    });
+  }
+
+  it("a change that doesn't fit saves nothing, and After replays Before", () => {
+    const rerun = rerunOwner(manifest, floor, starting, before, { change: { kind: "move-camera", elementId: "C9", to: "dock-corridor" }, rationale: "" });
+    expect(rerun.dropped).toMatch(/C9/);
+    expect(rerun.fixed).toBeNull();
+    expect(rerun.after.escaped).toBe(rerun.before.escaped);
+  });
+});
+
+describe("edits that change nothing, and closing a round", () => {
+  it("closing a round on its first node adds nothing, and the round still fits", () => {
+    const guard = starting.guards.find((g) => g.round.length > 2)!;
+    expect(extendRound(starting, guard.id, guard.round[0])).toBe(starting);
+    const drawn = startRound(starting, guard.id);
+    const next = floor.edges.find((e) => e.a === guard.post || e.b === guard.post)!;
+    const other = next.a === guard.post ? next.b : next.a;
+    const out = extendRound(extendRound(drawn, guard.id, other), guard.id, guard.post);
+    expect(out.guards.find((g) => g.id === guard.id)!.round).toEqual([guard.post, other]);
+    expect(problemsOf(out, floor).all.filter((e) => e.code === "round-broken")).toEqual([]);
+  });
+
+  it("a door set to the lock it has, or a guard moved onto its own post, stays as generated", () => {
+    const [door, lock] = Object.entries(starting.doors)[0];
+    expect(setDoor(starting, door, lock)).toBe(starting);
+    expect(starting.generated!.doors).toContain(door);
+    const guard = starting.guards[0];
+    expect(moveGuard(starting, guard.id, guard.post)).toBe(starting);
+    expect(starting.generated!.guards).toContain(guard.id);
+    // A real change still takes the element off the list.
+    expect(setDoor(starting, door, lock === "key" ? "badge" : "key").generated!.doors).not.toContain(door);
+  });
+
+  it("an open door set open again changes nothing", () => {
+    const open = floor.edges.find((e) => e.door?.lockable && !starting.doors[e.door.id])?.door;
+    if (open) expect(setDoor(starting, open.id, "open")).toBe(starting);
+  });
+});
+
+describe("a fix that didn't fit", () => {
+  const result = playOwnerBatch(manifest, floor, starting, answer);
+  const rerun = rerunOwner(manifest, floor, starting, result, { change: { kind: "move-camera", elementId: "C9", to: "dock-corridor" }, rationale: "" });
+  const batch: OwnerBatch = { status: "done", key: "generated", setup: starting, result, summary: sum(result), recorded: true, ms: 1 };
+  it("shows the batch unchanged, never an After side, and says why", () => {
+    const fix: OwnerFix = { status: "applied", answer: { fix: recordedFix, recorded: true, source: "recorded" }, rerun, ms: 1 };
+    const html = renderToStaticMarkup(
+      <BatchPanel
+        batch={batch}
+        fix={fix}
+        zones={ownerZones(manifest, floor)}
+        generated={generated}
+        setupName={null}
+        stale={false}
+        fixedSaved={null}
+        side="after"
+        onEdit={noop}
+        onRetry={noop}
+        onOpenFixed={noop}
+      />,
+    );
+    expect(html).toContain('data-testid="owner-fix-dropped"');
+    expect(html).toMatch(/data-testid="owner-route" data-side=""/);
+    expect(html).not.toContain("After the fix:");
   });
 });

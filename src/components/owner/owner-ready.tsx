@@ -4,16 +4,14 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { BatchSummary, FloorGraph, LevelManifest } from "@/domain";
 import type { OwnerSetup } from "@/domain/owner-setup";
-import { applyFix } from "@/engine";
 import { deleteOwnerSetup, loadOwnerSetups, saveOwnerSetup } from "@/components/run/owner-setup-store";
 import { BuildingScreen } from "@/components/shell/building-screen";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
 import { BatchPanel, type Side } from "./batch-panel";
-import { toEngineFix } from "./chief-fix";
-import { OwnerBoard, type Selection } from "./owner-board";
 import { ownerZones } from "./owner-batch";
+import { OwnerBoard, type Selection } from "./owner-board";
 import {
   addCamera,
   addGuard,
@@ -23,7 +21,6 @@ import {
   playable,
   problemsOf,
   setupFromPlaced,
-  setupWithFix,
   toggleDesk,
   updateCamera,
 } from "./owner-edit";
@@ -81,18 +78,11 @@ export function OwnerReady({
     () => (batch.status === "done" ? (boardOf(manifest, floor, batch.setup, OWNER_SEED) ?? generated) : null),
     [batch, manifest, floor, generated],
   );
+  // After the fix, the board draws the setup the After batch played: the one "Save the fixed setup" stores.
   const batchBoard = useMemo<PlacedLevel | null>(() => {
     if (!batchBefore) return null;
-    const before = batchBefore;
-    if (fix.status !== "applied" || side === "before" || fix.rerun.dropped) return before;
-    const engineFix = toEngineFix(fix.answer.fix, ownerZones(manifest, floor));
-    const applied = applyFix(before.level, engineFix.change);
-    if (!applied.ok) return before;
-    const cameras = before.cameras.map((c) => {
-      const spec = applied.level.cameras?.find((s) => s.id === c.id);
-      return spec ? { ...c, cover: spec.cover } : c;
-    });
-    return { ...before, level: applied.level, cameras };
+    if (fix.status !== "applied" || side === "before" || fix.rerun.dropped || !fix.rerun.fixed) return batchBefore;
+    return boardOf(manifest, floor, fix.rerun.fixed, OWNER_SEED) ?? batchBefore;
   }, [batchBefore, fix, side, manifest, floor]);
 
   // An edit that changed nothing (the same object back) leaves the draft as it was.
@@ -133,12 +123,10 @@ export function OwnerReady({
     setView("results");
   };
 
+  // Saves exactly the setup the After batch played, so replaying it gives the After count shown.
   const saveFixed = () => {
-    if (batch.status !== "done" || fix.status !== "applied" || fix.rerun.dropped) return;
-    const base = batch.setup;
-    const engineFix = toEngineFix(fix.answer.fix, ownerZones(manifest, floor));
-    const name = `${base.name}, after the fix`.slice(0, 80);
-    const fixed = setupWithFix(base, engineFix, generated.level, name);
+    if (batch.status !== "done" || fix.status !== "applied" || fix.rerun.dropped || !fix.rerun.fixed) return;
+    const fixed = fix.rerun.fixed;
     const ok = saveOwnerSetup(fixed);
     if (ok) setSaved(loadOwnerSetups(manifest.buildingId));
     setFixedSaved({ key: batch.key, ok, setup: fixed });
