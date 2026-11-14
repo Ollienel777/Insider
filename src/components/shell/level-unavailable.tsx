@@ -7,7 +7,7 @@ interface LevelUnavailableProps {
   name: string;
   /** The screen that could not open: its visual's name and the label above the heading. */
   step: "Plan" | "Run" | "Debrief";
-  /** The schema's message, when the cached files failed their check. */
+  /** The error's message: a schema failure, bad JSON or a read error. */
   detail?: string;
 }
 
@@ -27,7 +27,7 @@ export function LevelUnavailable({ buildingId, name, step, detail }: LevelUnavai
           </p>
           <h1 className="text-xl font-semibold text-text-1">{`${name}'s cached level failed its check`}</h1>
           <p className="text-base text-text-2">
-            The cached manifest or trace in data/levels/ does not match the schema, so there is no board to show. Rebuild it,
+            The cached manifest or trace in data/levels/ could not be read, or does not match the schema, so there is no board to show. Rebuild it,
             then reload.
           </p>
           <code className="w-fit rounded-sm border border-border bg-surface-2 px-3 py-2 font-mono text-sm text-text-1">
@@ -38,7 +38,7 @@ export function LevelUnavailable({ buildingId, name, step, detail }: LevelUnavai
       }
       panel={
         <div className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold text-text-1">{step}</h2>
+          <h2 className="text-lg font-semibold text-text-1">Rebuild the level</h2>
           <p className="text-sm text-text-2">Nothing to play on this building until its level is rebuilt.</p>
         </div>
       }
