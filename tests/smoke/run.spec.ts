@@ -93,8 +93,9 @@ test("pressing a neighbour's number moves the player, and then the guards", asyn
 
 test("the cones show the nodes each camera and guard covers this turn", async ({ page }) => {
   await open(page);
-  await expect(page.locator('[data-testid="cone"]')).toHaveCount(6);
-  for (const id of ["C1", "C2", "G1", "G2", "G3", "G4"]) {
+  // The two cameras, the four guards and K1, the night cleaner in the occupied suites (#95).
+  await expect(page.locator('[data-testid="cone"]')).toHaveCount(7);
+  for (const id of ["C1", "C2", "G1", "G2", "G3", "G4", "K1"]) {
     await expect(page.locator(`[data-testid="cone"][data-watcher="${id}"]`)).toHaveCount(1);
   }
   // C2 sweeps the two halves of its cover: dc-mid on turn 0, dc-west on turn 1.
