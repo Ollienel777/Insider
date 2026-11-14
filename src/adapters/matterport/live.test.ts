@@ -612,3 +612,57 @@ describe("the Inside view waits out a flight it did not start", () => {
     }
   });
 });
+
+describe("review fixes: the Inside view lets go, and a lost move does not freeze it", () => {
+  it("gives up on the player at once when the caller aborts, and disconnects one that opens after", async () => {
+    const disconnect = vi.fn();
+    let open: (sdk: InsideSdk) => void = () => {};
+    let inner: AbortSignal | undefined;
+    const connect = vi.fn<InsideConnect>((_p, _m, _k, signal) => {
+      inner = signal;
+      return new Promise((resolve) => (open = resolve));
+    });
+    const stop = new AbortController();
+    const view = connectInsideView({} as HTMLElement, "m", "k", connect, 20_000, stop.signal);
+    const settled = expect(view).rejects.toThrow("given up on");
+    stop.abort();
+    await settled;
+    expect(inner?.aborted).toBe(true);
+    open({ Sweep: { moveTo: vi.fn() }, disconnect });
+    await Promise.resolve();
+    expect(disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts a move that never settles as refused, and still flies to the next sweep", async () => {
+    vi.useFakeTimers();
+    try {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const moveTo = vi
+        .fn<InsideSdk["Sweep"]["moveTo"]>()
+        .mockImplementationOnce(() => new Promise(() => {}))
+        .mockResolvedValue(undefined);
+      const view = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ Sweep: { moveTo }, disconnect() {} }));
+      void view.moveTo("A");
+      await vi.advanceTimersByTimeAsync(10);
+      const next = view.moveTo("B");
+      await vi.advanceTimersByTimeAsync(6_000);
+      await next;
+      expect(moveTo.mock.calls.map(([id]) => id)).toEqual(["A", "B"]);
+      warn.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("review fixes: a number never repeats a name another room already has", () => {
+  it("skips a scan's own numbered name when numbering repeats", () => {
+    const room = (id: string, label: string, x: number, y: number) => ({ id, label, rect: { x, y, w: 3, h: 3 } });
+    const named = withFictionLabels([room("own", "Office 1", 20, 0), room("a", "", 0, 0), room("b", "", 10, 0)]);
+    expect(named.map((r) => [r.id, r.label])).toEqual([
+      ["own", "Office 1"],
+      ["a", "Office 2"],
+      ["b", "Office 3"],
+    ]);
+  });
+});

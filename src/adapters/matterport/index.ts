@@ -198,11 +198,11 @@ export function getMatterport(heistMode?: string): MatterportSelection {
 export function insideViewFor(
   building: Pick<Building, "id" | "matterportModelId">,
   heistMode?: string,
-): ((parent: HTMLElement) => Promise<InsideView>) | null {
+): ((parent: HTMLElement, signal?: AbortSignal) => Promise<InsideView>) | null {
   if (getMatterport(heistMode).mode !== "live") return null;
   const env = matterportEnv();
   const sdkKey = env.NEXT_PUBLIC_MATTERPORT_SDK_KEY;
   const modelId = scanModelId(building, env);
   if (!sdkKey || !modelId) return null;
-  return (parent) => connectInsideView(parent, modelId, sdkKey);
+  return (parent, signal) => connectInsideView(parent, modelId, sdkKey, undefined, undefined, signal);
 }

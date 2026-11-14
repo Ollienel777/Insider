@@ -59,15 +59,22 @@ export function within<T>(
   what: string,
   ms: number,
   release: (late: T) => void,
+  outer?: AbortSignal,
 ): Promise<T> {
   const abort = new AbortController();
   return new Promise((resolve, reject) => {
     let late = false;
-    const timer = setTimeout(() => {
+    const giveUp = (error: Error) => {
+      if (late) return;
       late = true;
+      clearTimeout(timer);
       abort.abort();
-      reject(new MatterportTimeoutError(what, ms));
-    }, ms);
+      reject(error);
+    };
+    const timer = setTimeout(() => giveUp(new MatterportTimeoutError(what, ms)), ms);
+    // The caller stopped waiting (the panel closed): give up now, as at the deadline.
+    if (outer?.aborted) giveUp(new Error(`Matterport: ${what} was given up on`));
+    else outer?.addEventListener("abort", () => giveUp(new Error(`Matterport: ${what} was given up on`)), { once: true });
     start(abort.signal).then(
       (value) => {
         if (late) return release(value);
@@ -313,6 +320,19 @@ const TRANSITION_ACTIVE = /transition.*(active|in progress)/i;
 const BUSY_RETRIES = 5;
 const BUSY_WAIT_MS = 400;
 
+const FLY_MS = 600;
+/** A move that has not settled by now counts as refused, so a lost flight cannot freeze the view. */
+const MOVE_MS = FLY_MS + 5_000;
+
+/** `promise`, or a rejection once `ms` pass without it settling. */
+function settleWithin<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`the move did not settle within ${ms} ms`)), ms);
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+
 /** How long the Inside view's player may take to connect before the panel says it failed. */
 export const INSIDE_CONNECT_MS = 20_000;
 
@@ -350,12 +370,14 @@ export async function connectInsideView(
   sdkKey: string,
   connect: InsideConnect = connectVisiblePlayer,
   connectMs: number = INSIDE_CONNECT_MS,
+  signal?: AbortSignal,
 ): Promise<InsideView> {
   const sdk = await within(
-    (signal) => connect(parent, modelId, sdkKey, signal),
+    (inner) => connect(parent, modelId, sdkKey, inner),
     "the Inside view's player",
     connectMs,
     (late) => late.disconnect?.(),
+    signal,
   );
   let flying: Promise<void> | null = null;
   let target: string | null = null;
@@ -370,7 +392,7 @@ export async function connectInsideView(
       while (!gone && target !== null && target !== at) {
         const sweepId = target;
         try {
-          await sdk.Sweep.moveTo(sweepId, { transition: FLY, transitionTime: 600 });
+          await settleWithin(sdk.Sweep.moveTo(sweepId, { transition: FLY, transitionTime: FLY_MS }), MOVE_MS);
           at = sweepId;
           busy = 0;
         } catch (error) {

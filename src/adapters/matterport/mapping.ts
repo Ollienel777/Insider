@@ -343,13 +343,22 @@ export function withFictionLabels(rooms: Room[]): Room[] {
     named.set(label, [...(named.get(label) ?? []), room]);
   }
   const labels = new Map<string, string>();
+  // Every name that stands as it is, so a number never repeats one (a scan's own "Office 1").
+  const used = new Set([...named].filter(([, group]) => group.length === 1).map(([name]) => name));
   for (const [name, group] of named) {
     if (group.length === 1) {
       labels.set(group[0].id, name);
       continue;
     }
     const ordered = [...group].sort((p, q) => p.rect.y - q.rect.y || p.rect.x - q.rect.x || (p.id < q.id ? -1 : 1));
-    ordered.forEach((room, i) => labels.set(room.id, `${name} ${i + 1}`));
+    let n = 0;
+    for (const room of ordered) {
+      let label: string;
+      do label = `${name} ${++n}`;
+      while (used.has(label));
+      used.add(label);
+      labels.set(room.id, label);
+    }
   }
   return rooms.map((room) => ({ ...room, label: labels.get(room.id)! }));
 }

@@ -395,6 +395,26 @@ describe("placeLevel on a floor from a live scan (no entry tags, no named record
     const farthest = Math.max(...f.nodes.map((n) => far(n.id)));
     expect(far(p.entries[0].nodeId)).toBe(farthest);
     expect(new Set(p.entries.map((e) => e.nodeId)).size).toBe(p.entries.length);
+    // Only the nodes the entries took count as ways in: the guards still get rounds clear of them.
+    expect(p.guards).toHaveLength(placeF1().guards.length);
+    expect(p.unplaced.filter((u) => u.elementRole.startsWith("guard:"))).toEqual([]);
+    const exits = new Set(p.entries.map((e) => e.nodeId));
+    for (const g of p.guards) expect(g.patrol.some((id) => exits.has(id)), g.id).toBe(false);
+    expect(p.cameras.flatMap((c) => c.cover).some((id) => exits.has(id))).toBe(false);
+  });
+
+  it("keeps guard rounds and camera covers off the nodes the entries took, wherever they land", () => {
+    const f = floor();
+    for (const n of f.nodes) n.tags = [];
+    for (const node of f.nodes) {
+      const p = placeLevel(manifest(), structuredClone(f), SEED, { entries: { roof: node.id } });
+      const exits = new Set(p.entries.map((e) => e.nodeId));
+      for (const g of p.guards) {
+        if (g.post) continue;
+        expect(g.patrol.filter((id) => exits.has(id)), `${node.id}: ${g.id}`).toEqual([]);
+      }
+      expect(p.cameras.flatMap((c) => c.cover).filter((id) => exits.has(id)), node.id).toEqual([]);
+    }
   });
 
   it("puts the objective in the free room farthest from the start when no room's name fits it", () => {
@@ -402,8 +422,36 @@ describe("placeLevel on a floor from a live scan (no entry tags, no named record
     for (const r of f.rooms) if (r.id === "records-room") r.label = "Storage";
     const p = placeLevel(manifest(), f, SEED, {});
     const objectiveRoom = f.nodes.find((n) => n.id === p.level.objective)!.roomId;
-    expect(objectiveRoom).not.toBe(f.nodes.find((n) => n.id === p.entries[0].nodeId)!.roomId);
+    for (const e of p.entries) expect(objectiveRoom).not.toBe(f.nodes.find((n) => n.id === e.nodeId)!.roomId);
     expect(placeLevel(manifest(), f, SEED, {}).level.objective).toBe(p.level.objective);
+  });
+
+  it("posts guards on a small scanned floor, where no node is two moves clear of the start and the entries", () => {
+    // Ten sweeps in a ring over three rooms, no tags: the shape of a small live scan, where every
+    // node is within two moves of the start or an entry.
+    const N = 10;
+    const ids = Array.from({ length: N }, (_, i) => `s${String(i).padStart(2, "0")}`);
+    const at = (i: number) => ({ x: 10 * Math.cos((i / N) * 2 * Math.PI), y: 10 * Math.sin((i / N) * 2 * Math.PI) });
+    const roomOf = (i: number) => ["north", "south", "west"][Math.floor(i / 4)];
+    const small: FloorGraph = {
+      nodes: ids.map((id, i) => ({ id, ...at(i), roomId: roomOf(i), tags: [] })),
+      edges: ids.map((id, i) => {
+        const next = ids[(i + 1) % N];
+        return roomOf(i) === roomOf((i + 1) % N) ? { a: id, b: next } : { a: id, b: next, door: { id: `door:${id}`, lockable: false } };
+      }),
+      rooms: ["north", "south", "west"].map((id, k) => ({ id, label: `Open Floor ${k + 1}`, rect: { x: -10, y: -10, w: 20, h: 20 } })),
+      sightlines: Object.fromEntries(ids.map((id, i) => [id, ids.filter((o, j) => o !== id && roomOf(j) === roomOf(i))])),
+      source: "matterport",
+    };
+    const p = placeLevel(manifest(), small, SEED, {});
+    expect(p.guards.length).toBeGreaterThan(0);
+    const exits = new Set(p.entries.map((e) => e.nodeId));
+    for (const g of p.guards) {
+      expect(g.patrol.some((id) => exits.has(id)), g.id).toBe(false);
+      expect(g.patrol.includes(p.entries[0].nodeId), g.id).toBe(false);
+    }
+    const run = createRun(p.level);
+    expect(run.status).toBe("playing");
   });
 
   it("leaves F1's own placement as it was", () => {

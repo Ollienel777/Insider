@@ -43,14 +43,17 @@ export interface InsideSession {
  * without a DOM.
  */
 export function openInsideSession(
-  open: (parent: HTMLElement) => Promise<InsideView>,
+  open: (parent: HTMLElement, signal?: AbortSignal) => Promise<InsideView>,
   parent: HTMLElement,
   onStatus: (status: InsideStatus) => void,
 ): InsideSession {
   let view: InsideView | null = null;
   let closed = false;
   let target: string | null = null;
-  open(parent).then(
+  // Closing while the player still opens takes it out of the page at once, so a
+  // remount never leaves a stale player stacked over the live one.
+  const stop = new AbortController();
+  open(parent, stop.signal).then(
     (opened) => {
       if (closed) return opened.disconnect();
       view = opened;
@@ -70,6 +73,7 @@ export function openInsideSession(
     },
     close() {
       closed = true;
+      stop.abort();
       view?.disconnect();
       view = null;
     },
@@ -81,7 +85,7 @@ export function InsideViewPanel({
   sweepId,
 }: {
   /** Opens the player in the element given; from `insideViewFor`. */
-  open: (parent: HTMLElement) => Promise<InsideView>;
+  open: (parent: HTMLElement, signal?: AbortSignal) => Promise<InsideView>;
   /** The player's node on the board: a sweep id of the scan. */
   sweepId: string;
 }) {

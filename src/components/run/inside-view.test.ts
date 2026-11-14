@@ -66,6 +66,15 @@ describe("the Inside view panel's session", () => {
     expect(onStatus).not.toHaveBeenCalled();
   });
 
+  it("aborts the opening when the panel closes, so the player leaves the page at once", () => {
+    const o = opener();
+    const session = openInsideSession(o.open, parent, () => {});
+    const signal = (o.open.mock.calls[0] as unknown as [HTMLElement, AbortSignal])[1];
+    expect(signal.aborted).toBe(false);
+    session.close();
+    expect(signal.aborted).toBe(true);
+  });
+
   it("says failed when the player does not open", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const o = opener();
