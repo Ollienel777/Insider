@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { modeChip, serviceModes } from "@/lib/mode";
-import { findBuildingStub } from "./building-stub";
+import { FIXTURE_BUILDINGS } from "@/adapters/costar/fake";
 import { LayerDot } from "./layer-dot";
 import { ModeChip, modeTooltip } from "./mode-chip";
 import { StepRailView } from "./step-rail-view";
@@ -61,7 +61,7 @@ describe("TopBar", () => {
   const chip = modeChip(serviceModes({}));
 
   it("shows the wordmark, the building and city, and the mode chip", () => {
-    const building = findBuildingStub("F1")!;
+    const building = FIXTURE_BUILDINGS.find((b) => b.id === "F1")!;
     const html = renderToStaticMarkup(<TopBar chip={chip} building={building} />);
     expect(html).toContain("h-14");
     expect(text(html)).toContain("Heist Anywhere");

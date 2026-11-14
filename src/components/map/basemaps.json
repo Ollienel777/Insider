@@ -1,0 +1,16 @@
+{
+  "LA": {
+    "file": "/basemaps/la.webp",
+    "width": 2080,
+    "height": 1664,
+    "bounds": { "west": -118.289, "east": -118.239, "south": 34.03853, "north": 34.07167 },
+    "detail": "street"
+  },
+  "Houston": {
+    "file": "/basemaps/houston.webp",
+    "width": 2080,
+    "height": 1664,
+    "bounds": { "west": -95.6575, "east": -95.2735, "south": 29.61325, "north": 29.87997 },
+    "detail": "metro"
+  }
+}

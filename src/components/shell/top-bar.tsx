@@ -1,12 +1,13 @@
 import Link from "next/link";
 import type { ModeChip as ModeChipState } from "@/lib/mode";
-import type { BuildingStub } from "./building-stub";
+import type { Building } from "@/domain";
+import { cityName } from "@/lib/cities";
 import { ModeChip } from "./mode-chip";
 
 interface TopBarProps {
   chip: ModeChipState;
   /** The building being played, shown centre; absent on the map. */
-  building?: Pick<BuildingStub, "name" | "city">;
+  building?: Pick<Building, "name" | "city">;
 }
 
 /** The 56px top bar: wordmark left, building centre, mode chip right (DESIGN.md, Layout). */
@@ -27,7 +28,7 @@ export function TopBar({ chip, building }: TopBarProps) {
           <>
             <span className="font-medium text-text-1">{building.name}</span>{" "}
             <span className="px-1 text-text-3 max-md:hidden">·</span>{" "}
-            <span className="text-text-2 max-md:hidden">{building.city}</span>
+            <span className="text-text-2 max-md:hidden">{cityName(building.city)}</span>
           </>
         ) : null}
       </div>

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BuildingScreen } from "@/components/shell/building-screen";
-import { findBuildingStub } from "@/components/shell/building-stub";
+import { findBuilding } from "@/lib/building";
+import { cityName } from "@/lib/cities";
 import { isStepSegment, nextStep, STEPS } from "@/components/shell/steps";
 import { buttonVariants } from "@/components/ui/button";
 
@@ -20,7 +21,7 @@ const PRIMARY_ACTION: Record<string, string> = {
 
 export default async function StepPlaceholder({ params }: { params: Promise<{ id: string; step: string }> }) {
   const { id, step } = await params;
-  const building = findBuildingStub(id);
+  const building = await findBuilding(id);
   if (!building || !isStepSegment(step)) notFound();
   const label = STEPS.find((s) => s.segment === step)!.label;
   const next = nextStep(step);
@@ -39,7 +40,7 @@ export default async function StepPlaceholder({ params }: { params: Promise<{ id
           <p className="label-caps text-text-3">{label}</p>
           <h1 className="text-2xl font-semibold text-text-1">{building.name}</h1>
           <p className="text-sm text-text-2">
-            {building.neighbourhood}, {building.city}
+            {building.neighbourhood}, {cityName(building.city)}
           </p>
           <dl className="mt-4 grid grid-cols-3 gap-2">
             {[

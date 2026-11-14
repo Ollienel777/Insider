@@ -1,14 +1,14 @@
 import type { ReactNode } from "react";
 import { connection } from "next/server";
 import { modeChip, serviceModes } from "@/lib/mode";
-import type { BuildingStub } from "./building-stub";
+import type { Building } from "@/domain";
 import { StepRail } from "./step-rail";
 import { TopBar } from "./top-bar";
 
 interface AppShellProps {
   children: ReactNode;
   /** On building screens: the building, which also turns the step rail on. */
-  building?: BuildingStub;
+  building?: Pick<Building, "id" | "name" | "city">;
 }
 
 /** The viewport-high frame every screen sits in: top bar, step rail on building screens, then content. */
