@@ -31,7 +31,7 @@ test("Debrief to Owner Mode: 50 attempts, the Chief's fix, before and after", as
     "Made-up setup on a fixture building. Real setups stay on this device.",
   );
   await expect(page.getByTestId("owner-setup")).toHaveAttribute("data-state", "untouched");
-  await expect(page.getByTestId("owner-setup-counts")).toHaveText("4 guards · 2 cameras · 2 locked doors · 0 desks");
+  await expect(page.getByTestId("owner-setup-counts")).toHaveText("4 guards · 1 cleaner · 2 cameras · 2 locked doors · 0 desks");
   await expect(page.getByTestId("owner-problems-none")).toBeVisible();
   await expect(page.getByTestId("owner-saved-empty")).toBeVisible();
   await shot(page, "setup");
@@ -127,7 +127,7 @@ test("the prepared pair: 7 of 50, C2 moved, 1 of 50, then the two side by side",
   await expect(page.getByTestId("owner-setup-state")).toHaveText("Made up");
   await expect(page.getByTestId("owner-made-up")).toBeVisible();
   await expect(page.getByTestId("owner-board-caption")).toHaveText("Demo: night shift");
-  await expect(page.getByTestId("owner-setup-counts")).toHaveText("4 guards · 2 cameras · 2 locked doors · 1 desk");
+  await expect(page.getByTestId("owner-setup-counts")).toHaveText("4 guards · 0 cleaners · 2 cameras · 2 locked doors · 1 desk");
   await page.getByTestId("owner-run").click();
   await expect(page.getByTestId("owner-count")).toHaveAttribute("data-escaped", "7");
   await expect(page.getByTestId("owner-count")).toHaveAttribute("data-total", "50");
@@ -224,4 +224,25 @@ test("after the Chief's fix, the route and the detector card follow the side the
   await expect(page.getByTestId("owner-detector")).toHaveAttribute("data-side", "before");
   const ringed = await page.getByTestId("owner-detector-ring").getAttribute("data-detector");
   await expect(page.getByTestId("owner-detector")).toHaveAttribute("data-detector", ringed!);
+});
+
+test("the editor adds a night cleaner and moves it", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/b/F1/owner");
+  await expect(page.getByTestId("owner-board")).toBeVisible();
+
+  await page.getByTestId("owner-tool").locator('[data-value="cleaner"]').click();
+  await page.locator('[data-owner-node="o-west"]').click({ force: true });
+  // F1 already has a generated cleaner, K1 (#41): the owner's is the next id.
+  await expect(page.getByTestId("owner-inspector")).toHaveAttribute("data-selected", "cleaner:K2");
+  await expect(page.getByTestId("owner-setup-counts")).toContainText("2 cleaners");
+  await expect(page.getByTestId("owner-selected-ring")).toHaveAttribute("data-node", "o-west");
+
+  // Move it to a corridor node: it stays there, and the setup still plays.
+  await page.getByTestId("owner-move").click();
+  await page.locator('[data-owner-node="mc-2"]').click({ force: true });
+  await expect(page.getByTestId("owner-selected-ring")).toHaveAttribute("data-node", "mc-2");
+  await expect(page.getByTestId("owner-problems-none")).toBeVisible();
+  await expect(page.getByTestId("owner-run")).toBeEnabled();
+  await shot(page, "editor-cleaner");
 });

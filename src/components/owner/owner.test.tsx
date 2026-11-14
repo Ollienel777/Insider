@@ -20,19 +20,25 @@ import { demoSetups, isDemoSetup } from "./demo-setups";
 import { compareOwnerSetups, ownerZones, playOwnerBatch, rerunOwner } from "./owner-batch";
 import { boardCaption, pairCaption, setupKey } from "./owner-ready";
 import {
+  addCleaner,
   addGuard,
   boardOf,
+  clearCleanerRound,
+  extendCleanerRound,
   extendRound,
   levelForSetup,
+  moveCleaner,
   moveGuard,
   playable,
   problemsOf,
+  removeCleaner,
   removeCamera,
   setDoor,
   setTempo,
   setupChanges,
   setupFromPlaced,
   setupWithFix,
+  startCleanerRound,
   startRound,
   toggleDesk,
   updateCamera,
@@ -95,7 +101,8 @@ describe("the editor's states", () => {
     expect(html).toContain("Starting point");
     expect(html).toContain('data-testid="owner-problems-none"');
     expect(html).toContain('data-testid="owner-saved-empty"');
-    expect(html).toContain("4 guards · 2 cameras · 2 locked doors · 0 desks");
+    // Main's placer (#41) gives F1 a generated night cleaner, which the starting point carries.
+    expect(html).toContain("4 guards · 1 cleaner · 2 cameras · 2 locked doors · 0 desks");
   });
 
   it("editing and saved, and a save the browser refused", () => {
@@ -126,6 +133,101 @@ describe("the editor's states", () => {
     const html = editor({ setup: off, pristine: false, state: "editing" }, { kind: "camera", id: "C3" });
     expect(html).toContain("Camera C3 is mounted over &quot;nowhere&quot;, which is not a node of this floor.");
     expect(playable(off, floor).cameras.map((c) => c.id)).toEqual(["C1", "C2"]);
+  });
+});
+
+describe("night cleaners in the editor", () => {
+  const busy = { ...manifest, zones: manifest.zones.filter((z) => z.id !== "quiet-2210") };
+  const busyStart = setupFromPlaced(placeLevel(busy, floor, 1));
+  // F1's generated cleaner (#41) taken off, so the editor's own is K1 and the only one.
+  const bare = removeCleaner(starting, starting.cleaners![0].id);
+  const withCleaner = addCleaner(bare, "o-west");
+
+  it("adds one on a node, standing there, with a fresh id", () => {
+    expect(withCleaner.id).toBe("K1");
+    expect(withCleaner.setup.cleaners).toEqual([{ id: "K1", round: ["o-west"] }]);
+    expect(addCleaner(withCleaner.setup, "o-north").id).toBe("K2");
+    expect(validateOwnerSetup(withCleaner.setup, floor)).toEqual([]);
+    expect(applyOwnerSetup(manifest, floor, withCleaner.setup, 1).ok).toBe(true);
+  });
+
+  it("moves one: on its round it walks on from there, off it it stays on the node", () => {
+    const round = extendCleanerRound(extendCleanerRound(startCleanerRound(withCleaner.setup, "K1"), "K1", "o-north"), "K1", "o-south");
+    expect(round.cleaners![0].round).toEqual(["o-west", "o-north", "o-south"]);
+    expect(validateOwnerSetup(round, floor)).toEqual([]);
+    expect(moveCleaner(round, "K1", "o-north").cleaners![0].round).toEqual(["o-north", "o-south", "o-west"]);
+    expect(moveCleaner(round, "K1", "mc-2").cleaners![0].round).toEqual(["mc-2"]);
+    // The last node again takes it off; staying put keeps the first.
+    expect(extendCleanerRound(round, "K1", "o-south").cleaners![0].round).toEqual(["o-west", "o-north"]);
+    expect(clearCleanerRound(round, "K1").cleaners![0].round).toEqual(["o-west"]);
+  });
+
+  it("an edited or removed generated cleaner comes off the generated list, and the rest still play as generated", () => {
+    const id = busyStart.cleaners![0].id;
+    expect(busyStart.generated?.cleaners).toEqual([id]);
+    const moved = moveCleaner(busyStart, id, "mc-2");
+    expect(moved.generated?.cleaners).toEqual([]);
+    expect(moved.generated?.guards).toEqual(busyStart.generated?.guards);
+    const out = applyOwnerSetup(busy, floor, moved, 1);
+    expect(out.ok && out.placed.cleaners[0]).toMatchObject({ id, patrol: ["mc-2"], provenance: [{ layer: "owner" }] });
+    const removed = removeCleaner(busyStart, id);
+    expect(removed.cleaners).toEqual([]);
+    expect(removed.generated?.cleaners).toEqual([]);
+  });
+
+  it("round-trips through a save, and plays the same batch after it", () => {
+    const moved = moveCleaner(busyStart, busyStart.cleaners![0].id, "mc-2");
+    const stored = OwnerSetup.parse(JSON.parse(JSON.stringify(moved)));
+    expect(stored).toEqual(moved);
+    const levelOf = (s: OwnerSetup, seed: number) => {
+      const out = applyOwnerSetup(busy, floor, s, seed);
+      if (!out.ok) throw new Error(out.errors.map((e) => e.reason).join("; "));
+      return out.placed.level;
+    };
+    const play = (s: OwnerSetup) => runBatch({ buildingId: "F1", strategies, levelFor: (seed) => levelOf(s, seed) });
+    expect(play(stored)).toEqual(play(moved));
+  });
+
+  it("a setup with no cleaners field stays without one until a cleaner is added", () => {
+    const older: OwnerSetup = { ...starting };
+    delete older.cleaners;
+    delete older.generated;
+    expect(moveGuard(older, "G1", "mc-1")).not.toHaveProperty("cleaners");
+    expect(playable(older, floor)).not.toHaveProperty("cleaners");
+  });
+
+  it("none selected: the counts name the cleaners, and the tool can add one", () => {
+    const html = editor({ setup: withCleaner.setup, pristine: false, state: "editing" });
+    expect(html).toContain("4 guards · 1 cleaner · 2 cameras");
+    expect(html).toContain('data-value="cleaner"');
+    expect(editor({ setup: starting, pristine: true, state: "untouched" }, null, "cleaner")).toContain("Click a node to start a night cleaner there.");
+  });
+
+  it("selected: the inspect line, move, draw a round and remove", () => {
+    const html = editor({ setup: withCleaner.setup, pristine: false, state: "editing" }, { kind: "cleaner", id: "K1" });
+    expect(html).toContain('data-selected="cleaner:K1"');
+    expect(html).toMatch(/Night cleaner, cleaning the [^<]+ all night/);
+    expect(html).toContain('data-testid="owner-move"');
+    expect(html).toContain('data-testid="owner-draw-round"');
+    expect(html).toContain("Remove K1");
+    expect(html).not.toContain('data-testid="owner-tempo"');
+  });
+
+  it("error: a broken round or no node, the reason inline and in the list, and the board keeps it where it starts", () => {
+    const broken = extendCleanerRound(startCleanerRound(withCleaner.setup, "K1"), "K1", "mc-4");
+    const html = editor({ setup: broken, pristine: false, state: "editing" }, { kind: "cleaner", id: "K1" }, "round");
+    expect(html).toContain('data-state="error"');
+    expect(html).toContain('data-testid="owner-inline-problem"');
+    expect(html).toContain("Cleaner K1&#x27;s round is not a connected loop: &quot;o-west&quot; and &quot;mc-4&quot; are not neighbours.");
+    expect(html).toContain('data-role="cleaner:K1"');
+    expect(html).toMatch(/data-testid="owner-save"[^>]*disabled/);
+    expect(playable(broken, floor).cleaners).toEqual([{ id: "K1", round: ["o-west"] }]);
+
+    const nowhere = { ...starting, cleaners: [{ id: "K1", round: [] }] };
+    expect(validateOwnerSetup(nowhere, floor)).toEqual([{ code: "cleaner-off-floor", elementRole: "cleaner:K1", reason: "Cleaner K1 stands on no node" }]);
+    expect(playable(nowhere, floor).cleaners).toEqual([]);
+    const off = { ...starting, cleaners: [{ id: "K1", round: ["roof-x"] }] };
+    expect(playable(off, floor).cleaners).toEqual([]);
   });
 });
 
@@ -426,7 +528,7 @@ describe("the prepared demo pair", () => {
     const loaded = editor({ setup: night, pristine: false, state: "preset" });
     expect(loaded).toContain('data-state="preset"');
     expect(loaded).toContain("A made-up setup prepared for the demo, not any real building&#x27;s.");
-    expect(loaded).toContain("4 guards · 2 cameras · 2 locked doors · 1 desk");
+    expect(loaded).toContain("4 guards · 0 cleaners · 2 cameras · 2 locked doors · 1 desk");
   });
 });
 
