@@ -5,7 +5,10 @@
 import { z } from "zod";
 import { Id, Text } from "./common";
 
-/** When the crew moves off the entry: at once, or once a round has passed. */
+/**
+ * When the crew moves off the entry: at once, or after a short seeded pause
+ * (0-2 turns) with a deeper peek and more patience. Not a full guard round.
+ */
 export const StrategyTiming = z.enum(["immediate", "wait-for-round"]);
 export type StrategyTiming = z.infer<typeof StrategyTiming>;
 

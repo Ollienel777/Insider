@@ -1,7 +1,21 @@
 {
   "buildingId": "F1",
-  "note": "Recorded Security Chief turns for Halvorsen Tower, matched by src/agents/chief/recorded.ts on the alarm transition. The first turn whose `when` matches answers; a transition with none gets the deterministic template (template.ts). Zone ids are the ones the Run screen sends for the F1 fixture floor: the cached manifest's zones and entries (data/levels/F1.romaine-1974.json; these replies are kept per building, so any mission on F1 reuses them), and the floor's other rooms by id. Written for beat 5: the judge walks straight into C2's half of the dock corridor on turn 1.",
+  "note": "Recorded Security Chief turns for Halvorsen Tower, matched by src/agents/chief/recorded.ts on the alarm transition. The first turn whose `when` matches answers; a transition with none gets the deterministic template (template.ts). Zone ids are the ones the Run screen sends for the F1 fixture floor: the cached manifest's zones and entries (data/levels/F1.romaine-1974.json; these replies are kept per building, so any mission on F1 reuses them), and the floor's other rooms by id. Written for beat 5: the judge walks straight into C2's half of the dock corridor on turn 1. A turn with `postedAt` answers a later run, when the Run screen's history posted a guard near that zone: it comes first, so a later run reaches it and a first run never does.",
   "turns": [
+    {
+      "id": "c2-trip-second-run",
+      "when": { "from": "calm", "to": "alert", "lastKnownZone": "dock-corridor", "postedAt": "dock-N" },
+      "orders": {
+        "orders": [
+          { "guardId": "G1", "intent": "converge", "zoneId": "dock-corridor" },
+          { "guardId": "G4", "intent": "converge", "zoneId": "dock-corridor" },
+          { "guardId": "G2", "intent": "hold", "zoneId": "objective" },
+          { "guardId": "G3", "intent": "block", "zoneId": "dock-N" }
+        ],
+        "lockZones": ["objective"],
+        "rationale": "They used the loading dock before. G3 starts in the secure room off the dock corridor tonight. C2 has them in the dock corridor. G1 and G4 converge. G2 holds the records room door. G3 closes the loading dock behind them. Lock the records room."
+      }
+    },
     {
       "id": "c2-trip",
       "when": { "from": "calm", "to": "alert", "lastKnownZone": "dock-corridor" },

@@ -1,0 +1,37 @@
+{
+  "buildingId": "F2",
+  "note": "Recorded Security Chief turns for Figueroa Exchange, matched by src/agents/chief/recorded.ts on the alarm transition. The first turn whose `when` matches answers; a transition with none gets the deterministic template (template.ts). Zone ids are the ones the Run screen sends for the F2 fixture floor: the cached manifest's zones and entries (data/levels/F2.sunset-1986.json; these replies are kept per building, so any mission on F2 reuses them), and the floor's other rooms by id. Written for the straight walk in: C2 sees the player in the west corridor on turn 1.",
+  "turns": [
+    {
+      "id": "c2-west-corridor",
+      "when": {
+        "from": "calm",
+        "to": "alert",
+        "lastKnownZone": "west-corridor"
+      },
+      "orders": {
+        "orders": [
+          {
+            "guardId": "G2",
+            "intent": "converge",
+            "zoneId": "west-corridor"
+          },
+          {
+            "guardId": "G3",
+            "intent": "converge",
+            "zoneId": "west-corridor"
+          },
+          {
+            "guardId": "G1",
+            "intent": "block",
+            "zoneId": "dock-W"
+          }
+        ],
+        "lockZones": [
+          "objective"
+        ],
+        "rationale": "C2 has them in the west corridor. G2, from the mail room, and G3, from the elevator lobby, converge on it. G1 leaves the mail room too and blocks the loading dock. Lock the vault."
+      }
+    }
+  ]
+}

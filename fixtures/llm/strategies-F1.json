@@ -4,14 +4,14 @@
   "strategies": [
     {
       "id": "dock-patient",
-      "name": "Dock, after the round",
+      "name": "Dock, patient",
       "entryId": "dock-N",
       "exitId": "dock-N",
       "timing": "wait-for-round",
       "route": "shortest",
       "via": [],
       "risk": "low",
-      "rationale": "Freight lift up, hold until the round passes, then straight down the dock corridor and back."
+      "rationale": "Freight lift up, pause at the dock to watch the corridor, then straight down the dock corridor and back."
     },
     {
       "id": "dock-fast",

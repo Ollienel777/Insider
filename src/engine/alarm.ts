@@ -11,7 +11,11 @@
 //   Lockdown does not decay.
 // - On reaching Alert or Lockdown, every guard is sent converging on the node
 //   the player was last seen on, at once, before any Chief order; on
-//   decaying to Calm, every guard goes back to its patrol.
+//   decaying to Calm, every guard goes back to its patrol (dropping any Chief
+//   order) and the doors the Chief locked unlock.
+// - At Alert or Lockdown, noise or a cleaner's sighting changes nothing: the
+//   last-known zone and node stay those of the last sighting, so it cannot
+//   hide a re-sighting at Lockdown from the Chief.
 // - At Alert or Lockdown, every later sighting moves the converging guards on
 //   to the node the player was seen on, so they close on the player instead
 //   of stopping at the edge of a zone.
@@ -77,6 +81,7 @@ export function detect(run: RunState, detection: Detection, turn: number, marks:
     marks.sighted = true;
     marks.held = true;
   } else {
+    if (isAlert(run.alarm)) return run;
     next = Math.max(now, rank("suspicious"));
     if (now <= rank("suspicious")) marks.held = true;
   }
@@ -123,13 +128,15 @@ export function setAlarm(run: RunState, alarm: AlarmState): RunState {
 /** Moves the alarm to `to`, logs the event, and applies what the new level does to the guards. */
 function transition(run: RunState, to: AlarmState, turn: number, cause: AlarmCause): RunState {
   const event: AlarmEvent = { turn, from: run.alarm, to, lastKnownZone: run.lastKnown?.zoneId ?? null, cause };
-  let { guards } = run;
+  let { guards, locked, chiefLocks } = run;
   const { lastKnown, lastSeen } = run;
   if (rank(to) > rank(run.alarm) && isAlert(to) && lastKnown && lastSeen) {
     const target = convergeOn(lastKnown.zoneId, lastSeen);
     guards = guards.map((g) => ({ ...g, target }));
   } else if (to === "calm") {
     guards = guards.map((g) => ({ ...g, target: null }));
+    locked = locked.filter((id) => !chiefLocks.includes(id));
+    chiefLocks = [];
   }
-  return { ...run, alarm: to, alarmQuiet: 0, guards, alarmEvents: [...run.alarmEvents, event] };
+  return { ...run, alarm: to, alarmQuiet: 0, guards, locked, chiefLocks, alarmEvents: [...run.alarmEvents, event] };
 }

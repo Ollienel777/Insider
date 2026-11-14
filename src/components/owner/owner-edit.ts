@@ -115,6 +115,16 @@ export function boardOf(manifest: LevelManifest, floor: FloorGraph, setup: Owner
     zones: placed.zones,
     objective: placed.objective,
     unplaced: placed.unplaced,
+    // The placer's watch names one of its own guards: it holds only while that guard is still on the board.
+    watch: placed.watch && placed.guards.some((g) => g.id === placed.watch!.guardId) ? placed.watch : null,
+    cleaners: placed.cleaners.map((c) => ({
+      id: c.id,
+      zoneId: c.zoneId,
+      roomId: c.roomId,
+      patrol: c.patrol,
+      rule: c.rule,
+      provenance: dataRows(c.provenance),
+    })),
     guards: placed.guards.map((g) => ({
       id: g.id,
       roomId: g.roomId,
