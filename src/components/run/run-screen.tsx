@@ -5,6 +5,8 @@ import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getMatterport } from "@/adapters/matterport";
 import { BuildingScreen } from "@/components/shell/building-screen";
+import { buildingHref } from "@/lib/building-href";
+import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -68,6 +70,7 @@ export function RunScreen({
   const [run, setRun] = useState<RunState | null>(null);
   const [status, setStatus] = useState<string>("");
   const [lens, toggleLens] = useLayerLens();
+  const missionId = useMissionId();
 
   // The Security Chief: one call per alarm event, answered between turns.
   // Nothing waits on it: the engine already has the guards converging.
@@ -95,14 +98,14 @@ export function RunScreen({
     const fresh = createRun(level);
     latestRun.current = fresh;
     setRun(fresh);
-    saveRunLog(runLogOf(fresh, chiefSources.current));
-  }, []);
+    saveRunLog(runLogOf(fresh, chiefSources.current), undefined, missionId);
+  }, [missionId]);
 
   useEffect(() => {
     if (!manifest) return;
     let live = true;
     // Until the board has its fresh run, there is no run on it: the last one's log goes now.
-    clearRunLog(building.id);
+    clearRunLog(building.id, undefined, missionId);
     const matterport = getMatterport(heistMode);
     matterport.adapter
       .loadFloor(building)
@@ -125,7 +128,7 @@ export function RunScreen({
     return () => {
       live = false;
     };
-  }, [building, manifest, heistMode, attempt, startRun]);
+  }, [building, manifest, heistMode, attempt, startRun, missionId]);
 
   const load: Load = manifest ? loaded : { status: "no-floor" };
   const placed = load.status === "ready" ? load.placed : null;
@@ -134,9 +137,9 @@ export function RunScreen({
   // The crew's plan from the Plan screen, read after mount (storage is the browser's).
   const [crewPlan, setCrewPlan] = useState<StoredCrewPlan | null>(null);
   useEffect(() => {
-    const timer = setTimeout(() => setCrewPlan(loadCrewPlan(building.id)), 0);
+    const timer = setTimeout(() => setCrewPlan(loadCrewPlan(building.id, undefined, missionId)), 0);
     return () => clearTimeout(timer);
-  }, [building.id]);
+  }, [building.id, missionId]);
 
   useEffect(() => {
     latestRun.current = run;
@@ -152,7 +155,7 @@ export function RunScreen({
       latestSeq.current = seq;
       let request: ReturnType<typeof chiefRequest>;
       try {
-        request = chiefRequest(building.id, placed, zones, state, state.alarmEvents[seq]);
+        request = chiefRequest(building.id, placed, zones, state, state.alarmEvents[seq], missionId);
       } catch (error) {
         // A board the request can't carry: the panel says so, and the turn (and its log) goes on.
         setChief({ status: "error", seq, message: error instanceof Error ? error.message : String(error) });
@@ -171,7 +174,7 @@ export function RunScreen({
             // still shows it, marked late, but no guard moves on it. The log keeps it as a late
             // decision, so the Debrief lists every re-plan the player watched.
             lateChief.current = { turn: current.turn, chief: orders, chiefSource: answer.source };
-            saveRunLog(runLogOf(current, chiefSources.current, lateChief.current));
+            saveRunLog(runLogOf(current, chiefSources.current, lateChief.current), undefined, missionId);
             setChief({ status: "ready", seq, answer, applied: result, late: true });
             return;
           }
@@ -180,7 +183,7 @@ export function RunScreen({
           chiefSources.current.set(result.run.turn, answer.source);
           latestRun.current = result.run;
           setRun(result.run);
-          saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current));
+          saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current), undefined, missionId);
           setChief({ status: "ready", seq, answer, applied: result });
         },
         (error: unknown) => {
@@ -189,7 +192,7 @@ export function RunScreen({
         },
       );
     },
-    [placed, zones, building.id],
+    [placed, zones, building.id, missionId],
   );
 
   const play = useCallback(
@@ -204,9 +207,9 @@ export function RunScreen({
       setRun(result.run);
       setStatus(describeTurn(placed, run, result.run));
       if (result.run.alarmEvents.length > run.alarmEvents.length) callChief(result.run, result.run.alarmEvents.length - 1);
-      saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current));
+      saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current), undefined, missionId);
     },
-    [placed, run, callChief],
+    [placed, run, callChief, missionId],
   );
 
   const retryChief = useCallback(() => {
@@ -354,7 +357,7 @@ export function RunScreen({
       action={
         over ? (
           <Link
-            href={`/b/${encodeURIComponent(building.id)}/debrief`}
+            href={buildingHref(building.id, "debrief", missionId)}
             className={buttonVariants({ variant: "primary" })}
           >
             See the debrief

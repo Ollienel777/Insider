@@ -1,4 +1,4 @@
-// The run board's model and render on the cached F1 level (data/levels/F1.json)
+// The run board's model and render on the cached F1 level (data/levels/F1.romaine-1974.json)
 // placed on the F1 fixture floor, as the Run screen places it.
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -7,7 +7,7 @@ import { LevelManifest, type AlarmState } from "@/domain";
 import { act, createRun, moveGuards, type Action, type RunState } from "@/engine";
 import { sightingsAt } from "@/engine/vision";
 import { placeLevel } from "@/level/placer";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import { ALARM_STYLE, AlarmBanner } from "./alarm-banner";
 import {
   actionForKey,

@@ -1,6 +1,8 @@
-// The cached levels in data/levels/ (SPEC §4.4): `<id>.json` is the
-// manifest and `<id>.trace.json` the trace. `npm run build:levels` writes
-// them; GET /api/levels/[id] serves them, so beat 3 never waits on a model.
+// The cached levels in data/levels/ (SPEC §4.4), keyed by building and
+// mission (SPEC §4.1, #119): `<buildingId>.<missionId>.json` is the manifest
+// and `<buildingId>.<missionId>.trace.json` the trace. `npm run build:levels`
+// writes them; GET /api/levels/[id]?m=… serves them, so beat 4 never waits on
+// a model.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { BuildTrace, LevelManifest } from "@/domain";
@@ -12,18 +14,28 @@ export interface CachedLevel {
   trace: BuildTrace;
 }
 
-/** Building ids are plain names: anything else could walk out of the directory. */
+/** Building and mission ids are plain names: anything else could walk out of the directory. */
 export const isLevelId = (id: string): boolean => /^[A-Za-z0-9_-]+$/.test(id);
 
-const files = (dir: string, id: string) => ({
-  manifest: path.join(dir, `${id}.json`),
-  trace: path.join(dir, `${id}.trace.json`),
+/** The file stem of a level: neither id holds a dot, so the pair reads back unambiguously. */
+export const levelKey = (buildingId: string, missionId: string): string => `${buildingId}.${missionId}`;
+
+const files = (dir: string, buildingId: string, missionId: string) => ({
+  manifest: path.join(dir, `${levelKey(buildingId, missionId)}.json`),
+  trace: path.join(dir, `${levelKey(buildingId, missionId)}.trace.json`),
 });
 
-/** The cached level, `null` when there is none, or an error when a file fails its schema. */
-export async function readCachedLevel(id: string, dir: string = LEVELS_DIR): Promise<CachedLevel | null> {
-  if (!isLevelId(id)) return null;
-  const paths = files(dir, id);
+/**
+ * The cached level of `buildingId` built for `missionId`, `null` when there
+ * is none, or an error when a file fails its schema or holds another pair.
+ */
+export async function readCachedLevel(
+  buildingId: string,
+  missionId: string,
+  dir: string = LEVELS_DIR,
+): Promise<CachedLevel | null> {
+  if (!isLevelId(buildingId) || !isLevelId(missionId)) return null;
+  const paths = files(dir, buildingId, missionId);
   let raw: [string, string];
   try {
     raw = await Promise.all([readFile(paths.manifest, "utf8"), readFile(paths.trace, "utf8")]);
@@ -31,18 +43,20 @@ export async function readCachedLevel(id: string, dir: string = LEVELS_DIR): Pro
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
   }
-  return {
-    manifest: LevelManifest.parse(JSON.parse(raw[0])),
-    trace: BuildTrace.parse(JSON.parse(raw[1])),
-  };
+  const manifest = LevelManifest.parse(JSON.parse(raw[0]));
+  if (manifest.buildingId !== buildingId || manifest.missionId !== missionId) {
+    throw new Error(`${paths.manifest} holds ${levelKey(manifest.buildingId, manifest.missionId)}`);
+  }
+  return { manifest, trace: BuildTrace.parse(JSON.parse(raw[1])) };
 }
 
-/** Writes a level's manifest and trace; returns the two paths. */
+/** Writes a level's manifest and trace under its building and mission; returns the two paths. */
 export async function writeCachedLevel(level: CachedLevel, dir: string = LEVELS_DIR): Promise<string[]> {
-  const id = level.manifest.buildingId;
-  if (!isLevelId(id)) throw new Error(`invalid building id "${id}"`);
+  const { buildingId, missionId } = level.manifest;
+  if (!isLevelId(buildingId)) throw new Error(`invalid building id "${buildingId}"`);
+  if (!isLevelId(missionId)) throw new Error(`invalid mission id "${missionId}"`);
   await mkdir(dir, { recursive: true });
-  const paths = files(dir, id);
+  const paths = files(dir, buildingId, missionId);
   const text = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
   await writeFile(paths.manifest, text(LevelManifest.parse(level.manifest)));
   await writeFile(paths.trace, text(BuildTrace.parse(level.trace)));

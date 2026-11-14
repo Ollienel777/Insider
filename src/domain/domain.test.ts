@@ -4,6 +4,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 import {
+  BRIEFING_MAX_WORDS,
+  briefingProblems,
+  briefingWords,
   Aerial,
   Building,
   BuildTrace,
@@ -112,6 +115,7 @@ const yearBuilt = {
 
 const manifest = {
   buildingId: "F1",
+  missionId: "romaine-1974",
   securityProfile: {
     era: "analog",
     guardCount: 4,
@@ -138,7 +142,7 @@ const manifest = {
     },
   ],
   entries: [{ id: "dock", kind: "dock", label: "Loading dock" }],
-  mission: { ...mission, briefing: "Floor 22 is the quietest night in the building." },
+  mission: { ...mission, briefing: "Floor 22 is the quietest night in the building. Its security is game fiction." },
   provenance: [
     yearBuilt,
     {
@@ -321,6 +325,26 @@ describe("LevelManifest", () => {
   it("rejects duplicate zone ids", () => {
     const zones = [manifest.zones[0], manifest.zones[0]];
     expect(LevelManifest.safeParse({ ...manifest, zones }).success).toBe(false);
+  });
+
+  it("is keyed by building and mission: missionId must be the mission's own id", () => {
+    expect(LevelManifest.safeParse({ ...manifest, missionId: "sunset-1986" }).success).toBe(false);
+    const { missionId: _omit, ...noMission } = manifest;
+    void _omit;
+    expect(LevelManifest.safeParse(noMission).success).toBe(false);
+  });
+
+  it("counts the briefing's words and requires the game-fiction line (#119)", () => {
+    const withBriefing = (briefing: string) => ({ ...manifest, mission: { ...manifest.mission, briefing } });
+    const fiction = " The security is game fiction.";
+    const words = (n: number) => Array.from({ length: n }, () => "word").join(" ");
+    expect(briefingWords("Floor 22 — dark, quiet; in by the dock.")).toBe(8);
+    expect(LevelManifest.safeParse(withBriefing(words(BRIEFING_MAX_WORDS - 5) + fiction)).success).toBe(true);
+    const long = LevelManifest.safeParse(withBriefing(words(BRIEFING_MAX_WORDS) + fiction));
+    expect(long.success).toBe(false);
+    expect(long.error?.issues[0].message).toBe(`the briefing is ${BRIEFING_MAX_WORDS + 5} words; the limit is ${BRIEFING_MAX_WORDS}`);
+    expect(LevelManifest.safeParse(withBriefing("In by the dock, out by the roof.")).success).toBe(false);
+    expect(briefingProblems("All of it is game-fiction security.")).toEqual([]);
   });
 });
 

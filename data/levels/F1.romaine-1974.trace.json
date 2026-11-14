@@ -1,7 +1,7 @@
 {
   "buildingId": "F1",
-  "recordedAt": "2026-11-14T04:03:10.265Z",
-  "model": "scripted (builder-F1), no LLM ran",
+  "recordedAt": "2026-11-14T04:34:41.008Z",
+  "model": "scripted (builder-F1-romaine-1974), no LLM ran",
   "liveData": false,
   "subagents": [
     "general-purpose",
@@ -10,38 +10,38 @@
   ],
   "events": [
     {
-      "atMs": 59,
+      "atMs": 60,
       "kind": "todo",
       "agent": "level-builder",
       "label": "Read F1's CoStar record and Vexcel aerial, and derive its security",
       "status": "in_progress"
     },
     {
-      "atMs": 59,
+      "atMs": 60,
       "kind": "todo",
       "agent": "level-builder",
-      "label": "Pick the mission for its city and era, and write the briefing",
+      "label": "Write the briefing for mission romaine-1974",
       "status": "pending"
     },
     {
-      "atMs": 59,
+      "atMs": 60,
       "kind": "todo",
       "agent": "level-builder",
       "label": "Write the level manifest",
       "status": "pending"
     },
     {
-      "atMs": 69,
+      "atMs": 72,
       "kind": "subagent",
       "agent": "data-analyst",
       "label": "Read building F1's CoStar record, available space and aerial entries, then derive its security profile with the rules table.",
       "status": "completed",
-      "durationMs": 37,
+      "durationMs": 33,
       "input": "Read building F1's CoStar record, available space and aerial entries, then derive its security profile with the rules table.",
       "output": "Built 1974 (before 1980): Analog era, key locks pickable in 2 turns, analog CCTV that sweeps, 2 cameras. Class A: 4 guards on tight rounds. Floor 22 has the most available area, suites 2202-2210, so the level is staged there and those suites are quiet zones; the rest of the floor is crowded. Entries from the aerial: loading dock and roof hatch first, then the garage ramp, the main lobby (with a desk guard) and the stair B exit."
     },
     {
-      "atMs": 80,
+      "atMs": 83,
       "kind": "tool",
       "agent": "data-analyst",
       "label": "get_building",
@@ -51,7 +51,7 @@
       "output": "{\n  \"id\": \"F1\",\n  \"name\": \"Halvorsen Tower\",\n  \"city\": \"LA\",\n  \"neighbourhood\": \"Bunker Hill\",\n  \"lat\": 34.05226,\n  \"lng\": -118.25287,\n  \"yearBuilt\": 1974,\n  \"buildingClass\": \"A\",\n  \"stories\": 42,\n  \"rbaSf\": 1018437,\n  \"typicalFloorSf\": 24850,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  },\n  \"source\": \"fixture\",\n  \"availableSuites\": 13\n}"
     },
     {
-      "atMs": 81,
+      "atMs": 83,
       "kind": "tool",
       "agent": "data-analyst",
       "label": "get_available_space",
@@ -61,7 +61,7 @@
       "output": "[\n  {\n    \"floor\": 8,\n    \"suite\": \"810\",\n    \"sf\": 2618\n  },\n  {\n    \"floor\": 15,\n    \"suite\": \"1504\",\n    \"sf\": 1947\n  },\n  {\n    \"floor\": 22,\n    \"suite\": \"2202\",\n    \"sf\": 3412\n  },\n  {\n    \"floor\": 22,\n    \"suite\": \"2203\",\n    \"sf\": 2187\n  },\n  {\n    \"floor\": 22,\n    \"suite\": \"2204\",\n    \"sf\": 1946\n  },\n  {\n    \"floor\": 22,\n    \"suite\": \"2205\",\n    \"sf\": 2764\n  },\n  {\n    \"floor\": 22,\n    \"suite\": \"2206\",\n    \"sf\": 1518\n  },\n  {\n    \"floor\": 22,\n    \"suite\": \"2207\",\n    \"sf\": 3095\n  },\n  {\n    \"floor\": 22,\n    \"suite\": \"2208\",\n    \"sf\": 2231\n  },\n  {\n    \"floor\": 22,\n    \"suite\": \"2209\",\n    \"sf\": 1872\n  },\n  {\n    \"floor\": 22,\n    \"suite\": \"2210\",\n    \"sf\": 4316\n  },\n  {\n    \"floor\": 31,\n    \"suite\": \"3120\",\n    \"sf\": 5203\n  },\n  {\n    \"floor\": 37,\n    \"suite\": \"3702\",\n    \"sf\": 3861\n  }\n]"
     },
     {
-      "atMs": 81,
+      "atMs": 84,
       "kind": "tool",
       "agent": "data-analyst",
       "label": "get_aerial_entries",
@@ -71,58 +71,58 @@
       "output": "{\n  \"source\": \"fixture\",\n  \"heightM\": 160,\n  \"entries\": [\n    {\n      \"id\": \"dock-N\",\n      \"kind\": \"dock\",\n      \"label\": \"Loading dock\",\n      \"view\": \"N\",\n      \"note\": \"North face, off the service alley: the only truck-height door. Deliveries stop at 6 pm and the bay goes dark.\"\n    },\n    {\n      \"id\": \"garage-E\",\n      \"kind\": \"garage\",\n      \"label\": \"Garage ramp\",\n      \"view\": \"E\",\n      \"note\": \"East face: the ramp down to three levels of parking under the plaza. The gate arm lifts for any badged car.\"\n    },\n    {\n      \"id\": \"lobby-S\",\n      \"kind\": \"lobby\",\n      \"label\": \"Main lobby\",\n      \"view\": \"S\",\n      \"note\": \"South face, on the plaza: revolving doors, a desk staffed around the clock, turnstiles to the lift banks.\"\n    },\n    {\n      \"id\": \"exit-W\",\n      \"kind\": \"service\",\n      \"label\": \"Stair B exit\",\n      \"view\": \"W\",\n      \"note\": \"West face, onto Hope Street: a fire exit from stair B. Alarmed, and it opens outward only.\"\n    },\n    {\n      \"id\": \"roof\",\n      \"kind\": \"roof\",\n      \"label\": \"Roof hatch\",\n      \"view\": \"ortho\",\n      \"note\": \"Beside the cooling towers. The hatch drops into the stair A core above the 42nd floor.\"\n    }\n  ]\n}"
     },
     {
-      "atMs": 92,
+      "atMs": 90,
       "kind": "tool",
       "agent": "data-analyst",
       "label": "derive_security_profile",
       "status": "completed",
-      "durationMs": 8,
+      "durationMs": 9,
       "input": "{\n  \"buildingId\": \"F1\"\n}",
       "output": "{\n  \"securityProfile\": {\n    \"era\": \"analog\",\n    \"guardCount\": 4,\n    \"patrolTempo\": 1,\n    \"cameraKind\": \"analog-sweep\",\n    \"cameraCount\": 2,\n    \"lockKind\": \"key\"\n  },\n  \"stagingFloor\": 22,\n  \"zones\": [\n    {\n      \"id\": \"quiet-2202\",\n      \"name\": \"Suite 2202 (vacant)\",\n      \"role\": \"quiet\",\n      \"rule\": \"Available suite: dark, unpatrolled, sound carries 1 node further\"\n    },\n    {\n      \"id\": \"quiet-2203\",\n      \"name\": \"Suite 2203 (vacant)\",\n      \"role\": \"quiet\",\n      \"rule\": \"Available suite: dark, unpatrolled, sound carries 1 node further\"\n    },\n    {\n      \"id\": \"quiet-2204\",\n      \"name\": \"Suite 2204 (vacant)\",\n      \"role\": \"quiet\",\n      \"rule\": \"Available suite: dark, unpatrolled, sound carries 1 node further\"\n    },\n    {\n      \"id\": \"quiet-2205\",\n      \"name\": \"Suite 2205 (vacant)\",\n      \"role\": \"quiet\",\n      \"rule\": \"Available suite: dark, unpatrolled, sound carries 1 node further\"\n    },\n    {\n      \"id\": \"quiet-2206\",\n      \"name\": \"Suite 2206 (vacant)\",\n      \"role\": \"quiet\",\n      \"rule\": \"Available suite: dark, unpatrolled, sound carries 1 node further\"\n    },\n    {\n      \"id\": \"quiet-2207\",\n      \"name\": \"Suite 2207 (vacant)\",\n      \"role\": \"quiet\",\n      \"rule\": \"Available suite: dark, unpatrolled, sound carries 1 node further\"\n    },\n    {\n      \"id\": \"quiet-2208\",\n      \"name\": \"Suite 2208 (vacant)\",\n      \"role\": \"quiet\",\n      \"rule\": \"Available suite: dark, unpatrolled, sound carries 1 node further\"\n    },\n    {\n      \"id\": \"quiet-2209\",\n      \"name\": \"Suite 2209 (vacant)\",\n      \"role\": \"quiet\",\n      \"rule\": \"Available suite: dark, unpatrolled, sound carries 1 node further\"\n    },\n    {\n      \"id\": \"quiet-2210\",\n      \"name\": \"Suite 2210 (vacant)\",\n      \"role\": \"quiet\",\n      \"rule\": \"Available suite: dark, unpatrolled, sound carries 1 node further\"\n    },\n    {\n      \"id\": \"crowded-22\",\n      \"name\": \"Occupied floor 22\",\n      \"role\": \"crowded\",\n      \"rule\": \"Occupied space: night cleaners raise Suspicious if they see you\"\n … [5165 more characters not recorded]"
     },
     {
-      "atMs": 111,
+      "atMs": 110,
       "kind": "todo",
       "agent": "level-builder",
       "label": "Read F1's CoStar record and Vexcel aerial, and derive its security",
       "status": "completed"
     },
     {
-      "atMs": 111,
+      "atMs": 110,
       "kind": "todo",
       "agent": "level-builder",
-      "label": "Pick the mission for its city and era, and write the briefing",
+      "label": "Write the briefing for mission romaine-1974",
       "status": "in_progress"
     },
     {
-      "atMs": 111,
+      "atMs": 110,
       "kind": "todo",
       "agent": "level-builder",
       "label": "Write the level manifest",
       "status": "pending"
     },
     {
-      "atMs": 112,
+      "atMs": 110,
       "kind": "subagent",
       "agent": "game-master",
-      "label": "Building F1, Halvorsen Tower, LA, built 1974. Analog era: key locks, sweeping analog CCTV, 2 cameras. Class A: 4 guards on tight rounds. Staged on floor 22, quiet suites 2202-2210. Entries: loading dock, roof hatch, garage ramp, main lobby, stair B exit. Pick the mission and write the briefing.",
+      "label": "Building F1, Halvorsen Tower, LA, built 1974. Analog era: key locks, sweeping analog CCTV, 2 cameras. Class A: 4 guards on tight rounds. Staged on floor 22, quiet suites 2202-2210. Entries: loading dock, roof hatch, garage ramp, main lobby, stair B exit. Mission romaine-1974: write its briefing.",
       "status": "completed",
-      "durationMs": 12,
-      "input": "Building F1, Halvorsen Tower, LA, built 1974. Analog era: key locks, sweeping analog CCTV, 2 cameras. Class A: 4 guards on tight rounds. Staged on floor 22, quiet suites 2202-2210. Entries: loading dock, roof hatch, garage ramp, main lobby, stair B exit. Pick the mission and write the briefing.",
-      "output": "Mission: romaine-1974, The Romaine Street Papers. It fits a 1974 analog building. Objective zone: Records room, take the files, then reach an exit. Briefing: Halvorsen Tower, Bunker Hill, a 1974 tower and the security to match: key locks, analog cameras that sweep, four guards on tight rounds. Floor 22 is mostly vacant, so suites 2202 to 2210 are dark and quiet tonight. Come in through the loading dock on the north face after deliveries stop, take the files from the records room, and leave the way you came or by the roof hatch. Nobody gets hurt and nothing leaves but paper. The security here is game fiction, drawn from the building's class and era."
+      "durationMs": 14,
+      "input": "Building F1, Halvorsen Tower, LA, built 1974. Analog era: key locks, sweeping analog CCTV, 2 cameras. Class A: 4 guards on tight rounds. Staged on floor 22, quiet suites 2202-2210. Entries: loading dock, roof hatch, garage ramp, main lobby, stair B exit. Mission romaine-1974: write its briefing.",
+      "output": "Mission: romaine-1974, The Romaine Street Papers, staged in a 1974 analog building. Objective zone: Records room, take the files, then reach an exit. Briefing: Halvorsen Tower, Bunker Hill, a 1974 tower and the security to match: key locks, analog cameras that sweep, four guards on tight rounds. Floor 22 is mostly vacant, so suites 2202 to 2210 are dark and quiet tonight. Come in through the loading dock on the north face after deliveries stop, take the files from the records room, and leave the way you came or by the roof hatch. Nobody gets hurt and nothing leaves but paper. The security here is game fiction, drawn from the building's class and era."
     },
     {
       "atMs": 120,
       "kind": "tool",
       "agent": "game-master",
-      "label": "list_missions",
+      "label": "get_mission",
       "status": "completed",
       "durationMs": 0,
-      "input": "{\n  \"city\": \"LA\"\n}",
-      "output": "[\n  {\n    \"id\": \"romaine-1974\",\n    \"city\": \"LA\",\n    \"type\": \"heist\",\n    \"title\": \"The Romaine Street Papers\",\n    \"inspiredBy\": {\n      \"event\": \"The Summa Corporation burglary, 7000 Romaine St, Hollywood\",\n      \"date\": \"June 5, 1974\",\n      \"sourceUrl\": \"https://www.cia.gov/stories/story/the-exposing-of-project-azorian\"\n    },\n    \"objective\": \"Take the files from the records room\",\n    \"exitCondition\": \"Leave by any entry with the files before the alarm reaches Lockdown\"\n  }\n]"
+      "input": "{\n  \"missionId\": \"romaine-1974\"\n}",
+      "output": "{\n  \"id\": \"romaine-1974\",\n  \"city\": \"LA\",\n  \"type\": \"heist\",\n  \"title\": \"The Romaine Street Papers\",\n  \"inspiredBy\": {\n    \"event\": \"The Summa Corporation burglary, 7000 Romaine St, Hollywood\",\n    \"date\": \"June 5, 1974\",\n    \"sourceUrl\": \"https://www.cia.gov/stories/story/the-exposing-of-project-azorian\"\n  },\n  \"objective\": \"Take the files from the records room\",\n  \"exitCondition\": \"Leave by any entry with the files before the alarm reaches Lockdown\"\n}"
     },
     {
-      "atMs": 128,
+      "atMs": 132,
       "kind": "tool",
       "agent": "level-builder",
       "label": "write_manifest",
@@ -132,21 +132,21 @@
       "output": "Manifest written for F1: 12 zones, 5 entries, 31 provenance entries, mission romaine-1974."
     },
     {
-      "atMs": 136,
+      "atMs": 141,
       "kind": "todo",
       "agent": "level-builder",
       "label": "Read F1's CoStar record and Vexcel aerial, and derive its security",
       "status": "completed"
     },
     {
-      "atMs": 136,
+      "atMs": 141,
       "kind": "todo",
       "agent": "level-builder",
-      "label": "Pick the mission for its city and era, and write the briefing",
+      "label": "Write the briefing for mission romaine-1974",
       "status": "completed"
     },
     {
-      "atMs": 136,
+      "atMs": 141,
       "kind": "todo",
       "agent": "level-builder",
       "label": "Write the level manifest",

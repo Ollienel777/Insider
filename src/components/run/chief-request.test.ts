@@ -7,7 +7,7 @@ import { ChiefRequest } from "@/agents/chief/request";
 import { LevelManifest } from "@/domain";
 import { act, createRun, type Action, type RunState } from "@/engine";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import { chiefRequest, chiefZones, toEngineOrders } from "./chief-request";
 import { RUN_SEED } from "./run-screen";
 

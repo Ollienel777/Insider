@@ -8,7 +8,7 @@ import { F1_DEMO, FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { LevelManifest, type Provenance } from "@/domain";
 import { applyChiefOrders, createRun } from "@/engine";
 import { placeLevel } from "@/level/placer";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import { BoardView } from "./board-view";
 import { frameOf } from "./iso";
 import { RUN_SEED } from "./run-screen";

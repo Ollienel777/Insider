@@ -8,6 +8,8 @@ import { saveCrewPlan } from "@/components/run/crew-plan-store";
 import { LensLegend, LensToggle, useLayerLens } from "@/components/run/layer-lens";
 import { RUN_SEED, type RunBuilding } from "@/components/run/run-screen";
 import { BuildingScreen } from "@/components/shell/building-screen";
+import { buildingHref } from "@/lib/building-href";
+import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -51,6 +53,7 @@ export function PlanScreen({
   const [order, setOrder] = useState("");
   const [ask, setAsk] = useState<Ask>({ status: "idle" });
   const [lens, toggleLens] = useLayerLens();
+  const missionId = useMissionId();
   const pending = useRef<AbortController | null>(null);
   const orderId = useId();
 
@@ -99,11 +102,11 @@ export function PlanScreen({
     pending.current = controller;
     setAsk({ status: "planning" });
     try {
-      const reply = await askCrew(crewRequest(building.id, text), { signal: controller.signal });
+      const reply = await askCrew(crewRequest(building.id, text, missionId), { signal: controller.signal });
       if (!controller.signal.aborted) {
         setAsk({ status: "answered", answer: reply });
         // The run follows the briefed plan (beat 4 into beat 5).
-        saveCrewPlan(building.id, { plan: reply.plan, recorded: reply.recorded });
+        saveCrewPlan(building.id, { plan: reply.plan, recorded: reply.recorded }, undefined, missionId);
       }
     } catch (error) {
       if (!controller.signal.aborted) setAsk({ status: "error", message: error instanceof Error ? error.message : String(error) });
@@ -261,7 +264,7 @@ export function PlanScreen({
         </div>
       }
       action={
-        <Link href={`/b/${encodeURIComponent(building.id)}/run`} className={buttonVariants({ variant: "primary" })}>
+        <Link href={buildingHref(building.id, "run", missionId)} className={buttonVariants({ variant: "primary" })}>
           Start the run
         </Link>
       }

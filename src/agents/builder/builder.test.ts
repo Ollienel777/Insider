@@ -1,6 +1,6 @@
 // The Level Builder on deepagents, keyless: the deep agent's graph, todos,
 // subagent dispatch and tools all run for real against the fake adapters;
-// only the model's turns are recorded (fixtures/llm/scripts/builder-F1.json).
+// only the model's turns are recorded (fixtures/llm/scripts/builder-F1-romaine-1974.json).
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { DEFAULT_SUBAGENT_PROMPT } from "deepagents";
@@ -12,8 +12,9 @@ import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { createFakeVexcel } from "@/adapters/vexcel/fake";
 import { BuildTrace, LevelManifest, type Provenance } from "@/domain";
 import { buildLevel, type BuiltLevel, LevelBuildError } from "./builder";
-import { MISSIONS } from "./missions";
+import { defaultMissionId, MISSIONS } from "./missions";
 import { BUILDER_PROMPT, DATA_ANALYST_PROMPT, GAME_MASTER_PROMPT } from "./prompts";
+import { analystTools, builderTools, type BuildRun, gameMasterTools } from "./tools";
 
 const root = process.cwd();
 
@@ -57,9 +58,9 @@ describe("buildLevel(F1) on the recorded script", () => {
   let adapters: ReturnType<typeof spiedAdapters>;
 
   beforeAll(async () => {
-    model = new ScriptedChatModel({ script: await loadScript("builder-F1") });
+    model = new ScriptedChatModel({ script: await loadScript("builder-F1-romaine-1974") });
     adapters = spiedAdapters();
-    built = await buildLevel("F1", {
+    built = await buildLevel("F1", "romaine-1974", {
       model,
       costar: adapters.costar,
       vexcel: adapters.vexcel,
@@ -156,7 +157,7 @@ describe("buildLevel(F1) on the recorded script", () => {
       "data-analyst/get_available_space",
       "data-analyst/get_aerial_entries",
       "data-analyst/derive_security_profile",
-      "game-master/list_missions",
+      "game-master/get_mission",
       "level-builder/write_manifest",
     ]);
     expect(tools.every((t) => t.status === "completed" && typeof t.durationMs === "number")).toBe(true);
@@ -176,17 +177,96 @@ describe("buildLevel(F1) on the recorded script", () => {
   });
 });
 
-describe("the cached F1 level in data/levels/", () => {
+describe("the builder takes the chosen mission as input (#119)", () => {
+  const run = (): BuildRun => ({
+    buildingId: "F1",
+    missionId: "romaine-1974",
+    costar: createFakeCoStar(),
+    vexcel: createFakeVexcel(),
+  });
+  const tool = <T extends { name: string }>(tools: T[], name: string): T => tools.find((t) => t.name === name)!;
+  const words = (n: number) => Array.from({ length: n }, () => "dark").join(" ");
+
+  it("is given the mission in its task, and the game master reads it with get_mission, not the library", async () => {
+    const model = new ScriptedChatModel({ script: await loadScript("builder-F1-romaine-1974") });
+    const built = await buildLevel("F1", "romaine-1974", { model });
+    expect(built.manifest.missionId).toBe("romaine-1974");
+    expect(built.manifest.mission.id).toBe("romaine-1974");
+    const getMission = built.trace.events.find((e) => e.label === "get_mission")!;
+    expect(JSON.parse(getMission.input!)).toEqual({ missionId: "romaine-1974" });
+    // The building is already cast: the reply carries the mission, not its casting needs.
+    expect(JSON.parse(getMission.output!)).toMatchObject({ id: "romaine-1974", title: "The Romaine Street Papers" });
+    expect(getMission.output).not.toContain("casting");
+    expect(built.trace.events.some((e) => e.label === "list_missions")).toBe(false);
+  }, 30_000);
+
+  it("get_mission and write_manifest refuse any mission but the run's", async () => {
+    const r = run();
+    const getMission = tool(gameMasterTools(r), "get_mission");
+    expect(JSON.parse(await getMission.invoke({ missionId: "romaine-1974" }))).toMatchObject({ id: "romaine-1974" });
+    await expect(getMission.invoke({ missionId: "sunset-1986" })).rejects.toThrow(
+      "this run builds mission romaine-1974, not sunset-1986",
+    );
+    await tool(analystTools(r), "derive_security_profile").invoke({ buildingId: "F1" });
+    const write = tool(builderTools(r), "write_manifest");
+    const args = { buildingId: "F1", briefing: "In by the dock. The security is game fiction.", objective: { name: "R", rule: "Take" } };
+    await expect(write.invoke({ ...args, missionId: "sunset-1986" })).rejects.toThrow("not sunset-1986");
+    await write.invoke({ ...args, missionId: "romaine-1974" });
+    expect(r.manifest?.missionId).toBe("romaine-1974");
+  });
+
+  it("write_manifest counts the briefing's words and requires the game-fiction line, so the agent must retry", async () => {
+    const r = run();
+    await tool(analystTools(r), "derive_security_profile").invoke({ buildingId: "F1" });
+    const write = tool(builderTools(r), "write_manifest");
+    const args = { buildingId: "F1", missionId: "romaine-1974", objective: { name: "R", rule: "Take" } };
+    await expect(write.invoke({ ...args, briefing: `${words(118)} It is game fiction.` })).rejects.toThrow(
+      "the briefing is 122 words; the limit is 120. Send it back to the game-master",
+    );
+    await expect(write.invoke({ ...args, briefing: "In by the dock, out by the roof." })).rejects.toThrow(
+      'the briefing must say its security is game fiction',
+    );
+    expect(r.manifest).toBeUndefined();
+    await write.invoke({ ...args, briefing: `${words(116)} It is game fiction.` });
+    expect(r.manifest?.mission.briefing).toMatch(/game fiction\.$/);
+  });
+
+  it("copies the game master's briefing into write_manifest verbatim on the recorded script", async () => {
+    const script = await loadScript("builder-F1-romaine-1974");
+    const gm = script.agents.find((a) => a.agent === "game-master")!.turns.at(-1)!.content;
+    const written = script.agents
+      .flatMap((a) => a.turns.flatMap((t) => t.toolCalls))
+      .find((c) => c.name === "write_manifest")!.args.briefing as string;
+    expect(gm.endsWith(`Briefing: ${written}`)).toBe(true);
+  });
+
+  it("tells the builder to copy the briefing verbatim and the game master that the length is counted", () => {
+    expect(BUILDER_PROMPT).toMatch(/briefing copied verbatim/);
+    expect(BUILDER_PROMPT).toMatch(/Never shorten,\s+reword or drop a line/);
+    expect(GAME_MASTER_PROMPT).toMatch(/Call get_mission/);
+    expect(GAME_MASTER_PROMPT).toMatch(/at most\s+120 words/);
+    expect(GAME_MASTER_PROMPT).toMatch(/Do not report a word count: write_manifest counts the words/);
+    expect(GAME_MASTER_PROMPT).not.toMatch(/list_missions/);
+  });
+
+  it("with no mission named, builds a building's own mission: the one that casts it first", () => {
+    expect(defaultMissionId("F1")).toBe("romaine-1974");
+    expect(defaultMissionId("F4")).toBe("paper-trail-2001");
+    expect(defaultMissionId("L01")).toBeNull();
+  });
+});
+
+describe("the cached F1 × romaine-1974 level in data/levels/", () => {
   const read = (file: string): unknown => JSON.parse(readFileSync(path.join(root, "data", "levels", file), "utf8"));
 
-  it("is what the builder writes today (rerun npm run build:levels -- F1 when this fails)", async () => {
-    const fresh = await buildLevel("F1");
-    expect(read("F1.json")).toEqual(fresh.manifest);
-    expect(fresh.trace.model).toBe("scripted (builder-F1), no LLM ran");
+  it("is what the builder writes today (rerun npm run build:levels -- F1:romaine-1974 when this fails)", async () => {
+    const fresh = await buildLevel("F1", "romaine-1974");
+    expect(read("F1.romaine-1974.json")).toEqual(fresh.manifest);
+    expect(fresh.trace.model).toBe("scripted (builder-F1-romaine-1974), no LLM ran");
   });
 
   it("has a trace with a todo list, both subagents and five tool calls", () => {
-    const trace = BuildTrace.parse(read("F1.trace.json"));
+    const trace = BuildTrace.parse(read("F1.romaine-1974.trace.json"));
     expect(trace.buildingId).toBe("F1");
     expect(trace.events.some((e) => e.kind === "todo")).toBe(true);
     expect(trace.events.filter((e) => e.kind === "subagent").map((e) => e.agent)).toEqual([
@@ -217,9 +297,9 @@ describe("the builder's guard rails", () => {
         { content: "Giving up." },
       ]),
     });
-    const error = await buildLevel("F1", { model }).catch((e: unknown) => e);
+    const error = await buildLevel("F1", "romaine-1974", { model }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(LevelBuildError);
-    expect((error as Error).message).toBe("the Level Builder finished without writing a manifest for F1");
+    expect((error as Error).message).toBe("the Level Builder finished without writing a manifest for F1 (romaine-1974)");
     // The failure went back to the model as an error result, not a crash,
     // and the trace says which call failed.
     expect(model.calls.map((c) => c.turn)).toEqual([0, 1]);
@@ -242,7 +322,7 @@ describe("the builder's guard rails", () => {
         { content: "Giving up." },
       ]),
     });
-    const error = (await buildLevel("F1", { model }).catch((e: unknown) => e)) as LevelBuildError;
+    const error = (await buildLevel("F1", "romaine-1974", { model }).catch((e: unknown) => e)) as LevelBuildError;
     expect(error.trace.events.map((e) => e.status)).toEqual(["failed"]);
   });
 
@@ -264,7 +344,7 @@ describe("the builder's guard rails", () => {
         { content: "Could not write it." },
       ]),
     );
-    const error = (await buildLevel("F1", { model: new ScriptedChatModel({ script }) }).catch((e: unknown) => e)) as LevelBuildError;
+    const error = (await buildLevel("F1", "romaine-1974", { model: new ScriptedChatModel({ script }) }).catch((e: unknown) => e)) as LevelBuildError;
     expect(error.trace.events).toEqual([
       expect.objectContaining({ kind: "subagent", agent: "general-purpose", status: "completed", output: "Could not write it." }),
       expect.objectContaining({ kind: "tool", agent: "general-purpose", label: "write_manifest", status: "failed" }),
@@ -275,7 +355,7 @@ describe("the builder's guard rails", () => {
     const script = builder([dispatchGeneralPurpose, { content: "Giving up." }]);
     // Its one turn calls a tool it does not have, so the subagent's run throws.
     script.agents.push(generalPurpose([{ toolCalls: [{ name: "no_such_tool", args: {} }] }]));
-    const error = (await buildLevel("F1", { model: new ScriptedChatModel({ script }) }).catch((e: unknown) => e)) as LevelBuildError;
+    const error = (await buildLevel("F1", "romaine-1974", { model: new ScriptedChatModel({ script }) }).catch((e: unknown) => e)) as LevelBuildError;
     expect(error.trace.events).toEqual([
       expect.objectContaining({ kind: "subagent", agent: "general-purpose", status: "failed" }),
     ]);
@@ -285,8 +365,8 @@ describe("the builder's guard rails", () => {
   it("keeps live adapters' data out of the trace: no input or output on any event (SPEC §4.5, M1)", async () => {
     const adapters = spiedAdapters();
     // The same fixture data, but passed with no modes, so treated as live.
-    const live = await buildLevel("F1", {
-      model: new ScriptedChatModel({ script: await loadScript("builder-F1") }),
+    const live = await buildLevel("F1", "romaine-1974", {
+      model: new ScriptedChatModel({ script: await loadScript("builder-F1-romaine-1974") }),
       costar: adapters.costar,
       vexcel: adapters.vexcel,
     });
@@ -308,8 +388,8 @@ describe("the builder's guard rails", () => {
       expect(event).not.toHaveProperty("input");
       expect(event).not.toHaveProperty("output");
     }
-    const vexcelLive = await buildLevel("F1", {
-      model: new ScriptedChatModel({ script: await loadScript("builder-F1") }),
+    const vexcelLive = await buildLevel("F1", "romaine-1974", {
+      model: new ScriptedChatModel({ script: await loadScript("builder-F1-romaine-1974") }),
       costar: adapters.costar,
       vexcel: adapters.vexcel,
       dataModes: { costar: "fake", vexcel: "live" },
@@ -327,8 +407,8 @@ describe("the builder's guard rails", () => {
         return super._generate(...args);
       }
     }
-    const model = new Watching({ script: await loadScript("builder-F1") });
-    const { trace } = await buildLevel("F1", { model });
+    const model = new Watching({ script: await loadScript("builder-F1-romaine-1974") });
+    const { trace } = await buildLevel("F1", "romaine-1974", { model });
     const task = (model.bound[0] as { name?: string; function?: { name?: string; description?: string }; description?: string }[])
       .map((t) => t.function ?? t)
       .find((t) => t.name === "task")!;
@@ -338,7 +418,9 @@ describe("the builder's guard rails", () => {
   });
 
   it("fails clearly in fake mode when a building has no recorded script", async () => {
-    await expect(buildLevel("F5")).rejects.toThrow("no recorded builder script for F5");
+    await expect(buildLevel("F5", "syntactic-2019")).rejects.toThrow("no recorded builder script for F5 and syntactic-2019");
+    // A script is per building and mission: F1's does not build F1 for another mission.
+    await expect(buildLevel("F1", "night-desk")).rejects.toThrow("no recorded builder script for F1 and night-desk");
   });
 
   it("gives each agent a system prompt the script can tell apart", () => {

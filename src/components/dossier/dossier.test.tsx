@@ -4,7 +4,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { FIXTURE_BUILDINGS } from "@/adapters/costar/fake";
 import { BuildTrace, LevelManifest, type BuildTraceEvent } from "@/domain";
-import { dataToLevelRows, suiteRange } from "./data-to-level";
+import { findMission } from "@/agents/builder/missions";
+import { castFinalist, castingResult } from "@/lib/cast-because";
+import { castBecauseRow, dataToLevelRows, suiteRange } from "./data-to-level";
 import { DISCLAIMER, DossierScreen } from "./dossier-screen";
 import { StepDetail, TraceList } from "./trace-list";
 import { dossierFacts } from "./facts";
@@ -19,10 +21,13 @@ import {
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const read = (file: string): unknown => JSON.parse(readFileSync(path.join(root, "data", "levels", file), "utf8"));
-const manifest = LevelManifest.parse(read("F1.json"));
-const trace = BuildTrace.parse(read("F1.trace.json"));
+const manifest = LevelManifest.parse(read("F1.romaine-1974.json"));
+const trace = BuildTrace.parse(read("F1.romaine-1974.trace.json"));
 const building = FIXTURE_BUILDINGS.find((b) => b.id === "F1")!;
-const rows = dataToLevelRows(manifest);
+const romaine = findMission("romaine-1974")!;
+const finalist = (await castFinalist(romaine, "F1"))!;
+const cast = { candidate: finalist.candidate, mission: romaine, derived: finalist.source === "derived" };
+const rows = dataToLevelRows(manifest, cast);
 
 const screen = (startComplete: boolean) =>
   renderToStaticMarkup(
@@ -49,6 +54,31 @@ const textOf = (html: string) =>
 
 describe("the Data → Level table for F1", () => {
   const row = (id: string) => rows.find((r) => r.id === id);
+
+  it("opens with the cast-because row: the mission, and why F1 was cast for it (beat 4, #119)", () => {
+    expect(rows.map((r) => r.id)).toEqual(["cast", "era", "guards", "staging", "crowded", "dock"]);
+    expect(rows[0]).toEqual({
+      id: "cast",
+      layer: "costar",
+      field: "casting",
+      value: "romaine-1974",
+      rule: "Cast for The Romaine Street Papers (derived from its casting filters)",
+      result: "Cast because: built 1974, Class A, floor 22 on the market, dock on the aerial",
+    });
+    expect(dataToLevelRows(manifest).map((r) => r.id)).not.toContain("cast");
+  });
+
+  it("derives the reason from the fixture inventory until the Casting Director's shortlist is cached (#117)", async () => {
+    expect(await castingResult("romaine-1974")).toBeNull();
+    expect(finalist.source).toBe("derived");
+    expect(finalist.candidate).toMatchObject({ id: "F1", vacantFloor: { floor: 22 } });
+    expect(finalist.candidate.fit.map((f) => f.criterion)).toEqual(romaine.casting.map((f) => f.label));
+    // A shortlist's finalist reads straight through, its reason the agent's own.
+    expect(castBecauseRow({ candidate: { id: "F1", reason: "the agent's words" }, mission: romaine, derived: false })).toMatchObject({
+      rule: "Cast for The Romaine Street Papers",
+      result: "Cast because: the agent's words",
+    });
+  });
 
   it("has a row for year built 1974 with its result", () => {
     expect(row("era")).toEqual({
@@ -169,7 +199,7 @@ describe("the replay", () => {
       "1:get_aerial_entries",
       "1:derive_security_profile",
       "0:task game-master",
-      "1:list_missions",
+      "1:get_mission",
       "0:write_manifest",
     ]);
     expect(steps.every((s) => s.shown && s.status === "completed")).toBe(true);
@@ -186,7 +216,7 @@ describe("the replay", () => {
 describe("the Recorded replay header", () => {
   it("says it is a recorded replay, when, and whose model turns: a script's, no LLM (R1-M5)", () => {
     expect(recordedRunHeader(trace)).toMatch(
-      /^Recorded replay · [A-Z][a-z]{2} \d{1,2}, \d{4}, \d\d:\d\d UTC · model turns: scripted \(builder-F1\), no LLM ran$/,
+      /^Recorded replay · [A-Z][a-z]{2} \d{1,2}, \d{4}, \d\d:\d\d UTC · model turns: scripted \(builder-F1-romaine-1974\), no LLM ran$/,
     );
     expect(formatRecordedAt("2026-11-13T11:39:34.402Z")).toBe("Nov 13, 2026, 11:39 UTC");
   });
@@ -214,7 +244,7 @@ describe("DossierScreen", () => {
     const text = textOf(html);
     expect(html).not.toContain('data-testid="skeleton"');
     expect(html).toContain('data-testid="replay"');
-    for (const expected of ["1974", "Analog era: key locks, sweeping CCTV", "4 guards, tight rounds", "Staged on 22"]) {
+    for (const expected of ["Cast because: built 1974, Class A, floor 22 on the market, dock on the aerial", "1974", "Analog era: key locks, sweeping CCTV", "4 guards, tight rounds", "Staged on 22"]) {
       expect(text).toContain(expected);
     }
     expect(text).toContain("The Romaine Street Papers");
@@ -223,7 +253,7 @@ describe("DossierScreen", () => {
     expect(html).toContain('href="https://www.cia.gov/stories/story/the-exposing-of-project-azorian"');
     expect(text).toContain(DISCLAIMER);
     expect(DISCLAIMER).toBe("Security shown is game fiction derived from building class and era.");
-    expect(html).toMatch(/<a[^>]*href="\/b\/F1\/plan"[^>]*>Brief the crew<\/a>/);
+    expect(html).toMatch(/<a[^>]*href="\/b\/F1\/plan\?m=romaine-1974"[^>]*>Brief the crew<\/a>/);
   });
 
   it("heads the trace with the Recorded replay line and says nothing here calls a model", () => {

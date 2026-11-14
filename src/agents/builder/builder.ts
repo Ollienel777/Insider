@@ -1,10 +1,10 @@
 // The Level Builder (SPEC §4.4): a `deepagents` deep agent with planning
 // todos, two subagents (`data-analyst`, `game-master`) and its own tools,
-// which turns one building's CoStar and Vexcel data into a LevelManifest and
-// a trace of how it got there.
+// which turns one building's CoStar and Vexcel data and the mission the player
+// chose into a LevelManifest and a trace of how it got there (#119).
 //
 // Keyless, it runs on ScriptedChatModel with the recorded script
-// fixtures/llm/scripts/builder-<id>.json: the graph, the todos, the subagent
+// fixtures/llm/scripts/builder-<id>-<missionId>.json: the graph, the todos, the subagent
 // dispatch and every tool run for real against the fake adapters; only the
 // model's turns are recorded. Live, the same agent runs on the builder model
 // from the LLM adapter; `npm run record:builds` saves a live run's turns as a
@@ -50,12 +50,12 @@ export interface BuildOptions extends TraceRecorderOptions {
 /** The subagents the builder can dispatch, as its trace lists them. */
 export const SUBAGENTS = ["general-purpose", "data-analyst", "game-master"] as const satisfies readonly BuilderAgent[];
 
-/** The recorded script name for a building. */
-export const scriptName = (buildingId: string): string => `builder-${buildingId}`;
+/** The recorded script name for a building and mission. */
+export const scriptName = (buildingId: string, missionId: string): string => `builder-${buildingId}-${missionId}`;
 
-async function scriptFor(buildingId: string): Promise<Script | undefined> {
+async function scriptFor(buildingId: string, missionId: string): Promise<Script | undefined> {
   try {
-    return await loadScript(scriptName(buildingId));
+    return await loadScript(scriptName(buildingId, missionId));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
@@ -74,14 +74,19 @@ export function scriptedLabel(script: Script): string {
   return `${SCRIPTED_MODEL_PREFIX}${script.id}), ${source}`;
 }
 
-async function resolveModel(buildingId: string, options: BuildOptions): Promise<{ model: BaseChatModel; label: string }> {
+async function resolveModel(
+  buildingId: string,
+  missionId: string,
+  options: BuildOptions,
+): Promise<{ model: BaseChatModel; label: string }> {
   if (options.model) return { model: options.model, label: options.modelLabel ?? options.model._llmType() };
-  const script = await scriptFor(buildingId);
+  const script = await scriptFor(buildingId, missionId);
   const selection = getChatModelSelection("builder", { script });
   if (selection.mode === "fake") {
     if (!script) {
       throw new Error(
-        `no recorded builder script for ${buildingId} (fixtures/llm/scripts/${scriptName(buildingId)}.json); ` +
+        `no recorded builder script for ${buildingId} and ${missionId} ` +
+          `(fixtures/llm/scripts/${scriptName(buildingId, missionId)}.json); ` +
           "fake mode cannot build it",
       );
     }
@@ -91,16 +96,16 @@ async function resolveModel(buildingId: string, options: BuildOptions): Promise<
   return { model: selection.model, label: `${selection.provider}${typeof id === "string" ? ` ${id}` : ""}` };
 }
 
-/** Builds one building's level by running the deep agent. */
-export async function buildLevel(buildingId: string, options: BuildOptions = {}): Promise<BuiltLevel> {
+/** Builds one building's level for one mission by running the deep agent. */
+export async function buildLevel(buildingId: string, missionId: string, options: BuildOptions = {}): Promise<BuiltLevel> {
   const recordedAt = options.recordedAt ?? new Date();
-  const { model, label } = await resolveModel(buildingId, options);
+  const { model, label } = await resolveModel(buildingId, missionId, options);
   // The modes the adapters actually serve, as the mode chip reads them; a
   // live one that falls back to fixtures mid-run only withholds more.
   const costar = options.costar ? { adapter: options.costar, mode: options.dataModes?.costar ?? "live" } : getCoStar();
   const vexcel = options.vexcel ? { adapter: options.vexcel, mode: options.dataModes?.vexcel ?? "live" } : getVexcel();
   const liveData = costar.mode === "live" || vexcel.mode === "live";
-  const run: BuildRun = { buildingId, costar: costar.adapter, vexcel: vexcel.adapter, missions: options.missions };
+  const run: BuildRun = { buildingId, missionId, costar: costar.adapter, vexcel: vexcel.adapter, missions: options.missions };
   const recorder = new TraceRecorder({ now: options.now, recordPayloads: !liveData });
 
   const agent = createDeepAgent({
@@ -143,18 +148,18 @@ export async function buildLevel(buildingId: string, options: BuildOptions = {})
   let summary = "";
   try {
     const result = await agent.invoke(
-      { messages: [{ role: "user", content: `Build the level for building ${buildingId}.` }] },
+      { messages: [{ role: "user", content: `Build the level for building ${buildingId} and mission ${missionId}.` }] },
       { recursionLimit: 60 },
     );
     const last = result.messages.at(-1);
     summary = typeof last?.content === "string" ? last.content : "";
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new LevelBuildError(`the Level Builder failed on ${buildingId}: ${message}`, traceSoFar(), { cause: error });
+    throw new LevelBuildError(`the Level Builder failed on ${buildingId} (${missionId}): ${message}`, traceSoFar(), { cause: error });
   }
 
   if (!run.manifest) {
-    throw new LevelBuildError(`the Level Builder finished without writing a manifest for ${buildingId}`, traceSoFar());
+    throw new LevelBuildError(`the Level Builder finished without writing a manifest for ${buildingId} (${missionId})`, traceSoFar());
   }
   return {
     manifest: LevelManifest.parse(run.manifest),

@@ -6,6 +6,8 @@ import { getMatterport } from "@/adapters/matterport";
 import { ALARM_STYLE } from "@/components/run/alarm-banner";
 import { loadRunLog } from "@/components/run/run-log-store";
 import { BuildingScreen } from "@/components/shell/building-screen";
+import { buildingHref } from "@/lib/building-href";
+import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -50,6 +52,7 @@ export function DebriefScreen({
 }) {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
+  const missionId = useMissionId();
 
   useEffect(() => {
     let live = true;
@@ -57,7 +60,7 @@ export function DebriefScreen({
       if (live) setLoad({ status: "error", message: error instanceof Error ? error.message : String(error) });
     };
     // Storage is the browser's: read it after mount.
-    const log: RunLog | null = loadRunLog(building.id);
+    const log: RunLog | null = loadRunLog(building.id, undefined, missionId);
     if (!log || !manifest || notStarted(log)) {
       // No cached manifest is the building with no level, not a missing run.
       const next: Load = !manifest ? { status: "no-floor" } : { status: "empty", reason: log ? "not-started" : "none" };
@@ -85,10 +88,10 @@ export function DebriefScreen({
     return () => {
       live = false;
     };
-  }, [building, manifest, heistMode, attempt]);
+  }, [building, manifest, heistMode, attempt, missionId]);
 
-  const runHref = `/b/${encodeURIComponent(building.id)}/run`;
-  const drillHref = `/b/${encodeURIComponent(building.id)}/drill`;
+  const runHref = buildingHref(building.id, "run", missionId);
+  const drillHref = buildingHref(building.id, "drill", missionId);
 
   if (load.status === "ready") {
     // Keyed on the log it reads, so a reload that brings a shorter log starts its scrubber afresh.

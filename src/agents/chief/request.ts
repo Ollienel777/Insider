@@ -23,6 +23,8 @@ export type ChiefTransition = z.infer<typeof ChiefTransition>;
 
 export const ChiefRequest = z.strictObject({
   buildingId: ShortId,
+  /** The mission whose level the run is on (#119); the building's own mission when absent. */
+  missionId: ShortId.optional(),
   transition: ChiefTransition,
   /** A zone id from `zones`; null when the player has never been detected. */
   lastKnownZone: ShortId.nullable(),

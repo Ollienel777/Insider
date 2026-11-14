@@ -71,7 +71,14 @@ export function chiefZones(placed: PlacedLevel): ChiefZones {
  * Ids and names are clamped to the request's limits, and past 64 zones it keeps the ones a guard or the
  * last sighting names first. Throws a plain message when it still fails its schema.
  */
-export function chiefRequest(buildingId: string, placed: PlacedLevel, zones: ChiefZones, run: RunState, event: AlarmEvent): ChiefRequest {
+export function chiefRequest(
+  buildingId: string,
+  placed: PlacedLevel,
+  zones: ChiefZones,
+  run: RunState,
+  event: AlarmEvent,
+  missionId?: string | null,
+): ChiefRequest {
   const chiefId = (engineId: string) => zones.toChief.get(engineId) ?? clampId(engineId);
   const lastKnownZone = event.lastKnownZone === null ? null : chiefId(event.lastKnownZone);
   const guards = run.guards.slice(0, MAX_GUARDS).map((g) => ({
@@ -86,6 +93,7 @@ export function chiefRequest(buildingId: string, placed: PlacedLevel, zones: Chi
       : [...zones.zones.filter((z) => named.has(z.id)), ...zones.zones.filter((z) => !named.has(z.id))].slice(0, MAX_ZONES);
   const parsed = ChiefRequest.safeParse({
     buildingId,
+    ...(missionId && { missionId }),
     transition: {
       turn: event.turn,
       from: event.from,

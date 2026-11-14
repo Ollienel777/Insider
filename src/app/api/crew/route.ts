@@ -1,5 +1,5 @@
 // POST /api/crew: brief the crew (SPEC §2 beat 4, §4.4). The body is
-// `{buildingId, order}` and nothing else: the server reads the zones and the
+// `{buildingId, order}`, plus the `missionId` whose level to read (issue 119), and nothing else: the server reads the zones and the
 // guard roster from its own cached manifest, so no floor data can arrive
 // here or travel on to a model (SPEC §4.5). Answers `CrewAnswer`.
 import { forcedChatModelSelection, safeErrorMessage } from "@/adapters/llm";
@@ -14,13 +14,19 @@ export async function POST(request: Request): Promise<Response> {
   } catch {
     return Response.json({ error: "the body must be JSON: {buildingId, order}" }, { status: 400 });
   }
-  const { buildingId, order } = (body ?? {}) as { buildingId?: unknown; order?: unknown };
+  const { buildingId, order, missionId } = (body ?? {}) as { buildingId?: unknown; order?: unknown; missionId?: unknown };
   if (typeof buildingId !== "string" || typeof order !== "string") {
     return Response.json({ error: "buildingId and order must be strings" }, { status: 400 });
   }
+  if (missionId !== undefined && typeof missionId !== "string") {
+    return Response.json({ error: "missionId must be a string" }, { status: 400 });
+  }
   try {
     const forced = forcedFromRequest(request).has("llm");
-    const answer = await briefCrew(buildingId, order, forced ? { selection: forcedChatModelSelection() } : {});
+    const answer = await briefCrew(buildingId, order, {
+      ...(missionId && { missionId }),
+      ...(forced && { selection: forcedChatModelSelection() }),
+    });
     if (!answer) return Response.json({ error: `no cached level for building "${buildingId}"` }, { status: 404 });
     return Response.json(withLlmFallback(answer));
   } catch (error) {

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { BuildingScreen } from "@/components/shell/building-screen";
+import { buildingHref } from "@/lib/building-href";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { BriefedMission, BuildTrace } from "@/domain";
 import type { DataToLevelRow } from "./data-to-level";
@@ -221,7 +222,7 @@ export function DossierScreen(props: DossierScreenProps) {
         />
       }
       action={
-        <Link href={`/b/${buildingId}/plan`} className={buttonVariants({ variant: "primary" })}>
+        <Link href={buildingHref(buildingId, "plan", mission.id)} className={buttonVariants({ variant: "primary" })}>
           Brief the crew
         </Link>
       }

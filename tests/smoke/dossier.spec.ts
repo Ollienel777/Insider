@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 test("the dossier replays the trace and fills in 1974, Analog era and 4 guards", async ({ page }) => {
   await page.goto("/b/F1/dossier");
   await expect(page.getByTestId("trace-header")).toContainText(
-    /^Recorded replay · .+ UTC · model turns: scripted \(builder-F1\), no LLM ran$/,
+    /^Recorded replay · .+ UTC · model turns: scripted \(builder-F1-romaine-1974\), no LLM ran$/,
   );
   await expect(page.getByText("Nothing on this screen calls a model.")).toBeVisible();
 
@@ -109,5 +109,5 @@ test("Replay starts again from the top, with the header and the CoStar record in
 test("Brief the crew goes to the plan", async ({ page }) => {
   await page.goto("/b/F1/dossier");
   await page.getByRole("link", { name: "Brief the crew" }).click();
-  await expect(page).toHaveURL(/\/b\/F1\/plan$/);
+  await expect(page).toHaveURL(/\/b\/F1\/plan\?m=romaine-1974$/);
 });

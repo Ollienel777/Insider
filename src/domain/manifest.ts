@@ -104,9 +104,36 @@ export type BriefedMission = z.infer<typeof BriefedMission>;
 export const LevelEntry = AerialEntry.pick({ id: true, kind: true, label: true });
 export type LevelEntry = z.infer<typeof LevelEntry>;
 
+/** The briefing's length limit, in words (the Game Master's rule, #119). */
+export const BRIEFING_MAX_WORDS = 120;
+
+/** The line every briefing carries (SPEC §1, taste rules): its security is game fiction. */
+const GAME_FICTION = /\bgame[- ]fiction\b/i;
+
+/** Words as a reader counts them: runs of non-space holding a letter or a digit, so a dash is not one. */
+export const briefingWords = (briefing: string): number =>
+  briefing.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+
+/**
+ * What is wrong with a briefing, in words the agent can act on; empty when
+ * nothing is. Checked in code, so the length is counted, never self-reported.
+ */
+export function briefingProblems(briefing: string): string[] {
+  const problems: string[] = [];
+  const words = briefingWords(briefing);
+  if (words > BRIEFING_MAX_WORDS) problems.push(`the briefing is ${words} words; the limit is ${BRIEFING_MAX_WORDS}`);
+  if (!GAME_FICTION.test(briefing)) problems.push('the briefing must say its security is game fiction (the words "game fiction")');
+  return problems;
+}
+
+/**
+ * A level, keyed by building and mission (SPEC §4.1): `missionId` is the
+ * mission it was built for, the same as `mission.id`.
+ */
 export const LevelManifest = z
   .strictObject({
     buildingId: Id,
+    missionId: Id,
     securityProfile: SecurityProfile,
     zones: z.array(Zone).min(1),
     entries: z.array(LevelEntry).min(1),
@@ -116,5 +143,11 @@ export const LevelManifest = z
   .superRefine((manifest, ctx) => {
     checkUnique(manifest.zones.map((zone) => zone.id), "zone", ["zones"], ctx);
     checkUnique(manifest.entries.map((e) => e.id), "entry", ["entries"], ctx);
+    if (manifest.missionId !== manifest.mission.id) {
+      ctx.addIssue({ code: "custom", path: ["missionId"], message: `missionId ${manifest.missionId} is not the mission's id ${manifest.mission.id}` });
+    }
+    for (const message of briefingProblems(manifest.mission.briefing)) {
+      ctx.addIssue({ code: "custom", path: ["mission", "briefing"], message });
+    }
   });
 export type LevelManifest = z.infer<typeof LevelManifest>;
