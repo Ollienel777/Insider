@@ -92,7 +92,8 @@ describe("the editor's states", () => {
     expect(html).toContain("Starting point");
     expect(html).toContain('data-testid="owner-problems-none"');
     expect(html).toContain('data-testid="owner-saved-empty"');
-    expect(html).toContain("4 guards · 0 cleaners · 2 cameras · 2 locked doors · 0 desks");
+    // Main's placer (#41) gives F1 a generated night cleaner, which the starting point carries.
+    expect(html).toContain("4 guards · 1 cleaner · 2 cameras · 2 locked doors · 0 desks");
   });
 
   it("editing and saved, and a save the browser refused", () => {
@@ -129,7 +130,9 @@ describe("the editor's states", () => {
 describe("night cleaners in the editor", () => {
   const busy = { ...manifest, zones: manifest.zones.filter((z) => z.id !== "quiet-2210") };
   const busyStart = setupFromPlaced(placeLevel(busy, floor, 1));
-  const withCleaner = addCleaner(starting, "o-west");
+  // F1's generated cleaner (#41) taken off, so the editor's own is K1 and the only one.
+  const bare = removeCleaner(starting, starting.cleaners![0].id);
+  const withCleaner = addCleaner(bare, "o-west");
 
   it("adds one on a node, standing there, with a fresh id", () => {
     expect(withCleaner.id).toBe("K1");

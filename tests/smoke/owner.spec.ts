@@ -31,7 +31,7 @@ test("Debrief to Owner Mode: 50 attempts, the Chief's fix, before and after", as
     "Made-up setup on a fixture building. Real setups stay on this device.",
   );
   await expect(page.getByTestId("owner-setup")).toHaveAttribute("data-state", "untouched");
-  await expect(page.getByTestId("owner-setup-counts")).toHaveText("4 guards · 0 cleaners · 2 cameras · 2 locked doors · 0 desks");
+  await expect(page.getByTestId("owner-setup-counts")).toHaveText("4 guards · 1 cleaner · 2 cameras · 2 locked doors · 0 desks");
   await expect(page.getByTestId("owner-problems-none")).toBeVisible();
   await expect(page.getByTestId("owner-saved-empty")).toBeVisible();
   await shot(page, "setup");
@@ -105,8 +105,9 @@ test("the editor adds a night cleaner and moves it", async ({ page }) => {
 
   await page.getByTestId("owner-tool").locator('[data-value="cleaner"]').click();
   await page.locator('[data-owner-node="o-west"]').click({ force: true });
-  await expect(page.getByTestId("owner-inspector")).toHaveAttribute("data-selected", "cleaner:K1");
-  await expect(page.getByTestId("owner-setup-counts")).toContainText("1 cleaner");
+  // F1 already has a generated cleaner, K1 (#41): the owner's is the next id.
+  await expect(page.getByTestId("owner-inspector")).toHaveAttribute("data-selected", "cleaner:K2");
+  await expect(page.getByTestId("owner-setup-counts")).toContainText("2 cleaners");
   await expect(page.getByTestId("owner-selected-ring")).toHaveAttribute("data-node", "o-west");
 
   // Move it to a corridor node: it stays there, and the setup still plays.
