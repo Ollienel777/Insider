@@ -7,7 +7,7 @@ import { LevelManifest, type FloorGraph } from "@/domain";
 import { createRun } from "@/engine";
 import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.romaine-1974.json";
-import { hopCutMetres, SCAN_HOP_METRES, SCAN_HOPS_KEPT, SCAN_SPACING_FACTOR, toFloorGraph, toFullFloorGraph } from "./mapping";
+import { hopCutMetres, nearestHops, SCAN_HOP_METRES, SCAN_HOPS_KEPT, SCAN_SPACING_FACTOR, toFloorGraph, toFullFloorGraph } from "./mapping";
 
 const v = (x: number, z: number) => ({ x, y: 1.5, z });
 const sweep = (sid: string, x: number, z: number, room: string | null, neighbors: string[], extra = {}) => ({
@@ -142,14 +142,14 @@ function square(): Scan {
 }
 
 /**
- * The same square beside five positions 1 m apart, every position listing
- * every other: the scan's spacing is the cluster's, so the cut stays at 6 m
- * and the square's 7 m sides are kept only as the tree needs them.
+ * The same square, each corner with a companion 1 m outside it, every position
+ * listing every other: each corner's own spacing is 1 m, so the cut stays at
+ * 6 m and the square's 7 m sides are kept only as the tree needs them.
  */
-function squareBesideCluster(): Scan {
+function squareWithCompanions(): Scan {
   const spots: Record<string, Spot> = { a: [0, 0, "r-yard"], b: [7, 0, "r-yard"], c: [7, 7, "r-yard"], d: [0, 7, "r-yard"] };
-  for (let i = 0; i < 5; i++) spots[`k${i}`] = [30 + i, 0, "r-yard"];
-  return { sweeps: sweepsOf(spots, everyPair(Object.keys(spots))), rooms: { "r-yard": room("r-yard", "Yard", -1, -1, 36, 8) } };
+  Object.assign(spots, { a1: [-0.6, -0.8, "r-yard"], b1: [7.6, -0.8, "r-yard"], c1: [7.6, 7.8, "r-yard"], d1: [-0.6, 7.8, "r-yard"] });
+  return { sweeps: sweepsOf(spots, everyPair(Object.keys(spots))), rooms: { "r-yard": room("r-yard", "Yard", -1, -1, 9, 9) } };
 }
 
 /**
@@ -226,7 +226,7 @@ function onTree(full: FloorGraph, hop: Hop): boolean {
 function ruled(full: FloorGraph): string[] {
   const nearest = (e: Hop) => shortestAt(full, e.a).includes(name(e)) || shortestAt(full, e.b).includes(name(e));
   return full.edges
-    .filter((e) => onTree(full, e) || (metres(full, e) <= hopCutMetres(full) && nearest(e)))
+    .filter((e) => onTree(full, e) || (metres(full, e) <= hopCutMetres(nearestHops(full), e.a, e.b) && nearest(e)))
     .map(name)
     .sort();
 }
@@ -298,9 +298,31 @@ describe("a sparse scan keeps its loops (PR 116 review)", () => {
     return { sweeps: sweepsOf(spots, near), rooms: { "r-hall": room("r-hall", "Open Floor", -1, -1, 28, 21) } };
   }
 
-  it("raises the cut to the scan's own spacing", () => {
-    expect(hopCutMetres(boards(sparseGrid()).full)).toBeCloseTo(SCAN_SPACING_FACTOR * 6.5);
-    expect(hopCutMetres(boards(openRoom()).full)).toBe(SCAN_HOP_METRES);
+  it("raises the cut to the spacing where the hop is", () => {
+    const grid = nearestHops(boards(sparseGrid()).full);
+    expect(hopCutMetres(grid, "g00", "g01")).toBeCloseTo(SCAN_SPACING_FACTOR * 6.5);
+    expect(hopCutMetres(nearestHops(boards(openRoom()).full), "a0", "a1")).toBe(SCAN_HOP_METRES);
+  });
+
+  it("keeps only a square grid's sides, not its diagonals", () => {
+    const { floor } = boards(sparseGrid());
+    expect(hops(floor)).not.toContain("g00 g11");
+    expect(hops(floor)).not.toContain("g01 g10");
+  });
+
+  it("keeps the loops of a sparse part of an otherwise dense floor", () => {
+    // The sparse grid beside a dense room: most positions are 3 m apart, but the grid's own spacing sets its hops' cut.
+    const grid = sparseGrid();
+    const dense = openRoom();
+    const shifted = Object.fromEntries(
+      Object.entries(dense.sweeps).map(([sid, sw]) => [sid, { ...sw, position: { ...sw.position, x: sw.position.x + 60 } }]),
+    );
+    const bridge = { ...grid.sweeps.g04, neighbors: [...grid.sweeps.g04.neighbors, "a0"] };
+    const a0 = { ...shifted.a0, neighbors: [...shifted.a0.neighbors, "g04"] };
+    const both: Scan = { sweeps: { ...grid.sweeps, ...shifted, g04: bridge, a0 }, rooms: { ...grid.rooms, ...dense.rooms } };
+    const { floor } = boards(both);
+    for (let c = 0; c < 4; c++) expect(hops(floor), `g0${c} g0${c + 1}`).toContain(`g0${c} g0${c + 1}`);
+    expect(hops(floor)).toContain("g00 g10");
   });
 
   it("keeps every grid side, so the board has loops round any one position", () => {
@@ -391,10 +413,10 @@ describe("only the hops change: nodes, tags, rooms and sightlines are the full g
 
 describe("the same scan always gives the same board: a tie in length breaks by id", () => {
   it("picks the tree's hops by id when every side of a square is the same length", () => {
-    const scan = squareBesideCluster();
+    const scan = squareWithCompanions();
     const sides = (floor: FloorGraph) => hops(floor).filter((h) => /^[a-d] [a-d]$/.test(h));
     // The cut is 6 m here, so the four 7 m sides are too long to keep for being near; the tree needs three, in id order.
-    expect(hopCutMetres(boards(scan).full)).toBe(SCAN_HOP_METRES);
+    expect(hopCutMetres(nearestHops(boards(scan).full), "a", "b")).toBe(SCAN_HOP_METRES);
     expect(sides(boards(scan).floor)).toEqual(["a b", "a d", "b c"]);
     expect(sides(boards(backwards(scan)).floor)).toEqual(["a b", "a d", "b c"]);
   });

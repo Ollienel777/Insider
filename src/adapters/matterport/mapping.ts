@@ -121,15 +121,17 @@ export const SCAN_HOP_METRES = 6;
 /** How many of its shortest hops a position keeps (`dropLongHops`). */
 export const SCAN_HOPS_KEPT = 4;
 /**
- * A sparse scan's positions can sit further apart than `SCAN_HOP_METRES`, and
- * then the cut would leave only the spanning tree: no loop, so no way round a
- * guard. The cut is therefore at least this many times the scan's own
- * spacing, the median of each position's nearest hop (PR 116 review).
+ * A sparse part of a scan (an atrium, a warehouse bay) can have positions
+ * further apart than `SCAN_HOP_METRES`, and there the cut would leave only the
+ * spanning tree: no loop, so no way round a guard. So a hop's cut is at least
+ * this many times its ends' own spacing, the nearer of the two ends' nearest
+ * hops (PR 116 review). Under the square root of 2, so a square grid keeps its sides and
+ * not its diagonals.
  */
-export const SCAN_SPACING_FACTOR = 1.5;
+export const SCAN_SPACING_FACTOR = 1.4;
 
-/** The longest hop `dropLongHops` keeps for being near on `floor`: 6 m, or more on a sparse scan. */
-export function hopCutMetres(floor: FloorGraph): number {
+/** Each position's nearest hop on `floor`, in metres. */
+export function nearestHops(floor: FloorGraph): Map<string, number> {
   const at = new Map(floor.nodes.map((n) => [n.id, n]));
   const nearest = new Map<string, number>();
   for (const { a, b } of floor.edges) {
@@ -137,11 +139,18 @@ export function hopCutMetres(floor: FloorGraph): number {
     const metres = Math.hypot(p.x - q.x, p.y - q.y);
     for (const id of [a, b]) nearest.set(id, Math.min(nearest.get(id) ?? Infinity, metres));
   }
-  const spacing = [...nearest.values()].sort((p, q) => p - q);
-  if (spacing.length === 0) return SCAN_HOP_METRES;
-  const mid = spacing.length >> 1;
-  const median = spacing.length % 2 ? spacing[mid] : (spacing[mid - 1] + spacing[mid]) / 2;
-  return Math.max(SCAN_HOP_METRES, SCAN_SPACING_FACTOR * median);
+  return nearest;
+}
+
+/**
+ * The longest a hop between `a` and `b` may be and still be kept for being
+ * near (`dropLongHops`): `SCAN_HOP_METRES`, or more where both ends sit in a
+ * sparse part of the scan. Both: a lone position far from the rest is sparse
+ * by itself, and raising the cut for it would let it reach across the room.
+ */
+export function hopCutMetres(nearest: ReadonlyMap<string, number>, a: string, b: string): number {
+  const spacing = Math.min(nearest.get(a) ?? 0, nearest.get(b) ?? 0);
+  return Math.max(SCAN_HOP_METRES, SCAN_SPACING_FACTOR * spacing);
 }
 
 function roomTags(label: string): NodeTag[] {
@@ -393,9 +402,9 @@ export function toFullFloorGraph(sweepCollection: Record<string, unknown>, roomC
  *
  * 1. It is on the minimum spanning tree of the board's edges by length, so
  *    the board stays exactly as connected as it was.
- * 2. It is at most `hopCutMetres(floor)` long (`SCAN_HOP_METRES`, or more on
- *    a sparse scan), and among the `SCAN_HOPS_KEPT` shortest edges at one of
- *    its two ends.
+ * 2. It is at most `hopCutMetres` long (`SCAN_HOP_METRES`, or more where
+ *    both ends sit in a sparse part of the scan), and among the
+ *    `SCAN_HOPS_KEPT` shortest edges at one of its two ends.
  *
  * Length is the distance on the board. Edges of the same length are ordered
  * by the ids of their ends, so the same scan always gives the same board.
@@ -404,7 +413,7 @@ export function toFullFloorGraph(sweepCollection: Record<string, unknown>, roomC
  */
 export function dropLongHops(floor: FloorGraph): FloorGraph {
   const at = new Map(floor.nodes.map((n) => [n.id, n]));
-  const cut = hopCutMetres(floor);
+  const nearest = nearestHops(floor);
   const hops = floor.edges.map((edge) => {
     const [lo, hi] = edge.a < edge.b ? [edge.a, edge.b] : [edge.b, edge.a];
     const [p, q] = [at.get(lo)!, at.get(hi)!];
@@ -432,7 +441,7 @@ export function dropLongHops(floor: FloorGraph): FloorGraph {
     const [atLo, atHi] = [before.get(lo) ?? 0, before.get(hi) ?? 0];
     before.set(lo, atLo + 1);
     before.set(hi, atHi + 1);
-    if (metres <= cut && Math.min(atLo, atHi) < SCAN_HOPS_KEPT) kept.add(edge);
+    if (metres <= hopCutMetres(nearest, lo, hi) && Math.min(atLo, atHi) < SCAN_HOPS_KEPT) kept.add(edge);
   }
   return { ...floor, edges: floor.edges.filter((edge) => kept.has(edge)) };
 }
