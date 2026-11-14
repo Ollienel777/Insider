@@ -391,6 +391,18 @@ describe("the trace's rows (#79)", () => {
     expect(textOf(renderToStaticMarkup(<StepDetail id="d" step={view.steps[0]} />))).toContain("Task returned an error Error: refused");
   });
 
+  it("show a task naming a subagent the builder lacks as task (unknown), not a failed run (#72)", () => {
+    const events: BuildTraceEvent[] = [
+      { atMs: 0, kind: "subagent", agent: "level-builder", label: "Pick", status: "failed", failure: "unknown", output: 'Error: unknown subagent "made-up"' },
+    ];
+    const view = traceView({ buildingId: "F1", events }, () => true);
+    const row = textOf(renderToStaticMarkup(<TraceList view={view} header="h" control={null} banner="b" />));
+    expect(row).toContain("task (unknown)");
+    expect(row).toContain("unknown subagent");
+    expect(row).not.toMatch(/level-builder|subagent failed/);
+    expect(textOf(renderToStaticMarkup(<StepDetail id="d" step={view.steps[0]} />))).toContain('No such subagent Error: unknown subagent "made-up"');
+  });
+
   it("scroll recorded text in a labelled region, and set the cut marker apart from the record (S4)", () => {
     const step = { ...stepOf("get_building"), output: "abc… [12 more characters not recorded]" };
     const markup = renderToStaticMarkup(<StepDetail id="d" step={step} />);

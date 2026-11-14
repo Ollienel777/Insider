@@ -41,7 +41,7 @@ export function DossierUnavailable({ buildingId, missionId, name, reason, detail
         </div>
       }
       action={
-        <Link href="/" className={buttonVariants({ variant: "primary" })}>
+        <Link href="/map" className={buttonVariants({ variant: "primary" })}>
           Pick another building
         </Link>
       }

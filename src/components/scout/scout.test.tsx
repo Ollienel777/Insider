@@ -1,10 +1,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FIXTURE_BUILDINGS } from "@/adapters/costar/fake";
+import { noCoverageFallback } from "@/adapters/vexcel";
 import { FIXTURE_AERIALS } from "@/adapters/vexcel/fake";
-import { buildMassing, entryFace, FRAME, LABEL_GAP, layoutLabels, stepView, VIEW_ORDER } from "./massing";
+import { orthoBounds, placeOnOrtho } from "@/adapters/vexcel/mapping";
+import { buildImageViews, buildMassing, entryFace, FRAME, LABEL_GAP, layoutLabels, stepView, VIEW_ORDER } from "./massing";
 import { MassingSvg } from "./massing-view";
-import { ScoutPanel, ScoutScreen } from "./scout-screen";
+import { fetchAerial, ScoutPanel, ScoutScreen, scoutViews } from "./scout-screen";
+import { getStatus, resetStatus } from "@/lib/demo-status";
+import { Aerial } from "@/domain";
 
 const storiesOf = (id: string) => FIXTURE_BUILDINGS.find((b) => b.id === id)!.stories;
 const all = [...FIXTURE_AERIALS].map(([id, aerial]) => ({ id, aerial, views: buildMassing(aerial, storiesOf(id)) }));
@@ -124,6 +128,58 @@ describe("entryFace", () => {
     expect(entryFace(byId("exit-W"), f1.heightM)).toBe("West face");
     expect(entryFace(byId("roof"), f1.heightM)).toBe("Roof");
   });
+
+  it("names the nearest face for an entry pinned on the ortho, as a live aerial pins them", () => {
+    const f1 = FIXTURE_AERIALS.get("F1")!;
+    for (const entry of f1.entries) {
+      const pinned = { ...entry, view: "ortho" as const, x: 1, y: 1 };
+      expect(entryFace(pinned, f1.heightM, f1.footprint), entry.id).toBe(entryFace(entry, f1.heightM));
+    }
+  });
+});
+
+describe("buildImageViews (live imagery)", () => {
+  const f1 = FIXTURE_AERIALS.get("F1")!;
+  const box = orthoBounds(f1.footprint);
+  const live = {
+    views: [
+      { dir: "N" as const, url: "/api/buildings/F1/aerial/N", width: 960, height: 700 },
+      { dir: "ortho" as const, url: "/api/buildings/F1/aerial/ortho", width: 2000, height: 1000 },
+    ],
+    entries: placeOnOrtho(f1.entries, box, { width: 2000, height: 1000 }, () => {}),
+  };
+  const views = buildImageViews(live);
+
+  it("fits each image whole and centred in the frame", () => {
+    const [n, ortho] = views;
+    // 960×700 is narrower than 16:10: full height, bars either side.
+    expect(n.box.height).toBeCloseTo(1);
+    expect(n.box.width).toBeCloseTo((960 / 700) * (FRAME.height / FRAME.width));
+    expect(n.box.x).toBeCloseTo((1 - n.box.width) / 2);
+    // 2:1 is wider: full width, bars above and below.
+    expect(ortho.box.width).toBeCloseTo(1);
+    expect(ortho.box.y).toBeCloseTo((1 - ortho.box.height) / 2);
+  });
+
+  it("draws each entry only on the view it is pinned to, inside the frame, every one facing", () => {
+    const [n, ortho] = views;
+    expect(n.markers).toEqual([]);
+    expect(ortho.markers.map((m) => m.entry.id)).toEqual(f1.entries.map((e) => e.id));
+    for (const m of ortho.markers) {
+      expect(m.facing).toBe(true);
+      for (const v of [m.x, m.y, m.labelX, m.labelY]) {
+        expect(v, m.entry.id).toBeGreaterThan(0);
+        expect(v, m.entry.id).toBeLessThan(1);
+      }
+    }
+    const dock = live.entries.find((e) => e.id === "dock-N")!;
+    const marker = ortho.markers.find((m) => m.entry.id === "dock-N")!;
+    expect(marker.x).toBeCloseTo((dock.x! * 0.8) / FRAME.width);
+  });
+
+  it("skips a view without an image", () => {
+    expect(buildImageViews({ views: [{ dir: "N", width: 10, height: 10 }], entries: [] })).toEqual([]);
+  });
 });
 
 describe("the render", () => {
@@ -164,5 +220,75 @@ describe("the render", () => {
     expect(html).toContain("Not loaded");
     expect(html).not.toContain("Tagging");
     expect(html).toMatch(/data-testid="entries-error"[\s\S]*<button[^>]*>Retry<\/button>/);
+  });
+});
+
+describe("the Scout on a live aerial", () => {
+  const f1 = FIXTURE_BUILDINGS.find((b) => b.id === "F1")!;
+  const massing = FIXTURE_AERIALS.get("F1")!;
+  // Vexcel had no west oblique here: four views, the entries pinned on the ortho.
+  const ortho = { width: 1600, height: 1000 };
+  const live = Aerial.parse({
+    views: [
+      ...(["N", "E", "S"] as const).map((dir) => ({ dir, url: `/api/buildings/F1/aerial/${dir}`, width: 960, height: 700 })),
+      { dir: "ortho", url: "/api/buildings/F1/aerial/ortho", ...ortho },
+    ],
+    entries: placeOnOrtho(massing.entries, orthoBounds(massing.footprint), ortho, () => {}),
+    footprint: massing.footprint,
+    heightM: massing.heightM,
+    source: "vexcel",
+  });
+  const render = (failed?: ("N" | "E" | "S" | "W" | "ortho")[]) =>
+    renderToStaticMarkup(<ScoutScreen building={f1} initialLoad={{ status: "ready", aerial: live, live: true, failed }} />);
+  const chip = (html: string, dir: string) => new RegExp(`<button[^>]*data-dir="${dir}"[^>]*>`).exec(html)![0];
+
+  it("opens on the ortho, with a photo per view Vexcel has, each described, and the missing direction's chip disabled", () => {
+    const html = render();
+    expect(html).toContain('data-view="ortho"');
+    expect(html.match(/data-testid="aerial-photo"/g)).toHaveLength(4);
+    for (const face of ["north face", "east face", "south face", "straight down"]) expect(html).toContain(`alt="Vexcel aerial, ${face}"`);
+    expect(html).not.toContain("west face");
+    expect(html).not.toContain('data-testid="massing-wall"');
+    expect(chip(html, "W")).toContain(' disabled=""');
+    for (const dir of ["N", "E", "S", "ortho"]) expect(chip(html, dir), dir).not.toContain(' disabled=""');
+    // Every entry is drawn once, on the ortho.
+    expect(html.match(/data-testid="entry-marker"/g)).toHaveLength(massing.entries.length);
+    expect(html).toContain("Vexcel · aerial");
+  });
+
+  it("draws the massing instead once every photo has failed to load", () => {
+    expect(scoutViews(live, f1.stories, ["N", "E", "S"]).every((v) => v.kind === "image")).toBe(true);
+    expect(scoutViews(live, f1.stories, ["N", "E", "S", "ortho"]).every((v) => v.kind === "massing")).toBe(true);
+
+    const html = render(["N", "E", "S", "ortho"]);
+    expect(html).not.toContain('data-testid="aerial-photo"');
+    expect(html).not.toContain("didn&#x27;t load");
+    expect(html).toContain('data-testid="massing-wall"');
+    // The massing has all five views again, and opens on its north face.
+    expect(html.match(/data-testid="aerial-view"/g)).toHaveLength(5);
+    expect(html).toContain('data-view="N"');
+    expect(html).toContain("Vexcel · massing");
+  });
+});
+
+describe("fetchAerial and the mode chip", () => {
+  const answer = (body: unknown) => vi.fn(async () => Response.json(body));
+  const f1 = structuredClone(FIXTURE_AERIALS.get("F1")!);
+  const photos = { ...f1, entries: [], views: [{ dir: "ortho", url: "/api/buildings/F1/aerial/ortho", width: 1600, height: 1000 }], source: "vexcel" };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetStatus();
+  });
+
+  it("switches Vexcel to fixtures for a massing served live, and back to live when photos come", async () => {
+    vi.stubGlobal("fetch", answer({ mode: "live", aerial: f1, fallback: noCoverageFallback("F1") }));
+    const massing = await fetchAerial("F1", new AbortController().signal);
+    expect(massing).toMatchObject({ status: "ready", live: false });
+    expect(getStatus().fellBack.has("vexcel")).toBe(true);
+
+    vi.stubGlobal("fetch", answer({ mode: "live", aerial: photos }));
+    expect(await fetchAerial("F2", new AbortController().signal)).toMatchObject({ status: "ready", live: true });
+    expect(getStatus().fellBack.has("vexcel")).toBe(false);
   });
 });

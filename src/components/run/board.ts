@@ -377,7 +377,7 @@ export function describeTurn(placed: PlacedLevel, before: RunState, after: RunSt
     if (raised.cause.kind === "noise") return `${by} heard you in the ${where}.`;
     return `${by} saw you in the ${where}. The guards are converging.`;
   }
-  if (!before.carrying && after.carrying) return "You have the files. Get out.";
+  if (!before.carrying && after.carrying) return `You have the ${objectiveNoun(placed.level.missionId)}. Get out.`;
   const opened = before.locked.find((d) => !after.locked.includes(d));
   if (opened) return "The door is open.";
   if (after.picking) return `Picking the lock, ${after.picking.progress} of ${placed.level.pickTurns}.`;

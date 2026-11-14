@@ -58,8 +58,13 @@ export const BuildTraceEvent = z.object({
   input: Text.optional(),
   /** What came back: a subagent's answer, a tool's result, or its error. */
   output: Text.optional(),
-  /** How a failed call failed: it threw (for a `task`, the subagent's whole run), or it returned an error result. */
-  failure: z.enum(["thrown", "returned"]).optional(),
+  /**
+   * How a failed call failed: it threw (for a `task`, the subagent's whole
+   * run), it returned an error result, or (a `task` only) it named a subagent
+   * the builder does not have, so none ran; the event's agent is then the
+   * one that called it (#72).
+   */
+  failure: z.enum(["thrown", "returned", "unknown"]).optional(),
 });
 export type BuildTraceEvent = z.infer<typeof BuildTraceEvent>;
 
