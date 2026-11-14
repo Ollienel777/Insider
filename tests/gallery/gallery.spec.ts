@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
 
 // The Devpost gallery (issue #14): the seven screens of SPEC §2, one 16:9 shot
@@ -8,7 +10,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 const DEMO_ORDER = "Go in through the dock, wait for the 2 am round to pass, take the records room.";
 
-const shot = (page: Page, name: string) => page.screenshot({ path: `hackathon/submission/media/${name}.png` });
+const MEDIA = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "hackathon", "submission", "media");
+const shot = (page: Page, name: string) => page.screenshot({ path: path.join(MEDIA, `${name}.png`) });
 
 /** Presses the number the board shows on the neighbour `nodeId`, and waits for the turn it plays. */
 async function moveTo(page: Page, nodeId: string) {
@@ -18,11 +21,15 @@ async function moveTo(page: Page, nodeId: string) {
   await expect(page.getByTestId("turn")).toHaveText(String(turn + 1));
 }
 
-/** Waits for the board's hops and the page's fonts to settle, so no shot catches a piece mid-air. */
+/**
+ * Waits for the board's hops and the page's fonts to settle, so no shot catches a piece mid-air.
+ * Endless animations (a skeleton's pulse, a spinner) never finish, so they are not waited on.
+ */
 async function settle(page: Page) {
   await page.evaluate(async () => {
     await document.fonts.ready;
-    await Promise.all(document.getAnimations().map((a) => a.finished.catch(() => null)));
+    const ending = document.getAnimations().filter((a) => a.effect?.getComputedTiming().iterations !== Infinity);
+    await Promise.all(ending.map((a) => a.finished.catch(() => null)));
   });
 }
 

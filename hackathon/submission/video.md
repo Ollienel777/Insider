@@ -33,7 +33,7 @@ live where a key works on the day, fake everywhere else. Per service, as of
 
 | service | live on `main`? | in the video |
 |---|---|---|
-| Vexcel (beat 3, Scout) | yes (#57) | live if `VEXCEL_API_KEY` loads the aerial in rehearsal: real obliques and the ortho. Otherwise the massing render. |
+| Vexcel (beat 3, Scout) | yes (#57) | live if `VEXCEL_API_BASE` and `VEXCEL_API_KEY` load the aerial in rehearsal: real obliques and the ortho. Otherwise the massing render. |
 | CoStar (beats 1–4) | not yet (#59 is open) | fixtures, unless #59 merges and is rehearsed |
 | Matterport (beats 5–7) | not yet (#58 is open) | fixtures, unless #58 merges and is rehearsed |
 | LLM: crew, Chief, agents | yes | the recorded replies, as on stage: they are deterministic and on time |
@@ -41,16 +41,18 @@ live where a key works on the day, fake everywhere else. Per service, as of
 Set each service with its own variable in `.env.local` (`VEXCEL_MODE=live`,
 the rest `fake`), then `npm run build`, `npm start` and `npm run demo:reset`.
 The chip at the top right reads `FIXTURES` while every service is on
-fixtures, and `LIVE` once any one is live, listing those still on fixtures.
-Each screen also names its own source above the board or the aerial (for
+fixtures, and `LIVE` once any one is live (its tooltip lists those still on
+fixtures, but the video doesn't show that). Each screen also names its own source above the board or the aerial (for
 example `VEXCEL · MASSING FROM FIXTURES` on Scout). The narration follows
 them:
 
 - Say "real" only about what that screen's source label says is live. On a
   screen on fixtures, the narration says "fixture" or says nothing about the
   source, as the gallery does.
-- The **Recorded** labels on the crew's reply and the Chief's orders stay
-  visible. The narration never calls them live.
+- The Cast and Dossier screens replay recorded agent runs ("Scripted run",
+  "Recorded replay"), and the crew's reply and the Chief's orders carry
+  **Recorded** labels. The narration calls them recorded runs, never live
+  work.
 
 ## Recording setup
 
@@ -70,9 +72,9 @@ against a timer once and cut words, not beats.
 | # | time | screen | on screen | narration |
 |---|---|---|---|---|
 | 1 | 0:00–0:10 | Missions (`/`) | The five mission cards. Click **The Romaine Street Papers**. | "Every heist in history needed a building. Pick one: the Romaine Street burglary, 1974. Our agent finds a building that fits." |
-| 2 | 0:10–0:32 | Cast (`/m/romaine-1974/cast`) | The Casting Director's run replays: its todos, then the funnel, each filter with its count, the map's pins dimming. Three finalist cards. Click **Halvorsen Tower**, then **Scout it**. | "The Casting Director works through the inventory one filter at a time: Los Angeles, built by 1974, office, a vacant floor on the market tonight, a scan, a dock on the aerial. Three finalists, each with its reason. We take Halvorsen Tower." |
+| 2 | 0:10–0:32 | Cast (`/m/romaine-1974/cast`) | The Casting Director's run replays: its todos, then the funnel, each filter with its count, the map's pins dimming. Three finalist cards. Click **Halvorsen Tower**, then **Scout it**. | "This is the Casting Director's recorded run, one filter at a time: Los Angeles, built by 1974, office, Class A or B, a big floor on the market, a scan, a dock on the aerial. Three finalists, each with its reason. We take Halvorsen Tower." |
 | 3 | 0:32–0:42 | Scout (`/b/F1/scout?m=romaine-1974`) | Press **→** through E, S, W and Ortho. The tagged entries ride along. Click **Plan the job**. | "The aerial gives the ways in: the loading dock, the garage ramp, the lobby, the roof hatch." |
-| 4 | 0:42–0:57 | Dossier (`/b/F1/dossier?m=romaine-1974`) | The Level Builder's replay fills the Data → Level table, then the briefing. Click **Brief the crew**. | "A deep agent builds the level from the data. Built 1974: analog era, key locks, sweeping cameras. Class A: four guards. Floor 22 mostly vacant: quiet suites. The dock: the way in." |
+| 4 | 0:42–0:57 | Dossier (`/b/F1/dossier?m=romaine-1974`) | The Level Builder's replay fills the Data → Level table, then the briefing. Click **Brief the crew**. | "A deep agent built this level from the data; this is its recorded run. Built 1974: analog era, key locks, sweeping cameras. Class A: four guards. Floor 22 mostly vacant: quiet suites. The dock: the way in." |
 | 5 | 0:57–1:10 | Plan (`/b/F1/plan?m=romaine-1974`) | Paste the order, press **Enter**. The crew's four steps, the ghost path, C2's sighting ringed, the pushback. Click **Start the run**. | "One order in plain English. The crew answers with a plan, and pushes back. The board checks it: camera C2 catches us in the dock corridor on the way out." |
 | 6 | 1:10–1:40 | Run (`/b/F1/run?m=romaine-1974`) | Press **1**, **1**: into C2's cone. The alarm jumps to **Alert**, the Chief's orders stream in, and the guards' routes turn to match. Click guard **G4**: the Why card. **Esc**, then **W** until caught. Click **See the debrief**. | "Now walk straight in. C2 sees us: Alert. The security chief re-plans, and every order is on the board: G1 and G4 converge, G2 holds the records room, G3 cuts off the dock. Click a guard and it says which data put it there: the dock on the aerial, and Class A gives the fourth guard." |
 | 7 | 1:40–2:00 | Debrief (`/b/F1/debrief?m=romaine-1974`) | Grade **D**, caught in the Dock Corridor. Drag the **Turn** slider back and forward. The Chief's decisions as a timeline. | "The debrief replays every move, ours and the guards', with each of the chief's decisions. And the search that cast this heist is the one a location scout runs on Monday: a vacant 1970s floor with a dock." |
