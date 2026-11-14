@@ -5,7 +5,8 @@
 // committed. Nothing is written to disk.
 import { buildKitLevel } from "@/agents/builder/build-on-demand";
 import { buildsOnDemand, canBuildFor } from "@/agents/builder/live-levels";
-import { findBuilding } from "@/lib/building";
+import { getCoStar } from "@/adapters/costar";
+import { forcedFromRequest } from "@/lib/mode";
 
 export const dynamic = "force-dynamic";
 // A live build is a few minutes of model calls at most.
@@ -15,7 +16,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const { id } = await context.params;
   const missionId = new URL(request.url).searchParams.get("m");
   if (!missionId) return Response.json({ error: "no mission given; add ?m=<missionId>" }, { status: 400 });
-  const building = await findBuilding(id);
+  const forced = forcedFromRequest(request).has("costar");
+  const building = await getCoStar({ forced }).adapter.getBuilding(id);
   if (!building) return Response.json({ error: `no building "${id}"` }, { status: 404 });
   if (!buildsOnDemand(building)) {
     return Response.json({ error: `"${id}" is a prepared building; its level is already built` }, { status: 400 });
