@@ -338,7 +338,9 @@ describe("choices and keys", () => {
       }
     }
     expect(checked).toBeGreaterThan(0);
-  });
+    // It draws the board once for every node of the floor, twice over: about 4 s on its own on a
+    // laptop, and past the default 5 s when the whole suite runs beside it. The budget is for that.
+  }, 30_000);
 
   it("make S sprint, S again walk, and S with nowhere to sprint stay walking and say why", () => {
     expect(toggleSprint(start(), "walk")).toEqual({ mode: "sprint", status: SPRINT_STATUS });
@@ -501,19 +503,19 @@ describe("the alarm banner", () => {
 
 describe("RunScreen", () => {
   it("renders its loading skeleton before the floor arrives", () => {
-    const out = renderToStaticMarkup(<RunScreen building={{ id: "F1", name: "Halvorsen Tower" }} manifest={manifest} />);
+    const out = renderToStaticMarkup(<RunScreen building={{ id: "F1", name: "Halvorsen Tower" }} manifest={manifest} source="fixture" />);
     expect(out).toContain('data-testid="board-skeleton"');
     expect(out).toContain('data-testid="panel-skeleton"');
   });
 
   it("says when a building has no level yet", () => {
-    const out = renderToStaticMarkup(<RunScreen building={{ id: "F2", name: "Figueroa Exchange" }} manifest={null} />);
+    const out = renderToStaticMarkup(<RunScreen building={{ id: "F2", name: "Figueroa Exchange" }} manifest={null} source="fixture" />);
     expect(out).toContain('data-testid="board-empty"');
     expect(out).toContain("Back to the map");
   });
 
   it("pulses nothing when no board is coming: the panel says what would be there (#68)", () => {
-    const out = renderToStaticMarkup(<RunScreen building={{ id: "F2", name: "Figueroa Exchange" }} manifest={null} />);
+    const out = renderToStaticMarkup(<RunScreen building={{ id: "F2", name: "Figueroa Exchange" }} manifest={null} source="fixture" />);
     expect(out).not.toContain("animate-pulse");
     expect(out).not.toContain('data-testid="panel-skeleton"');
     expect(out).toContain('data-testid="panel-empty"');

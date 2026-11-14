@@ -7,7 +7,7 @@ import { BASEMAPS } from "@/components/map/basemap";
 import type { Building, City } from "@/domain";
 import { createFakeCoStar } from "./fake";
 import { loadKitIndex, type KitIndex } from "./kit";
-import { mapSelection } from "./mapping";
+import { mapSelection, type KitPropertyType } from "./mapping";
 import type { CoStarAdapter } from "./types";
 
 export interface LiveCoStarConfig {
@@ -26,6 +26,8 @@ export class CoStarNotConfiguredError extends Error {
 export interface LiveCoStar extends CoStarAdapter {
   /** A building from the index already in memory, without loading it; `null` when not loaded or unknown. */
   cached(id: string): Building | null;
+  /** A kit building's property type (not on `Building`), once the index is in memory; `null` otherwise. */
+  propertyType(id: string): KitPropertyType | null;
 }
 
 export function createLiveCoStar(config: LiveCoStarConfig): LiveCoStar {
@@ -82,6 +84,9 @@ export function createLiveCoStar(config: LiveCoStarConfig): LiveCoStar {
     cached(id: string) {
       const found = loaded ? building(loaded, id) : null;
       return found ? copy(found) : null;
+    },
+    propertyType(id: string) {
+      return loaded?.properties.get(id)?.propertyType ?? null;
     },
     searchInventory: (filters) => fixtures.searchInventory(filters),
   };

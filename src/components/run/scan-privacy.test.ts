@@ -73,7 +73,7 @@ describe("the Run screen keeps a scanned board's log out of storage from its fir
     const id = "scan-building-3";
     const manifest = LevelManifest.parse(structuredClone(cached));
     // What the Run screen does on a loaded floor: `boardOn`, then `startRun`, which saves the fresh run's log.
-    const { placed: board, live } = boardOn(id, manifest, structuredClone(scannedFloor));
+    const { placed: board, live } = boardOn(id, manifest, structuredClone(scannedFloor), undefined, null, "fixture");
     expect(live).toBe(true);
     saveRunLog({ ...runLogOf(createRun(board.level), new Map()), buildingId: id });
     expect(storage.setItem).not.toHaveBeenCalled();
@@ -85,10 +85,46 @@ describe("the Run screen keeps a scanned board's log out of storage from its fir
     vi.stubGlobal("localStorage", storage);
     const id = "fixture-building-1";
     const manifest = LevelManifest.parse(structuredClone(cached));
-    const { placed: board, live } = boardOn(id, manifest, structuredClone(FIXTURE_FLOORS.F1));
+    const { placed: board, live } = boardOn(id, manifest, structuredClone(FIXTURE_FLOORS.F1), undefined, null, "fixture");
     expect(live).toBe(false);
     saveRunLog({ ...runLogOf(createRun(board.level), new Map()), buildingId: id });
     expect(storage.setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a kit building's log in memory on the stand-in floor too: its level comes from its real record (#95)", () => {
+    const storage = fakeStorage();
+    vi.stubGlobal("localStorage", storage);
+    const id = "900199";
+    storage.items.set(runLogKey(id, "romaine-1974"), "{}");
+    const manifest = LevelManifest.parse(structuredClone(cached));
+    const { placed: board, live, inMemory } = boardOn(id, manifest, structuredClone(FIXTURE_FLOORS.F1), undefined, "romaine-1974", "costar");
+    // Not a scan (no Inside view), but nothing stored: the old log goes, the fresh one stays in memory.
+    expect(live).toBe(false);
+    expect(inMemory).toBe(true);
+    expect(storage.items.has(runLogKey(id, "romaine-1974"))).toBe(false);
+    saveRunLog({ ...runLogOf(createRun(board.level), new Map()), buildingId: id }, undefined, "romaine-1974");
+    expect(storage.setItem).not.toHaveBeenCalled();
+    expect(loadRunLog(id, undefined, "romaine-1974")?.buildingId).toBe(id);
+  });
+
+  it("never reads a kit building's log stored before #95, as the Debrief opened before Run, and removes it", () => {
+    const storage = fakeStorage();
+    const id = "900101";
+    const manifest = LevelManifest.parse(structuredClone(cached));
+    const { placed: board } = boardOn("F1", manifest, structuredClone(FIXTURE_FLOORS.F1), undefined, "romaine-1974", "fixture");
+    const stale = JSON.stringify({ ...runLogOf(createRun(board.level), new Map()), buildingId: id });
+    storage.items.set(runLogKey(id, "romaine-1974"), stale);
+    storage.items.set(runLogKey("F1", "romaine-1974"), JSON.stringify({ ...runLogOf(createRun(board.level), new Map()), buildingId: "F1" }));
+    expect(loadRunLog(id, storage, "romaine-1974", true)).toBeNull();
+    expect(storage.items.has(runLogKey(id, "romaine-1974"))).toBe(false);
+    // A fixture building's stored log still reaches its Debrief.
+    expect(loadRunLog("F1", storage, "romaine-1974", false)?.buildingId).toBe("F1");
+  });
+
+  it("stores a fixture building's runs as before: only a scan or a kit building stays in memory", () => {
+    const manifest = LevelManifest.parse(structuredClone(cached));
+    expect(boardOn("fixture-building-2", manifest, structuredClone(FIXTURE_FLOORS.F1), undefined, null, "fixture").inMemory).toBe(false);
+    expect(boardOn("fixture-building-3", manifest, structuredClone(scannedFloor), undefined, null, "fixture").inMemory).toBe(true);
   });
 });
 

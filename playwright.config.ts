@@ -48,6 +48,9 @@ export default defineConfig({
       COSTAR_MODE: "fake",
       VEXCEL_MODE: "fake",
       NEXT_PUBLIC_MATTERPORT_MODE: "fake",
+      // The fictional test kit's one building opens by id, for the recorded
+      // kit path (kit-path.spec.ts, #95). The map and the fixtures are unchanged.
+      HEIST_TEST_KIT: "1",
     },
   },
 });

@@ -815,6 +815,18 @@ describe("the Run screen's layout", () => {
     expect(panelsOpen("tactical", false)).toBe(true);
   });
 
+  it("keeps a kit building's record label on the screen in Live: in the HUD while the bar is closed (#95)", () => {
+    const run = play(start(), [move("fl-lobby")]);
+    const record = <span data-testid="record-label">Real CoStar record · stand-in floor plan</span>;
+    const closed = shown(layout(run, { mode: "live", record }));
+    expect(closed.match(/data-testid="record-label"/g)).toHaveLength(1);
+    expect(closed).toMatch(/data-testid="play-hud"[^>]*><div class="flex w-full min-w-0"><span data-testid="record-label">/);
+    // With Details open the bar carries it (run-screen.tsx puts it there), so the HUD doesn't.
+    expect(layout(run, { mode: "live", details: true, record })).not.toContain('data-testid="record-label"');
+    // Tactical is unchanged: the bar carries it.
+    expect(layout(run, { mode: "tactical", record })).toBe(layout(run, { mode: "tactical" }));
+  });
+
   it.each(["guard", "camera", "lock"] as const)("still opens a Why card from a %s in Live with the panels closed", (kind) => {
     const run = play(start(), [move("fl-lobby")]);
     const target = whyTargets(placed).find((t) => t.kind === kind)!;
