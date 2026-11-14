@@ -13,7 +13,7 @@ import { useReducedMotion } from "./use-reduced-motion";
 export interface NarrativeAnswer {
   narrative: DrillNarrative;
   recorded: boolean;
-  reason?: "fake mode" | "timeout" | "error";
+  reason?: "fake mode" | "configuration" | "timeout" | "error";
   recording?: string;
 }
 
@@ -46,6 +46,7 @@ export async function askNarrator(facts: DrillFacts, fetcher: typeof fetch = fet
 
 const REASON: Record<NonNullable<NarrativeAnswer["reason"]>, string> = {
   "fake mode": "Fake mode: no model was called. This narrative was recorded for this drill.",
+  configuration: "No model was called: a setting refuses live calls. This narrative was recorded for this drill.",
   timeout: "The model didn't answer within the time limit, so the narrative recorded for this drill stands in.",
   error: "The model call failed, so the narrative recorded for this drill stands in.",
 };

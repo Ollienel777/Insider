@@ -21,6 +21,48 @@ export const ChiefTransition = z.strictObject({
 });
 export type ChiefTransition = z.infer<typeof ChiefTransition>;
 
+const ZoneCount = z.strictObject({ zoneId: ShortId, count: z.int().positive().max(99) });
+
+/**
+ * What the player did on their earlier runs of this building (#35), summed in
+ * the browser from the run history it keeps: zone ids from `zones` and counts,
+ * nothing else, so no node or coordinate can ride along. `posted` is the guard
+ * the board already stood near the way in they used most, for the Chief to
+ * account for on the radio.
+ */
+export const ChiefHistory = z.strictObject({
+  runs: z.int().positive().max(99),
+  /** The ways in they started from, most used first. */
+  entries: z.array(ZoneCount).max(16),
+  /** The ways out they left by, most used first. */
+  exits: z.array(ZoneCount).max(16),
+  /** The zones where they were seen, most often first. */
+  detectedZones: z.array(ZoneCount).max(16),
+  /** Noisy turns (sprints and picks) per run, to one decimal. */
+  averageNoise: z.number().nonnegative().max(999),
+  /** `zoneId` is the way in the guard was posted near; `startZone`, the zone its post stands in. */
+  posted: z.strictObject({ guardId: ShortId, zoneId: ShortId, startZone: ShortId.optional() }).optional(),
+});
+export type ChiefHistory = z.infer<typeof ChiefHistory>;
+
+/**
+ * The ids `history` names that the request itself does not: a zone missing
+ * from `zones`, a posted guard missing from `guards`. History ids reach the
+ * live prompt, so the request holds them to the ids it already carries.
+ */
+export function strayHistoryIds(
+  history: ChiefHistory,
+  zoneIds: ReadonlySet<string>,
+  guardIds: ReadonlySet<string>,
+): string[] {
+  const zones = [...history.entries, ...history.exits, ...history.detectedZones].map((z) => z.zoneId);
+  if (history.posted) zones.push(history.posted.zoneId, ...(history.posted.startZone ? [history.posted.startZone] : []));
+  return [
+    ...zones.filter((id) => !zoneIds.has(id)),
+    ...(history.posted && !guardIds.has(history.posted.guardId) ? [history.posted.guardId] : []),
+  ];
+}
+
 export const ChiefRequest = z.strictObject({
   buildingId: ShortId,
   /** The mission whose level the run is on (#119); the building's own mission when absent. */
@@ -34,6 +76,15 @@ export const ChiefRequest = z.strictObject({
     .max(12),
   /** The zones the Chief may name: the manifest's, the entries, and the floor's other areas. */
   zones: z.array(z.strictObject({ id: ShortId, name: ShortName })).min(1).max(64),
+  /** The player's earlier runs here; sent only with a run's first transition, and only when there were any. */
+  history: ChiefHistory.optional(),
+}).superRefine((request, ctx) => {
+  if (!request.history) return;
+  const zoneIds = new Set(request.zones.map((z) => z.id));
+  const guardIds = new Set(request.guards.map((g) => g.id));
+  for (const id of strayHistoryIds(request.history, zoneIds, guardIds)) {
+    ctx.addIssue({ code: "custom", path: ["history"], message: `history names ${JSON.stringify(id)}, which the request does not` });
+  }
 });
 export type ChiefRequest = z.infer<typeof ChiefRequest>;
 
@@ -45,7 +96,7 @@ export interface ChiefAnswer {
   orders: ChiefOrders;
   /** True when no live model answered: fake mode, a timeout or a failure. */
   recorded: boolean;
-  reason?: "fake mode" | "timeout" | "error";
+  reason?: "fake mode" | "configuration" | "timeout" | "error";
   /** `recorded`: a recorded turn answered; `template`: the deterministic rules did, for a moment with no recording. */
   source: ChiefSource;
   /** The recorded turn's id, when one answered. */

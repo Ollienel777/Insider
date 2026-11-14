@@ -83,13 +83,15 @@ export function useChiefStream(state: ChiefState): Revealed {
  * The panel's one line on where the orders came from, true on every path
  * (#30, R1-M2): the model wrote them; the model was called and the recorded
  * or rule-based orders stood in because it timed out or failed; or no model
- * was called at all (fake mode, or forced to fixtures in the demo settings).
+ * was called at all (fake mode, forced to fixtures in the demo settings, or a
+ * setting that refuses every live call).
  */
 export function chiefSourceNote(answer: Pick<ChiefAnswer, "source" | "reason">): string {
   if (answer.source === "model") return "Live orders: the model wrote these.";
   const kind = answer.source === "recorded" ? "recorded" : "rule-based";
   if (answer.reason === "timeout") return `The model was called but didn't answer in time, so ${kind} orders stand in.`;
   if (answer.reason === "error") return `The model was called but the call failed, so ${kind} orders stand in.`;
+  if (answer.reason === "configuration") return `No model was called: a setting refuses live calls, so ${kind} orders stand in.`;
   return answer.source === "recorded"
     ? "Recorded orders: no model was called."
     : "Rule-based orders: no recording for this moment, and no model was called.";

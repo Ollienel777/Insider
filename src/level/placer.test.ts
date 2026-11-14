@@ -147,7 +147,11 @@ describe("placeLevel on F1 from the cached manifest", () => {
     }
   });
 
-  it("has a quiet route from the dock to the files and back out, the crew's advice (beat 4)", () => {
+  // Places, routes and plays all 24 seeds, which is the claim: 0.6 s alone,
+  // 2.2 s pinned to one busy CPU, past the 5 s default with two gates on the
+  // 2-vCPU VM (#85). Fewer seeds would test less, so it gets a budget: 30 s,
+  // several times the worst seen.
+  it("has a quiet route from the dock to the files and back out, the crew's advice (beat 4)", { timeout: 30_000 }, () => {
     for (const seed of SEEDS) {
       const p = placeF1(seed);
       const route = quietRoute(p);
@@ -155,6 +159,33 @@ describe("placeLevel on F1 from the cached manifest", () => {
       const run = play(createRun(p.level), route!);
       expect(run.alarmEvents, `seed ${seed}`).toEqual([]);
       expect(new Set(run.turns.map((t) => t.alarm)), `seed ${seed}`).toEqual(new Set(["calm"]));
+      expect(run.status, `seed ${seed}`).toBe("won");
+    }
+  });
+
+  it("keeps a quiet route and a guard on a round with the watch post of a second run (#35)", { timeout: 30_000 }, () => {
+    // Hops from the dock over the floor's edges, doors included.
+    const dockHops = new Map<string, number>([[F1_DEMO.dockEntry, 0]]);
+    for (const at of dockHops.keys()) {
+      for (const e of floor().edges) {
+        const to = e.a === at ? e.b : e.b === at ? e.a : null;
+        if (to && !dockHops.has(to)) dockHops.set(to, dockHops.get(at)! + 1);
+      }
+    }
+    for (const seed of SEEDS) {
+      const p = placeLevel(manifest(), floor(), seed, undefined, { watchEntry: "dock-N" });
+      expect(p.watch, `seed ${seed}`).not.toBeNull();
+      // With the night cleaners on the floor, and the posted guard strictly nearer the dock than any default start.
+      expect(p.cleaners.length, `seed ${seed}`).toBeGreaterThan(0);
+      const nearest = (q: PlacedLevel) => Math.min(...q.level.guards.map((g) => dockHops.get(g.patrol[0]) ?? Infinity));
+      const watchStart = p.level.guards.find((g) => g.id === p.watch!.guardId)!.patrol[0];
+      expect(dockHops.get(watchStart), `seed ${seed}`).toBeLessThan(nearest(placeF1(seed)));
+      expect(nearest(p), `seed ${seed}`).toBeLessThan(nearest(placeF1(seed)));
+      expect(p.guards.some((g) => g.post === undefined && g.patrol.length > 1), `seed ${seed}`).toBe(true);
+      const route = quietRoute(p);
+      expect(route, `seed ${seed}`).not.toBeNull();
+      const run = play(createRun(p.level), route!);
+      expect(run.alarmEvents, `seed ${seed}`).toEqual([]);
       expect(run.status, `seed ${seed}`).toBe("won");
     }
   });
@@ -256,25 +287,161 @@ describe("placeLevel on F1 from the cached manifest", () => {
   it("maps the zones onto rooms", () => {
     const zone = (id: string) => placed.zones.find((z) => z.zoneId === id);
     expect(zone("quiet-2202")?.roomIds).toEqual(["suites-2202-2205"]);
+    expect(zone("quiet-2205")?.roomIds).toEqual(["suites-2202-2205"]);
     expect(zone("quiet-2209")?.roomIds).toEqual(["suites-2206-2209"]);
     expect(zone("quiet-2210")?.roomIds).toEqual(["office-2210"]);
     expect(zone("objective")?.roomIds).toEqual(["records-room"]);
     expect(zone("secure")?.roomIds).toEqual(["server-closet"]);
     expect(level.lockedDoors).toContain("d-server-closet");
     expect(level.zones?.["dock-N"]).toEqual([F1_DEMO.dockEntry]);
-    // F1's floor 22 has no occupied suite left, and only two entry nodes.
-    expect(placed.unplaced.map((u) => u.elementRole)).toEqual([
-      "entry:garage-E",
-      "entry:lobby-S",
-      "entry:exit-W",
-      "zone:crowded-22",
-    ]);
+    // Every suite room on F1's floor 22 holds an available suite, so the
+    // occupied space has no room of its own (its cleaner works a corridor).
+    // The floor has only two entry nodes.
+    expect(zone("crowded-22")).toBeUndefined();
+    expect(placed.unplaced.map((u) => u.elementRole)).toEqual(["entry:garage-E", "entry:lobby-S", "entry:exit-W", "zone:crowded-22"]);
+    expect(placed.unplaced.find((u) => u.elementRole === "zone:crowded-22")?.reason).toMatch(/every suite room on this floor holds an available suite/);
+  });
+
+  it("keeps every suite the F1 manifest lists as available a quiet zone, on its own suite room (R1-C1)", () => {
+    const quiet = manifest().zones.filter((z) => z.role === "quiet");
+    expect(quiet.map((z) => z.id)).toEqual([2202, 2203, 2204, 2205, 2206, 2207, 2208, 2209, 2210].map((n) => `quiet-${n}`));
+    for (const seed of SEEDS) {
+      const p = placeF1(seed);
+      for (const z of quiet) {
+        const suite = z.id.replace("quiet-", "");
+        const placedZone = p.zones.find((pz) => pz.zoneId === z.id);
+        expect(placedZone?.role, `seed ${seed}: ${z.id}`).toBe("quiet");
+        expect(placedZone!.roomIds.length, z.id).toBeGreaterThan(0);
+        for (const roomId of placedZone!.roomIds) expect(roomId, z.id).toMatch(new RegExp(`^(suites-\\d+-\\d+|office-${suite})$`));
+        expect(p.level.quietZones, z.id).toContain(z.id);
+        // No room holding an available suite is also given to the crowded zone.
+        for (const crowded of p.zones.filter((pz) => pz.role === "crowded")) {
+          for (const roomId of placedZone!.roomIds) expect(crowded.roomIds, `${z.id} in ${roomId}`).not.toContain(roomId);
+        }
+      }
+    }
+  });
+
+  it("walks night cleaner K1 down the corridor farthest from the way in, out of sight of the quiet route (#95)", () => {
+    expect(placed.cleaners.map((k) => [k.id, k.zoneId, k.roomId])).toEqual([["K1", "crowded-22", "main-corridor"]]);
+    const [k1] = placed.cleaners;
+    expect(level.cleaners).toEqual([{ id: "K1", patrol: k1.patrol }]);
+    expect(k1.patrol.length).toBeGreaterThan(1);
+    const corridor = new Set(level.floor.nodes.filter((n) => n.roomId === "main-corridor").map((n) => n.id));
+    for (const id of k1.patrol) expect(corridor.has(id), id).toBe(true);
+    // Nothing on K1's walk sees the quiet route, as the placement computes it.
+    const route = quietRoute(placed)!;
+    const routeNodes = new Set([level.start, ...route.flatMap((a) => (a.kind === "move" ? [a.to] : []))]);
+    for (const id of corridor) {
+      for (const seen of [id, ...(level.floor.sightlines[id] ?? [])]) expect(routeNodes.has(seen), `${id} sees ${seen}`).toBe(false);
+    }
+    // It works for the crowded zone: that zone's own CoStar entry, the same object, and the placer's reason.
+    const crowded = manifest().zones.find((z) => z.id === "crowded-22")!;
+    expect(k1.provenance.map((p) => [p.elementRole, p.layer, p.field])).toEqual([["zone:crowded-22", "costar", "typicalFloorSf"]]);
+    expect(k1.provenance[0].rule).toBe(crowded.provenance[0].rule);
+    expect(k1.rule).toMatch(/no room of its own/);
+  });
+
+  it("puts the crowded zone and its cleaner in the suites the manifest leaves occupied, and no guard round there", () => {
+    // Suites 2206–2209 let: the manifest lists them as occupied (no quiet zone).
+    const m = manifest();
+    m.zones = m.zones.filter((z) => !/^quiet-220[6-9]$/.test(z.id));
+    for (const seed of SEEDS) {
+      const p = placeLevel(m, floor(), seed);
+      expect(p.zones.find((z) => z.role === "crowded")?.roomIds, `seed ${seed}`).toEqual(["suites-2206-2209"]);
+      expect(p.cleaners.map((k) => [k.id, k.roomId, k.rule]), `seed ${seed}`).toEqual([
+        ["K1", "suites-2206-2209", expect.stringMatching(/^Walks the occupied suites/)],
+      ]);
+      const crowded = new Set(level.floor.nodes.filter((n) => n.roomId === "suites-2206-2209").map((n) => n.id));
+      for (const id of p.cleaners[0].patrol) expect(crowded.has(id), id).toBe(true);
+      for (const guard of p.guards) expect(guard.roomId, `seed ${seed}: ${guard.id}`).not.toBe("suites-2206-2209");
+      for (const guard of p.level.guards) for (const id of guard.patrol) expect(crowded.has(id), `seed ${seed}: ${guard.id} at ${id}`).toBe(false);
+    }
+  });
+
+  it("keeps the objective out of corridors, lobbies, stairs and lifts, whatever the model names it (#95)", () => {
+    for (const name of ["Corridor", "Main Corridor", "Lobby", "Elevator Lobby", "Stair", "West Stair", "Freight Lift"]) {
+      const m = manifest();
+      m.zones.find((z) => z.role === "objective")!.name = name;
+      const p = placeLevel(m, floor(), SEED, {});
+      expect(p.zones.find((z) => z.role === "objective")?.roomIds, name).toEqual(["records-room"]);
+      expect(p.level.objective, name).toBe(F1_DEMO.objective);
+    }
+  });
+
+  it("still finds the objective room by its zone's name when no keyword matches", () => {
+    const f = floor();
+    for (const r of f.rooms) if (r.id === "records-room") r.label = "Evidence Locker";
+    const m = manifest();
+    m.zones.find((z) => z.role === "objective")!.name = "Evidence locker";
+    const p = placeLevel(m, f, SEED, {});
+    expect(p.zones.find((z) => z.role === "objective")?.roomIds).toEqual(["records-room"]);
+  });
+
+  it("falls back to the farthest room nobody passes through when the only name match is a corridor (R1-M2)", () => {
+    // No records, archive or vault room, and a model that names the objective "Corridor".
+    const f = floor();
+    for (const r of f.rooms) if (r.id === "records-room") r.label = "Storage";
+    for (const name of ["Corridor", "Elevator Lobby", "Stair"]) {
+      const m = manifest();
+      m.zones.find((z) => z.role === "objective")!.name = name;
+      const p = placeLevel(m, f, SEED, {});
+      expect(p.zones.find((z) => z.role === "objective")?.roomIds, name).toEqual(["records-room"]);
+      expect(p.level.objective, name).toBe(F1_DEMO.objective);
+      // The server closet stays the secure zone's.
+      expect(p.zones.find((z) => z.role === "secure")?.roomIds, name).toEqual(["server-closet"]);
+    }
+  });
+
+  it("never puts the objective in a suite or office by its model-written name (R1 review)", () => {
+    // Suite 2210 let, no records room, and a model that names the objective "Office".
+    const f = floor();
+    for (const r of f.rooms) if (r.id === "records-room") r.label = "Storage";
+    const m = manifest();
+    m.zones = m.zones.filter((z) => z.id !== "quiet-2210");
+    m.zones.find((z) => z.role === "objective")!.name = "Office";
+    const p = placeLevel(m, f, SEED, {});
+    expect(p.zones.find((z) => z.role === "objective")?.roomIds).toEqual(["records-room"]);
+  });
+
+  it("ignores a model-written name under three letters, which matches nearly any room (R1 review)", () => {
+    const f = floor();
+    for (const r of f.rooms) if (r.id === "records-room") r.label = "Storage";
+    const m = manifest();
+    m.zones.find((z) => z.role === "objective")!.name = "e";
+    const p = placeLevel(m, f, SEED, {});
+    expect(p.zones.find((z) => z.role === "objective")?.roomIds).toEqual(["records-room"]);
+    expect(p.zones.find((z) => z.role === "secure")?.roomIds).toEqual(["server-closet"]);
+  });
+
+  it("finds a records room named a hall by its keyword, and reads circulation words whole (R1 review)", () => {
+    for (const label of ["Records Hall", "Hall of Records"]) {
+      const f = floor();
+      for (const r of f.rooms) if (r.id === "records-room") r.label = label;
+      const p = placeLevel(manifest(), f, SEED, {});
+      expect(p.zones.find((z) => z.role === "objective")?.roomIds, label).toEqual(["records-room"]);
+    }
+    // "Uplift" is not a lift: the fallback still takes the room.
+    const f = floor();
+    for (const r of f.rooms) if (r.id === "records-room") r.label = "Uplift Storage";
+    const m = manifest();
+    m.zones.find((z) => z.role === "objective")!.name = "Corridor";
+    expect(placeLevel(m, f, SEED, {}).zones.find((z) => z.role === "objective")?.roomIds).toEqual(["records-room"]);
+  });
+
+  it("still gives an entry zone the lobby its name matches (R1 review)", () => {
+    const m = manifest();
+    const objective = m.zones.find((z) => z.role === "objective")!;
+    m.zones.push({ ...objective, id: "entry-lobby", role: "entry", name: "Elevator Lobby" });
+    const p = placeLevel(m, floor(), SEED);
+    expect(p.zones.find((z) => z.zoneId === "entry-lobby")?.roomIds).toEqual(["elevator-lobby"]);
   });
 
   it("gives every placed element its manifest provenance entries, the same objects", () => {
     const m = manifest();
     const p = placeLevel(m, floor(), SEED);
-    const elements = [...p.entries, ...p.zones, p.objective, ...p.locks, ...p.cameras, ...p.guards];
+    const elements = [...p.entries, ...p.zones, p.objective, ...p.locks, ...p.cameras, ...p.guards, ...p.cleaners];
+    expect(p.cleaners.length).toBeGreaterThan(0);
     expect(elements.length).toBeGreaterThan(0);
     for (const element of elements) {
       expect(element.provenance.length).toBeGreaterThan(0);
@@ -360,9 +527,22 @@ describe("placeLevel refuses what it cannot run", () => {
     expect(() => placeLevel(manifest(), f, SEED)).toThrow(/no entry node/);
   });
 
-  it("throws on a floor with no room for the objective", () => {
+  it("still places a floor whose objective room cannot be reached from the start (R1-M1: no hang)", () => {
+    // Sever every edge into the records room: the objective is cut off from the dock.
     const f = floor();
-    for (const r of f.rooms) if (r.id === "records-room") r.label = "Storage";
-    expect(() => placeLevel(manifest(), f, SEED)).toThrow(/objective/);
+    const inside = new Set(f.nodes.filter((n) => n.roomId === "records-room").map((n) => n.id));
+    f.edges = f.edges.filter((e) => inside.has(e.a) === inside.has(e.b));
+    const p = placeLevel(manifest(), f, SEED);
+    expect(p.level.objective).toBe(F1_DEMO.objective);
+    expect(p.cleaners.map((k) => k.id)).toEqual(["K1"]);
+  });
+
+  it("throws on a floor with no room for the objective: every room left is one people pass through, a suite, or taken", () => {
+    const f = floor();
+    for (const r of f.rooms) if (r.id === "records-room") r.label = "Back Hall";
+    const m = manifest();
+    m.zones.find((z) => z.role === "objective")!.name = "Corridor";
+    expect(() => placeLevel(m, f, SEED)).toThrow(PlacementError);
+    expect(() => placeLevel(m, f, SEED)).toThrow(/no room on the floor fits the objective zone: every room left is a corridor, lobby, stair or lift/);
   });
 });

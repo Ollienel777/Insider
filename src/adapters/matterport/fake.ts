@@ -7,11 +7,15 @@
 // terms stance (browser only, never persisted) does not apply to them.
 import { FloorGraph } from "@/domain";
 import f1 from "../../../fixtures/floors/F1.json";
+import f2 from "../../../fixtures/floors/F2.json";
+import f3 from "../../../fixtures/floors/F3.json";
 import type { MatterportAdapter } from "./types";
 
-/** Building id → its fixture floor. F2–F5 floors are later tickets. */
+/** Building id → its fixture floor. F4 and F5 floors are a later ticket (#40). */
 export const FIXTURE_FLOORS: Readonly<Record<string, FloorGraph>> = Object.freeze({
   F1: FloorGraph.parse(f1),
+  F2: FloorGraph.parse(f2),
+  F3: FloorGraph.parse(f3),
 });
 
 /**

@@ -18,7 +18,7 @@ export {
 } from "./autoplay";
 export { HOLD, LEVELS, setAlarm, type AlarmCause, type AlarmEvent } from "./alarm";
 export { moveGuards, orderGuard, plannedPath, type OrderResult } from "./guards";
-export { toRunLog } from "./log";
+export { RUN_RULES, toRunLog } from "./log";
 export { hearingRange, withinHops } from "./noise";
 export { applyChiefOrders, type AppliedOrders, type DroppedOrder } from "./orders";
 export { neighbours, shortestPath } from "./path";
