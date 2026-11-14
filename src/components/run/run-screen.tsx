@@ -46,6 +46,7 @@ import { clearRunLog, keepRunLogInMemory, runLogOf, saveRunLog } from "./run-log
 import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postureOf, runRecordOf, type RunRecord } from "./run-history";
 import { MuteToggle, useRunSound } from "./run-sound";
 import { placeOrFixture } from "./scan-fallback";
+import { firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, ViewSwitch } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -118,6 +119,8 @@ export function RunScreen({
   const missionId = useMissionId();
   /** Walking or sprinting (issue 121): `S` switches; any action, and Restart, go back to walking. */
   const [mode, setMode] = useState<Mode>("walk");
+  /** The board or first person (issue 115): first person hands its actions to `play`, like a key. */
+  const runView = useRunView();
 
   // The Security Chief: one call per alarm event, answered between turns.
   // Nothing waits on it: the engine already has the guards converging.
@@ -487,6 +490,7 @@ export function RunScreen({
       }
       board={
           <div className="relative min-h-0 flex-1">
+            {run && placed ? <ViewSwitch state={runView} floor={placed.level.floor} /> : null}
             {load.status === "loading" ? (
               <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
             ) : load.status === "no-floor" ? (
@@ -518,6 +522,17 @@ export function RunScreen({
                   </Button>
                 }
               />
+            ) : run && placed && manifest && firstPersonOn(runView, placed.level.floor) ? (
+              <FirstPersonView
+                placed={placed}
+                run={run}
+                objective={manifest.mission.objective}
+                onAct={play}
+                onUnavailable={() => {
+                  runView.fail();
+                  setStatus(FP_UNAVAILABLE);
+                }}
+              />
             ) : run && placed ? (
               <BoardView
                 placed={placed}
@@ -541,7 +556,7 @@ export function RunScreen({
             <p data-testid="run-status" aria-live="polite" className="min-w-0 text-sm text-text-1 md:truncate">
               {status}
             </p>
-            <div className="flex shrink-0 items-center gap-4 text-sm text-text-2 max-md:hidden">
+            <div className={cn("flex shrink-0 items-center gap-4 text-sm text-text-2 max-md:hidden", placed && firstPersonOn(runView, placed.level.floor) ? "hidden" : null)}>
               <span className="flex items-center gap-2">
                 <Kbd>1–9</Kbd> {mode === "sprint" ? "sprint" : "move"}
               </span>
