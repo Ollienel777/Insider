@@ -211,11 +211,11 @@ test("Live: a pick in progress goes on by the clock, and Space takes the files a
   await expect(page.getByTestId("alarm-banner")).toHaveAttribute("data-state", "calm");
 });
 
-test("Live: a clock turn raises the alarm and calls the Chief, whose re-plan lands while the turns pass, and the clock stops when the run ends", async ({
+test("Live: a clock turn raises the alarm and calls the Chief, whose re-plan lands while the turns pass; the clock stops when the run ends, and the Debrief replays its turns", async ({
   page,
 }) => {
-  // Three keys, then up to a dozen clock turns and two Chief calls: about 3 s alone. 60 s is for a loaded VM.
-  test.setTimeout(60_000);
+  // Three keys, up to a dozen clock turns, two Chief calls and the Debrief: about 5 s alone. 90 s is for a loaded VM.
+  test.setTimeout(90_000);
   let calls = 0;
   let release!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve));
@@ -269,7 +269,36 @@ test("Live: a clock turn raises the alarm and calls the Chief, whose re-plan lan
   const ended = await turn(page).textContent();
   await tick(page, LIVE_TURN_MS * 5);
   await expect(turn(page)).toHaveText(ended!);
-  await expect(page.getByRole("link", { name: "See the debrief" })).toBeVisible();
+
+  // The Debrief replays the run from its log: three turns by the player, then the clock's waits, each
+  // with every piece where that turn left it.
+  const final = await page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? "null"), RUN_LOG);
+  expect(final.turns).toHaveLength(Number(ended));
+  expect(final.turns.map((t: { player: { kind: string } }) => t.player.kind)).toEqual([
+    "move",
+    "wait",
+    "move",
+    ...Array.from({ length: final.turns.length - 3 }, () => "wait"),
+  ]);
+  await page.clock.resume();
+  await page.getByRole("link", { name: "See the debrief" }).click();
+  await expect(page).toHaveURL(/\/b\/F1\/debrief\?m=romaine-1974$/, { timeout: 15_000 });
+  const replay = page.getByTestId("replay-board");
+  await expect(replay).toBeVisible();
+  await expect(page.getByTestId("replay-slider")).toHaveAttribute("max", String(final.turns.length));
+  // The clock's first turn (the one C2 saw), the one that carried the Chief's orders, and its last.
+  for (const frame of [4, 6, final.turns.length]) {
+    await page.getByTestId("replay-slider").fill(String(frame));
+    await expect(replay).toHaveAttribute("data-frame", String(frame));
+    const logged = final.turns[frame - 1] as { player: { nodeId: string }; guards: { guardId: string; nodeId: string }[] };
+    await expect(replay.getByTestId("player-piece")).toHaveAttribute("data-node", logged.player.nodeId);
+    for (const guard of logged.guards) {
+      await expect(replay.locator(`[data-testid="guard-piece"][data-id="${guard.guardId}"]`), `${guard.guardId} on frame ${frame}`).toHaveAttribute(
+        "data-node",
+        guard.nodeId,
+      );
+    }
+  }
 });
 
 test("Live: Restart starts the countdown over, sprinting stays on through a clock turn, and Tactical stops the clock and its pause", async ({
