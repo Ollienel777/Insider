@@ -10,7 +10,9 @@ import { toRunLog, zoneOf, type RunState } from "@/engine";
 import type { Posture } from "@/level/placer";
 import type { ChiefZones } from "./chief-request";
 
-export const runHistoryKey = (buildingId: string) => `heist:run-history:${buildingId}`;
+/** Keyed by building and mission, as the run log is: a record's zones belong to that pair's level. */
+export const runHistoryKey = (buildingId: string, missionId?: string | null) =>
+  missionId ? `heist:run-history:${buildingId}:${missionId}` : `heist:run-history:${buildingId}`;
 
 /** How many runs the history keeps: the oldest goes first. */
 export const HISTORY_MAX = 20;
@@ -53,9 +55,9 @@ export function runRecordOf(run: RunState): RunRecord | null {
   };
 }
 
-export function loadRunHistory(buildingId: string, storage?: Pick<Storage, "getItem">): RunRecord[] {
+export function loadRunHistory(buildingId: string, storage?: Pick<Storage, "getItem">, missionId?: string | null): RunRecord[] {
   try {
-    const raw = (storage ?? browserStorage())?.getItem(runHistoryKey(buildingId));
+    const raw = (storage ?? browserStorage())?.getItem(runHistoryKey(buildingId, missionId));
     if (!raw) return [];
     const parsed = RunHistory.safeParse(JSON.parse(raw));
     return parsed.success ? parsed.data : [];
@@ -69,20 +71,21 @@ export function appendRunHistory(
   buildingId: string,
   record: RunRecord,
   storage?: Pick<Storage, "getItem" | "setItem">,
+  missionId?: string | null,
 ): void {
   try {
     const store = storage ?? browserStorage();
     if (!store) return;
-    const next = [...loadRunHistory(buildingId, store), record].slice(-HISTORY_MAX);
-    store.setItem(runHistoryKey(buildingId), JSON.stringify(next));
+    const next = [...loadRunHistory(buildingId, store, missionId), record].slice(-HISTORY_MAX);
+    store.setItem(runHistoryKey(buildingId, missionId), JSON.stringify(next));
   } catch {
     // The Chief just remembers less.
   }
 }
 
-export function clearRunHistory(buildingId: string, storage?: Pick<Storage, "removeItem">): void {
+export function clearRunHistory(buildingId: string, storage?: Pick<Storage, "removeItem">, missionId?: string | null): void {
   try {
-    (storage ?? browserStorage())?.removeItem(runHistoryKey(buildingId));
+    (storage ?? browserStorage())?.removeItem(runHistoryKey(buildingId, missionId));
   } catch {
     // As with a save.
   }

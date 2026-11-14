@@ -105,6 +105,20 @@ describe("a finished run's record", () => {
     clearRunHistory("F1", storage);
     expect(loadRunHistory("F1", storage)).toEqual([]);
   });
+  it("is kept per building and mission, as the run log is", () => {
+    const storage = memoryStorage();
+    const record: RunRecord = { outcome: "caught", entryZone: "dock-N", detectedZones: [], noise: 1 };
+    expect(runHistoryKey("F1", "romaine-1974")).toBe("heist:run-history:F1:romaine-1974");
+    appendRunHistory("F1", record, storage, "romaine-1974");
+    expect(storage.getItem("heist:run-history:F1:romaine-1974")).not.toBeNull();
+    expect(loadRunHistory("F1", storage, "romaine-1974")).toEqual([record]);
+    expect(loadRunHistory("F1", storage, "other-mission")).toEqual([]);
+    expect(loadRunHistory("F1", storage)).toEqual([]);
+    clearRunHistory("F1", storage, "other-mission");
+    expect(loadRunHistory("F1", storage, "romaine-1974")).toHaveLength(1);
+    clearRunHistory("F1", storage, "romaine-1974");
+    expect(loadRunHistory("F1", storage, "romaine-1974")).toEqual([]);
+  });
   it("stays quiet when storage throws, on reaching it or on every call (#96)", () => {
     const record: RunRecord = { outcome: "caught", entryZone: "dock-N", detectedZones: [], noise: 1 };
     const boom = () => {

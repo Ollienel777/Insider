@@ -45,6 +45,10 @@ test("a second run of F1 by the dock: G3 starts posted nearer it, the Chief says
   await caught(page);
   // The run that just ended counts at once, before any reload (R1-M1).
   await expect(page.getByTestId("forget-history")).toHaveText("Forget 1 earlier run");
+  // Kept per building and mission, as the run log is: its zones belong to that level.
+  const stored = await page.evaluate(() => [localStorage.getItem("heist:run-history:F1:romaine-1974"), localStorage.getItem("heist:run-history:F1")]);
+  expect(stored[0]).not.toBeNull();
+  expect(stored[1]).toBeNull();
 
   // The second run: G3 stands elsewhere, and the first rationale names the dock and G3.
   await open(page);

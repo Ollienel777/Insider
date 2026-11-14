@@ -129,7 +129,7 @@ export function RunScreen({
           if (!live) return;
           if (!floor) return setLoad({ status: "no-floor" });
           // Earlier runs here set the guards' starting posture (#35): the placer takes it as an input.
-          const history = loadRunHistory(building.id);
+          const history = loadRunHistory(building.id, undefined, missionId);
           const placed = placeLevel(manifest, floor, RUN_SEED, undefined, postureOf(history));
           setLoad({ status: "ready", placed, live: floor.source === "matterport", history });
           setStoredRuns(history.length);
@@ -239,9 +239,9 @@ export function RunScreen({
       // A run that just ended joins the history; the next visit's guards start from it.
       const record = run.status === "playing" ? runRecordOf(result.run) : null;
       if (record) {
-        appendRunHistory(building.id, record);
+        appendRunHistory(building.id, record, undefined, missionId);
         // The Forget button counts what is stored now, not what this run was placed from.
-        setStoredRuns(loadRunHistory(building.id).length);
+        setStoredRuns(loadRunHistory(building.id, undefined, missionId).length);
       }
       saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current, watchEntry.current), undefined, missionId);
     },
@@ -255,14 +255,14 @@ export function RunScreen({
 
   /** Forgets the earlier runs and places the level again, in its default posture. */
   const forgetHistory = useCallback(() => {
-    clearRunHistory(building.id);
+    clearRunHistory(building.id, undefined, missionId);
     setStoredRuns(0);
     // No run on the board until the level is placed again: no key plays the old one meanwhile.
     latestRun.current = null;
     setRun(null);
     setLoad({ status: "loading" });
     setAttempt((a) => a + 1);
-  }, [building.id]);
+  }, [building.id, missionId]);
 
   const restart = useCallback(() => {
     if (!placed) return;

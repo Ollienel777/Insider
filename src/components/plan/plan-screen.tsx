@@ -75,14 +75,14 @@ export function PlanScreen({
         if (!live) return;
         if (!floor) return setLoad({ status: "no-floor" });
         // The same posture the Run screen places with (#35), so the board the crew plans on is the one they run.
-        const posture = postureOf(loadRunHistory(building.id));
+        const posture = postureOf(loadRunHistory(building.id, undefined, missionId));
         setLoad({ status: "ready", placed: placeLevel(manifest, floor, RUN_SEED, undefined, posture), live: floor.source === "matterport" });
       }, fail)
       .catch(fail);
     return () => {
       live = false;
     };
-  }, [building, manifest, heistMode]);
+  }, [building, manifest, heistMode, missionId]);
 
   useEffect(() => warmModel(warm), [warm]);
 
