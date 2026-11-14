@@ -7,7 +7,7 @@ import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { BatchResult, LevelManifest, type Strategy } from "@/domain";
 import { placeLevel } from "@/level/placer";
 import cached from "../../data/levels/F1.json";
-import { autoplay, BATCH_SEEDS, resolveStrategy, runBatch } from "./index";
+import { autoplay, BATCH_SEEDS, resolveStrategy, runBatch, varyLevel } from "./index";
 
 const manifest = LevelManifest.parse(structuredClone(cached));
 const floor = FIXTURE_FLOORS.F1;
@@ -44,15 +44,24 @@ describe("runBatch on F1", () => {
     expect(a).toEqual(b);
   });
 
-  it("has at least one strategy that gets out with the files and one that is caught", () => {
-    const { byStrategy } = batch().summary;
-    const tally = (id: string) => byStrategy.find((s) => s.strategyId === id)!;
-    expect(byStrategy.some((s) => s.escaped > 0)).toBe(true);
-    expect(byStrategy.some((s) => s.caught > 0)).toBe(true);
-    // The demo's way in (SPEC §2): the dock, waiting for the round.
-    expect(tally("dock-patient").escaped).toBe(10);
+  it("reads as odds: a strategy gets out on some seeds and is caught on others", () => {
+    const { summary } = batch();
+    const tally = (id: string) => summary.byStrategy.find((s) => s.strategyId === id)!;
+    // 17 of 50 get out with the files.
+    expect(summary.escaped).toBe(17);
+    expect(summary.escaped).toBeGreaterThanOrEqual(5);
+    expect(summary.escaped).toBeLessThanOrEqual(20);
+    const mixed = summary.byStrategy.filter((s) => s.escaped > 0 && s.escaped < s.runs);
+    expect(mixed.map((s) => s.strategyId)).toEqual(["dock-patient", "dock-fast", "dock-in-roof-out"]);
+    // The demo's way in (SPEC §2): the dock, waiting for the round, gets out most often.
+    expect(tally("dock-patient").escaped).toBe(9);
     // The rounds walk the main corridor below the east stair.
     expect(tally("roof-quiet").caught).toBe(10);
+  });
+
+  it("plays the placed levels as they are with vary: false", () => {
+    const plain = runBatch({ buildingId: "F1", strategies, levelFor, vary: false });
+    expect(plain.runs.map((r) => r.outcome)).not.toEqual(batch().runs.map((r) => r.outcome));
   });
 
   it("names what saw the player first, and on which turn", () => {
@@ -110,9 +119,27 @@ describe("strategies the board cannot play", () => {
   });
 });
 
+describe("varyLevel", () => {
+  it("starts each round and sweep at a seeded point, on the same route and cover", () => {
+    const level = levelFor(1);
+    const before = JSON.stringify(level);
+    const a = varyLevel(level, 1);
+    expect(JSON.stringify(level)).toBe(before);
+    expect(varyLevel(level, 1)).toEqual(a);
+    a.guards.forEach((guard, i) => {
+      const placed = level.guards[i];
+      expect(guard.id).toBe(placed.id);
+      for (const waypoint of placed.patrol) expect(guard.patrol).toContain(waypoint);
+    });
+    a.cameras!.forEach((camera, i) => expect(camera.cover).toEqual(level.cameras![i].cover));
+    const starts = BATCH_SEEDS.map((seed) => JSON.stringify(varyLevel(levelFor(seed), seed).guards.map((g) => g.patrol[0])));
+    expect(new Set(starts).size).toBeGreaterThan(3);
+  });
+});
+
 describe("autoplay", () => {
   it("heads for a via zone before the objective", () => {
-    const level = levelFor(1);
+    const level = levelFor(2);
     const play = (via: string[]) => {
       const resolved = resolveStrategy(level, { ...byId("dock-fast"), via });
       if (!resolved.ok) throw new Error(resolved.reason);

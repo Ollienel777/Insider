@@ -11,13 +11,17 @@
 // long as its patience lasts. Risk tolerance sets how far it peeks, how long
 // it waits and whether it sprints. A batch plays strategies × seeds.
 //
-// Pure: the seed is the only source of variation (it places the level, via
-// `levelFor`, and sets a strategy's opening pause), so the same strategies,
-// seeds and levels always give the same batch.
+// Pure: the seed is the only source of variation, so the same strategies,
+// seeds and levels always give the same batch. It places the level (via
+// `levelFor`), sets where each round and sweep starts (`varyLevel`), and sets
+// the crew's nerve on the attempt: its opening pause, its patience, the turns
+// it misreads the board, and whether it improvises once patience runs out.
+// So a strategy succeeds on some seeds and fails on others, and a batch reads
+// as odds.
 import type { BatchResult, BatchRun, Detector, DetectorTally, DroppedStrategy, Strategy, StrategyTally } from "@/domain";
 import { act, type Action } from "./actions";
-import { neighbours } from "./path";
-import { createRun, type Board, type Level, type RunState } from "./state";
+import { neighbours, shortestPath } from "./path";
+import { compileBoard, createRun, type Board, type Level, type RunState } from "./state";
 
 /** A run still inside after this many turns ends as a timeout. */
 export const AUTOPLAY_MAX_TURNS = 120;
@@ -35,6 +39,21 @@ const POLICY = {
 
 /** What `wait-for-round` adds before the first move: a deeper peek, more patience, and a seeded pause. */
 const ROUND = { peek: 1, patience: 4, pause: 3 } as const;
+
+/**
+ * The crew's nerve on one attempt, drawn from the seed: patience shifts by
+ * `NERVE.min` to `NERVE.max` turns, and on a seeded share of turns (per 100,
+ * by risk) it misreads the board and moves without peeking. A real crew is
+ * not the same crew twice, so neither is this one.
+ */
+const NERVE = { min: -2, max: 3 } as const;
+const SLIPS = { low: 20, medium: 25, high: 30 } as const;
+/**
+ * The share of attempts (per 100, by risk) in which the crew improvises once
+ * its patience runs out: it drops the via zones it has not reached and heads
+ * for the files, or, holding them, leaves by the way it came in.
+ */
+const IMPROVISE = { low: 20, medium: 30, high: 40 } as const;
 
 /** The extra cost of a move by route preference. */
 const OFF_QUIET = 1;
@@ -97,6 +116,11 @@ export function autoplay(level: Level, plan: ResolvedStrategy, maxTurns: number 
   let reached = false;
   const rounding = strategy.timing === "wait-for-round";
   let pause = rounding ? hash(level.seed, strategy.id) % ROUND.pause : 0;
+  const nerve = NERVE.min + (hash(level.seed, `${strategy.id}:nerve`) % (NERVE.max - NERVE.min + 1));
+  const improvises = hash(level.seed, `${strategy.id}:improvise`) % 100 < IMPROVISE[strategy.risk];
+  let replanned = false;
+  let exit = plan.exit;
+  const slips = (turn: number) => hash(level.seed, `${strategy.id}:slip:${turn}`) % 100 < SLIPS[strategy.risk];
 
   while (run.status === "playing" && run.turn < maxTurns) {
     while (viaIndex < plan.via.length && plan.via[viaIndex].includes(run.playerNode)) viaIndex++;
@@ -136,14 +160,14 @@ export function autoplay(level: Level, plan: ResolvedStrategy, maxTurns: number 
     const here = run.playerNode;
     const viaDone = viaIndex >= plan.via.length;
     if (!run.carrying && viaDone && here === board.level.objective) return go({ kind: "take" });
-    const goals = run.carrying ? [plan.exit] : viaDone ? [board.level.objective] : plan.via[viaIndex];
+    const goals = run.carrying ? [exit] : viaDone ? [board.level.objective] : plan.via[viaIndex];
     const dist = distances(board, goals, run.locked, cost);
     const path = follow(board, here, dist, run.locked, cost);
     if (path.length < 2) return { kind: "wait" };
 
     const opening = rounding && !moved;
     const peek = policy.peek + (opening ? ROUND.peek : 0);
-    const patience = policy.patience + (opening ? ROUND.patience : 0);
+    const patience = Math.max(0, policy.patience + nerve + (opening ? ROUND.patience : 0));
     const route = actionsAlong(board, run, path);
     const primary = route[0];
     const wait: Action = { kind: "wait" };
@@ -152,9 +176,24 @@ export function autoplay(level: Level, plan: ResolvedStrategy, maxTurns: number 
       pause--;
       return wait;
     }
-    if (clear(run, route.slice(0, peek))) return go(primary);
+    if (slips(run.turn) || clear(run, route.slice(0, peek))) return go(primary);
     const holding = stalled < patience;
     if (holding && clear(run, [wait])) return wait;
+    if (!holding && improvises && !replanned) {
+      replanned = true;
+      let changed = false;
+      if (!run.carrying && !viaDone) {
+        viaIndex = plan.via.length;
+        changed = true;
+      } else if (run.carrying && exit !== plan.start) {
+        exit = plan.start;
+        changed = true;
+      }
+      if (changed) {
+        stalled = 0;
+        return choose();
+      }
+    }
 
     // Step aside: a neighbour no farther from the goal that nothing watches.
     const best = dist.get(here) ?? Infinity;
@@ -267,6 +306,40 @@ function follow(
   return path;
 }
 
+/** Camera phases are drawn below this: a multiple of every kind's cycle (2 and 3 turns). */
+const PHASE_SPAN = 6;
+
+/**
+ * The level as the batch plays it on `seed`: each walking guard starts at a
+ * seeded point of its round (same route, a different phase) and each camera
+ * at a seeded point of its sweep. The placer alone keeps rounds and sweeps
+ * nearly the same from seed to seed, so without this a strategy would meet
+ * the same security every time and a batch would read as five coin flips,
+ * not odds. Only the batch does this; the player's levels are unchanged.
+ */
+export function varyLevel(level: Level, seed: number = level.seed): Level {
+  const board = compileBoard(level);
+  const guards = level.guards.map((guard) => {
+    const round = roundOf(board, guard.patrol);
+    if (round.length < 2) return guard;
+    const at = hash(seed, `guard:${guard.id}`) % round.length;
+    return { ...guard, patrol: [...round.slice(at), ...round.slice(0, at)] };
+  });
+  const cameras = level.cameras?.map((camera) => ({ ...camera, phase: hash(seed, `camera:${camera.id}`) % PHASE_SPAN }));
+  return { ...level, guards, ...(cameras && { cameras }) };
+}
+
+/** A patrol loop as every node it walks, in order, the way back to the first waypoint included. */
+function roundOf(board: Board, patrol: readonly string[]): string[] {
+  if (patrol.length < 2) return [...patrol];
+  const round: string[] = [];
+  for (let i = 0; i < patrol.length; i++) {
+    const leg = shortestPath(board, patrol[i], [patrol[(i + 1) % patrol.length]]) ?? [patrol[i]];
+    round.push(...leg.slice(0, -1));
+  }
+  return round.filter((id, i) => id !== round[(i + 1) % round.length]);
+}
+
 export interface BatchInput {
   buildingId: string;
   strategies: readonly Strategy[];
@@ -275,12 +348,17 @@ export interface BatchInput {
   /** The level placed with a seed: the browser places the manifest on the floor for each one. */
   levelFor: (seed: number) => Level;
   maxTurns?: number;
+  /** Seed each round's and sweep's phase (`varyLevel`). Default true. */
+  vary?: boolean;
 }
 
 /** Plays every playable strategy on every seed. Strategies the board cannot play are dropped with a reason. */
 export function runBatch(input: BatchInput): BatchResult {
   const seeds = [...(input.seeds ?? BATCH_SEEDS)];
-  const levels = seeds.map((seed) => input.levelFor(seed));
+  const levels = seeds.map((seed) => {
+    const level = input.levelFor(seed);
+    return input.vary === false ? level : varyLevel(level, seed);
+  });
   const dropped: DroppedStrategy[] = [];
   const kept: { strategy: Strategy; plans: ResolvedStrategy[] }[] = [];
   const ids = new Set<string>();
