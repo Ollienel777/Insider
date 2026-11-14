@@ -9,7 +9,7 @@ import { moveGuards } from "./guards";
 import { turnEntry } from "./log";
 import { hearers } from "./noise";
 import { neighbours } from "./path";
-import { guardOn, isAlert, type Exit, type RunState } from "./state";
+import { guardOn, isAlert, picksToOpen, type Exit, type RunState } from "./state";
 import { sightingsAt, type Sighting } from "./vision";
 
 export type Action =
@@ -137,7 +137,7 @@ function playerPhase(run: RunState, action: Action): PlayerPhase | string {
       if (!exit) return `door "${action.doorId}" is not on an edge out of "${here}"`;
       if (!run.locked.includes(action.doorId)) return `door "${action.doorId}" is not locked`;
       const progress = (run.picking?.doorId === action.doorId ? run.picking.progress : 0) + 1;
-      if (progress < run.board.level.pickTurns) {
+      if (progress < picksToOpen(run.board.level, action.doorId)) {
         return { ...same, kind: "pick", entered: [], picking: { doorId: action.doorId, progress } };
       }
       return { ...same, kind: "pick", entered: [], locked: run.locked.filter((d) => d !== action.doorId) };
