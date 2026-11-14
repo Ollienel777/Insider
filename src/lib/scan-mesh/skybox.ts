@@ -178,7 +178,10 @@ export function panoWeights(distances: readonly number[], keep = 3, soft = 0.12)
   const cutoff = sorted.length > keep ? sorted[keep] : Infinity;
   const raw = distances.map((d) => {
     const fade = cutoff === Infinity ? 1 : Math.max(0, 1 - d / Math.max(cutoff, 1e-6));
-    return (fade * fade) / (d * d + soft * soft);
+    // Squared: two panoramas blended half and half show thin things twice, so
+    // the nearer one keeps most of the picture until the player is nearly midway.
+    const near = fade / (d * d + soft * soft);
+    return near * near;
   });
   const total = raw.reduce((sum, w) => sum + w, 0);
   if (total <= 0) {
