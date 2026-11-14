@@ -11,8 +11,10 @@ import {
   createLiveMatterport,
   FLY,
   MatterportNotConfiguredError,
+  PLAYING,
   type InsideConnect,
   type InsideSdk,
+  type InsideView,
   type ShowcaseConnect,
 } from "./live";
 import {
@@ -27,6 +29,16 @@ import {
 } from "./mapping";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+
+/** `App.state` of a player that is already playing, so a stubbed Inside view opens at once. */
+const playing = (): InsideSdk["App"] => ({
+  state: {
+    subscribe(observer) {
+      observer({ phase: PLAYING });
+      return { cancel() {} };
+    },
+  },
+});
 
 const v = (x: number, z: number) => ({ x, y: 1.5, z });
 const sweep = (sid: string, x: number, z: number, room: string | null, neighbors: string[], extra = {}) => ({
@@ -298,7 +310,7 @@ describe("the live Matterport adapter (stubbed SDK, no key)", () => {
 
   it("never sends, stores or caches scan data: no network or storage API in live.ts, mapping.ts or the Inside view", () => {
     const FORBIDDEN = /\b(fetch|XMLHttpRequest|sendBeacon|WebSocket|EventSource|localStorage|sessionStorage|indexedDB|caches)\b/;
-    for (const file of ["live.ts", "mapping.ts", "../../components/run/inside-view.tsx"]) {
+    for (const file of ["live.ts", "mapping.ts", "../../components/run/inside-view.tsx", "../../components/run/scan-pane.tsx"]) {
       const code = readFileSync(path.join(here, file), "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, "")
         .replace(/\/\/.*$/gm, "");
@@ -310,7 +322,7 @@ describe("the live Matterport adapter (stubbed SDK, no key)", () => {
 describe("the Inside view (stubbed SDK)", () => {
   function stubInside(moveTo: InsideSdk["Sweep"]["moveTo"] = vi.fn(async () => undefined)) {
     const disconnect = vi.fn();
-    const connect = vi.fn(async () => ({ Sweep: { moveTo }, disconnect }));
+    const connect = vi.fn(async () => ({ App: playing(), Sweep: { moveTo }, disconnect }));
     return { connect, disconnect, moveTo };
   }
 
@@ -491,7 +503,7 @@ describe("deadlines let go of what they gave up on", () => {
       await vi.advanceTimersByTimeAsync(100);
       await settled;
       expect(seen?.aborted).toBe(true);
-      open({ Sweep: { moveTo: vi.fn() }, disconnect });
+      open({ App: playing(), Sweep: { moveTo: vi.fn() }, disconnect });
       await Promise.resolve();
       expect(disconnect).toHaveBeenCalledTimes(1);
     } finally {
@@ -521,7 +533,7 @@ describe("the Inside view's moves never overlap", () => {
         });
       });
     });
-    const view = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ Sweep: { moveTo }, disconnect() {} }));
+    const view = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ App: playing(), Sweep: { moveTo }, disconnect() {} }));
     const a = view.moveTo("A");
     await Promise.resolve();
     await Promise.resolve();
@@ -538,7 +550,7 @@ describe("the Inside view's moves never overlap", () => {
 
   it("does not fly again to where it already is, and stops once disconnected", async () => {
     const moveTo = vi.fn(async () => undefined);
-    const view = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ Sweep: { moveTo }, disconnect() {} }));
+    const view = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ App: playing(), Sweep: { moveTo }, disconnect() {} }));
     await view.moveTo("A");
     await view.moveTo("A");
     expect(moveTo).toHaveBeenCalledTimes(1);
@@ -592,7 +604,7 @@ describe("the Inside view waits out a flight it did not start", () => {
         .mockRejectedValueOnce(new Error("SweepTransitionActiveException: Tried to start transition while another transition was active"))
         .mockResolvedValue(undefined);
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-      const view = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ Sweep: { moveTo }, disconnect() {} }));
+      const view = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ App: playing(), Sweep: { moveTo }, disconnect() {} }));
       const moved = view.moveTo("A");
       await vi.advanceTimersByTimeAsync(1_000);
       await moved;
@@ -611,7 +623,7 @@ describe("the Inside view waits out a flight it did not start", () => {
         throw new Error("Tried to start transition while another transition was active");
       });
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-      const view = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ Sweep: { moveTo: busy }, disconnect() {} }));
+      const view = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ App: playing(), Sweep: { moveTo: busy }, disconnect() {} }));
       const moved = view.moveTo("A");
       await vi.advanceTimersByTimeAsync(10_000);
       await moved;
@@ -621,7 +633,7 @@ describe("the Inside view waits out a flight it did not start", () => {
       const missing = vi.fn<InsideSdk["Sweep"]["moveTo"]>(async () => {
         throw new Error("sweep not found");
       });
-      const other = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ Sweep: { moveTo: missing }, disconnect() {} }));
+      const other = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ App: playing(), Sweep: { moveTo: missing }, disconnect() {} }));
       await other.moveTo("B");
       expect(missing).toHaveBeenCalledTimes(1);
       warn.mockRestore();
@@ -646,7 +658,7 @@ describe("review fixes: the Inside view lets go, and a lost move does not freeze
     stop.abort();
     await settled;
     expect(inner?.aborted).toBe(true);
-    open({ Sweep: { moveTo: vi.fn() }, disconnect });
+    open({ App: playing(), Sweep: { moveTo: vi.fn() }, disconnect });
     await Promise.resolve();
     expect(disconnect).toHaveBeenCalledTimes(1);
   });
@@ -659,7 +671,7 @@ describe("review fixes: the Inside view lets go, and a lost move does not freeze
         .fn<InsideSdk["Sweep"]["moveTo"]>()
         .mockImplementationOnce(() => new Promise(() => {}))
         .mockResolvedValue(undefined);
-      const view = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ Sweep: { moveTo }, disconnect() {} }));
+      const view = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ App: playing(), Sweep: { moveTo }, disconnect() {} }));
       void view.moveTo("A");
       await vi.advanceTimersByTimeAsync(10);
       const next = view.moveTo("B");
@@ -691,7 +703,7 @@ describe("second review: an Inside view that opened is the panel's to close", ()
     const disconnect = vi.fn();
     const connect = vi.fn<InsideConnect>(async (_p, _m, _k, signal) => {
       inner = signal;
-      return { Sweep: { moveTo: vi.fn(async () => undefined) }, disconnect };
+      return { App: playing(), Sweep: { moveTo: vi.fn(async () => undefined) }, disconnect };
     });
     const stop = new AbortController();
     const view = await connectInsideView({} as HTMLElement, "m", "k", connect, 20_000, stop.signal);
@@ -699,5 +711,107 @@ describe("second review: an Inside view that opened is the panel's to close", ()
     expect(inner?.aborted).toBe(false);
     view.disconnect();
     expect(disconnect).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** An `App.state` the test drives: each phase goes to whoever is subscribed, the current one on subscribing, as the SDK sends them. */
+function drivenApp(first = "appphase.loading") {
+  const observers = new Set<(state: { phase?: string }) => void>();
+  const cancel = vi.fn();
+  let phase = first;
+  const app: InsideSdk["App"] = {
+    state: {
+      subscribe(observer) {
+        observers.add(observer);
+        observer({ phase });
+        return {
+          cancel() {
+            cancel();
+            observers.delete(observer);
+          },
+        };
+      },
+    },
+  };
+  const send = (next: string) => {
+    phase = next;
+    observers.forEach((observer) => observer({ phase }));
+  };
+  return { app, cancel, send, subscribers: () => observers.size };
+}
+
+// Issue 117: the SDK connects while the player still loads. A move made then is taken, the
+// player's own opening move is refused after it, and the player never leaves its poster.
+describe("the Inside view opens only once its player is playing (issue 117)", () => {
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("does not open while the player loads or starts, opens when playing arrives, and stops listening", async () => {
+    const player = drivenApp();
+    let opened: InsideView | null = null;
+    const opening = connectInsideView({} as HTMLElement, "m", "k", async () => ({
+      App: player.app,
+      Sweep: { moveTo: vi.fn(async () => undefined) },
+      disconnect() {},
+    })).then((view) => (opened = view));
+    await flush();
+    expect(opened).toBeNull();
+    expect(player.subscribers()).toBe(1);
+    player.send("appphase.starting");
+    await flush();
+    expect(opened).toBeNull();
+    player.send(PLAYING);
+    await opening;
+    expect(opened).not.toBeNull();
+    await flush();
+    expect(player.cancel).toHaveBeenCalledTimes(1);
+    expect(player.subscribers()).toBe(0);
+  });
+
+  it("fails a player that never plays at the connect deadline, the one bound for both, and disconnects it", async () => {
+    vi.useFakeTimers();
+    try {
+      const player = drivenApp();
+      const disconnect = vi.fn();
+      // The connection itself takes 60 of the 100 ms: the wait for playing gets what is left, not a deadline of its own.
+      const connect: InsideConnect = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        return { App: player.app, Sweep: { moveTo: vi.fn() }, disconnect };
+      };
+      const view = connectInsideView({} as HTMLElement, "m", "k", connect, 100);
+      const settled = expect(view).rejects.toMatchObject({ name: "TimeoutError", message: expect.stringContaining("within 100 ms") });
+      await vi.advanceTimersByTimeAsync(99);
+      expect(player.subscribers()).toBe(1);
+      expect(disconnect).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await settled;
+      expect(disconnect).toHaveBeenCalledTimes(1);
+      expect(player.cancel).toHaveBeenCalledTimes(1);
+      expect(player.subscribers()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets go of a player still loading when the caller stops waiting, and stops listening", async () => {
+    const player = drivenApp();
+    const disconnect = vi.fn();
+    const stop = new AbortController();
+    const view = connectInsideView(
+      {} as HTMLElement,
+      "m",
+      "k",
+      async () => ({ App: player.app, Sweep: { moveTo: vi.fn() }, disconnect }),
+      20_000,
+      stop.signal,
+    );
+    const settled = expect(view).rejects.toThrow("given up on");
+    await flush();
+    expect(player.subscribers()).toBe(1);
+    stop.abort();
+    await settled;
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    await flush();
+    expect(player.cancel).toHaveBeenCalledTimes(1);
+    expect(player.subscribers()).toBe(0);
   });
 });

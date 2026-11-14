@@ -4,6 +4,7 @@
 // the panel has gone.
 import { describe, expect, it, vi } from "vitest";
 import type { InsideView } from "@/adapters/matterport";
+import { connectInsideView, FLY, PLAYING, type InsideSdk } from "@/adapters/matterport/live";
 import { openInsideSession, type InsideStatus } from "./inside-view";
 
 function opener() {
@@ -73,6 +74,34 @@ describe("the Inside view panel's session", () => {
     expect(signal.aborted).toBe(false);
     session.close();
     expect(signal.aborted).toBe(true);
+  });
+
+  it("holds a move asked while the player still loads, and flies it once the view opens (issue 117)", async () => {
+    // The adapter's own connectInsideView, on a stubbed SDK whose player the test starts.
+    let play: () => void = () => {};
+    const app: InsideSdk["App"] = {
+      state: {
+        subscribe(observer) {
+          observer({ phase: "appphase.loading" });
+          play = () => observer({ phase: PLAYING });
+          return { cancel() {} };
+        },
+      },
+    };
+    const moveTo = vi.fn<InsideSdk["Sweep"]["moveTo"]>(async () => undefined);
+    const open = (into: HTMLElement, signal?: AbortSignal) =>
+      connectInsideView(into, "m", "k", async () => ({ App: app, Sweep: { moveTo }, disconnect() {} }), 20_000, signal);
+    const statuses: InsideStatus[] = [];
+    const session = openInsideSession(open, parent, (s) => statuses.push(s));
+    session.moveTo("s1");
+    await tick();
+    expect(statuses).toEqual([]);
+    expect(moveTo).not.toHaveBeenCalled();
+    play();
+    await vi.waitFor(() => expect(moveTo).toHaveBeenCalledTimes(1));
+    expect(moveTo).toHaveBeenCalledWith("s1", expect.objectContaining({ transition: FLY }));
+    expect(statuses).toEqual(["ready"]);
+    session.close();
   });
 
   it("says failed when the player does not open", async () => {
