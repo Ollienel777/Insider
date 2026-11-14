@@ -9,6 +9,7 @@ import {
   type InventoryProperty,
   Mission,
 } from "@/domain";
+import { searchInventory, vacantFloors } from "@/adapters/costar/search";
 import buildingsRaw from "../../fixtures/costar/buildings.json";
 import inventoryRaw from "../../fixtures/inventory.json";
 import finalistsRaw from "../../fixtures/inventory-finalists.json";
@@ -18,52 +19,10 @@ const missions = Mission.array().parse(missionsRaw);
 const inventory = Inventory.parse(inventoryRaw);
 const buildings = Building.array().parse(buildingsRaw);
 
-// ---- reference funnel ------------------------------------------------------
-// A minimal, test-only reading of the filter semantics documented on
-// `CastingFilter`. The search the app runs is C2's (`searchInventory` on the
-// CoStar adapter, #116); it must agree with this on the fixture inventory.
-
-/** The property's floors, each with its available suites added up, largest first. */
-function vacantFloors(p: InventoryProperty) {
-  const floors = new Map<number, { floor: number; sf: number; suites: string[] }>();
-  for (const s of p.availableSpace) {
-    const f = floors.get(s.floor) ?? { floor: s.floor, sf: 0, suites: [] };
-    f.sf += s.sf;
-    f.suites.push(s.suite);
-    floors.set(s.floor, f);
-  }
-  return [...floors.values()].sort((a, b) => b.sf - a.sf || a.floor - b.floor);
-}
-
-function passes(p: InventoryProperty, f: CastingFilter): boolean {
-  switch (f.kind) {
-    case "city":
-      return p.city === f.city;
-    case "yearBuilt":
-      return (f.yearBuilt.min ?? -Infinity) <= p.yearBuilt && p.yearBuilt <= (f.yearBuilt.max ?? Infinity);
-    case "buildingClass":
-      return f.buildingClass.includes(p.buildingClass);
-    case "propertyTypes":
-      return f.propertyTypes.includes(p.propertyType);
-    case "minVacantFloorSf":
-      return (vacantFloors(p)[0]?.sf ?? 0) >= f.minVacantFloorSf;
-    case "needsScan":
-      return p.layers.matterport;
-    case "needsEntry":
-      return f.needsEntry.some((kind) => p.entries.includes(kind));
-  }
-}
-
-/** Applies the filters in order; survivors ranked by their largest vacant floor, then id. */
+// The funnel is the app's own: `searchInventory` (src/adapters/costar/search.ts, #23).
 function funnel(filters: CastingFilter[], all: InventoryProperty[]) {
-  const steps = [{ label: `${all.length} buildings in the inventory`, count: all.length }];
-  let left = all;
-  for (const f of filters) {
-    left = left.filter((p) => passes(p, f));
-    steps.push({ label: f.label, count: left.length });
-  }
-  const ranked = [...left].sort((a, b) => vacantFloors(b)[0].sf - vacantFloors(a)[0].sf || a.id.localeCompare(b.id));
-  return { steps, ranked };
+  const { steps } = searchInventory(all, filters, "fixture");
+  return { steps: steps.map(({ label, count }) => ({ label, count })), ranked: steps[steps.length - 1].top };
 }
 
 // ---- the fixtures ----------------------------------------------------------
@@ -122,6 +81,7 @@ describe("fixtures/inventory.json", () => {
     expect(steps).toHaveLength(mission.casting.length + 1);
     // Every filter takes something away, so each row of the funnel tells.
     for (let i = 1; i < steps.length; i++) expect(steps[i].count, steps[i].label).toBeLessThan(steps[i - 1].count);
+    expect(steps[steps.length - 1].count).toBe(expected.length);
     expect(ranked.map((p) => p.id)).toEqual(expected);
   });
 });
@@ -157,7 +117,7 @@ function shortlist(mission: Mission) {
   return {
     missionId: mission.id,
     funnel: steps,
-    finalists: ranked.slice(0, 3).map(candidate),
+    finalists: ranked.slice(0, 3).map((c) => candidate(inventory.find((p) => p.id === c.id)!)),
     trace: {
       events: [{ atMs: 0, kind: "todo", agent: "casting-director", label: "Read the mission", status: "completed" }],
     },

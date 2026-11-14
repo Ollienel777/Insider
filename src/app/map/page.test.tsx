@@ -1,4 +1,4 @@
-// The map page `/` (#154): with the CoStar fake failing it renders MapError,
+// The map page `/map` (#37): with the CoStar fake failing it renders MapError,
 // whose Retry reloads into the map once CoStar answers. The failure switch is
 // test-only: a production build and a request cannot turn it on.
 import { isValidElement, type ReactElement, type ReactNode } from "react";
@@ -7,9 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CoStarAdapter } from "@/adapters/costar";
 import { createFakeCoStar } from "@/adapters/costar/fake";
 import { MapError } from "@/components/map/map-error";
-import Home from "./page";
+import MapPage from "./page";
 
-/** When set, the adapter `/` reads; otherwise the real selection. */
+/** When set, the adapter `/map` reads; otherwise the real selection. */
 let override: CoStarAdapter | null = null;
 
 vi.mock("@/adapters/costar", async (importOriginal) => {
@@ -26,12 +26,12 @@ vi.mock("@/lib/forced-server", () => ({ forcedServices: async () => new Set() })
 type El = ReactElement<{ children?: ReactNode }>;
 
 /**
- * Renders `/` as a request would: the page, then the async map data inside
- * its Suspense boundary (the shell around it is not rendered).
+ * Renders `/map` as a request would: the page, then the async map data inside
+ * its Suspense boundary (the AppShell around it is not rendered).
  */
-async function renderHome(searchParams: Record<string, string> = {}) {
-  const page = (await Home({ searchParams: Promise.resolve(searchParams) })) as El;
-  const suspense = page.props.children as El;
+async function renderMap() {
+  const shell = MapPage() as El;
+  const suspense = shell.props.children as El;
   const data = suspense.props.children as ReactElement<object, (p: object) => Promise<ReactElement>>;
   const element = await data.type(data.props);
   return { element, html: renderToStaticMarkup(element) };
@@ -50,10 +50,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("/ with the CoStar fake failing", () => {
+describe("/map with the CoStar fake failing", () => {
   it("shows MapError with the message, and its Retry reloads into the map once CoStar answers", async () => {
-    override = createFakeCoStar(undefined, { failWith: "CoStar timed out" });
-    const failed = await renderHome();
+    override = createFakeCoStar(undefined, undefined, { failWith: "CoStar timed out" });
+    const failed = await renderMap();
     expect(failed.element.type).toBe(MapError);
     expect(failed.html).toContain('data-testid="map-error"');
     expect(failed.html).toContain("CoStar didn&#x27;t answer");
@@ -73,7 +73,7 @@ describe("/ with the CoStar fake failing", () => {
 
     // ...and the reloaded page, with CoStar answering, is the map.
     override = null;
-    const recovered = await renderHome();
+    const recovered = await renderMap();
     expect(recovered.html).not.toContain('data-testid="map-error"');
     expect(pins(recovered.html)).toEqual(["F1", "F2", "F3"]);
   });
@@ -82,13 +82,16 @@ describe("/ with the CoStar fake failing", () => {
 describe("the failure switch", () => {
   it("is ignored in a production build: the fake answers from the fixtures", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    const costar = createFakeCoStar(undefined, { failWith: "CoStar timed out" });
+    const costar = createFakeCoStar(undefined, undefined, { failWith: "CoStar timed out" });
     expect((await costar.listBuildings("LA")).map((b) => b.id)).toEqual(["F1", "F2", "F3"]);
     expect((await costar.getBuilding("F1"))?.id).toBe("F1");
   });
 
-  it("cannot be reached from the URL: `/` with any query is the map", async () => {
-    const { html } = await renderHome({ city: "LA", failWith: "x", fail: "1", costar: "fail" });
+  it("cannot be reached from the URL: `/map` takes no request input, and is the map", async () => {
+    // The page declares no searchParams (the city tab is read in the browser),
+    // so no query string can reach the adapter it builds.
+    expect(MapPage.length).toBe(0);
+    const { html } = await renderMap();
     expect(html).not.toContain('data-testid="map-error"');
     expect(pins(html)).toEqual(["F1", "F2", "F3"]);
   });

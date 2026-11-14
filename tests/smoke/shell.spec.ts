@@ -33,7 +33,7 @@ test("a building screen shows the building and the step rail", async ({ page }) 
 test("the primary action walks to the next step and marks the last one done", async ({ page }) => {
   await page.goto("/b/F1/scout");
   await page.getByRole("link", { name: "Plan the job" }).click();
-  await expect(page).toHaveURL(/\/b\/F1\/dossier$/);
+  await expect(page).toHaveURL(/\/b\/F1\/dossier\?m=romaine-1974$/);
   const rail = page.getByRole("navigation", { name: "Steps" });
   await expect(rail.locator('[aria-current="page"]')).toHaveText("Dossier");
   await expect(rail.locator('[data-state="done"]')).toHaveText(["Scout(done)"]);
@@ -68,7 +68,9 @@ async function tabThrough(page: Page) {
 // Each route's controls are all on screen only once its data has arrived, so
 // the walk waits for that outcome before it starts.
 //
-// "/" streams the map: the skeleton comes first, then the buildings in a
+// "/" is the mission picker (#118), rendered whole on the server.
+//
+// "/map" streams the map: the skeleton comes first, then the buildings in a
 // hidden <div>, which React's reveal script swaps in on a later animation
 // frame. The load event can fire before that frame, and under load the walk
 // used to tab past the skeleton (no controls) to the end of the page after
@@ -78,8 +80,14 @@ async function tabThrough(page: Page) {
 //
 // The Scout screen fetches its aerial after hydration; its entry markers are
 // controls too.
+//
+// The cast screen's finalist cards are hidden until its replay ends; under
+// reduced motion it starts at the end, so every control is there at once.
 const loaded: Record<string, (page: Page) => Promise<void>> = {
   "/": async (page) => {
+    await expect(page.getByTestId("mission-card")).toHaveCount(5);
+  },
+  "/map": async (page) => {
     await expect(page.getByTestId("map-skeleton")).toHaveCount(0);
     const rows = page.getByTestId("building-row");
     await expect(rows).toHaveCount(3);
@@ -88,10 +96,16 @@ const loaded: Record<string, (page: Page) => Promise<void>> = {
   "/b/F1/scout": async (page) => {
     await expect(page.getByTestId("aerial-canvas")).toBeVisible();
   },
+  "/m/romaine-1974/cast": async (page) => {
+    await expect(page.getByTestId("finalists")).toHaveAttribute("data-shown", "true");
+    await expect(page.getByTestId("replay")).toBeVisible();
+  },
 };
 
 for (const [route, waitForData] of Object.entries(loaded)) {
   test(`every control on ${route} shows a focus ring and is at least 40px tall`, async ({ page }) => {
+    // Only the cast screen needs it (above); every other route walks with motion on.
+    if (route.endsWith("/cast")) await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(route);
     await waitForData(page);
     const controls = await tabThrough(page);
