@@ -337,6 +337,25 @@ function suitesIn(label: string): (suite: string) => boolean {
   };
 }
 
+/**
+ * The nodes an entry may take: those tagged `entry`. A floor built from a
+ * live scan has none (a scan does not say where the ways in are), so there
+ * the floor's stairs and lifts are offered instead, as SPEC §4.3 always
+ * offers the dock (by the freight lift) and the roof (by a stair). A scan
+ * with neither offers every node, the edge of the plate first (farthest from
+ * its centre, a tie to the lower id).
+ */
+function entryCandidates(floor: FloorGraph): FloorGraph["nodes"] {
+  const tagged = floor.nodes.filter((n) => n.tags.includes("entry"));
+  if (tagged.length > 0) return tagged;
+  const ways = floor.nodes.filter((n) => n.tags.includes("stair") || n.tags.includes("lift"));
+  if (ways.length > 0) return ways;
+  const cx = floor.nodes.reduce((s, n) => s + n.x, 0) / floor.nodes.length;
+  const cy = floor.nodes.reduce((s, n) => s + n.y, 0) / floor.nodes.length;
+  const far = (n: { x: number; y: number }) => (n.x - cx) ** 2 + (n.y - cy) ** 2;
+  return [...floor.nodes].sort((p, q) => far(q) - far(p) || (p.id < q.id ? -1 : 1));
+}
+
 // ---- the placer -------------------------------------------------------------
 
 /**
@@ -371,7 +390,7 @@ export function placeLevel(
   const profileProvenance = (field: string) => provenanceOf(`profile:${field}`);
 
   // Entries: each takes an entry node, the anchored one or the first free one with its preferred tag.
-  const entryNodes = floor.nodes.filter((n) => n.tags.includes("entry"));
+  const entryNodes = entryCandidates(floor);
   const taken = new Set<string>();
   const entries: PlacedEntry[] = [];
   for (const entry of manifest.entries) {
@@ -397,7 +416,11 @@ export function placeLevel(
   if (entries.length === 0) throw new PlacementError("the floor has no entry node for any of the manifest's entries");
   const start = entries[0].nodeId;
   const fromStart = hops(adj, [start]);
-  const fromEntries = hops(adj, entryNodes.map((n) => n.id));
+  // The ways in that guards and cameras keep clear of: every entry-tagged node on a
+  // floor that tags them (F1), else, on a scan, the nodes the entries took.
+  const tagsEntries = floor.nodes.some((n) => n.tags.includes("entry"));
+  const wayIn = new Set(tagsEntries ? entryNodes.map((n) => n.id) : entries.map((e) => e.nodeId));
+  const fromEntries = hops(adj, [...wayIn]);
 
   // Zones onto rooms. Every available suite keeps its own room: the crowded
   // zone (the occupied space) takes only the suite rooms that no available
@@ -441,12 +464,30 @@ export function placeLevel(
     // No room's label names the objective: it goes in the unclaimed room
     // farthest from the start that people do not pass through, that holds no
     // entry, is not a suite or office (the quiet and the occupied space) and
-    // is not named for another zone. Ties go to the lower id.
+    // is not named for another zone. Ties go to the lower id. On a scan the
+    // entries are the nodes the placer chose, not tagged ones.
+    const holdsEntry = (roomId: string) =>
+      hasEntry(roomId) || entries.some((e) => (roomNodes.get(roomId) ?? []).includes(e.nodeId));
     const fallback = floor.rooms
-      .filter((r) => usable(r) && !SUITE_ROOM.test(r.label) && !hasEntry(r.id) && !namedForOther(zone.role, r.label))
+      .filter((r) => usable(r) && !SUITE_ROOM.test(r.label) && !holdsEntry(r.id) && !namedForOther(zone.role, r.label))
       .filter((r) => (roomNodes.get(r.id) ?? []).length > 0)
       .sort((a, b) => nearestToStart(b.id) - nearestToStart(a.id) || a.id.localeCompare(b.id))[0];
-    return fallback ? [fallback.id] : [];
+    if (fallback) return [fallback.id];
+    // A scanned floor's rooms carry fiction names ("Office N") that the rule
+    // above leaves out. There the objective goes to the free room, never one
+    // people pass through, farthest from the start (its nearest node, in
+    // moves), one that holds no entry first, a tie to the lower id.
+    if (floor.source !== "matterport") return [];
+    const far = floor.rooms
+      .filter((r) => usable(r) && (roomNodes.get(r.id)?.length ?? 0) > 0 && !roomNodes.get(r.id)!.includes(start))
+      .filter((r) => Number.isFinite(nearestToStart(r.id)))
+      .sort(
+        (p, q) =>
+          Number(holdsEntry(p.id)) - Number(holdsEntry(q.id)) ||
+          nearestToStart(q.id) - nearestToStart(p.id) ||
+          (p.id < q.id ? -1 : 1),
+      );
+    return far[0] ? [far[0].id] : [];
   };
   // Quiet zones first, so a crowded zone gets only the suites they leave.
   const order: ZoneRole[] = ["quiet", "objective", "secure", "entry", "crowded"];
@@ -482,25 +523,44 @@ export function placeLevel(
       "no room on the floor fits the objective zone: every room left is a corridor, lobby, stair or lift, a suite or office, holds an entry, or is taken",
     );
   }
+  // Never on a way in when the room has another node: the files are not taken standing on an exit.
+  const objectivePool = objectiveZone.nodes.some((id) => !wayIn.has(id))
+    ? objectiveZone.nodes.filter((id) => !wayIn.has(id))
+    : objectiveZone.nodes;
   const objectiveNode =
     anchors.objective && objectiveZone.nodes.includes(anchors.objective)
       ? anchors.objective
-      : [...objectiveZone.nodes].sort(
+      : [...objectivePool].sort(
           (a, b) => (fromStart.get(b) ?? -1) - (fromStart.get(a) ?? -1) || a.localeCompare(b),
         )[0];
   const objective = { nodeId: objectiveNode, zoneId: objectiveZone.zoneId, provenance: objectiveZone.provenance };
 
-  // Locks: every lockable door into the objective and secure rooms.
+  // Locks: every lockable door into the objective and secure rooms. A scan
+  // knows where its doors are but not which lock (its doors all come in
+  // unlockable), so there every door into those rooms takes the era's lock:
+  // the floor the level carries marks them lockable, as the engine requires.
+  const lockedZones = [objectiveZone, ...byRole("secure")];
+  const scanLocks = new Set(
+    floor.source === "matterport"
+      ? lockedZones.flatMap((zone) => {
+          const inside = new Set(zone.nodes);
+          return floor.edges.filter((e) => e.door && inside.has(e.a) !== inside.has(e.b)).map((e) => e.door!.id);
+        })
+      : [],
+  );
+  const lockable = (door: FloorGraph["edges"][number]["door"]) => !!door && (door.lockable || scanLocks.has(door.id));
   const locks: PlacedLock[] = [];
   const lockProvenance = profileProvenance("lockKind");
-  for (const zone of [objectiveZone, ...byRole("secure")]) {
+  for (const zone of lockedZones) {
     const inside = new Set(zone.nodes);
     const doors = floor.edges
-      .filter((e) => e.door?.lockable && inside.has(e.a) !== inside.has(e.b))
+      .filter((e) => lockable(e.door) && inside.has(e.a) !== inside.has(e.b))
       .map((e) => e.door!.id)
       .sort();
     if (doors.length === 0) unplaced.push({ elementRole: `lock:${zone.zoneId}`, reason: "the room has no lockable door" });
     for (const doorId of doors) {
+      // A door between two locked rooms takes one lock, the first room's (the objective's first).
+      if (locks.some((l) => l.doorId === doorId)) continue;
       // The lock's kind (from the era) first, then the zone that puts it on this door.
       locks.push({ doorId, zoneId: zone.zoneId, provenance: [...lockProvenance, ...zone.provenance] });
     }
@@ -519,7 +579,7 @@ export function placeLevel(
   // The night cleaners' rooms: guards walk their rounds elsewhere.
   const crowdedNodes = new Set(byRole("crowded").flatMap((z) => z.nodes));
   const lockedRooms = new Set([objectiveZone, ...byRole("secure")].flatMap((z) => z.roomIds));
-  const isEntry = (id: string) => nodeById.get(id)!.tags.includes("entry");
+  const isEntry = (id: string) => wayIn.has(id);
 
   // Cameras: anchored covers first, then corridor runs nearest the start. No
   // camera watches where a lock is picked: a pick takes several turns, and a
@@ -576,13 +636,34 @@ export function placeLevel(
 
   // Guards: rounds in rooms clear of the way in and out of earshot of the
   // locks, each starting clear of every entry.
-  const nearStart = new Set([...fromStart].filter(([, d]) => d <= ENTRY_CLEARANCE).map(([id]) => id));
+  // Sightlines on a scan are the whole room: a round there never walks where it sees the start.
+  const seesStart = (id: string) => (floor.sightlines[id] ?? []).includes(start);
+  // Out of earshot of the locks: within hearing of a pick, a guard hears it. The range is the
+  // engine's own (the level's `hearing`), on a scan as anywhere: a guard posted nearer would hear
+  // every pick, so a floor with nowhere out of earshot leaves its guards unplaced instead.
   const earshot = new Set(
     [...pickNodes].flatMap((id) => {
       const range = DEFAULT_HEARING + (quietNodes.has(id) ? 1 : 0);
       return [...hops(adj, [id])].filter(([, d]) => d <= range).map(([node]) => node);
     }),
   );
+  // How far from the start and the entries a guard keeps: ENTRY_CLEARANCE moves. A small scanned
+  // floor (a few sweeps, every entry on it) can be nowhere that far, so there it is the most the
+  // floor allows while some node a round could walk (outside the locked rooms, off the entries,
+  // out of sight of the start, out of earshot) is still clear; a floor that tags its entries (F1)
+  // keeps the rule. (With no such node, it falls back to the nodes outside the locked rooms.)
+  const outOfEarshot = floor.nodes
+    .filter((n) => !lockedRooms.has(n.roomId) && !isEntry(n.id) && !quietNodes.has(n.id) && !crowdedNodes.has(n.id) && !seesStart(n.id))
+    .map((n) => n.id)
+    .filter((id) => !earshot.has(id));
+  const roundable = outOfEarshot.length > 0 ? outOfEarshot : floor.nodes.filter((n) => !lockedRooms.has(n.roomId)).map((n) => n.id);
+  const fits = (from: Map<string, number>) =>
+    tagsEntries
+      ? ENTRY_CLEARANCE
+      : Math.max(0, Math.min(ENTRY_CLEARANCE, Math.max(0, ...roundable.map((id) => from.get(id) ?? 0)) - 1));
+  const startClearance = fits(fromStart);
+  const entryClearance = fits(fromEntries);
+  const nearStart = new Set([...fromStart].filter(([, d]) => d <= startClearance).map(([id]) => id));
   const covered = new Set(cameras.flatMap((c) => c.cover));
 
   // The dock post (SPEC §2 beat 5): the last guard of the force holds the
@@ -605,7 +686,7 @@ export function placeLevel(
     const barred = watch ? objectiveRooms : lockedRooms;
     const candidates = floor.nodes
       .filter((n) => !barred.has(n.roomId) && !quietNodes.has(n.id) && !crowdedNodes.has(n.id) && !isEntry(n.id) && !(!watch && covered.has(n.id)))
-      .filter((n) => !nearStart.has(n.id) && !earshot.has(n.id) && (fromEntries.get(n.id) ?? Infinity) > ENTRY_CLEARANCE)
+      .filter((n) => !nearStart.has(n.id) && !earshot.has(n.id) && (fromEntries.get(n.id) ?? Infinity) > entryClearance)
       .filter((n) => !(floor.sightlines[n.id] ?? []).some((id) => nearStart.has(id)))
       .filter((n) => fromEntry.has(n.id) && !taken.has(n.id) && (!watch || fromEntry.get(n.id)! < watch.within))
       .sort((a, b) => fromEntry.get(a.id)! - fromEntry.get(b.id)! || a.id.localeCompare(b.id));
@@ -632,14 +713,25 @@ export function placeLevel(
     }
   }
 
+  // A floor that tags its entries leaves out a whole room that comes near the start or the
+  // locks. A scanned floor has a few large rooms, so there only those nodes are left out.
+  const tooClose = (id: string) => nearStart.has(id) || earshot.has(id);
   let chains = floor.rooms
     .filter((r) => !lockedRooms.has(r.id))
-    .filter((r) => !(roomNodes.get(r.id) ?? []).some((id) => nearStart.has(id) || earshot.has(id)))
+    .filter((r) => !tagsEntries || !(roomNodes.get(r.id) ?? []).some(tooClose))
     .map((r) => ({
       roomId: r.id,
       chain: chainOf(
         adj,
-        (roomNodes.get(r.id) ?? []).filter((id) => !quietNodes.has(id) && !crowdedNodes.has(id) && !isEntry(id) && id !== post?.node && id !== watch?.node),
+        (roomNodes.get(r.id) ?? []).filter(
+          (id) =>
+            !quietNodes.has(id) &&
+            !crowdedNodes.has(id) &&
+            !isEntry(id) &&
+            id !== post?.node &&
+            id !== watch?.node &&
+            (tagsEntries || (!tooClose(id) && !seesStart(id))),
+        ),
         fromStart,
       ),
     }))
@@ -660,7 +752,7 @@ export function placeLevel(
   const routes = chains
     .map((route) => ({
       ...route,
-      starts: route.chain.flatMap((id, i) => ((fromEntries.get(id) ?? Infinity) > ENTRY_CLEARANCE ? [i] : [])),
+      starts: route.chain.flatMap((id, i) => ((fromEntries.get(id) ?? Infinity) > entryClearance ? [i] : [])),
     }))
     .filter((route) => route.starts.length > 0)
     .sort((a, b) => b.chain.length - a.chain.length || a.chain[0].localeCompare(b.chain[0]));
@@ -671,6 +763,8 @@ export function placeLevel(
   }
   const guards: PlacedGuard[] = [];
   const tempo = profileProvenance("patrolTempo");
+  // On a scan a short round can have fewer starts than guards sharing it: no two start on one node.
+  const startedOn = new Set<string>();
   for (let g = 0; g < roundCount; g++) {
     const id = `G${g + 1}`;
     if (routes.length === 0) {
@@ -682,7 +776,16 @@ export function placeLevel(
     const nth = Math.floor(g / routes.length);
     const { chain, starts } = route;
     const turn = hash(seed, chain[0]) % starts.length;
-    const at = starts[(turn + Math.floor((nth * starts.length) / sharing)) % starts.length];
+    let at = starts[(turn + Math.floor((nth * starts.length) / sharing)) % starts.length];
+    if (!tagsEntries && startedOn.has(chain[at])) {
+      const free = starts.find((i) => !startedOn.has(chain[i]));
+      if (free === undefined) {
+        unplaced.push({ elementRole: `guard:${id}`, reason: "every start on its round is taken" });
+        continue;
+      }
+      at = free;
+    }
+    startedOn.add(chain[at]);
     const last = chain.length - 1;
     const patrol =
       last === 0
@@ -722,8 +825,8 @@ export function placeLevel(
   // Night cleaners (SPEC §4.3), one for each crowded zone: they walk its
   // room, or a corridor when it has none (CLEANER_RULE), off the nodes that
   // see the shortest way from the start to the objective.
-  const wayIn = new Set(pathWithin(adj, start, objective.nodeId, nodeIds));
-  const offWayIn = (id: string) => !isEntry(id) && !wayIn.has(id) && !(floor.sightlines[id] ?? []).some((s) => wayIn.has(s));
+  const routeIn = new Set(pathWithin(adj, start, objective.nodeId, nodeIds));
+  const offWayIn = (id: string) => !isEntry(id) && !routeIn.has(id) && !(floor.sightlines[id] ?? []).some((s) => routeIn.has(s));
   const cleaners: PlacedCleaner[] = [];
   for (const zone of manifest.zones.filter((z) => z.role === "crowded")) {
     const id = `K${cleaners.length + 1}`;
@@ -761,7 +864,10 @@ export function placeLevel(
     buildingId: manifest.buildingId,
     missionId: manifest.mission.id,
     seed,
-    floor,
+    floor:
+      scanLocks.size > 0
+        ? { ...floor, edges: floor.edges.map((e) => (e.door && scanLocks.has(e.door.id) ? { ...e, door: { ...e.door, lockable: true } } : e)) }
+        : floor,
     start,
     objective: objective.nodeId,
     exits: entries.map((e) => e.nodeId),

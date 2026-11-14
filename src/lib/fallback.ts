@@ -13,7 +13,7 @@ export interface Fallback {
   message: string;
 }
 
-export type FallbackCause = "failed" | "timeout" | "no-scan" | "unknown";
+export type FallbackCause = "failed" | "timeout" | "no-scan" | "unknown" | "unplaceable";
 
 /**
  * A live service answered "no such id" for an id the fixtures know (the demo
@@ -40,6 +40,7 @@ export function fallbackMessage(service: Service, cause: FallbackCause = "failed
   const label = SERVICES[service].label;
   const name = service === "llm" ? "The model" : label;
   if (cause === "no-scan") return `This building has no ${label} scan, so ${WHAT[service]}.`;
+  if (cause === "unplaceable") return `The ${label} scan can't hold this level, so ${WHAT[service]}.`;
   if (cause === "unknown") return `${name} doesn't know this building, so ${WHAT[service]}.`;
   if (cause === "timeout") return `${name} didn't answer in time, so ${WHAT[service]}.`;
   return `${name} didn't answer, so ${WHAT[service]}.`;

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getMatterport } from "@/adapters/matterport";
+import { getMatterport, insideViewFor } from "@/adapters/matterport";
 import { BuildingScreen } from "@/components/shell/building-screen";
 import { buildingHref } from "@/lib/building-href";
 import { useMissionId } from "@/lib/use-mission-id";
@@ -34,8 +34,10 @@ import { LensLegend, LensToggle, useLayerLens } from "./layer-lens";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
 import { loadCrewPlan, type StoredCrewPlan } from "./crew-plan-store";
-import { clearRunLog, runLogOf, saveRunLog } from "./run-log-store";
+import { InsideViewPanel } from "./inside-view";
+import { clearRunLog, keepRunLogInMemory, runLogOf, saveRunLog } from "./run-log-store";
 import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postureOf, runRecordOf, type RunRecord } from "./run-history";
+import { placeOrFixture } from "./scan-fallback";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -48,6 +50,23 @@ export const WALK_STATUS = "Walking again. Pick a number to move.";
 
 /** Where the run's log is kept for the Debrief (SPEC §4.1: run logs live in localStorage). */
 export { runLogKey } from "./run-log-store";
+
+/**
+ * The level placed on `floor`, and whether the floor is a live scan. A board
+ * from the scan names its sweeps, so before any run on it writes its log, the
+ * log is kept out of storage (SPEC §4.5). Call this before `startRun`.
+ */
+export function boardOn(
+  buildingId: string,
+  manifest: LevelManifest,
+  floor: FloorGraph,
+  posture?: Parameters<typeof placeLevel>[4],
+  missionId?: string | null,
+): { placed: PlacedLevel; live: boolean } {
+  const live = floor.source === "matterport";
+  keepRunLogInMemory(buildingId, live, undefined, missionId);
+  return { placed: placeLevel(manifest, floor, RUN_SEED, undefined, posture), live };
+}
 
 type Load =
   | { status: "loading" }
@@ -124,8 +143,8 @@ export function RunScreen({
     (level: LevelManifest, floor: FloorGraph): PlacedLevel => {
       // Earlier runs here set the guards' starting posture (#35): the placer takes it as an input.
       const history = loadRunHistory(building.id, undefined, missionId);
-      const placed = placeLevel(level, floor, RUN_SEED, undefined, postureOf(history));
-      setLoad({ status: "ready", placed, floor, live: floor.source === "matterport", history });
+      const { placed, live } = boardOn(building.id, level, floor, postureOf(history), missionId);
+      setLoad({ status: "ready", placed, floor, live, history });
       setStoredRuns(history.length);
       watchEntry.current = placed.watch?.entryId;
       startRun(placed.level);
@@ -143,10 +162,13 @@ export function RunScreen({
     matterport.adapter
       .loadFloor(building)
       .then(
-        (floor) => {
+        async (floor) => {
           if (!live) return;
           if (!floor) return setLoad({ status: "no-floor" });
-          const placed = placeAndStart(manifest, floor);
+          // A scan the level can't be placed on falls back to the fixture floor, and the chip says so.
+          const placed = await placeOrFixture(building, floor, (on) => (live ? placeAndStart(manifest, on) : null));
+          if (!live) return;
+          if (!placed) return setLoad({ status: "no-floor" });
           setStatus(`You're in at the ${placed.entries[0].label.toLowerCase()}. Pick a number to move.`);
         },
         (error: unknown) => {
@@ -168,6 +190,9 @@ export function RunScreen({
   const history = load.status === "ready" ? load.history : null;
   const floor = load.status === "ready" ? load.floor : null;
   const zones = useMemo(() => (placed ? chiefZones(placed) : null), [placed]);
+  // The Inside view: only on a floor that came from a live scan (never on fixtures, so the demo path is unchanged).
+  const liveScan = load.status === "ready" && load.live;
+  const openInside = useMemo(() => (liveScan ? insideViewFor(building, heistMode) : null), [liveScan, building, heistMode]);
 
   // The crew's plan from the Plan screen, read after mount (storage is the browser's).
   const [crewPlan, setCrewPlan] = useState<StoredCrewPlan | null>(null);
@@ -249,9 +274,10 @@ export function RunScreen({
       setRun(result.run);
       setStatus(describeTurn(placed, run, result.run));
       if (result.run.alarmEvents.length > run.alarmEvents.length) callChief(result.run, result.run.alarmEvents.length - 1);
-      // A run that just ended joins the history; the next visit's guards start from it.
+      // A run that just ended joins the history; the next visit's guards start from it. Not on a
+      // live scan: a record names the scan's rooms, and SPEC §4.5 keeps scan data out of storage.
       try {
-        const record = run.status === "playing" ? runRecordOf(result.run) : null;
+        const record = run.status === "playing" && !liveScan ? runRecordOf(result.run) : null;
         if (record) {
           appendRunHistory(building.id, record, undefined, missionId);
           // The Forget button counts what is stored now, not what this run was placed from.
@@ -262,7 +288,7 @@ export function RunScreen({
       }
       saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current, watchEntry.current), undefined, missionId);
     },
-    [placed, run, callChief, building.id, missionId],
+    [placed, run, callChief, building.id, missionId, liveScan],
   );
 
   const retryChief = useCallback(() => {
@@ -465,6 +491,7 @@ export function RunScreen({
           crewPlan={crewPlan}
           loading={load.status === "loading" || (load.status === "ready" && !run)}
           awaiting={hidden}
+          inside={openInside && run ? <InsideViewPanel open={openInside} sweepId={run.playerNode} /> : null}
           chief={<ChiefPanel state={chief} revealed={revealed} zoneName={(id) => (placed ? zoneName(placed, id) : id)} onRetry={retryChief} />}
         />
       }
@@ -489,6 +516,7 @@ function RunPanel({
   crewPlan,
   loading,
   awaiting,
+  inside,
   chief,
 }: {
   manifest: LevelManifest | null;
@@ -500,6 +528,8 @@ function RunPanel({
   loading: boolean;
   /** Guards whose Chief order is still streaming in: their row waits for it. */
   awaiting: ReadonlySet<string>;
+  /** The Inside view, on a live scan only. */
+  inside: ReactNode;
   chief: ReactNode;
 }) {
   if (!manifest || !placed || !run) {
@@ -538,6 +568,8 @@ function RunPanel({
       {run.status !== "playing" ? <Outcome placed={placed} run={run} /> : null}
 
       {chief}
+
+      {inside}
 
       <section aria-labelledby="objective-label" className="flex flex-col gap-2">
         <h2 id="objective-label" className="label-caps text-text-3">
