@@ -95,8 +95,8 @@ export interface TraceView {
  * What the trace shows once the events `shown` accepts have played. Every
  * row is listed from the start, so the list never changes height.
  */
-export function traceView(
-  trace: { events: readonly (Omit<BuildTraceEvent, "agent"> & { agent: string })[]; liveData?: boolean },
+export function traceView<T extends { events: readonly (Omit<BuildTraceEvent, "agent"> & { agent: string })[]; liveData?: boolean }>(
+  trace: T,
   shown: (index: number) => boolean,
   /** The agent the run belongs to; the tools any other agent calls indent under its task. */
   root = "level-builder",
