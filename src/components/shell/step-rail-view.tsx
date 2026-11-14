@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Check } from "lucide-react";
+import { buildingHref } from "@/lib/building-href";
 import { cn } from "@/lib/utils";
 import { STEPS, stepStates, type StepState } from "./steps";
 
@@ -30,9 +31,18 @@ function StepLink({ href, label, state }: { href: string; label: string; state: 
 }
 
 /** The rail itself, with the current step given; `StepRail` supplies it from the route. */
-export function StepRailView({ buildingId, current }: { buildingId: string; current: string | null }) {
+export function StepRailView({
+  buildingId,
+  current,
+  missionId = null,
+}: {
+  buildingId: string;
+  current: string | null;
+  /** The chosen mission, carried on every step as `?m=` (issue 119). */
+  missionId?: string | null;
+}) {
   const states = stepStates(current);
-  const href = (segment: string) => `/b/${encodeURIComponent(buildingId)}/${segment}`;
+  const href = (segment: string) => buildingHref(buildingId, segment, missionId);
   return (
     <nav aria-label="Steps" className="border-b border-border bg-surface-1 px-1 md:px-3">
       <ol className="flex h-11 items-center">

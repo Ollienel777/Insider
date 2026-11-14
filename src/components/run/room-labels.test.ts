@@ -13,7 +13,7 @@ import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { type FloorGraph, LevelManifest } from "@/domain";
 import { act, createRun, type Action } from "@/engine";
 import { placeLevel } from "@/level/placer";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import baseline from "./room-labels-F1.main.json";
 import { fixedLabels, shortLabel, standingOf } from "./board-view";
 import { frameOf, LABEL_FONT, project, projectRect, roomLabelMatrix, type Matrix, type Point } from "./iso";

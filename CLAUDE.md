@@ -85,6 +85,20 @@ of `in-progress`, `hold` or `needs-decision`, and that no open PR closes.
   answer, which the status issue (#1) names. Answering one and adding
   `loop-ok` hands it to the loop instead.
 
+## Skein: the team's decisions, and who is on what
+
+The repo's `.mcp.json` connects every session to the team's Skein at
+`insider.skeinai.ca`. Set `SKEIN_SECRET` in your shell before starting `claude`
+(Nelson shares it privately; it never enters the repo), and approve the
+`skein` server once.
+
+- **Before deciding anything a teammate might own** (scope, a convention, the
+  demo), call `ask_skein` with `wait_seconds` 90 or less: the venue's route to
+  Skein cuts a call off at 100 seconds. Use its answer and cite its id.
+- **When you start or finish a ticket**, call `report_status` with orchestrator
+  `<your GitHub login> claude-code`, repo `Ollienel777/Insider`, and your
+  whole `working_on` and `waiting_on` lists. Each report replaces your last.
+
 ## Things that bite
 
 - **No product code before `hacking starts`** (see `hackathon/EVENT.md`). Many

@@ -10,6 +10,266 @@
       "sourceUrl": "https://www.cia.gov/stories/story/the-exposing-of-project-azorian"
     },
     "objective": "Take the files from the records room",
-    "exitCondition": "Leave by any entry with the files before the alarm reaches Lockdown"
+    "exitCondition": "Leave by any entry with the files before the alarm reaches Lockdown",
+    "casting": [
+      {
+        "kind": "city",
+        "label": "in LA",
+        "city": "LA"
+      },
+      {
+        "kind": "yearBuilt",
+        "label": "built 1974 or earlier",
+        "yearBuilt": {
+          "max": 1974
+        }
+      },
+      {
+        "kind": "propertyTypes",
+        "label": "office",
+        "propertyTypes": [
+          "office"
+        ]
+      },
+      {
+        "kind": "buildingClass",
+        "label": "Class A or B",
+        "buildingClass": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "kind": "minVacantFloorSf",
+        "label": "a floor with 10,000 SF or more on the market",
+        "minVacantFloorSf": 10000
+      },
+      {
+        "kind": "needsScan",
+        "label": "a Matterport scan"
+      },
+      {
+        "kind": "needsEntry",
+        "label": "a dock or service entry on the aerial",
+        "needsEntry": [
+          "dock",
+          "service"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "sunset-1986",
+    "city": "LA",
+    "type": "heist",
+    "title": "Hole in the Ground",
+    "inspiredBy": {
+      "event": "The First Interstate Bank tunnel burglary, Sunset Blvd",
+      "date": "1986",
+      "sourceUrl": "https://lareviewofbooks.org/short-takes/l-four-locations-bank-robbery-capital-world"
+    },
+    "objective": "Open the vault room from below and take the safe-deposit boxes",
+    "exitCondition": "Leave through the garage or the service entry with the boxes before the alarm reaches Lockdown",
+    "casting": [
+      {
+        "kind": "city",
+        "label": "in LA",
+        "city": "LA"
+      },
+      {
+        "kind": "yearBuilt",
+        "label": "built in the 1980s",
+        "yearBuilt": {
+          "min": 1980,
+          "max": 1989
+        }
+      },
+      {
+        "kind": "propertyTypes",
+        "label": "office or retail",
+        "propertyTypes": [
+          "office",
+          "retail"
+        ]
+      },
+      {
+        "kind": "minVacantFloorSf",
+        "label": "a floor with 10,000 SF or more on the market",
+        "minVacantFloorSf": 10000
+      },
+      {
+        "kind": "needsScan",
+        "label": "a Matterport scan"
+      },
+      {
+        "kind": "needsEntry",
+        "label": "a garage or service entry on the aerial",
+        "needsEntry": [
+          "garage",
+          "service"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "night-desk",
+    "city": "LA",
+    "type": "prevent",
+    "title": "The Night Desk",
+    "inspiredBy": null,
+    "objective": "Get the prototype out of the lab before the hired crew reaches it",
+    "exitCondition": "Leave by the service lift or the east stair with the prototype before the alarm reaches Lockdown",
+    "casting": [
+      {
+        "kind": "city",
+        "label": "in LA",
+        "city": "LA"
+      },
+      {
+        "kind": "yearBuilt",
+        "label": "built 2015 or later",
+        "yearBuilt": {
+          "min": 2015
+        }
+      },
+      {
+        "kind": "propertyTypes",
+        "label": "office",
+        "propertyTypes": [
+          "office"
+        ]
+      },
+      {
+        "kind": "buildingClass",
+        "label": "Class A",
+        "buildingClass": [
+          "A"
+        ]
+      },
+      {
+        "kind": "minVacantFloorSf",
+        "label": "a floor with 15,000 SF or more on the market",
+        "minVacantFloorSf": 15000
+      },
+      {
+        "kind": "needsScan",
+        "label": "a Matterport scan"
+      },
+      {
+        "kind": "needsEntry",
+        "label": "a dock on the aerial",
+        "needsEntry": [
+          "dock"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "paper-trail-2001",
+    "city": "Houston",
+    "type": "prevent",
+    "title": "Paper Trail",
+    "inspiredBy": {
+      "event": "The Andersen document shredding, 1400 Smith St, Houston",
+      "date": "Oct 23 – Nov 9, 2001",
+      "sourceUrl": "https://en.wikipedia.org/wiki/1400_Smith_Street"
+    },
+    "objective": "Keep the audit files out of the shredding room",
+    "exitCondition": "Get the files to the dock before the shredders run, or hold the records room until dawn",
+    "casting": [
+      {
+        "kind": "city",
+        "label": "in Houston",
+        "city": "Houston"
+      },
+      {
+        "kind": "yearBuilt",
+        "label": "built 2001 or earlier",
+        "yearBuilt": {
+          "max": 2001
+        }
+      },
+      {
+        "kind": "propertyTypes",
+        "label": "office",
+        "propertyTypes": [
+          "office"
+        ]
+      },
+      {
+        "kind": "buildingClass",
+        "label": "Class A",
+        "buildingClass": [
+          "A"
+        ]
+      },
+      {
+        "kind": "minVacantFloorSf",
+        "label": "a floor with 10,000 SF or more on the market",
+        "minVacantFloorSf": 10000
+      },
+      {
+        "kind": "needsScan",
+        "label": "a Matterport scan"
+      },
+      {
+        "kind": "needsEntry",
+        "label": "a dock on the aerial",
+        "needsEntry": [
+          "dock"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "syntactic-2019",
+    "city": "Houston",
+    "type": "prevent",
+    "title": "Syntactic",
+    "inspiredBy": {
+      "event": "The Trelleborg syntactic-foam trade-secret case, Houston",
+      "date": "2019",
+      "sourceUrl": "https://worldoil.com/news/2019/7/30/prolific-chinese-theft-ring-targeted-deepwater-drilling-technologies/"
+    },
+    "objective": "Keep the foam samples and the formula binder in the lab",
+    "exitCondition": "Stop the samples leaving by the dock, or hold the lab until dawn",
+    "casting": [
+      {
+        "kind": "city",
+        "label": "in Houston",
+        "city": "Houston"
+      },
+      {
+        "kind": "yearBuilt",
+        "label": "built 2019 or earlier",
+        "yearBuilt": {
+          "max": 2019
+        }
+      },
+      {
+        "kind": "propertyTypes",
+        "label": "industrial or flex",
+        "propertyTypes": [
+          "industrial",
+          "flex"
+        ]
+      },
+      {
+        "kind": "minVacantFloorSf",
+        "label": "a floor with 2,500 SF or more on the market",
+        "minVacantFloorSf": 2500
+      },
+      {
+        "kind": "needsScan",
+        "label": "a Matterport scan"
+      },
+      {
+        "kind": "needsEntry",
+        "label": "a dock on the aerial",
+        "needsEntry": [
+          "dock"
+        ]
+      }
+    ]
   }
 ]

@@ -167,6 +167,8 @@ export interface RunState {
   picking: { doorId: string; progress: number } | null;
   /** Ids of the doors locked now, sorted. */
   locked: readonly string[];
+  /** Ids of the doors a Chief order locked, sorted; they unlock when the alarm decays to Calm. */
+  chiefLocks: readonly string[];
   guards: readonly GuardState[];
   alarm: AlarmState;
   /** Turns in a row that nothing has held the alarm at its level (see alarm.ts). */
@@ -285,6 +287,7 @@ export function createRun(level: Level): RunState {
     carrying: false,
     picking: null,
     locked: [...new Set(level.lockedDoors)].sort(),
+    chiefLocks: [],
     guards: level.guards.map((g) => placeWalker(board, g)),
     alarm: "calm",
     alarmQuiet: 0,

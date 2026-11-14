@@ -1,0 +1,304 @@
+{
+  "id": "casting-romaine-1974",
+  "agents": [
+    {
+      "agent": "casting-director",
+      "systemIncludes": "You are the Casting Director for Heist Anywhere.",
+      "turns": [
+        {
+          "content": "Reading romaine-1974.",
+          "toolCalls": [
+            {
+              "name": "get_mission",
+              "args": {
+                "missionId": "romaine-1974"
+              }
+            }
+          ]
+        },
+        {
+          "content": "The Romaine Street Papers: 7 casting filters. Planning.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  {
+                    "content": "Read mission romaine-1974 and its casting needs",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Narrow the inventory with the location scout, one filter at a time",
+                    "status": "in_progress"
+                  },
+                  {
+                    "content": "Pick three finalists and write the shortlist",
+                    "status": "pending"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "The scout runs the search; the city first, the rarest needs last.",
+          "toolCalls": [
+            {
+              "name": "task",
+              "args": {
+                "subagent_type": "location-scout",
+                "description": "Mission romaine-1974: apply its casting filters with search_inventory in this order: city, yearBuilt, propertyTypes, buildingClass, minVacantFloorSf, needsScan, needsEntry. Then check the candidates left with get_candidate and get_aerial_entries, and report the funnel's counts and each candidate's year, class, vacant floor and matching entries."
+              }
+            }
+          ]
+        },
+        {
+          "content": "The funnel ends with 3: F1, L01, L02.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  {
+                    "content": "Read mission romaine-1974 and its casting needs",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Narrow the inventory with the location scout, one filter at a time",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Pick three finalists and write the shortlist",
+                    "status": "in_progress"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "Writing the shortlist, best first.",
+          "toolCalls": [
+            {
+              "name": "write_shortlist",
+              "args": {
+                "missionId": "romaine-1974",
+                "finalists": [
+                  {
+                    "id": "F1",
+                    "reason": "The 1974 tower with a near-empty floor 22 and a loading dock: the closest stand-in for a 1974 records office, and its era matches the burglary's own year."
+                  },
+                  {
+                    "id": "L01",
+                    "reason": "A 1968 Class B office with 14,620 SF dark on floor 9 and a service door: older and smaller than Halvorsen, so a quieter, scrappier job."
+                  },
+                  {
+                    "id": "L02",
+                    "reason": "A 1971 Class A tower with floor 17 on the market and a dock: the right era, though less of its floor is empty than at Halvorsen."
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "Shortlist written.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  {
+                    "content": "Read mission romaine-1974 and its casting needs",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Narrow the inventory with the location scout, one filter at a time",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Pick three finalists and write the shortlist",
+                    "status": "completed"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "Cast for romaine-1974: Halvorsen Tower (F1), Lancaster Building (L01), Tolland Center (L02), best first."
+        }
+      ]
+    },
+    {
+      "agent": "location-scout",
+      "systemIncludes": "You are the location scout of the Casting Director.",
+      "turns": [
+        {
+          "content": "Reading romaine-1974's casting filters.",
+          "toolCalls": [
+            {
+              "name": "get_mission",
+              "args": {
+                "missionId": "romaine-1974"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: in LA.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "romaine-1974",
+                "filter": "city"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: built 1974 or earlier.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "romaine-1974",
+                "filter": "yearBuilt"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: office.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "romaine-1974",
+                "filter": "propertyTypes"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: Class A or B.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "romaine-1974",
+                "filter": "buildingClass"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: a floor with 10,000 SF or more on the market.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "romaine-1974",
+                "filter": "minVacantFloorSf"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: a Matterport scan.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "romaine-1974",
+                "filter": "needsScan"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: a dock or service entry on the aerial.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "romaine-1974",
+                "filter": "needsEntry"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Halvorsen Tower's record.",
+          "toolCalls": [
+            {
+              "name": "get_candidate",
+              "args": {
+                "id": "F1"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Halvorsen Tower's ways in.",
+          "toolCalls": [
+            {
+              "name": "get_aerial_entries",
+              "args": {
+                "id": "F1"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Lancaster Building's record.",
+          "toolCalls": [
+            {
+              "name": "get_candidate",
+              "args": {
+                "id": "L01"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Lancaster Building's ways in.",
+          "toolCalls": [
+            {
+              "name": "get_aerial_entries",
+              "args": {
+                "id": "L01"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Tolland Center's record.",
+          "toolCalls": [
+            {
+              "name": "get_candidate",
+              "args": {
+                "id": "L02"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Tolland Center's ways in.",
+          "toolCalls": [
+            {
+              "name": "get_aerial_entries",
+              "args": {
+                "id": "L02"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Funnel: 61 in the inventory -> 32 (in LA) -> 14 (built 1974 or earlier) -> 11 (office) -> 8 (Class A or B) -> 5 (a floor with 10,000 SF or more on the market) -> 4 (a Matterport scan) -> 3 (a dock or service entry on the aerial). Left: F1 Halvorsen Tower: built 1974, Class A office, floor 22 has 23,341 SF on the market (suites 2202-2210), scanned, dock and service entry; L01 Lancaster Building: built 1968, Class B office, floor 9 has 14,620 SF on the market, scanned, service entry; L02 Tolland Center: built 1971, Class A office, floor 17 has 11,880 SF on the market, scanned, dock."
+        }
+      ]
+    }
+  ]
+}

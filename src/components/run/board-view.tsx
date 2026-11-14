@@ -76,7 +76,7 @@ function lensAttrs(key: string, layers: readonly LensLayer[] | undefined) {
  * can move to. Pieces hop (`useHop`): the player in `--t-base`,
  * the guards in `--t-slow` once the player has landed.
  *
- * Every guard, camera, lock and zone is a button: clicking one draws the
+ * Every guard, cleaner, camera, lock and zone is a button: clicking one draws the
  * provenance thread and opens its Why card beside it (#21). Esc, the card's
  * close button or a click anywhere else closes it. The guards' and cameras'
  * hit areas sit in a layer above the numbered neighbours, so a click on a
@@ -183,7 +183,10 @@ export function BoardView({
   useEffect(() => {
     if (!why) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") close();
+      if (event.key !== "Escape") return;
+      // Esc closes the card and does nothing else: the Run screen's handler sees it taken (issue 121).
+      event.preventDefault();
+      close();
     };
     const onDown = (event: PointerEvent) => {
       const el = event.target as Element | null;
@@ -240,8 +243,8 @@ export function BoardView({
   const anchor = ((): Point | null => {
     if (!target) return null;
     const id = target.key.slice(target.key.indexOf(":") + 1);
-    if (target.kind === "guard") {
-      const piece = standing.find((s) => s.kind === "guard" && s.id === id);
+    if (target.kind === "guard" || target.kind === "cleaner") {
+      const piece = standing.find((s) => s.kind === target.kind && s.id === id);
       return piece ? { x: piece.p.x, y: piece.p.y - 20 } : null;
     }
     if (target.kind === "camera") {
@@ -547,8 +550,8 @@ export function BoardView({
                 at={piece.p}
                 nodeId={piece.nodeId}
                 tone={piece.kind}
-                selected={piece.kind === "guard" && why === whyKey.guard(piece.id)}
-                layers={piece.kind === "guard" ? layersOf(whyKey.guard(piece.id)) : undefined}
+                selected={why === whyKey[piece.kind](piece.id)}
+                layers={layersOf(whyKey[piece.kind](piece.id))}
                 labelAt={pawnLabels.get(piece.id)}
                 marksAt={pawnMarks.get(piece.id)}
               />
@@ -591,7 +594,7 @@ export function BoardView({
           ))}
         </g>
 
-        {/* Every camera's and guard's hit area, above the numbered neighbours: a click on one opens its card. */}
+        {/* Every camera's, guard's and cleaner's hit area, above the numbered neighbours: a click on one opens its card. */}
         <g data-testid="why-hits">
           {placed.cameras.map((camera) => {
             const p = cameraAt(camera.id);
@@ -606,11 +609,11 @@ export function BoardView({
               </g>
             );
           })}
-          {standing
-            .filter((piece) => piece.kind === "guard")
-            .map((piece) => (
-              <GuardHit key={piece.id} id={piece.id} nodeId={piece.nodeId} at={piece.p} onInspect={inspect} />
-            ))}
+          {standing.map((piece) =>
+            piece.kind === "player" ? null : (
+              <GuardHit key={piece.id} kind={piece.kind} id={piece.id} nodeId={piece.nodeId} at={piece.p} onInspect={inspect} />
+            ),
+          )}
         </g>
       </svg>
       {target ? (
@@ -669,13 +672,15 @@ function inspectable(key: string, label: string, onInspect: (key: string, fromTa
   } as const;
 }
 
-/** A guard's hit area in the board's top layer: it hops with the guard's pawn. */
+/** A guard's or cleaner's hit area in the board's top layer: it hops with the pawn. */
 function GuardHit({
+  kind,
   id,
   nodeId,
   at,
   onInspect,
 }: {
+  kind: "guard" | "cleaner";
   id: string;
   nodeId: string;
   at: Point;
@@ -687,7 +692,7 @@ function GuardHit({
   return (
     <g
       ref={ref}
-      {...inspectable(whyKey.guard(id), `Why is ${id} here?`, onInspect)}
+      {...inspectable(whyKey[kind](id), `Why is ${id} here?`, onInspect)}
       data-node={nodeId}
       className="cursor-pointer"
       style={{ transform: `translate(${p.x}px, ${p.y}px)` }}
@@ -1153,9 +1158,9 @@ export function Pawn({
   tone: "player" | "guard" | "cleaner";
   carrying?: boolean;
   caught?: boolean;
-  /** Its Why card is open (guards only; the hit area that opens it is in the board's top layer). */
+  /** Its Why card is open (guards and cleaners; the hit area that opens it is in the board's top layer). */
   selected?: boolean;
-  /** With the Layer lens on (guards only): its layers, as rings round its base and letter marks beside it. */
+  /** With the Layer lens on (guards and cleaners): its layers, as rings round its base and letter marks beside it. */
   layers?: readonly LensLayer[];
   /** Where its id stands beside its head, clear of the board's other labels (`placeLabels`); right of it by default. */
   labelAt?: LabelSpot;
@@ -1176,7 +1181,7 @@ export function Pawn({
       data-testid={testId}
       data-node={nodeId}
       data-id={label}
-      {...lensAttrs(whyKey.guard(label), layers)}
+      {...lensAttrs(tone === "cleaner" ? whyKey.cleaner(label) : whyKey.guard(label), layers)}
       style={{ transform: `translate(${p.x}px, ${p.y}px)` }}
     >
       {layers ? <LayerRings layers={layers} rx={selected ? 25 : 19} ry={selected ? 12.5 : 9.5} /> : null}
@@ -1311,7 +1316,9 @@ function ChoiceHint({
   const label =
     choice.kind === "pick"
       ? `Pick the door to ${room}, ${choice.progress!.done} of ${choice.progress!.of} (${choice.key})`
-      : `Move to ${room} (${choice.key})`;
+      : choice.kind === "sprint"
+        ? `Sprint to ${room}, two hops, loud (${choice.key})`
+        : `Move to ${room} (${choice.key})`;
   const onKey = (event: KeyboardEvent) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -1341,6 +1348,8 @@ function ChoiceHint({
         fill="none"
         className="stroke-accent transition-[stroke-opacity] [stroke-opacity:0.55] group-hover:[stroke-opacity:1] group-focus-visible:[stroke-opacity:1]"
         strokeWidth="2"
+        // A sprint target's ring is dashed: two hops away, and loud (issue 121).
+        strokeDasharray={choice.kind === "sprint" ? "4 3" : undefined}
       />
       <rect
         x="-11"

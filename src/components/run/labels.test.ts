@@ -9,9 +9,14 @@ import { CrewPlan, LevelManifest } from "@/domain";
 import { ghostOf } from "@/components/plan/crew-reply";
 import { validatePlan } from "@/level/validate-plan";
 import crewF1 from "../../../fixtures/llm/crew-F1.json";
+import crewF2 from "../../../fixtures/llm/crew-F2.json";
+import crewF3 from "../../../fixtures/llm/crew-F3.json";
+import f2Cached from "../../../data/levels/F2.sunset-1986.json";
+import f3Cached from "../../../data/levels/F3.night-desk.json";
 import { act, createRun, type Action, type RunState } from "@/engine";
-import { placeLevel } from "@/level/placer";
-import cached from "../../../data/levels/F1.json";
+import { placeLevel, type PlacedLevel } from "@/level/placer";
+import { quietRoute } from "@/level/quiet-route";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import { actionForKey, cameraMount, choices as choicesOf } from "./board";
 import { CHOICE_HIT, DISC, fixedLabels, fixedLensMarks, fixedLensRings, GHOST_REACH, movingLabels, PICK_HIT, standingOf, type GhostPlan } from "./board-view";
 import { project } from "./iso";
@@ -35,14 +40,14 @@ function play(run: RunState, actions: readonly Action[]): RunState {
 }
 
 /** Every label the board draws on this frame, by its text, as its glyph box (no padding). */
-function drawn(run: RunState, ghost: GhostPlan | null = null, lens = false): { name: string; quad: Quad }[] {
+function drawn(run: RunState, ghost: GhostPlan | null = null, level: PlacedLevel = placed, lens = false): { name: string; quad: Quad }[] {
   const atNode = at(run);
-  const fixed = fixedLabels(placed, run.board.cameras, lens);
+  const fixed = fixedLabels(level, run.board.cameras, lens);
   const choices = choicesOf(run);
   const standing = standingOf(run, atNode);
   const moving = movingLabels(fixed, atNode, choices, standing, ghost);
-  const { floor, objective, exits } = placed.level;
-  const entryLabel = new Map(placed.entries.map((e) => [e.nodeId, e.label]));
+  const { floor, objective, exits } = level.level;
+  const entryLabel = new Map(level.entries.map((e) => [e.nodeId, e.label]));
   const labels: { name: string; quad: Quad }[] = [
     ...fixed.rooms.map((r) => ({ name: r.text, quad: r.quad })),
     ...[objective, ...exits].map((id) => {
@@ -129,7 +134,7 @@ describe("the board's labels (#68)", () => {
       });
     };
     const lensed = (run: RunState) => [
-      ...drawn(run, null, true),
+      ...drawn(run, null, placed, true),
       ...marks.map((quad, i) => ({ name: `lens mark ${i}`, quad })),
       ...guardMarks(run),
     ];
@@ -143,7 +148,7 @@ describe("the board's labels (#68)", () => {
     const demo = CrewPlan.parse(crewF1.replies.find((r) => r.id === "dock-wait")!.plan);
     const ghost: GhostPlan = ghostOf(validatePlan(placed, demo));
     const run = createRun(placed.level);
-    const lensed = [...drawn(run, ghost, true), ...fixedLensMarks(placed, run.board.cameras).map((quad, i) => ({ name: `lens mark ${i}`, quad }))];
+    const lensed = [...drawn(run, ghost, placed, true), ...fixedLensMarks(placed, run.board.cameras).map((quad, i) => ({ name: `lens mark ${i}`, quad }))];
     expect(collisions(lensed)).toEqual([]);
     // No plan mark covers a camera's, lock's or entry's ring.
     const rings = fixedLensRings(placed, run.board.cameras);
@@ -190,7 +195,11 @@ describe("the board's labels (#68)", () => {
     expect([...seen].sort()).toEqual(["rr-door", "sc-rack"]);
   });
 
-  it("keeps every label clear of every other at the wow beat, and on every turn of the quiet route", () => {
+  // Lays out and pair-checks every label on 17 frames, the wow beat and each
+  // turn of the quiet route: 0.9 s alone, 4.0 s pinned to one busy CPU, past the 5 s
+  // default with two gates on the 2-vCPU VM (#85). Skipping frames would test
+  // less, so it gets a budget: 30 s, several times the worst seen.
+  it("keeps every label clear of every other at the wow beat, and on every turn of the quiet route", { timeout: 30_000 }, () => {
     const start = createRun(placed.level);
     expect(collisions(drawn(play(start, [{ kind: "move", to: "fl-lobby" }, { kind: "move", to: "dc-west" }])))).toEqual([]);
     // The quiet route the player plays by keys, in and out (tests/smoke/run.spec.ts).
@@ -204,5 +213,33 @@ describe("the board's labels (#68)", () => {
       expect(collisions(drawn(run)), `turn ${run.turn}`).toEqual([]);
     }
     expect(run.carrying).toBe(true);
+  });
+});
+
+// F2 and F3, the other LA pins (#39): the same frames on their own floors.
+describe.each([
+  { id: "F2", cached: f2Cached, crew: crewF2 },
+  { id: "F3", cached: f3Cached, crew: crewF3 },
+])("the board's labels on $id (#39)", ({ id, cached: level, crew }) => {
+  const here = placeLevel(LevelManifest.parse(structuredClone(level)), structuredClone(FIXTURE_FLOORS[id]), RUN_SEED);
+
+  it("keeps every label clear of every other at the start of the run", () => {
+    expect(collisions(drawn(createRun(here.level), null, here))).toEqual([]);
+  });
+
+  it("keeps the plan's marks clear of every label, for each recorded crew reply", () => {
+    for (const reply of crew.replies) {
+      const ghost = ghostOf(validatePlan(here, CrewPlan.parse(reply.plan)));
+      expect(collisions(drawn(createRun(here.level), ghost, here)), reply.id).toEqual([]);
+    }
+  });
+
+  it("keeps every label clear of every other on every turn of the quiet route", () => {
+    let run = createRun(here.level);
+    for (const action of quietRoute(here)!) {
+      run = play(run, [action]);
+      expect(collisions(drawn(run, null, here)), `turn ${run.turn}`).toEqual([]);
+    }
+    expect(run.status).toBe("won");
   });
 });
