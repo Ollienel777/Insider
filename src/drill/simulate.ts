@@ -1,8 +1,9 @@
 // The drill simulation (SPEC §1, §2 beat 7, D21): the same building and
 // board as the heist, run as an evacuation drill. Occupants stand in the
 // floor's occupied rooms (headcount from CoStar's occupied area ÷ 250 sf),
-// the scenario blocks the stair most of them would use (on a tie, the one
-// whose loss costs the most time, and the report says it was a tie), and each walks to
+// the scenario blocks the stair more of them would use than any other (on a
+// tie, the one whose loss cuts off the most people, then costs the most time,
+// then the lower node id, and the report says it was a tie), and each walks to
 // the nearest open stair at 1.2 m/s over the board's node distances (the
 // fixture floors are drawn in metres). A node admits a fixed number of people
 // per tick, so a shared door or landing queues. The report gives the time to
@@ -37,8 +38,9 @@ export interface DrillOptions {
   /** Only rotates where in its room each occupant starts. Default 0. */
   seed?: number;
   /**
-   * The stair node to block. Default: the scenario's choice (the stair most
-   * occupants would use; a tie goes to the stair whose loss costs the most
+   * The stair node to block. Default: the scenario's choice (the stair more
+   * occupants would use than any other; a tie goes to the stair whose loss cuts
+   * off the most, then costs the most
    * time). `null` blocks none, as the baseline.
    */
   blockedStair?: string | null;
@@ -55,7 +57,7 @@ export interface DrillOccupant {
   distanceM: number;
   /** Seconds after the alarm that they enter the stair; null when stranded. */
   clearedAtS: number | null;
-  /** Seconds spent queued at a full node. */
+  /** Seconds of walking lost held at full nodes (see `walk`), to the hundredth. */
   waitedS: number;
   /** Position at each tick, from 0 to `clearedAtS`, for the drill view to play back. */
   track: readonly { x: number; y: number }[];
@@ -69,25 +71,55 @@ export interface DrillZone {
   clearedAtS: number | null;
 }
 
+/**
+ * A warden post: one for each way out of an occupied room that anyone leaves by, so no one's way out
+ * goes unwatched. A room with two ways out in use gets two posts.
+ */
 export interface WardenPost {
   roomId: string;
   label: string;
-  /** The door most of the room's occupants leave through; null when the way out has no door. */
+  /** The door of this way out; null when the way out has no door. */
   doorId: string | null;
   /** Where the warden stands: the room's side of that way out. */
   nodeId: string;
+  /** How many of the room's occupants leave by this way out. */
+  people: number;
+  /** How many occupants the room holds, by every way out. */
   occupants: number;
 }
 
+/**
+ * The room people spent the most time queued to get into or along. A walker
+ * queues at the threshold of the next node on their path when that node has
+ * already let `NODE_CAPACITY` people in this tick, and the wait is booked to
+ * that node's room: the room they are waiting to enter (from a doorway) or to
+ * move along (from inside it). That is where the flow is held up and where the
+ * board draws the waiting dots, so it is where a warden can relieve it. Every
+ * figure is the whole room's, over all of its nodes.
+ */
 export interface Bottleneck {
-  nodeId: string;
-  /** The room the node is in. */
+  roomId: string;
+  /** The room's label. */
   label: string;
-  /** Occupant-seconds spent queued to enter it. */
-  waitS: number;
-  /** The most people queued for it at once. */
+  /** The room's node with the most queued time, where the board marks the queue. */
+  nodeId: string;
+  /**
+   * Person-seconds spent queued to enter any of the room's nodes: the sum, over
+   * everyone, of the seconds each waited, to the whole second. Not a span of time on the clock.
+   */
+  personSeconds: number;
+  /** The most people queued at once to enter any of the room's nodes (held there at the end of one tick). */
   peakQueue: number;
-  /** People who passed through it. */
+  /** Distinct people who queued for any of the room's nodes. */
+  waiters: number;
+  /**
+   * The most seconds any one person spent queued for the room's nodes, all of
+   * their waits added together, to the whole second. One person's total over
+   * several stops, not one unbroken wait: in a stop-start queue a person waits,
+   * moves a node, and waits again.
+   */
+  mostWaitedS: number;
+  /** Distinct people who were in any of the room's nodes on their way out: who entered one, and who started in one. */
   throughput: number;
 }
 
@@ -119,7 +151,7 @@ export interface DrillReport {
   /** True when every occupant reached a stair. */
   allClear: boolean;
   zones: readonly DrillZone[];
-  /** The node with the most queued occupant-seconds; null when nobody queued. */
+  /** The room with the most person-seconds queued for it, with the whole room's figures; null when nobody queued. */
   bottleneck: Bottleneck | null;
   wardenPosts: readonly WardenPost[];
   /** Everyone who cannot reach an open stair, and why. */
@@ -231,15 +263,36 @@ const remaining = (w: Walker) => w.legs.slice(w.leg).reduce((s, m) => s + m, 0) 
  * Walks everyone to their stair, a tick at a time. In each tick the walkers
  * nearest their stair move first, so the front of a queue goes through first;
  * a walker who reaches a node that has already admitted `NODE_CAPACITY`
- * people this tick waits at its threshold.
+ * people this tick waits at its threshold for the rest of the tick. A wait is
+ * walking time lost: the part of the tick left when they were stopped.
  */
-function walk(g: Graph, walkers: Walker[]): { waits: Map<string, number>; peaks: Map<string, number>; through: Map<string, number> } {
+interface WalkTally {
+  /** Person-seconds queued to enter each node. */
+  waits: Map<string, number>;
+  /** People who entered each node. */
+  through: Map<string, number>;
+  /** The most people queued at once for any of a room's nodes, by room id. */
+  roomPeaks: Map<string, number>;
+  /** Seconds each walker spent queued for any of a room's nodes, by room id, then walker id. */
+  roomWaiters: Map<string, Map<string, number>>;
+  /** The distinct walkers who started in or entered any of a room's nodes, by room id. */
+  roomThrough: Map<string, Set<string>>;
+}
+
+function walk(g: Graph, walkers: Walker[]): WalkTally {
   const waits = new Map<string, number>();
-  const peaks = new Map<string, number>();
   const through = new Map<string, number>();
+  const roomPeaks = new Map<string, number>();
+  const roomThrough = new Map<string, Set<string>>();
+  const roomWaiters = new Map<string, Map<string, number>>();
+  const roomOf = (nodeId: string) => g.nodes.get(nodeId)!.roomId;
   for (const w of walkers) {
     w.track.push(positionOf(g, w));
     if (w.legs.length === 0) w.clearedAt = 0;
+    // Someone who starts in a room passes through it too, though they never enter one of its nodes.
+    const start = roomThrough.get(roomOf(w.path[0])) ?? new Set<string>();
+    start.add(w.id);
+    roomThrough.set(roomOf(w.path[0]), start);
   }
   const step = WALK_SPEED_M_S * TICK_S;
   for (let t = 1; walkers.some((w) => w.clearedAt === null); t++) {
@@ -261,15 +314,28 @@ function walk(g: Graph, walkers: Walker[]): { waits: Map<string, number>; peaks:
         const next = w.path[w.leg + 1];
         const used = entered.get(next) ?? 0;
         if (used >= NODE_CAPACITY) {
+          // Held at the threshold for the rest of the tick. The wait is the time it costs them: the walking they
+          // could not use this tick, which is none when they reach the threshold just as the tick ends, since next
+          // tick they go in and still walk a full step. At their stair it is the whole tick, since they go in a
+          // tick later, and going in is the end of their walk.
+          const held = w.leg + 1 === w.legs.length ? TICK_S : (budget - room) / WALK_SPEED_M_S;
           w.along = w.legs[w.leg];
-          w.waited += TICK_S;
-          waits.set(next, (waits.get(next) ?? 0) + TICK_S);
-          queued.set(next, (queued.get(next) ?? 0) + 1);
           budget = 0;
+          if (held > 1e-6) {
+            w.waited += held;
+            waits.set(next, (waits.get(next) ?? 0) + held);
+            queued.set(next, (queued.get(next) ?? 0) + 1);
+            const waiting = roomWaiters.get(roomOf(next)) ?? new Map<string, number>();
+            waiting.set(w.id, (waiting.get(w.id) ?? 0) + held);
+            roomWaiters.set(roomOf(next), waiting);
+          }
           break;
         }
         entered.set(next, used + 1);
         through.set(next, (through.get(next) ?? 0) + 1);
+        const seen = roomThrough.get(roomOf(next)) ?? new Set<string>();
+        seen.add(w.id);
+        roomThrough.set(roomOf(next), seen);
         budget -= room;
         w.leg += 1;
         w.along = 0;
@@ -280,9 +346,12 @@ function walk(g: Graph, walkers: Walker[]): { waits: Map<string, number>; peaks:
       }
       w.track.push(positionOf(g, w));
     }
-    for (const [id, n] of queued) peaks.set(id, Math.max(peaks.get(id) ?? 0, n));
+    // Each walker queues for one node at most per tick, so a room's sum counts nobody twice.
+    const inRoom = new Map<string, number>();
+    for (const [id, n] of queued) inRoom.set(roomOf(id), (inRoom.get(roomOf(id)) ?? 0) + n);
+    for (const [room, n] of inRoom) roomPeaks.set(room, Math.max(roomPeaks.get(room) ?? 0, n));
   }
-  return { waits, peaks, through };
+  return { waits, through, roomPeaks, roomThrough, roomWaiters };
 }
 
 // ---- the drill --------------------------------------------------------------
@@ -334,7 +403,12 @@ export function simulateDrill(building: Building, floor: FloorGraph, options: Dr
       rule = "No occupant can reach a stair, so none is blocked";
     } else if (leaders.length === 1) {
       blockedStair = leaders[0];
-      rule = `${label(blockedStair)} is the stair most occupants would use (${of}), so the scenario blocks it`;
+      // "Most" only for a true majority; a plurality is "more than any other stair".
+      const which =
+        most * 2 > placement.occupants.length
+          ? "the stair most occupants would use"
+          : "the stair more occupants would use than any other";
+      rule = `${label(blockedStair)} is ${which} (${of}), so the scenario blocks it`;
     } else {
       // A tie: block the stair whose loss strands the most people, then costs the most time, then the lower id.
       const cost = new Map(leaders.map((s) => [s, lossOf(g, open(new Set([s])))]));
@@ -343,9 +417,17 @@ export function simulateDrill(building: Building, floor: FloorGraph, options: Dr
           cost.get(b)!.stranded - cost.get(a)!.stranded || cost.get(b)!.timeS - cost.get(a)!.timeS || a.localeCompare(b),
       )[0];
       const chosen = blockedStair;
-      const said = (s: string) => {
+      // What losing a stair does, as a clause. "Clears the floor" only when nobody is cut off.
+      const outcome = (s: string) => {
         const c = cost.get(s)!;
-        return c.stranded === 0 ? `${c.timeS} s` : `${c.timeS} s, with ${c.stranded} unable to reach a stair`;
+        if (c.stranded === 0) return `the floor clears in ${c.timeS} s`;
+        if (c.walking === 0) return `nobody can reach a stair`;
+        return `${c.stranded} cannot reach a stair and the rest are in a stair in ${c.timeS} s`;
+      };
+      // The same, as a short comparison: "47 s", or "47 s with 1 cut off".
+      const brief = (s: string) => {
+        const c = cost.get(s)!;
+        return c.stranded === 0 ? `${c.timeS} s` : `${c.timeS} s with ${c.stranded} cut off`;
       };
       const same = (s: string) =>
         cost.get(s)!.timeS === cost.get(chosen)!.timeS && cost.get(s)!.stranded === cost.get(chosen)!.stranded;
@@ -356,13 +438,13 @@ export function simulateDrill(building: Building, floor: FloorGraph, options: Dr
         : "A tie goes to the stair whose loss costs the most time";
       if (others.every(same)) {
         rule =
-          `${each}, a tie. ${tieRule}, but losing any of them ` +
-          `clears the floor in ${said(chosen)}, so the scenario blocks ${label(chosen)}, the first by node id`;
+          `${each}, a tie. ${tieRule}, but losing any of them gives the same result (${outcome(chosen)}), ` +
+          `so the scenario blocks ${label(chosen)}, the first by node id`;
       } else {
-        const against = listOf(others.map((s) => `${said(s)} without ${label(s)}`));
+        const against = listOf(others.map((s) => `${brief(s)} without ${label(s)}`));
         rule =
           `${each}, a tie. ${tieRule}: without ${label(chosen)} ` +
-          `the floor clears in ${said(chosen)}, against ${against}, so the scenario blocks ${label(chosen)}`;
+          `${outcome(chosen)}, against ${against}, so the scenario blocks ${label(chosen)}`;
       }
     }
   }
@@ -386,7 +468,7 @@ export function simulateDrill(building: Building, floor: FloorGraph, options: Dr
     }
     walkers.push(walkerOf(g, o.id, route.path));
   }
-  const { waits, peaks, through } = walk(g, walkers);
+  const { waits, through, roomPeaks, roomThrough, roomWaiters } = walk(g, walkers);
   const byId = new Map(walkers.map((w) => [w.id, w]));
 
   const occupants: DrillOccupant[] = placement.occupants.map((o) => {
@@ -399,7 +481,7 @@ export function simulateDrill(building: Building, floor: FloorGraph, options: Dr
       path: w ? w.path : [],
       distanceM: w ? round2(w.legs.reduce((s, m) => s + m, 0)) : 0,
       clearedAtS: w ? w.clearedAt : null,
-      waitedS: w ? w.waited : 0,
+      waitedS: w ? round2(w.waited) : 0,
       track: w ? w.track : [],
     };
   });
@@ -429,20 +511,48 @@ export function simulateDrill(building: Building, floor: FloorGraph, options: Dr
       found.n += 1;
       exits.set(key, found);
     }
-    const best = [...exits.entries()].sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0]))[0];
-    if (!best) return [];
-    return [{ roomId: z.roomId, label: z.label, doorId: best[1].doorId, nodeId: best[1].nodeId, occupants: z.occupants }];
+    // Every way out anyone takes, the busiest first (then the lower key).
+    return [...exits.entries()]
+      .sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0]))
+      .map(([, e]) => ({ roomId: z.roomId, label: z.label, doorId: e.doorId, nodeId: e.nodeId, people: e.n, occupants: z.occupants }));
   });
 
-  // Only a node someone queued for is a bottleneck; with no queue there is none.
+  // The bottleneck is a room: the one with the most person-seconds queued for it, then the most people through it, then the
+  // lower room id. Only a room someone queued in is one; with no queue there is none. Its figures are the
+  // whole room's, and the board marks the room's node with the most queued time (then through, then id). Waits are
+  // fractions of a tick, so they are compared to the hundredth and reported to the whole second.
+  const byRoom = new Map<string, { nodeId: string; personSeconds: number }>();
+  for (const [nodeId, exact] of [...waits.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const wait = round2(exact);
+    if (wait === 0) continue;
+    const roomId = g.nodes.get(nodeId)!.roomId;
+    const room = byRoom.get(roomId);
+    if (!room) {
+      byRoom.set(roomId, { nodeId, personSeconds: wait });
+      continue;
+    }
+    const best = room.nodeId;
+    if (wait > round2(waits.get(best)!) || (wait === round2(waits.get(best)!) && (through.get(nodeId) ?? 0) > (through.get(best) ?? 0))) {
+      room.nodeId = nodeId;
+    }
+    room.personSeconds += wait;
+  }
   let bottleneck: Bottleneck | null = null;
-  for (const [nodeId, n] of [...through.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-    if ((waits.get(nodeId) ?? 0) === 0) continue;
-    const candidate = { nodeId, label: label(nodeId), waitS: waits.get(nodeId) ?? 0, peakQueue: peaks.get(nodeId) ?? 0, throughput: n };
+  for (const [roomId, room] of [...byRoom.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const candidate: Bottleneck = {
+      roomId,
+      label: label(room.nodeId),
+      nodeId: room.nodeId,
+      personSeconds: Math.round(room.personSeconds),
+      peakQueue: roomPeaks.get(roomId) ?? 0,
+      waiters: roomWaiters.get(roomId)?.size ?? 0,
+      mostWaitedS: Math.round(Math.max(0, ...(roomWaiters.get(roomId)?.values() ?? []))),
+      throughput: roomThrough.get(roomId)?.size ?? 0,
+    };
     if (
       !bottleneck ||
-      candidate.waitS > bottleneck.waitS ||
-      (candidate.waitS === bottleneck.waitS && candidate.throughput > bottleneck.throughput)
+      candidate.personSeconds > bottleneck.personSeconds ||
+      (candidate.personSeconds === bottleneck.personSeconds && candidate.throughput > bottleneck.throughput)
     ) {
       bottleneck = candidate;
     }
@@ -480,8 +590,12 @@ function listOf(items: readonly string[]): string {
 function lossOf(
   g: Graph,
   routes: { o: { id: string }; route: { path: string[] } | null }[],
-): { stranded: number; timeS: number } {
+): { stranded: number; walking: number; timeS: number } {
   const walkers = routes.flatMap(({ o, route }) => (route ? [walkerOf(g, o.id, route.path)] : []));
   walk(g, walkers);
-  return { stranded: routes.length - walkers.length, timeS: walkers.reduce((m, w) => Math.max(m, w.clearedAt!), 0) };
+  return {
+    stranded: routes.length - walkers.length,
+    walking: walkers.length,
+    timeS: walkers.reduce((m, w) => Math.max(m, w.clearedAt!), 0),
+  };
 }

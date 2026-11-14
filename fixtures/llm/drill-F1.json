@@ -1,0 +1,74 @@
+{
+  "buildingId": "F1",
+  "note": "Recorded drill narratives for Halvorsen Tower, read by src/agents/drill/recorded.ts. Each answers only the exact facts it was recorded for (src/drill/facts.ts). src/agents/drill/narrator.test.ts checks every recording against simulateDrill on its floor, and src/agents/drill/claims.test.ts ties every number in its text to a named fact and checks every claim against those facts, so a change to the simulation, or an edit that makes a sentence untrue, fails there instead of reaching the screen.",
+  "narratives": [
+    {
+      "id": "floor-22-staged",
+      "facts": {
+        "buildingId": "F1",
+        "floor": 22,
+        "headcount": 6,
+        "blockedStair": "West Stair (Stair B)",
+        "wouldUse": 3,
+        "openStairs": ["East Stair (Stair A)"],
+        "timeToClearS": 54,
+        "baselineS": 46,
+        "allClear": true,
+        "stranded": 0,
+        "bottleneck": { "label": "Dock Corridor", "peakQueue": 2, "waiters": 3, "mostWaitedS": 2, "personSeconds": 3, "throughput": 6 },
+        "zones": [
+          { "label": "Server Closet", "occupants": 3, "clearedAtS": 54, "rerouted": 3 },
+          { "label": "Records Room", "occupants": 3, "clearedAtS": 42, "rerouted": 0 }
+        ],
+        "wardenPosts": [
+          { "label": "Server Closet", "doorId": "d-server-closet", "people": 3 },
+          { "label": "Records Room", "doorId": "d-records-room", "people": 3 }
+        ]
+      },
+      "narrative": {
+        "scenario": "CoStar's occupied area puts 6 people on floor 22: 3 in the Server Closet and 3 in the Records Room. The drill blocks West Stair (Stair B), which 3 of them would use with every stair open, all from the Server Closet, and all 6 leave by East Stair (Stair A). The floor is in a stair in 54 s, 8 s longer than with every stair open. 3 people wait to get into or along the Dock Corridor, up to 2 at once; the most any of them waits is 2 s in all, every stop added together.",
+        "recommendations": [
+          "Post a warden at the Server Closet door (d-server-closet) to turn its 3 people from West Stair (Stair B) to East Stair (Stair A): they are the last into a stair, at 54 s.",
+          "Post a warden at the Records Room door (d-records-room) to keep its 3 people moving: they need no turning, and are in a stair by 42 s.",
+          "Keep the way into the Dock Corridor clear during the drill: all 6 people pass through it, and up to 2 at once wait to get into or along it."
+        ]
+      }
+    },
+    {
+      "id": "floor-21-busiest",
+      "facts": {
+        "buildingId": "F1",
+        "floor": 21,
+        "headcount": 99,
+        "blockedStair": "East Stair (Stair A)",
+        "wouldUse": 57,
+        "openStairs": ["West Stair (Stair B)"],
+        "timeToClearS": 111,
+        "baselineS": 78,
+        "allClear": true,
+        "stranded": 0,
+        "bottleneck": { "label": "Main Corridor", "peakQueue": 53, "waiters": 98, "mostWaitedS": 80, "personSeconds": 2461, "throughput": 99 },
+        "zones": [
+          { "label": "Open Office 2210", "occupants": 26, "clearedAtS": 82, "rerouted": 26 },
+          { "label": "Suites 2202–2205", "occupants": 42, "clearedAtS": 61, "rerouted": 0 },
+          { "label": "Suites 2206–2209", "occupants": 31, "clearedAtS": 111, "rerouted": 31 }
+        ],
+        "wardenPosts": [
+          { "label": "Open Office 2210", "doorId": "d-2210-south", "people": 21 },
+          { "label": "Open Office 2210", "doorId": "d-2210-north", "people": 5 },
+          { "label": "Suites 2202–2205", "doorId": "d-2202", "people": 21 },
+          { "label": "Suites 2202–2205", "doorId": "d-2205", "people": 21 },
+          { "label": "Suites 2206–2209", "doorId": "d-2206", "people": 31 }
+        ]
+      },
+      "narrative": {
+        "scenario": "CoStar's occupied area puts 99 people on floor 21: 42 in Suites 2202–2205, 31 in Suites 2206–2209 and 26 in Open Office 2210. The drill blocks East Stair (Stair A), which 57 of them would use with every stair open, the 31 from Suites 2206–2209 and the 26 from Open Office 2210, and all 99 leave by West Stair (Stair B). The floor is in a stair in 111 s, 33 s longer than with every stair open. The Main Corridor is the choke point: all 99 pass through it, and 98 of them wait to get into or along it, up to 53 at once; the most any of them waits is 80 s in all, every stop added together.",
+        "recommendations": [
+          "Post a warden at the Suites 2206–2209 door (d-2206) to turn its 31 people from East Stair (Stair A) to West Stair (Stair B): they are the last into a stair, at 111 s.",
+          "Post a warden inside Open Office 2210 to turn its 26 people from East Stair (Stair A) to West Stair (Stair B): once turned, 21 leave by d-2210-south and 5 by d-2210-north.",
+          "Post a warden in the Main Corridor to keep its queue moving: up to 53 people at once wait to get into or along it; the most any of them waits is 80 s in all, every stop added together."
+        ]
+      }
+    }
+  ]
+}

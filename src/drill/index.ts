@@ -25,3 +25,4 @@ export {
   type StrandedOccupant,
   type WardenPost,
 } from "./simulate";
+export { DrillFacts, drillFacts } from "./facts";
