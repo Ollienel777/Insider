@@ -21,7 +21,7 @@ export const MAX_ROUTE_TURNS = 60;
 /** What makes two states the same for the rest of the run (the turn is the layer). */
 function keyOf(run: RunState): string {
   const walkers = (group: RunState["guards"]) =>
-    group.map((g) => `${g.nodeId}:${g.waypoint}:${g.idle}:${g.target?.zoneId ?? ""}`).join(",");
+    group.map((g) => `${g.nodeId}:${g.waypoint}:${g.idle}:${g.target ? `${g.target.intent}:${g.target.nodes.join("+")}:${g.target.visit}` : ""}`).join(",");
   return [
     run.playerNode,
     run.carrying ? 1 : 0,

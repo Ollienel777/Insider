@@ -1,0 +1,34 @@
+{
+  "buildingId": "F1",
+  "note": "Recorded Security Chief turns for Halvorsen Tower, matched by src/agents/chief/recorded.ts on the alarm transition. The first turn whose `when` matches answers; a transition with none gets the deterministic template (template.ts). Zone ids are the ones the Run screen sends for the F1 fixture floor: the cached manifest's zones and entries (data/levels/F1.json), and the floor's other rooms by id. Written for beat 5: the judge walks straight into C2's half of the dock corridor on turn 1.",
+  "turns": [
+    {
+      "id": "c2-trip",
+      "when": { "from": "calm", "to": "alert", "lastKnownZone": "dock-corridor" },
+      "orders": {
+        "orders": [
+          { "guardId": "G1", "intent": "converge", "zoneId": "dock-corridor" },
+          { "guardId": "G4", "intent": "converge", "zoneId": "dock-corridor" },
+          { "guardId": "G2", "intent": "hold", "zoneId": "objective" },
+          { "guardId": "G3", "intent": "block", "zoneId": "dock-N" }
+        ],
+        "lockZones": ["objective"],
+        "rationale": "C2 has them in the dock corridor. G1 and G4, up through the elevator lobby and converge. G2 holds the records room door. G3 cuts off the loading dock. Lock the records room."
+      }
+    },
+    {
+      "id": "c2-second-contact",
+      "when": { "from": "alert", "to": "lockdown", "lastKnownZone": "dock-corridor" },
+      "orders": {
+        "orders": [
+          { "guardId": "G1", "intent": "converge", "zoneId": "dock-corridor" },
+          { "guardId": "G2", "intent": "converge", "zoneId": "dock-corridor" },
+          { "guardId": "G4", "intent": "converge", "zoneId": "dock-corridor" },
+          { "guardId": "G3", "intent": "block", "zoneId": "dock-N" }
+        ],
+        "lockZones": [],
+        "rationale": "Second contact, dock corridor. Lockdown. G1, G2 and G4 converge on it. G3 stays on the loading dock. Nobody leaves by the freight lift."
+      }
+    }
+  ]
+}

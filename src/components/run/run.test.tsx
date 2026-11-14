@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { F1_DEMO, FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { LevelManifest, type AlarmState } from "@/domain";
-import { act, createRun, type Action, type RunState } from "@/engine";
+import { act, createRun, moveGuards, type Action, type RunState } from "@/engine";
 import { sightingsAt } from "@/engine/vision";
 import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.json";
@@ -112,17 +112,65 @@ describe("the projection", () => {
 });
 
 describe("cones", () => {
-  it("show exactly the nodes on which the engine would see the player this turn", () => {
+  it("show exactly the nodes on which the engine would see the player this turn, after the guards' move included", () => {
     let run = start();
     const route = QUIET_ROUTE.slice(0, 9);
     for (let i = 0; i <= route.length; i++) {
       const covered = coverage(run);
+      // The engine's two looks (actions.ts): as the player lands, then once the guards have moved.
+      const moved = { guards: moveGuards(run.board, run.guards), cleaners: moveGuards(run.board, run.cleaners) };
       for (const node of placed.level.floor.nodes) {
-        const engine = sightingsAt(run.board, run, node.id, run.turn).map((s) => s.id);
+        const engine = new Set([
+          ...sightingsAt(run.board, run, node.id, run.turn).map((s) => s.id),
+          ...sightingsAt(run.board, moved, node.id, null).map((s) => s.id),
+        ]);
         expect([...(covered.get(node.id) ?? [])].sort(), `turn ${run.turn} ${node.id}`).toEqual([...engine].sort());
       }
       if (i < route.length) run = press(run, [keyOf(run, route[i])]);
     }
+  });
+
+  it("are right about every step: a neighbour drawn as safe is never seen, and one drawn as covered always is", () => {
+    // Every move and wait from every node the player can reach unseen in 20 turns, played for real by the
+    // engine. Unseen, the guards' moves depend only on the turn, so one run per node per turn covers them all.
+    let frontier = [start()];
+    let checked = 0;
+    let seen = 0;
+    for (let depth = 0; depth < 20; depth++) {
+      const next: RunState[] = [];
+      const reached = new Set<string>();
+      for (const run of frontier) {
+        const covered = coverage(run);
+        const steps = [...choices(run).filter((c) => c.kind === "move").map((c) => c.action), { kind: "wait" } as Action];
+        for (const action of steps) {
+          const after = play(run, [action]);
+          const nodeId = action.kind === "move" ? action.to : run.playerNode;
+          const detected = after.lastSeen?.turn === run.turn;
+          expect(detected, `turn ${run.turn}: ${run.playerNode} → ${nodeId}`).toBe(covered.has(nodeId));
+          checked += 1;
+          if (detected) seen += 1;
+          else if (!reached.has(after.playerNode)) {
+            reached.add(after.playerNode);
+            next.push(after);
+          }
+        }
+      }
+      frontier = next;
+    }
+    expect(checked).toBeGreaterThan(100);
+    expect(seen).toBeGreaterThan(0);
+  });
+
+  it("draw a guard's after-move look as its own wedge from the node it moves to", () => {
+    const run = start();
+    const g2 = cones(run).find((c) => c.id === "G2")!;
+    const next = moveGuards(run.board, run.guards).find((g) => g.id === "G2")!;
+    expect(g2.after).not.toBeNull();
+    const at = run.board.nodes.get(next.nodeId)!;
+    expect(g2.after!.origin).toEqual({ x: at.x, y: at.y });
+    const out = renderToStaticMarkup(<BoardView placed={placed} run={run} choices={choices(run)} onChoose={() => {}} />);
+    expect(out).toMatch(/data-watcher="G2"[^>]*data-after-nodes="[^"]+"/);
+    expect(out).toContain('data-testid="cone-after"');
   });
 
   it("give C2's cone the dock corridor's west node on the turn walking straight in meets it", () => {

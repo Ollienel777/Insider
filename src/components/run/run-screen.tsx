@@ -2,19 +2,33 @@
 
 import Link from "next/link";
 import { RotateCcw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getMatterport } from "@/adapters/matterport";
 import { BuildingScreen } from "@/components/shell/building-screen";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Building, LevelManifest } from "@/domain";
-import { act, createRun, toRunLog, type Action, type RunState } from "@/engine";
+import { act, applyChiefOrders, createRun, toRunLog, type Action, type RunState } from "@/engine";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
 import { AlarmBanner } from "./alarm-banner";
-import { actionForKey, canTake, choices as choicesOf, describeTurn, guardOrders, planSteps, roomName, type Choice } from "./board";
+import {
+  actionForKey,
+  canTake,
+  choices as choicesOf,
+  crewPlanSteps,
+  describeTurn,
+  guardOrders,
+  planSteps,
+  roomName,
+  zoneName,
+  type Choice,
+} from "./board";
 import { BoardView } from "./board-view";
+import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
+import { askChief, chiefRequest, chiefZones, toEngineOrders } from "./chief-request";
+import { loadCrewPlan, type StoredCrewPlan } from "./crew-plan-store";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -81,6 +95,52 @@ export function RunScreen({
 
   const load: Load = manifest ? loaded : { status: "no-floor" };
   const placed = load.status === "ready" ? load.placed : null;
+  const zones = useMemo(() => (placed ? chiefZones(placed) : null), [placed]);
+
+  // The crew's plan from the Plan screen, read after mount (storage is the browser's).
+  const [crewPlan, setCrewPlan] = useState<StoredCrewPlan | null>(null);
+  useEffect(() => {
+    const timer = setTimeout(() => setCrewPlan(loadCrewPlan(building.id)), 0);
+    return () => clearTimeout(timer);
+  }, [building.id]);
+
+  // The Security Chief: one call per alarm event, answered between turns.
+  // Nothing waits on it: the engine already has the guards converging.
+  const [chief, setChief] = useState<ChiefState>({ status: "idle" });
+  const latestRun = useRef<RunState | null>(null);
+  const latestSeq = useRef(-1);
+  const pendingChief = useRef<AbortController | null>(null);
+  useEffect(() => {
+    latestRun.current = run;
+  }, [run]);
+  useEffect(() => () => pendingChief.current?.abort(), []);
+
+  const callChief = useCallback(
+    (state: RunState, seq: number) => {
+      if (!placed || !zones) return;
+      pendingChief.current?.abort();
+      const controller = new AbortController();
+      pendingChief.current = controller;
+      latestSeq.current = seq;
+      setChief({ status: "pending", seq });
+      const request = chiefRequest(building.id, placed, zones, state, state.alarmEvents[seq]);
+      askChief(request, { signal: controller.signal }).then(
+        (answer) => {
+          // A newer alarm event has its own call out; this answer is stale.
+          if (controller.signal.aborted || latestSeq.current !== seq || !latestRun.current) return;
+          const result = applyChiefOrders(latestRun.current, toEngineOrders(answer.orders, zones));
+          latestRun.current = result.run;
+          setRun(result.run);
+          setChief({ status: "ready", seq, answer, applied: result });
+        },
+        (error: unknown) => {
+          if (controller.signal.aborted || latestSeq.current !== seq) return;
+          setChief({ status: "error", seq, message: error instanceof Error ? error.message : String(error) });
+        },
+      );
+    },
+    [placed, zones, building.id],
+  );
 
   const play = useCallback(
     (action: Action) => {
@@ -90,22 +150,37 @@ export function RunScreen({
         setStatus(`Not possible: ${result.reason}.`);
         return;
       }
+      latestRun.current = result.run;
       setRun(result.run);
       setStatus(describeTurn(placed, run, result.run));
+      if (result.run.alarmEvents.length > run.alarmEvents.length) callChief(result.run, result.run.alarmEvents.length - 1);
       try {
         window.localStorage.setItem(runLogKey(building.id), JSON.stringify(toRunLog(result.run)));
       } catch {
         // Storage can be full or blocked; the run itself goes on.
       }
     },
-    [placed, run, building.id],
+    [placed, run, building.id, callChief],
   );
+
+  const retryChief = useCallback(() => {
+    const current = latestRun.current;
+    if (current && current.alarmEvents.length > 0) callChief(current, current.alarmEvents.length - 1);
+  }, [callChief]);
 
   const restart = useCallback(() => {
     if (!placed) return;
-    setRun(createRun(placed.level));
+    pendingChief.current?.abort();
+    latestSeq.current = -1;
+    setChief({ status: "idle" });
+    const fresh = createRun(placed.level);
+    latestRun.current = fresh;
+    setRun(fresh);
     setStatus("Back at the start. The guards are on their rounds.");
   }, [placed]);
+
+  const revealed = useChiefStream(chief);
+  const hidden = useMemo(() => hiddenRoutes(chief, revealed), [chief, revealed]);
 
   useEffect(() => {
     if (!run) return;
@@ -183,7 +258,13 @@ export function RunScreen({
                 }
               />
             ) : run && placed ? (
-              <BoardView placed={placed} run={run} choices={options} onChoose={(c: Choice) => play(c.action)} />
+              <BoardView
+                placed={placed}
+                run={run}
+                choices={options}
+                onChoose={(c: Choice) => play(c.action)}
+                hiddenRoutes={hidden}
+              />
             ) : null}
           </div>
 
@@ -205,7 +286,16 @@ export function RunScreen({
           </div>
         </div>
       }
-      panel={<RunPanel manifest={manifest} placed={placed} run={run} />}
+      panel={
+        <RunPanel
+          manifest={manifest}
+          placed={placed}
+          run={run}
+          crewPlan={crewPlan}
+          awaiting={hidden}
+          chief={<ChiefPanel state={chief} revealed={revealed} zoneName={(id) => (placed ? zoneName(placed, id) : id)} onRetry={retryChief} />}
+        />
+      }
       action={
         over ? (
           <Link
@@ -224,10 +314,18 @@ function RunPanel({
   manifest,
   placed,
   run,
+  crewPlan,
+  awaiting,
+  chief,
 }: {
   manifest: LevelManifest | null;
   placed: PlacedLevel | null;
   run: RunState | null;
+  /** The plan briefed on the Plan screen; the level's own steps stand in without one. */
+  crewPlan: StoredCrewPlan | null;
+  /** Guards whose Chief order is still streaming in: their row waits for it. */
+  awaiting: ReadonlySet<string>;
+  chief: ReactNode;
 }) {
   if (!manifest || !placed || !run) {
     return (
@@ -238,7 +336,9 @@ function RunPanel({
       </div>
     );
   }
-  const steps = planSteps(placed, run, manifest.mission.objective);
+  const briefed = crewPlan ? crewPlanSteps(placed, run, crewPlan.plan) : [];
+  const fromCrew = briefed.length > 0;
+  const steps = fromCrew ? briefed : planSteps(placed, run, manifest.mission.objective);
   const orders = guardOrders(placed, run);
   const floor = placed.level.floor;
 
@@ -247,6 +347,8 @@ function RunPanel({
       <AlarmBanner alarm={run.alarm} turn={run.turn} />
 
       {run.status !== "playing" ? <Outcome placed={placed} run={run} /> : null}
+
+      {chief}
 
       <section aria-labelledby="objective-label" className="flex flex-col gap-2">
         <h2 id="objective-label" className="label-caps text-text-3">
@@ -265,12 +367,12 @@ function RunPanel({
 
       <section aria-labelledby="plan-label" className="flex flex-col gap-2">
         <h2 id="plan-label" className="label-caps text-text-3">
-          The plan
+          {fromCrew ? "The crew's plan" : "The plan"}
         </h2>
-        <ol data-testid="plan" className="flex flex-col">
+        <ol data-testid="plan" data-source={fromCrew ? "crew" : "level"} className="flex flex-col">
           {steps.map((step, i) => (
             <li
-              key={step.label}
+              key={i}
               data-state={step.state}
               aria-current={step.state === "next" ? "step" : undefined}
               className={cn(
@@ -296,18 +398,21 @@ function RunPanel({
         <ul data-testid="guard-orders" className="flex flex-col">
           {run.guards.map((guard) => {
             const order = orders.find((o) => o.guardId === guard.id);
+            const waiting = awaiting.has(guard.id);
             return (
               <li
                 key={guard.id}
                 data-guard={guard.id}
-                data-intent={order?.intent ?? "round"}
+                data-intent={waiting ? "awaiting" : (order?.intent ?? "round")}
                 className="grid grid-cols-[32px_88px_minmax(0,1fr)] items-baseline border-b border-border py-1.5 text-sm last:border-b-0"
               >
                 <span className="font-mono text-text-1">{guard.id}</span>
-                <span className={cn("font-mono text-xs uppercase", order ? "text-danger" : "text-text-2")}>
-                  {order ? "converge" : "round"}
+                <span className={cn("font-mono text-xs uppercase", order && !waiting ? "text-danger" : "text-text-2")}>
+                  {waiting ? "…" : order ? order.intent : "round"}
                 </span>
-                <span className="truncate text-text-2">{order ? order.zone : roomName(floor, guard.nodeId)}</span>
+                <span className="truncate text-text-2">
+                  {waiting ? "Awaiting orders" : order ? order.zone : roomName(floor, guard.nodeId)}
+                </span>
               </li>
             );
           })}

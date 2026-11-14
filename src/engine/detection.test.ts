@@ -124,15 +124,16 @@ describe("beat 5 on F1: the judge trips C2", () => {
     expect(run.alarmEvents).toEqual([]);
   });
 
-  it("sends every guard toward the dock on its very next move, with no Chief order", () => {
+  it("sends every guard converging on the node C2 saw the player on, on its very next move, with no Chief order", () => {
     const before = play(createRun(beat5Level()), [toLobby]);
     const run = play(before, [intoCorridor]);
-    const toDock = hopsTo(F1, F1_DEMO.c2Cover);
+    const toSighting = hopsTo(F1, ["dc-west"]);
     for (const guard of run.guards) {
       const was = before.guards.find((g) => g.id === guard.id)!;
-      expect(guard.target).toEqual({ zoneId: "dock", nodes: F1_DEMO.c2Cover });
-      expect(toDock.get(guard.nodeId), guard.id).toBe(toDock.get(was.nodeId)! - 1);
+      expect(guard.target).toEqual({ zoneId: "dock", nodes: ["dc-west"], intent: "converge", visit: 0 });
+      expect(toSighting.get(guard.nodeId), guard.id).toBe(toSighting.get(was.nodeId)! - 1);
     }
+    const toDock = hopsTo(F1, F1_DEMO.c2Cover);
     // They keep converging on the turns after, still with no order given.
     const later = play(run, [{ kind: "move", to: F1_DEMO.freightLiftWait }]);
     for (const guard of later.guards) {
@@ -351,8 +352,10 @@ describe("the alarm states", () => {
   });
 
   it("sends the guards back to their patrols when it decays to Calm", () => {
-    const level = { ...fixed, floor: { ...fixed.floor, sightlines: {} }, guards: [{ id: "G1", patrol: ["n2"] }] };
+    // Tempo 2, so the guard reaches n1 a turn after the player has left it, and holds there.
+    const level = { ...fixed, floor: { ...fixed.floor, sightlines: {} }, guards: [{ id: "G1", patrol: ["n2"] }], patrolTempo: 2 };
     const run = play(createRun(level), [{ kind: "move", to: "n1" }, { kind: "move", to: "n0" }]);
+    expect(run.guards[0].nodeId).toBe("n1");
     expect(run.guards[0].target?.zoneId).toBe("hall");
     const calm = play(run, waits(5));
     expect(calm.alarm).toBe("calm");

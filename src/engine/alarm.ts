@@ -9,13 +9,19 @@
 //   to hold it at its level (a sighting holds any level; noise or a cleaner
 //   holds Suspicious). So Alert is held 3 turns after the last sighting.
 //   Lockdown does not decay.
-// - On reaching Alert or Lockdown, every guard is sent to the last-known
-//   zone at once, before any Chief order; on decaying to Calm, every guard
-//   goes back to its patrol.
+// - On reaching Alert or Lockdown, every guard is sent converging on the node
+//   the player was last seen on, at once, before any Chief order; on
+//   decaying to Calm, every guard goes back to its patrol.
+// - At Alert or Lockdown, every later sighting moves the converging guards on
+//   to the node the player was seen on, so they close on the player instead
+//   of stopping at the edge of a zone.
 //
 // Every transition appends one `AlarmEvent`; the Chief (#20) re-plans on them.
+// Lockdown cannot rise, so a sighting there that finds the player somewhere
+// new (another zone, or after at least one turn unseen) appends an event too,
+// from Lockdown to Lockdown, so the Chief re-plans on it.
 import type { AlarmState } from "@/domain";
-import { isAlert, guardOn, zoneOf, type RunState } from "./state";
+import { convergeOn, isAlert, guardOn, zoneOf, type RunState, type Sighted } from "./state";
 
 /** What caused a transition. `id` names the camera, guard or cleaner, when there is one. */
 export interface AlarmCause {
@@ -24,8 +30,12 @@ export interface AlarmCause {
 }
 
 export interface AlarmEvent {
-  /** The turn it happened on. A `setAlarm` between turns carries the next turn's number. */
+  /**
+   * The turn it happened on. A `setAlarm` between turns carries the next
+   * turn's number.
+   */
   turn: number;
+  /** `from` equals `to` only for a re-sighting at Lockdown. */
   from: AlarmState;
   to: AlarmState;
   /** The zone the player was last detected in, as the event leaves it; null if never. */
@@ -70,9 +80,21 @@ export function detect(run: RunState, detection: Detection, turn: number, marks:
     next = Math.max(now, rank("suspicious"));
     if (now <= rank("suspicious")) marks.held = true;
   }
-  const seen = { ...run, lastKnown: zoneOf(run.board, detection.nodeId) };
+  const lastKnown = zoneOf(run.board, detection.nodeId);
+  const lastSeen: Sighted = { nodeId: detection.nodeId, turn };
+  const seen: RunState = { ...run, lastKnown, lastSeen };
   const to = LEVELS[Math.min(next, LEVELS.length - 1)];
-  return to === run.alarm ? seen : transition(seen, to, turn, detection.cause);
+  if (to !== run.alarm) return transition(seen, to, turn, detection.cause);
+  if (detection.strength !== "sighting" || !isAlert(run.alarm)) return seen;
+
+  // Already at Alert or Lockdown: the converging guards close on the new sighting.
+  const target = convergeOn(lastKnown.zoneId, lastSeen);
+  const guards = run.guards.map((g) => (g.target?.intent === "converge" ? { ...g, target } : g));
+  const elsewhere =
+    run.lastKnown?.zoneId !== lastKnown.zoneId || (run.lastSeen !== null && turn - run.lastSeen.turn > 1);
+  if (run.alarm !== "lockdown" || !elsewhere) return { ...seen, guards };
+  const event: AlarmEvent = { turn, from: run.alarm, to: run.alarm, lastKnownZone: lastKnown.zoneId, cause: detection.cause };
+  return { ...seen, guards, alarmEvents: [...run.alarmEvents, event] };
 }
 
 /** The end of a turn: the alarm decays a step if nothing has held it for its hold. */
@@ -102,9 +124,10 @@ export function setAlarm(run: RunState, alarm: AlarmState): RunState {
 function transition(run: RunState, to: AlarmState, turn: number, cause: AlarmCause): RunState {
   const event: AlarmEvent = { turn, from: run.alarm, to, lastKnownZone: run.lastKnown?.zoneId ?? null, cause };
   let { guards } = run;
-  const { lastKnown } = run;
-  if (rank(to) > rank(run.alarm) && isAlert(to) && lastKnown) {
-    guards = guards.map((g) => ({ ...g, target: lastKnown }));
+  const { lastKnown, lastSeen } = run;
+  if (rank(to) > rank(run.alarm) && isAlert(to) && lastKnown && lastSeen) {
+    const target = convergeOn(lastKnown.zoneId, lastSeen);
+    guards = guards.map((g) => ({ ...g, target }));
   } else if (to === "calm") {
     guards = guards.map((g) => ({ ...g, target: null }));
   }

@@ -3,8 +3,17 @@
 // and the placed level, so the board, the panel and the tests all read the
 // same answers. The engine stays authoritative: these helpers only say what
 // it would do, using its own `watched`, `visibleFrom` and `shortestPath`.
-import type { FloorGraph } from "@/domain";
-import { neighbours, shortestPath, visibleFrom, watched, type Action, type RunState } from "@/engine";
+import type { FloorGraph, GuardIntent } from "@/domain";
+import {
+  moveGuards,
+  neighbours,
+  plannedPath,
+  visibleFrom,
+  watched,
+  type Action,
+  type GuardState,
+  type RunState,
+} from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
 import { project } from "./iso";
 
@@ -17,8 +26,15 @@ export interface Cone {
   kind: WatcherKind;
   /** Where the cone starts, in floor units: the guard's node, or the camera's mount on the wall. */
   origin: { x: number; y: number };
-  /** The nodes it would see the player on this turn. */
+  /** The nodes it sees the player on as the player lands this turn. */
   nodes: readonly string[];
+  /**
+   * A guard's or cleaner's look after its move this turn: the engine checks
+   * the player's node again once the guards have moved, so a node in here is
+   * seen too. Null when the guard does not move this turn, or its look stays
+   * the same.
+   */
+  after: { origin: { x: number; y: number }; nodes: readonly string[] } | null;
   /** A sweeping camera's part for the turn after, drawn as an outline. Empty for guards. */
   next: readonly string[];
 }
@@ -42,33 +58,57 @@ export function cameraMount(floor: FloorGraph, cover: readonly string[]): { x: n
   return { x: rect.x + rect.w / 2, y };
 }
 
-/** Every camera's, guard's and cleaner's cone on the run's current turn. */
+/**
+ * Every camera's, guard's and cleaner's cone on the run's current turn: what
+ * the engine checks a node the player steps onto against (actions.ts). That
+ * is the cameras' watched part, each guard's look where it stands, and each
+ * guard's look after its move, since the engine looks again once the guards
+ * have moved. A move that no cone covers is seen by nobody, so the guards
+ * move exactly as `moveGuards` says here.
+ */
 export function cones(run: RunState): Cone[] {
   const { board, turn } = run;
   const { floor } = board.level;
-  const node = (id: string) => board.nodes.get(id)!;
+  const origin = (id: string) => {
+    const n = board.nodes.get(id)!;
+    return { x: n.x, y: n.y };
+  };
   const fromCameras = board.cameras.map(
     (camera): Cone => ({
       id: camera.id,
       kind: "camera",
       origin: cameraMount(floor, camera.parts.flat()),
       nodes: watched(camera, turn),
+      after: null,
       next: camera.parts.length > 1 ? watched(camera, turn + 1) : [],
     }),
   );
-  const walkers = (kind: "guard" | "cleaner", group: RunState["guards"]) =>
-    group.map((walker): Cone => {
-      const at = node(walker.nodeId);
-      return { id: walker.id, kind, origin: { x: at.x, y: at.y }, nodes: visibleFrom(board, walker), next: [] };
+  const walkers = (kind: "guard" | "cleaner", group: readonly GuardState[]) => {
+    const moved = moveGuards(board, group);
+    return group.map((walker, i): Cone => {
+      const now = visibleFrom(board, walker);
+      const then = visibleFrom(board, moved[i]);
+      const same = then.length === now.length && then.every((id) => now.includes(id));
+      return {
+        id: walker.id,
+        kind,
+        origin: origin(walker.nodeId),
+        nodes: now,
+        after: same ? null : { origin: origin(moved[i].nodeId), nodes: then },
+        next: [],
+      };
     });
+  };
   return [...fromCameras, ...walkers("guard", run.guards), ...walkers("cleaner", run.cleaners)];
 }
 
-/** Node id → the ids of everything that would see the player there this turn. */
+/** Node id → the ids of everything that would see the player there this turn, as they land or after the guards move. */
 export function coverage(run: RunState): Map<string, string[]> {
   const out = new Map<string, string[]>();
   for (const cone of cones(run)) {
-    for (const id of cone.nodes) out.set(id, [...(out.get(id) ?? []), cone.id]);
+    for (const id of new Set([...cone.nodes, ...(cone.after?.nodes ?? [])])) {
+      out.set(id, [...(out.get(id) ?? []), cone.id]);
+    }
   }
   return out;
 }
@@ -200,31 +240,81 @@ function joinOr(items: readonly string[]): string {
   return `${items.slice(0, -1).join(", ")} or the ${items[items.length - 1]}`;
 }
 
+/**
+ * The crew's numbered plan from the Plan screen (#19), followed on the run.
+ * A step is done once the run has done what it asks after the step before
+ * it: the objective's step by taking it, the last step by getting out, a
+ * waiting step by a wait, and any other step by standing in its zone. A step
+ * whose zone is not on this board is left out. Done steps stay done when a
+ * later one is done first, so the next step is always the first not done.
+ */
+export function crewPlanSteps(
+  placed: PlacedLevel,
+  run: RunState,
+  plan: { steps: readonly { zoneId: string; action: string }[] },
+): PlanStep[] {
+  const zones = run.board.level.zones ?? {};
+  const steps = plan.steps.filter((s) => Object.hasOwn(zones, s.zoneId));
+  // Where the player stood: the start, then each turn's node and action.
+  const trail = [
+    { nodeId: placed.level.start, kind: "start" as string },
+    ...run.turns.map((t) => ({ nodeId: t.player.nodeId, kind: t.player.kind as string })),
+  ];
+  let cursor = 0;
+  const done = steps.map((step, i) => {
+    const last = i === steps.length - 1;
+    if (last) return run.status === "won";
+    const zone = zones[step.zoneId];
+    const meets = (at: (typeof trail)[number]) =>
+      step.zoneId === placed.objective.zoneId
+        ? at.kind === "take"
+        : WAITING.test(step.action)
+          ? at.kind === "wait"
+          : zone.includes(at.nodeId);
+    const found = trail.findIndex((at, j) => j >= cursor && meets(at));
+    if (found === -1) return false;
+    cursor = found;
+    return true;
+  });
+  // A later step done means every step before it is behind the player too.
+  const lastDone = done.lastIndexOf(true);
+  let nextGiven = false;
+  return steps.map((step, i) => {
+    if (i <= lastDone) return { label: step.action, state: "done" };
+    if (nextGiven) return { label: step.action, state: "todo" };
+    nextGiven = true;
+    return { label: step.action, state: "next" };
+  });
+}
+
+/** A step that asks the player to wait (the same words validate-plan.ts reads as a wait). */
+const WAITING = /\b(wait|hold|let .* pass)\b/i;
+
 export interface GuardOrder {
   guardId: string;
-  intent: "converge";
+  intent: GuardIntent;
   zoneId: string;
   zone: string;
-  /** The guard's next hops toward the zone, its own node first; at most three hops. */
+  /** The guard's next hops as the engine will move it, its own node first; at most three hops. */
   path: readonly string[];
 }
 
 /**
- * The guards the engine has sent somewhere: on Alert, every guard converges
- * on the last-known zone at once, before any Chief order (alarm.ts). Each
- * comes with its next three hops, which the board draws.
+ * The guards with somewhere to be: on Alert every guard converges on where
+ * the player was seen, at once (alarm.ts), and the Chief's orders replace
+ * that. Each comes with its next three hops (`plannedPath`), which the board
+ * draws dashed.
  */
 export function guardOrders(placed: PlacedLevel, run: RunState): GuardOrder[] {
   return run.guards.flatMap((guard): GuardOrder[] => {
     if (!guard.target) return [];
-    const path = shortestPath(run.board, guard.nodeId, guard.target.nodes) ?? [guard.nodeId];
     return [
       {
         guardId: guard.id,
-        intent: "converge",
+        intent: guard.target.intent,
         zoneId: guard.target.zoneId,
         zone: zoneName(placed, guard.target.zoneId),
-        path: path.slice(0, 4),
+        path: plannedPath(run.board, guard),
       },
     ];
   });

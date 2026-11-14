@@ -132,9 +132,94 @@ test("beat 5: stepping into C2's cover from the dock raises the alarm to Alert",
   expect(calmColour).not.toBe("rgb(255, 90, 95)");
   await expect(page.getByTestId("run-status")).toHaveText("C2 saw you in the Dock Corridor. The guards are converging.");
   await expect(page.getByTestId("sighting")).toHaveCount(1);
-  // The guards converge at once, with no Chief order: four orders, four routes.
-  await expect(page.locator('[data-testid="guard-orders"] li[data-intent="converge"]')).toHaveCount(4);
   await expect(page.getByTestId("guard-route").first()).toBeVisible();
+});
+
+test("beat 5, the wow: the Chief's re-plan streams in within 4 s, and the guards take its routes", async ({ page }) => {
+  await open(page);
+  const chief = page.getByTestId("chief-panel");
+  await expect(chief).toHaveAttribute("data-state", "idle");
+  await pressFor(page, "fl-lobby");
+  await pressFor(page, "dc-west");
+  await expect(banner(page)).toHaveAttribute("data-state", "alert");
+
+  // The rationale streams in, names a guard and a zone, and says no model ran.
+  const rationale = page.getByTestId("chief-rationale");
+  await expect(rationale).toContainText(/\w/, { timeout: 4_000 });
+  await expect(rationale).toHaveAttribute("data-done", "true", { timeout: 4_000 });
+  await expect(rationale).toContainText(/\bG\d\b/);
+  await expect(rationale).toContainText(/dock corridor/i);
+  await expect(page.getByTestId("chief-recorded-chip")).toHaveText("Recorded");
+  await expect(page.getByTestId("chief-source-note")).toHaveText("Recorded orders: no model was called.");
+
+  // Each order row is the route the board now draws for that guard.
+  const rows = page.getByTestId("chief-order");
+  await expect(rows).toHaveCount(4);
+  const routes: Record<string, string[]> = {};
+  for (const row of await rows.all()) {
+    const guard = (await row.getAttribute("data-guard"))!;
+    const intent = (await row.getAttribute("data-intent"))!;
+    const route = page.locator(`[data-testid="guard-route"][data-guard="${guard}"]`);
+    await expect(route, guard).toHaveAttribute("data-intent", intent);
+    routes[guard] = (await route.getAttribute("data-nodes"))!.split(" ");
+  }
+  expect(routes.G2.at(-1)).toMatch(/^rr-/);
+  await expect(page.locator('[data-testid="guard-orders"] li[data-guard="G2"]')).toHaveAttribute("data-intent", "hold");
+  await expect(page.getByTestId("chief-lock")).toContainText("Records room");
+
+  // The next turn, every ordered guard steps onto its route's next node.
+  await page.keyboard.press("w");
+  await expect(page.getByTestId("turn")).toHaveText("3");
+  for (const [guard, path] of Object.entries(routes)) {
+    await expect(page.locator(`[data-testid="guard-piece"][data-id="${guard}"]`), guard).toHaveAttribute("data-node", path[1]);
+  }
+
+  // Stay put and the guards close in: caught on your own node.
+  for (let i = 0; i < 8 && (await page.getByTestId("run-outcome").count()) === 0; i++) await page.keyboard.press("w");
+  await expect(page.getByTestId("run-outcome")).toHaveAttribute("data-status", "caught");
+});
+
+test("beat 5: the guards keep moving while the Chief's call is out", async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/api/chief", async (route) => {
+    await held;
+    await route.continue();
+  });
+  await open(page);
+  await pressFor(page, "fl-lobby");
+  await pressFor(page, "dc-west");
+  await expect(page.getByTestId("chief-panel")).toHaveAttribute("data-state", "pending");
+  await expect(page.getByTestId("chief-skeleton")).toBeVisible();
+
+  // No turn waits on it: the player steps back, and the guards converge on where C2 saw them.
+  const before = await guardNodes(page);
+  await pressFor(page, "fl-lobby");
+  await expect(page.getByTestId("turn")).toHaveText("3");
+  expect(await guardNodes(page)).not.toEqual(before);
+  await expect(page.locator('[data-testid="guard-orders"] li[data-intent="converge"]')).toHaveCount(4);
+  await expect(page.getByTestId("chief-panel")).toHaveAttribute("data-state", "pending");
+
+  release();
+  await expect(page.getByTestId("chief-rationale")).toHaveAttribute("data-done", "true", { timeout: 4_000 });
+});
+
+test("beats 4 to 5: the plan briefed on the Plan screen is the plan on the run", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/b/F1/plan");
+  await page.getByTestId("crew-order").fill("Go in through the dock, wait for the 2 am round to pass, take the records room.");
+  await page.getByRole("button", { name: "Brief the crew" }).click();
+  await expect(page.getByTestId("crew-reply")).toBeVisible();
+  await page.getByRole("link", { name: "Start the run" }).click();
+  await expect(board(page)).toBeVisible();
+  const plan = page.getByTestId("plan");
+  await expect(plan).toHaveAttribute("data-source", "crew");
+  await expect(page.locator("#plan-label")).toHaveText("The crew's plan");
+  await expect(plan.locator("li")).toHaveCount(4);
+  await expect(plan.locator('li[data-state="next"]')).toHaveText(/Wait one turn at the freight lift/);
+  await pressFor(page, "fl-lobby");
+  await page.keyboard.press("w");
+  await expect(plan.locator('li[data-state="next"]')).toHaveText(/take the files/);
 });
 
 test("the crew's quiet route plays by keys to a clean exit, then offers the debrief", async ({ page }) => {
@@ -177,6 +262,7 @@ test("Restart puts the run back at the start", async ({ page }) => {
   await expect(banner(page)).toHaveAttribute("data-state", "alert");
   await page.getByRole("button", { name: "Restart" }).click();
   await expect(banner(page)).toHaveAttribute("data-state", "calm");
+  await expect(page.getByTestId("chief-panel")).toHaveAttribute("data-state", "idle");
   await expect(page.getByTestId("turn")).toHaveText("0");
   await expect(player(page)).toHaveAttribute("data-node", "fl-car");
   // The number keys still play with the focus left on Restart.

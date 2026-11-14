@@ -89,8 +89,8 @@ export function act(run: RunState, action: Action): ActResult {
   }
 
   if (state.status === "playing") state = settle(state, turn, marks);
-  const entry = turnEntry(turn, phase.kind, state.playerNode, state.guards, state.alarm);
-  return { ok: true, run: { ...state, turn: turn + 1, turns: [...state.turns, entry] } };
+  const entry = turnEntry(turn, phase.kind, state.playerNode, state.guards, state.alarm, state.chief);
+  return { ok: true, run: { ...state, chief: null, turn: turn + 1, turns: [...state.turns, entry] } };
 }
 
 function toDetection(sighting: Sighting, nodeId: string): Detection {

@@ -29,6 +29,8 @@ interface BoardViewProps {
   ghost?: GhostPlan | null;
   /** The board at reduced emphasis, under a plan (DESIGN.md, Plan). */
   reduced?: boolean;
+  /** Guards whose dashed route is not drawn yet: the Chief's orders draw each one as its row lands. */
+  hiddenRoutes?: ReadonlySet<string>;
   testId?: string;
 }
 
@@ -47,6 +49,7 @@ export function BoardView({
   onChoose,
   ghost = null,
   reduced = false,
+  hiddenRoutes,
   testId = "run-board",
 }: BoardViewProps) {
   const { floor } = placed.level;
@@ -184,15 +187,17 @@ export function BoardView({
         />
       ) : null}
 
-      {/* Where the engine is sending each guard: the next three hops. */}
+      {/* Where each guard is going: its next three hops, as the engine will move it. */}
       <g aria-hidden>
         {orders
-          .filter((o) => o.path.length > 1)
+          .filter((o) => o.path.length > 1 && !hiddenRoutes?.has(o.guardId))
           .map((o) => (
             <polyline
               key={o.guardId}
               data-testid="guard-route"
               data-guard={o.guardId}
+              data-intent={o.intent}
+              data-nodes={o.path.join(" ")}
               points={pointsAttr(o.path.map(at))}
               fill="none"
               style={{ stroke: "var(--danger)" }}
@@ -409,8 +414,29 @@ function ConeShape({ cone, at, sighting }: { cone: Cone; at: (id: string) => Poi
     });
   const shape = hull([origin, ...seen.flatMap((id) => ring(at(id)))]);
   const camera = cone.kind === "camera";
+  const after = cone.after;
+  const afterOrigin = after ? project(after.origin.x, after.origin.y) : null;
+  const afterSeen = after && afterOrigin ? after.nodes.filter((id) => at(id).x !== afterOrigin.x || at(id).y !== afterOrigin.y) : [];
   return (
-    <g data-testid="cone" data-watcher={cone.id} data-kind={cone.kind} data-nodes={cone.nodes.join(" ")}>
+    <g
+      data-testid="cone"
+      data-watcher={cone.id}
+      data-kind={cone.kind}
+      data-nodes={cone.nodes.join(" ")}
+      data-after-nodes={after ? after.nodes.join(" ") : undefined}
+    >
+      {after && afterOrigin ? (
+        // Where it looks once it has moved this turn: the engine checks the player's node again then.
+        <polygon
+          data-testid="cone-after"
+          points={pointsAttr(hull([afterOrigin, ...ring(afterOrigin), ...afterSeen.flatMap((id) => ring(at(id)))]))}
+          style={{ fill: "var(--n-500)", stroke: "var(--n-400)" }}
+          fillOpacity="0.12"
+          strokeOpacity="0.5"
+          strokeDasharray="3 4"
+          strokeLinejoin="round"
+        />
+      ) : null}
       {seen.length > 0 ? (
         <polygon
           points={pointsAttr(shape)}

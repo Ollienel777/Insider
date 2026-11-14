@@ -1,9 +1,10 @@
 // Guard movement, after each player action. A guard hops once every
-// `patrolTempo` turns: along its patrol loop, or, once ordered to a zone,
-// toward the nearest node of that zone by A*, where it then holds. Guards
+// `patrolTempo` turns: along its patrol loop, or, once ordered, toward its
+// target by A* (see `GuardTarget` for what each intent does there). Guards
 // carry keys, so locked doors do not stop them. Cleaners walk the same way.
+import type { GuardIntent } from "@/domain";
 import { shortestPath } from "./path";
-import type { Board, Facing, GuardState, RunState } from "./state";
+import { convergeOn, zoneTarget, type Board, type Facing, type GuardState, type GuardTarget, type RunState } from "./state";
 
 /** Every guard after one turn's movement, in roster order. */
 export function moveGuards(board: Board, guards: readonly GuardState[]): GuardState[] {
@@ -17,10 +18,18 @@ export function moveGuards(board: Board, guards: readonly GuardState[]): GuardSt
 
 /** The guard after one hop. It faces the way it went, or keeps its facing if it stayed. */
 export function hop(board: Board, guard: GuardState): GuardState {
-  let { waypoint } = guard;
+  let { waypoint, target } = guard;
   let goals: readonly string[];
-  if (guard.target) {
-    goals = guard.target.nodes;
+  if (target?.intent === "sweep") {
+    // Skip past the sweep node it is standing on, round the zone.
+    let visit = target.visit;
+    for (let i = 0; i < target.nodes.length && target.nodes[visit] === guard.nodeId; i++) {
+      visit = (visit + 1) % target.nodes.length;
+    }
+    target = { ...target, visit };
+    goals = [target.nodes[visit]];
+  } else if (target) {
+    goals = target.nodes;
   } else {
     const { patrol } = guard;
     // Skip past every waypoint the guard is standing on (a loop may repeat one).
@@ -30,7 +39,23 @@ export function hop(board: Board, guard: GuardState): GuardState {
     goals = [patrol[waypoint]];
   }
   const nodeId = nextHop(board, guard.nodeId, goals);
-  return { ...guard, waypoint, nodeId, facing: facingOf(board, guard.nodeId, nodeId) ?? guard.facing };
+  return { ...guard, waypoint, target, nodeId, facing: facingOf(board, guard.nodeId, nodeId) ?? guard.facing };
+}
+
+/**
+ * The nodes the guard will stand on over its next `hops` hops, its own node
+ * first, as the engine will move it if nothing changes its orders. The board
+ * draws this as the guard's dashed route.
+ */
+export function plannedPath(board: Board, guard: GuardState, hops = 3): string[] {
+  const path = [guard.nodeId];
+  let at = guard;
+  for (let i = 0; i < hops; i++) {
+    at = hop(board, at);
+    if (at.nodeId === path[path.length - 1] && at.target?.intent !== "sweep") break;
+    path.push(at.nodeId);
+  }
+  return path.filter((id, i) => i === 0 || id !== path[i - 1]);
 }
 
 /** The direction from one node to another, or null when they are the same node or the same point. */
@@ -51,19 +76,47 @@ function nextHop(board: Board, from: string, goals: readonly string[]): string {
 export type OrderResult = { ok: true; run: RunState } | { ok: false; reason: string };
 
 /**
- * Sends a guard to a zone of the level (`zoneId`), or back to its patrol
- * (`null`). It applies from the guard's next hop. An unknown guard or zone is
- * refused with a reason, so model orders can be clamped by dropping them.
+ * Sends a guard to a zone (`zoneId`: one of the level's zones, or a room of
+ * the floor by its id) with an intent, or back to its patrol (`null`). It
+ * applies from the guard's next hop. An unknown guard or zone is refused
+ * with a reason, so model orders can be clamped by dropping them.
  */
-export function orderGuard(run: RunState, guardId: string, zoneId: string | null): OrderResult {
+export function orderGuard(
+  run: RunState,
+  guardId: string,
+  zoneId: string | null,
+  intent: GuardIntent = "hold",
+): OrderResult {
   const index = run.guards.findIndex((g) => g.id === guardId);
   if (index === -1) return { ok: false, reason: `no guard "${guardId}"` };
-  let target: GuardState["target"] = null;
+  let target: GuardTarget | null = null;
   if (zoneId !== null) {
-    const zones = run.board.level.zones ?? {};
-    if (!Object.hasOwn(zones, zoneId)) return { ok: false, reason: `no zone "${zoneId}"` };
-    target = { zoneId, nodes: zones[zoneId] };
+    const zone = zoneTarget(run.board, zoneId);
+    if (!zone) return { ok: false, reason: `no zone "${zoneId}"` };
+    const guard = run.guards[index];
+    if (intent === "converge" && run.lastSeen && zone.nodes.includes(run.lastSeen.nodeId)) {
+      target = convergeOn(zoneId, run.lastSeen);
+    } else if (intent === "sweep") {
+      target = { zoneId, nodes: sweepOrder(run.board, guard.nodeId, zone.nodes), intent, visit: 0 };
+    } else {
+      target = { zoneId, nodes: zone.nodes, intent, visit: 0 };
+    }
   }
   const guards = run.guards.map((g, i) => (i === index ? { ...g, target } : g));
   return { ok: true, run: { ...run, guards } };
+}
+
+/** A sweep's order: from the zone node nearest `from`, each next one the nearest not yet taken. */
+function sweepOrder(board: Board, from: string, nodes: readonly string[]): string[] {
+  const left = [...nodes];
+  const order: string[] = [];
+  let at = from;
+  while (left.length > 0) {
+    const path = shortestPath(board, at, left);
+    const next = path ? path[path.length - 1] : left[0];
+    order.push(next);
+    left.splice(left.indexOf(next), 1);
+    at = next;
+  }
+  return order;
 }

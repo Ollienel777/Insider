@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { getMatterport } from "@/adapters/matterport";
 import { BoardView } from "@/components/run/board-view";
+import { saveCrewPlan } from "@/components/run/crew-plan-store";
 import { RUN_SEED, type RunBuilding } from "@/components/run/run-screen";
 import { BuildingScreen } from "@/components/shell/building-screen";
 import { LayerDot } from "@/components/shell/layer-dot";
@@ -97,7 +98,11 @@ export function PlanScreen({
     setAsk({ status: "planning" });
     try {
       const reply = await askCrew(crewRequest(building.id, text), { signal: controller.signal });
-      if (!controller.signal.aborted) setAsk({ status: "answered", answer: reply });
+      if (!controller.signal.aborted) {
+        setAsk({ status: "answered", answer: reply });
+        // The run follows the briefed plan (beat 4 into beat 5).
+        saveCrewPlan(building.id, { plan: reply.plan, recorded: reply.recorded });
+      }
     } catch (error) {
       if (!controller.signal.aborted) setAsk({ status: "error", message: error instanceof Error ? error.message : String(error) });
     }

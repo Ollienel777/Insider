@@ -3,7 +3,7 @@
 // here reads the clock, a random source, the DOM or React (purity.test.ts
 // holds that); the seed is the only source of variation, so the same level,
 // seed and actions give the same run.
-import type { AlarmState, CameraKind, FloorGraph, FloorNode, RunTurn } from "@/domain";
+import type { AlarmState, CameraKind, ChiefOrders, FloorGraph, FloorNode, GuardIntent, RunTurn } from "@/domain";
 import type { AlarmEvent } from "./alarm";
 import { hop } from "./guards";
 
@@ -52,7 +52,11 @@ export interface Level {
   /** Player turns per guard hop: the security profile's `patrolTempo`. */
   patrolTempo: number;
   guards: readonly GuardSpec[];
-  /** Zone id → its nodes, for guard orders (Chief orders name zones). */
+  /**
+   * Zone id → its nodes, for guard orders (Chief orders name zones). A room
+   * of the floor is a zone too, under its room id, so the last-known zone
+   * (which is a room when no zone holds the node) can always be ordered to.
+   */
   zones?: Readonly<Record<string, readonly string[]>>;
   /** The floor's cameras. None when absent. */
   cameras?: readonly CameraSpec[];
@@ -91,6 +95,26 @@ export interface ZoneTarget {
   nodes: readonly string[];
 }
 
+/**
+ * Where an order sends a guard, and how it behaves there (SPEC §4.4):
+ * - `converge`: onto the player's last-seen node when the zone is the
+ *   last-known one (else the zone's nearest node), and it follows each new
+ *   sighting while the alarm is at Alert or Lockdown;
+ * - `hold` and `block`: to the zone's nearest node, and it stays there;
+ * - `sweep`: through every node of the zone in `nodes` order, round and round.
+ */
+export interface GuardTarget extends ZoneTarget {
+  intent: GuardIntent;
+  /** For a sweep: the index into `nodes` of the node it is walking to. 0 otherwise. */
+  visit: number;
+}
+
+/** Where and when the player was last detected. */
+export interface Sighted {
+  nodeId: string;
+  turn: number;
+}
+
 /** The level, indexed once per run. Shared by every state of the run. */
 export interface Board {
   level: Level;
@@ -119,8 +143,8 @@ export interface GuardState {
   patrol: readonly string[];
   /** Index into `patrol` of the waypoint the guard is walking to. */
   waypoint: number;
-  /** Set by an order: the guard heads for the nearest of these nodes and holds there. */
-  target: ZoneTarget | null;
+  /** Set by an order or the alarm: where the guard heads instead of its patrol (see `GuardTarget`). */
+  target: GuardTarget | null;
   /** Turns since the guard last hopped. It hops when this reaches the tempo. */
   idle: number;
   /**
@@ -149,6 +173,10 @@ export interface RunState {
   alarmQuiet: number;
   /** The zone the player was last detected in; null until they first are. */
   lastKnown: ZoneTarget | null;
+  /** The node and turn the player was last detected on; null until they first are. */
+  lastSeen: Sighted | null;
+  /** Chief orders applied since the last logged turn; the next turn's log entry carries them. */
+  chief: ChiefOrders | null;
   /** Every alarm transition of the run, in order. */
   alarmEvents: readonly AlarmEvent[];
   /** The night cleaners, in the level's order. */
@@ -261,6 +289,8 @@ export function createRun(level: Level): RunState {
     alarm: "calm",
     alarmQuiet: 0,
     lastKnown: null,
+    lastSeen: null,
+    chief: null,
     alarmEvents: [],
     cleaners: (level.cleaners ?? []).map((c) => placeWalker(board, c)),
     status: "playing",
@@ -290,6 +320,22 @@ export function zoneOf(board: Board, nodeId: string): ZoneTarget {
   const roomId = board.nodes.get(nodeId)!.roomId;
   const nodes = board.level.floor.nodes.filter((n) => n.roomId === roomId).map((n) => n.id);
   return { zoneId: roomId, nodes };
+}
+
+/**
+ * A zone of the level as a destination: one of the level's zones, else a
+ * room of the floor by its room id. Null when neither has that id.
+ */
+export function zoneTarget(board: Board, zoneId: string): ZoneTarget | null {
+  const zones = board.level.zones ?? {};
+  if (Object.hasOwn(zones, zoneId)) return { zoneId, nodes: zones[zoneId] };
+  const nodes = board.level.floor.nodes.filter((n) => n.roomId === zoneId).map((n) => n.id);
+  return nodes.length > 0 ? { zoneId, nodes } : null;
+}
+
+/** A converge order onto the node the player was seen on, in the zone that holds it. */
+export function convergeOn(zoneId: string, seen: Sighted): GuardTarget {
+  return { zoneId, nodes: [seen.nodeId], intent: "converge", visit: 0 };
 }
 
 /** Whether the alarm is high enough that sharing a node with a guard is capture. */
