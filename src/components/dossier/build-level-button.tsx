@@ -23,7 +23,7 @@ export function BuildLevelButton({
   async function build() {
     setState({ status: "building" });
     try {
-      const response = await fetch(`/api/levels/${encodeURIComponent(buildingId)}/build?m=${encodeURIComponent(missionId)}`, {
+      const response = await fetch(`/api/levels/${encodeURIComponent(buildingId)}/generate?m=${encodeURIComponent(missionId)}`, {
         method: "POST",
       });
       const body = (await response.json().catch(() => ({}))) as { error?: string };
