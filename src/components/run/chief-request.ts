@@ -73,13 +73,15 @@ export function chiefZones(placed: PlacedLevel): ChiefZones {
  * `history` is the summary of earlier runs (run-history.ts), for the run's first event only.
  */
 export function chiefRequest(
-  buildingId: string,
+  /** The building, or the building and the mission whose level is on the board (issue 119). */
+  level: string | { buildingId: string; missionId: string | null },
   placed: PlacedLevel,
   zones: ChiefZones,
   run: RunState,
   event: AlarmEvent,
   history: ChiefHistory | null = null,
 ): ChiefRequest {
+  const { buildingId, missionId } = typeof level === "string" ? { buildingId: level, missionId: null } : level;
   const chiefId = (engineId: string) => zones.toChief.get(engineId) ?? clampId(engineId);
   const lastKnownZone = event.lastKnownZone === null ? null : chiefId(event.lastKnownZone);
   const guards = run.guards.slice(0, MAX_GUARDS).map((g) => ({
@@ -97,6 +99,7 @@ export function chiefRequest(
     history && strayHistoryIds(history, new Set(offered.map((z) => z.id)), new Set(guards.map((g) => g.id))).length === 0;
   const parsed = ChiefRequest.safeParse({
     buildingId,
+    ...(missionId && { missionId }),
     transition: {
       turn: event.turn,
       from: event.from,

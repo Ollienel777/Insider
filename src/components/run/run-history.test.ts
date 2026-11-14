@@ -8,7 +8,7 @@ import { ChiefHistory, ChiefRequest, replanChief } from "@/agents/chief";
 import { LevelManifest } from "@/domain";
 import { act, createRun, shortestPath, type Action, type RunState } from "@/engine";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import { chiefRequest, chiefZones } from "./chief-request";
 import {
   appendRunHistory,

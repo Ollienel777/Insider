@@ -7,7 +7,7 @@ import { ChiefRequest } from "@/agents/chief/request";
 import { LevelManifest } from "@/domain";
 import { act, createRun, type Action, type RunState } from "@/engine";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import { chiefRequest, chiefZones, toEngineOrders } from "./chief-request";
 import { RUN_SEED } from "./run-screen";
 
@@ -68,6 +68,16 @@ describe("the Chief's request over its limits (#97)", () => {
     const request = chiefRequest("F1", base, zones, run, lastEvent(run));
     expect(request.zones).toEqual(zones.zones);
     expect(request.lastKnownZone).toBe("dock-corridor");
+  });
+
+  it("carries the mission when given with the building, and none from a bare building id (issue 119)", () => {
+    const zones = chiefZones(base);
+    const run = tripped(base);
+    expect(chiefRequest({ buildingId: "F1", missionId: "romaine-1974" }, base, zones, run, lastEvent(run)).missionId).toBe(
+      "romaine-1974",
+    );
+    expect(chiefRequest({ buildingId: "F1", missionId: null }, base, zones, run, lastEvent(run))).not.toHaveProperty("missionId");
+    expect(chiefRequest("F1", base, zones, run, lastEvent(run))).not.toHaveProperty("missionId");
   });
 
   it("fails with a plain message, not a schema dump, when the request still cannot fit", () => {

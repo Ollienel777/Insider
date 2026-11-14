@@ -184,7 +184,7 @@ test("when the aerial fails, the side panel shows the error with Retry, not a sk
 test("Plan the job goes to the dossier", async ({ page }) => {
   await open(page);
   await page.getByRole("link", { name: "Plan the job" }).click();
-  await expect(page).toHaveURL(/\/b\/F1\/dossier$/);
+  await expect(page).toHaveURL(/\/b\/F1\/dossier\?m=romaine-1974$/);
 });
 
 test("the panel shows CoStar's facts beside Vexcel's height and entries", async ({ page }) => {
