@@ -13,6 +13,8 @@ interface Props {
   given: boolean;
   faces: PanoResolution;
   mesh: MeshResolution;
+  /** Whether to load the scan's detailed mesh. */
+  detail: boolean;
   debug: boolean;
 }
 
@@ -41,7 +43,7 @@ const HINTS: [string, string][] = [
 
 const seconds = (value: number | null) => (value === null ? "…" : `${value.toFixed(2)} s`);
 
-export function ScanWalkScreen({ modelId, given, faces, mesh, debug }: Props) {
+export function ScanWalkScreen({ modelId, given, faces, mesh, detail, debug }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [hud, setHud] = useState<WalkHud | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -56,14 +58,14 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, debug }: Props) {
     import("./engine")
       .then(({ ScanWalk }) => {
         if (gone) return;
-        engine = new ScanWalk(element, { modelId, faces, mesh, reducedMotion, debug, onHud: setHud });
+        engine = new ScanWalk(element, { modelId, faces, mesh, detail, reducedMotion, debug, onHud: setHud });
       })
       .catch(() => setFailed("This browser couldn't start the 3D view (WebGL 2 is needed)."));
     return () => {
       gone = true;
       engine?.dispose();
     };
-  }, [modelId, faces, mesh, debug]);
+  }, [modelId, faces, mesh, detail, debug]);
 
   if (!modelId) {
     return (
@@ -113,6 +115,8 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, debug }: Props) {
         <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-xs tabular-nums">
           <Row label="Mesh">
             {hud && hud.triangles > 0 ? `${hud.triangles.toLocaleString("en-US")} triangles` : "…"}
+            {hud?.detail.state === "loading" && " · detail loading"}
+            {hud?.detail.state === "ready" && ` · detail ${hud.detail.triangles.toLocaleString("en-US")}`}
           </Row>
           <Row label="Load">
             {hud

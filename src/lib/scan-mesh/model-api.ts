@@ -29,6 +29,27 @@ export class ModelApiError extends Error {
 }
 
 /**
+ * The length of the archive at `url` (a link the API just gave out), from a
+ * one-byte range request whose body is the archive's first byte, read and
+ * dropped: the page can't read the length itself. Null on any failure.
+ */
+export async function archiveLength(url: string, fetchImpl: typeof fetch = fetch, timeoutMs = 8000): Promise<number | null> {
+  try {
+    const response = await fetchImpl(url, {
+      headers: { Range: "bytes=0-0" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    await response.arrayBuffer();
+    if (response.status !== 206) return null;
+    const total = Number(response.headers.get("content-range")?.split("/")[1]);
+    return Number.isSafeInteger(total) && total > 0 ? total : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The API's `data.model` for one scan (null when it has no such model).
  * Throws `ModelApiError` on any failure.
  */

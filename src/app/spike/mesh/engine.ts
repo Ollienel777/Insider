@@ -16,11 +16,18 @@ import {
 } from "three";
 import type { BlendMode } from "@/lib/scan-mesh/blend";
 import type { Vec3 } from "@/lib/scan-mesh/coords";
-import { isAllowedAssetUrl, type MeshResolution, type PanoResolution, type ScanManifest } from "@/lib/scan-mesh/manifest";
+import {
+  isAllowedAssetUrl,
+  type MeshResolution,
+  type PanoResolution,
+  type ScanDetail,
+  type ScanManifest,
+} from "@/lib/scan-mesh/manifest";
 import { applyLook, stepMove, TUNING, viewBob, type MoveState } from "@/lib/scan-mesh/movement";
 import { parseObj } from "@/lib/scan-mesh/obj";
 import { MeshWorld } from "./collider";
 import { blankCube, PanoStore, type PanoUse } from "./panos";
+import type { DetailReply, DetailRequest } from "./detail-worker";
 import { matchExposure } from "./exposure-match";
 import { createScanMaterial } from "./projection";
 import { RECORD_STEP, WalkRecorder, type RecordOptions } from "./recorder";
@@ -51,6 +58,8 @@ export interface WalkHud {
   canMove: boolean;
   /** How much of the building is in memory. */
   building: WalkBuilding;
+  /** The detailed mesh from the scan's Matterpak, which takes over the picture once in. */
+  detail: { state: "none" | "loading" | "ready" | "failed" | "off"; triangles: number; megabytes: number; seconds: number; reason?: string };
   /** The exposure match: pairs of panoramas compared, the gains' range, and whether they are applied; null until solved. */
   exposure: { pairs: number; low: number; high: number; on: boolean } | null;
   faces: PanoResolution;
@@ -84,6 +93,8 @@ export interface WalkOptions {
   modelId: string;
   faces: PanoResolution;
   mesh: MeshResolution;
+  /** Whether to load the Matterpak's detailed mesh when the scan has one. */
+  detail: boolean;
   reducedMotion: boolean;
   /** Exposes the engine on `window` for poking at from the console. */
   debug: boolean;
@@ -131,7 +142,11 @@ export class ScanWalk {
   private readonly backdrop: Mesh;
   private readonly keys = new Set<string>();
   private readonly abort = new AbortController();
+  /** The walkable mesh (collision, floors), and the one drawn: the detailed mesh once it is in. */
   private geometry: BufferGeometry | null = null;
+  private drawn: Mesh | null = null;
+  private detailGeometry: BufferGeometry | null = null;
+  private detailWorker: Worker | null = null;
   private wire: Mesh | null = null;
   private world: MeshWorld | null = null;
   private panos: PanoStore | null = null;
@@ -190,6 +205,7 @@ export class ScanWalk {
       projection: true,
       blend: "view",
       exposure: null,
+      detail: { state: "none", triangles: 0, megabytes: 0, seconds: 0 },
       sensitivity: 1,
       panos: [],
       panoCount: 0,
@@ -298,7 +314,8 @@ export class ScanWalk {
       this.world = new MeshWorld(geometry, TUNING.stepUp);
       this.hud.timings.build = (performance.now() - at) / 1000;
       this.hud.triangles = parsed.index.length / 3;
-      this.scene.add(new Mesh(geometry, this.material));
+      this.drawn = new Mesh(geometry, this.material);
+      this.scene.add(this.drawn);
 
       // The sharp layer's size: six 2k cubes are about 800 MB of GPU memory.
       const { faces } = this.options;
@@ -309,6 +326,7 @@ export class ScanWalk {
       this.panos.setPanos(manifest.panos);
 
       this.spawn(parsed.bounds);
+      this.loadDetail(manifest.detail);
       this.readyAt = performance.now();
       this.hud.phase = "ready";
       this.push();
@@ -513,7 +531,7 @@ export class ScanWalk {
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -1,
     });
-    this.wire = new Mesh(this.geometry, material);
+    this.wire = new Mesh(this.drawn?.geometry ?? this.geometry, material);
     this.scene.add(this.wire);
   }
 
@@ -528,6 +546,66 @@ export class ScanWalk {
     if (this.panos) this.panos.useGains = on;
     if (this.hud.exposure) this.hud.exposure = { ...this.hud.exposure, on };
     this.push();
+  }
+
+  /**
+   * Fetch the Matterpak's detailed mesh in a worker and, once in, draw it and
+   * see the panoramas' occlusion against it. Walking stays on the 50k mesh,
+   * whose floors are clean. Only the mesh file is pulled from the archive.
+   */
+  private loadDetail(detail: ScanDetail | null): void {
+    const hud = this.hud.detail;
+    if (!this.options.detail) {
+      hud.state = "off";
+      return;
+    }
+    if (!detail || detail.bytes === null || !isAllowedAssetUrl(detail.url)) return;
+    hud.state = "loading";
+    // The 9 MB or so of mesh first: the full-size faces, hundreds of megabytes, wait for it.
+    if (this.panos) this.panos.holdSharp = true;
+    const release = () => {
+      if (this.panos) this.panos.holdSharp = false;
+    };
+    try {
+      const worker = new Worker(new URL("./detail-worker.ts", import.meta.url), { type: "module" });
+      this.detailWorker = worker;
+      worker.onmessage = (event: MessageEvent<DetailReply>) => {
+        worker.terminate();
+        this.detailWorker = null;
+        release();
+        const reply = event.data;
+        if (this.disposed) return;
+        if ("failed" in reply) {
+          hud.state = "failed";
+          hud.reason = reply.failed;
+          this.push();
+          return;
+        }
+        const geometry = new BufferGeometry();
+        geometry.setAttribute("position", new BufferAttribute(reply.positions, 3));
+        geometry.setIndex(new BufferAttribute(reply.index, 1));
+        geometry.computeBoundingSphere();
+        this.detailGeometry = geometry;
+        if (this.drawn) this.drawn.geometry = geometry;
+        if (this.wire) this.wire.geometry = geometry;
+        this.panos?.setGeometry(geometry);
+        Object.assign(hud, { state: "ready", triangles: reply.index.length / 3, megabytes: reply.megabytes, seconds: reply.seconds });
+        this.push();
+      };
+      worker.onerror = (event) => {
+        worker.terminate();
+        this.detailWorker = null;
+        release();
+        hud.state = "failed";
+        hud.reason = `worker: ${event.message}`;
+        this.push();
+      };
+      const request: DetailRequest = { url: detail.url, bytes: detail.bytes };
+      worker.postMessage(request);
+    } catch {
+      release();
+      hud.state = "failed";
+    }
   }
 
   /** Once every panorama has its small cube, compare neighbours' colours and even out their exposures. */
@@ -579,7 +657,13 @@ export class ScanWalk {
   }
 
   snapshot(): WalkHud {
-    return { ...this.hud, panos: [...this.hud.panos], timings: { ...this.hud.timings }, building: { ...this.hud.building } };
+    return {
+      ...this.hud,
+      panos: [...this.hud.panos],
+      timings: { ...this.hud.timings },
+      building: { ...this.hud.building },
+      detail: { ...this.hud.detail },
+    };
   }
 
   // ---- the frame ----
@@ -723,6 +807,8 @@ export class ScanWalk {
     this.panos?.dispose();
     if (this.wire) (this.wire.material as MeshBasicMaterial).dispose();
     this.geometry?.dispose();
+    this.detailGeometry?.dispose();
+    this.detailWorker?.terminate();
     this.material.dispose();
     this.backdropMaterial.dispose();
     this.backdrop.geometry.dispose();

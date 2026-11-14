@@ -2,7 +2,8 @@
 // the free-walk sandbox needs to draw one scan (issue 118). It asks the
 // Matterport Model API with the secret key and relays a manifest: a
 // short-lived signed link to the mesh, and each panorama's position, rotation
-// and six face links. The browser fetches the assets itself, straight from the
+// and six face links; and, where the scan's Matterpak is unlocked, its link
+// and length (one byte of it is read here for that, and dropped). The browser fetches the assets itself, straight from the
 // scan CDN, so no scan byte passes through this server and nothing is cached
 // or written. Links are checked against an allow-list before they are relayed
 // (src/lib/scan-mesh/manifest.ts).
@@ -17,7 +18,7 @@ import {
   type MeshResolution,
   type PanoResolution,
 } from "@/lib/scan-mesh/manifest";
-import { fetchScanModel, ModelApiError, modelApiRefusal } from "@/lib/scan-mesh/model-api";
+import { archiveLength, fetchScanModel, ModelApiError, modelApiRefusal } from "@/lib/scan-mesh/model-api";
 
 export const dynamic = "force-dynamic";
 
@@ -62,5 +63,10 @@ export async function GET(request: Request): Promise<Response> {
   }
   const manifest = buildManifest(model, { mesh, faces });
   if (!manifest) return refuse("no-model", 404);
+  if (manifest.detail) {
+    // The page finds the detailed mesh by the archive's length, which only the server can read.
+    const bytes = await archiveLength(manifest.detail.url);
+    manifest.detail = bytes === null ? null : { ...manifest.detail, bytes };
+  }
   return Response.json(manifest, { headers: NO_STORE });
 }

@@ -30,6 +30,14 @@ function model(over: Record<string, unknown> = {}) {
       ],
     },
     panoLocations: [pano("p1"), pano("p2")],
+    bundles: [
+      { name: "BIM", availability: "unavailable", assets: [] },
+      {
+        name: "Matterpak",
+        availability: "unlocked",
+        assets: [{ format: "zip", status: "available", url: `${CDN}/bundles/pak.zip?t=sig`, validUntil: "2026-01-02T00:00:00Z" }],
+      },
+    ],
     ...over,
   };
 }
@@ -172,7 +180,7 @@ describe("buildManifest", () => {
 
   it("relays nothing but what the page needs", () => {
     const manifest = buildManifest({ ...model(), name: "Somewhere", secret: "x" }, { mesh: "50k", faces: "2k" });
-    expect(Object.keys(manifest!).sort()).toEqual(["mesh", "panos", "validUntil"]);
+    expect(Object.keys(manifest!).sort()).toEqual(["detail", "mesh", "panos", "validUntil"]);
     expect(Object.keys(manifest!.panos[0]).sort()).toEqual([
       "anchor",
       "faces",
@@ -187,10 +195,36 @@ describe("buildManifest", () => {
   });
 });
 
+describe("the detailed mesh", () => {
+  const want = { mesh: "50k", faces: "2k" } as const;
+  const pak = (over: Record<string, unknown>) => ({ name: "Matterpak", availability: "unlocked", ...over });
+
+  it("relays the unlocked Matterpak's link", () => {
+    expect(buildManifest(model(), want)?.detail).toEqual({ url: `${CDN}/bundles/pak.zip?t=sig`, bytes: null });
+  });
+
+  it("has none when the Matterpak is locked, missing, off the allow-list or not ready", () => {
+    const zip = { format: "zip", status: "available", url: `${CDN}/bundles/pak.zip` };
+    const cases = [
+      [],
+      [pak({ availability: "locked", assets: [zip] })],
+      [pak({ assets: [{ ...zip, url: "https://example.com/models/pak.zip" }] })],
+      [pak({ assets: [{ ...zip, status: "locked" }] })],
+      [{ name: "Other", availability: "unlocked", assets: [zip] }],
+    ];
+    for (const bundles of cases) expect(buildManifest(model({ bundles }), want)?.detail).toBeNull();
+  });
+
+  it("keeps the earliest expiry when the Matterpak's lasts longer", () => {
+    expect(buildManifest(model(), want)?.validUntil).toBe("2026-01-01T00:08:00Z");
+  });
+});
+
 describe("the query", () => {
   it("asks for links and placement only", () => {
     expect(MANIFEST_QUERY).toContain("meshes(formats: [\"obj\"])");
     expect(MANIFEST_QUERY).toContain("skyboxes(resolutions: $faces)");
-    expect(MANIFEST_QUERY).not.toMatch(/\bname\b|\baddress\b|downloadUrl/);
+    // Only the bundles' names are asked for; the model's own name and address are not.
+    expect(MANIFEST_QUERY.replace("bundles { name", "")).not.toMatch(/\bname\b|\baddress\b|downloadUrl/);
   });
 });

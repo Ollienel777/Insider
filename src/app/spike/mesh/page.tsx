@@ -4,7 +4,7 @@
 // and says so when it has neither.
 //
 // Options: `faces=high|2k|4k` (panorama sharpness, default 2k),
-// `mesh=50k|500k`, `debug=1`.
+// `mesh=50k|500k`, `detail=0` (no Matterpak mesh), `debug=1`.
 import type { Metadata } from "next";
 import { MESH_RESOLUTIONS, MODEL_ID, PANO_RESOLUTIONS, type MeshResolution, type PanoResolution } from "@/lib/scan-mesh/manifest";
 import { ScanWalkScreen } from "./scan-walk";
@@ -35,6 +35,7 @@ export default async function ScanMeshPage({ searchParams }: { searchParams: Pro
       given={m !== null}
       faces={pick<PanoResolution>(one(search.faces), PANO_RESOLUTIONS, "2k")}
       mesh={pick<MeshResolution>(one(search.mesh), MESH_RESOLUTIONS, "50k")}
+      detail={one(search.detail) !== "0"}
       debug={one(search.debug) === "1"}
     />
   );

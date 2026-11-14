@@ -62,7 +62,8 @@ const GAIN_RATE = 1.5;
 const HORIZON = 1.2;
 /** The small cube's face when it has to be made from the full-size bytes, pixels. */
 const LOW_SIZE = 512;
-const DEPTH_SIZE = 384;
+/** A depth cube's face, pixels: a third of a degree each, plenty to tell in front from behind. */
+const DEPTH_SIZE = 256;
 /** Strips a full-size face goes to the GPU in. */
 const STRIPS = 8;
 /** A frame hands the GPU no new work once it has spent this long on it, ms. */
@@ -195,6 +196,9 @@ export class PanoStore {
   private readonly waiting = new Map<number, (reply: DecodeReply) => void>();
   private decodingLow: Promise<unknown> = Promise.resolve();
   private readonly depthScene = new Scene();
+  private readonly depthMesh: Mesh;
+  /** Bytes per depth cube texel, for the memory count. */
+  private depthTexel = 8;
   private readonly depthMaterial = createDistanceMaterial();
   private readonly depthCamera = new PerspectiveCamera(90, 1, 0.05, 4000);
   private readonly far: Mesh;
@@ -205,6 +209,8 @@ export class PanoStore {
   needsLinks = false;
   /** How the slots are weighted (lib/scan-mesh/blend.ts). */
   mode: BlendMode = "view";
+  /** While true, no full-size faces are fetched: the link is left to something smaller and more urgent. */
+  holdSharp = false;
   /** Whether the exposure gains are applied (to compare with and without). */
   useGains = true;
   /** Each panorama's colour gain as shown, by index in the scan's list, easing toward `targetGains`; missing means 1. */
@@ -222,7 +228,8 @@ export class PanoStore {
     private readonly sharpSize: number,
   ) {
     this.warming = capacity;
-    this.depthScene.add(new Mesh(geometry, this.depthMaterial));
+    this.depthMesh = new Mesh(geometry, this.depthMaterial);
+    this.depthScene.add(this.depthMesh);
     // What a panorama sees through a hole in the mesh is far away, not nothing.
     const farMaterial = createDistanceMaterial();
     farMaterial.side = BackSide;
@@ -335,7 +342,8 @@ export class PanoStore {
       if (e.lowCube && e.depth) out.low++;
       if (e.sharpStage === "ready" || e.sharpStage === "leaving") out.sharp++;
       if (e.sharpStage === "working") out.sharpLoading++;
-      if (e.depth) out.gpu += DEPTH_SIZE * DEPTH_SIZE * 8;
+      // Six faces of half floats (one channel, or four where the GPU can't render to one), and their depth buffer.
+      if (e.depth) out.gpu += DEPTH_SIZE * DEPTH_SIZE * 6 * (this.depthTexel + 4);
     }
     out.gpu += this.lowTexels * 4;
     // Every sharp cube made so far, in use or pooled, with its smaller copies.
@@ -354,6 +362,16 @@ export class PanoStore {
   /** Each panorama's colour gain, by index: eased in over a second or so. */
   setGains(gains: ReadonlyMap<number, Rgb>): void {
     this.targetGains = new Map(gains);
+  }
+
+  /**
+   * A finer mesh to see the panoramas' occlusion against: every depth cube is
+   * rendered again from it, a few a frame, the old one in use until then.
+   */
+  setGeometry(geometry: BufferGeometry): void {
+    this.depthMesh.geometry = geometry;
+    const queued = new Set(this.depthQueue);
+    for (const e of this.shown) if (e.depth && !queued.has(e)) this.depthQueue.push(e);
   }
 
   /** The panorama nearest `eye`, by index, or -1. */
@@ -474,7 +492,7 @@ export class PanoStore {
         return;
       }
       if (wantsLow && this.lowFetches < LOW_FETCHES) void this.fetchFaces(e, "low");
-      if (wantsSharp && this.sharpFetches < SHARP_FETCHES) void this.fetchFaces(e, "sharp");
+      if (wantsSharp && !this.holdSharp && this.sharpFetches < SHARP_FETCHES) void this.fetchFaces(e, "sharp");
     }
   }
 
@@ -754,7 +772,9 @@ export class PanoStore {
 
     const seen = this.depthQueue.shift();
     if (seen) {
+      const old = seen.depth;
       seen.depth = this.renderDepth(seen.origin);
+      old?.dispose();
       return true;
     }
 
@@ -804,6 +824,7 @@ export class PanoStore {
     const renderer = this.renderer;
     // One channel is all it needs, where the GPU can render to one.
     const single = renderer.extensions.has("EXT_color_buffer_float");
+    this.depthTexel = single ? 2 : 8;
     const target = new WebGLCubeRenderTarget(DEPTH_SIZE, {
       type: HalfFloatType,
       format: single ? RedFormat : RGBAFormat,

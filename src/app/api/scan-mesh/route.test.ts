@@ -101,7 +101,30 @@ describe("GET /api/scan-mesh", () => {
     expect(body.panos[0].position).toEqual([0, 1.4, 0]);
     expect(body.panos[0].faces).toHaveLength(6);
     expect(body.validUntil).toBe("2026-01-01T00:05:00Z");
+    expect(body.detail).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("relays the Matterpak's link with its length, read from one byte", async () => {
+    live();
+    const pak = `${CDN}/bundles/pak.zip?t=sig`;
+    const bundles = [{ name: "Matterpak", availability: "unlocked", assets: [{ format: "zip", status: "available", url: pak }] }];
+    fetchMock.mockResolvedValueOnce(Response.json({ data: { model: { ...MODEL, bundles } } }));
+    fetchMock.mockResolvedValueOnce(new Response("P", { status: 206, headers: { "content-range": "bytes 0-0/123456" } }));
+    const body = await (await get("?m=abcDEF12345")).json();
+    expect(body.detail).toEqual({ url: pak, bytes: 123456 });
+    const [url, init] = fetchMock.mock.calls[1];
+    expect(url).toBe(pak);
+    expect((init?.headers as Record<string, string>).Range).toBe("bytes=0-0");
+    expect(init?.cache).toBe("no-store");
+  });
+
+  it("drops the Matterpak when its length can't be read", async () => {
+    live();
+    const bundles = [{ name: "Matterpak", availability: "unlocked", assets: [{ format: "zip", status: "available", url: `${CDN}/p.zip` }] }];
+    fetchMock.mockResolvedValueOnce(Response.json({ data: { model: { ...MODEL, bundles } } }));
+    fetchMock.mockResolvedValueOnce(new Response("no", { status: 403 }));
+    expect((await (await get("?m=abcDEF12345")).json()).detail).toBeNull();
   });
 
   it("says a scan has no mesh by relaying none", async () => {

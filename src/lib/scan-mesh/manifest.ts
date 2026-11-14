@@ -47,9 +47,25 @@ export interface ScanPano {
   neighbours: string[];
 }
 
+export interface ScanDetail {
+  url: string;
+  /**
+   * The archive's length in bytes, which the page needs to find the archive's
+   * directory at its end and can't read itself (the CDN doesn't expose
+   * `Content-Range` to pages). The route fills it in; null until then.
+   */
+  bytes: number | null;
+}
+
 export interface ScanManifest {
   /** Null when the scan has no mesh the API will serve. */
   mesh: ScanMesh | null;
+  /**
+   * A signed link to the scan's Matterpak, an archive whose detailed mesh
+   * (ten times the triangles of the 50k one, in the same frame) the page
+   * pulls out by range requests; null when the scan's Matterpak isn't unlocked.
+   */
+  detail: ScanDetail | null;
   panos: ScanPano[];
   /** The earliest moment any link here stops working (ISO), or null when none expires. */
   validUntil: string | null;
@@ -59,6 +75,7 @@ export interface ScanManifest {
 export const MANIFEST_QUERY = `query ScanManifest($id: ID!, $faces: [String!]) {
   model(id: $id) {
     assets { meshes(formats: ["obj"]) { status format resolution url validUntil } }
+    bundles { name availability assets { ... on Resource { format status url validUntil } } }
     panoLocations {
       id
       position { x y z }
@@ -152,6 +169,19 @@ export function buildManifest(
     break;
   }
 
+  let detail: ScanDetail | null = null;
+  for (const entry of list(m.bundles)) {
+    const bundle = record(entry);
+    if (!bundle || bundle.name !== "Matterpak" || bundle.availability !== "unlocked") continue;
+    const zip = list(bundle.assets)
+      .map(record)
+      .find((a) => a && a.status === "available" && a.format === "zip" && isAllowedAssetUrl(a.url));
+    if (!zip) continue;
+    detail = { url: zip.url as string, bytes: null };
+    expires(zip.validUntil);
+    break;
+  }
+
   const order = faceResolutions(want.faces);
   const panos: ScanPano[] = [];
   for (const entry of list(m.panoLocations)) {
@@ -200,5 +230,5 @@ export function buildManifest(
   }
 
   expiries.sort((a, b) => Date.parse(a) - Date.parse(b));
-  return { mesh, panos, validUntil: expiries[0] ?? null };
+  return { mesh, detail, panos, validUntil: expiries[0] ?? null };
 }
