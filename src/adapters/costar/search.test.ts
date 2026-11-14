@@ -1,6 +1,7 @@
 // The inventory search on the fixture inventory only: no kit record is ever
 // in the repo (SPEC §4.5).
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 import { type CastingFilter, InventorySearch, Mission, SEARCH_TOP } from "@/domain";
 import finalists from "../../../fixtures/inventory-finalists.json";
 import missionsRaw from "../../../fixtures/missions.json";
@@ -140,6 +141,30 @@ describe("searchInventory live (the kit is not mapped yet, #27)", () => {
     expect(hits).toContain("/api/properties");
     expect(hits).toContain("/api/properties/48213");
     expect(getCoStar()).toMatchObject({ mode: "live" });
+  });
+
+  it("rejects a malformed filter to the caller, and live buildings stay live", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("HEIST_MODE", "");
+    vi.stubEnv("COSTAR_MODE", "live");
+    vi.stubEnv("COSTAR_API_BASE", "https://costar.test/api");
+    vi.stubEnv("COSTAR_API_KEY", "test-key");
+    const hits: string[] = [];
+    vi.stubGlobal("fetch", async (input: string | URL | Request) => {
+      const path = new URL(String(input)).pathname;
+      hits.push(path);
+      if (path === "/api/properties") return Response.json([PROPERTY]);
+      return Response.json({ items: [] });
+    });
+    resetCoStar();
+
+    const bad = [{ kind: "roofDeck", label: "a roof deck" }] as unknown as CastingFilter[];
+    await expect(getCoStar().adapter.searchInventory(bad)).rejects.toThrow(ZodError);
+    expect(getCoStar()).toMatchObject({ mode: "live" });
+    expect(getCoStar().fallback).toBeUndefined();
+    expect((await getCoStar().adapter.listBuildings("LA")).map((b) => b.source)).toEqual(["costar"]);
+    expect(hits).toContain("/api/properties");
   });
 });
 
