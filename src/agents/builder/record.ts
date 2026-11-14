@@ -7,6 +7,7 @@
 // agent and task, in the order they returned: within one task an agent's
 // calls run one after another, so that order is the turn number.
 import path from "node:path";
+import { DEFAULT_SUBAGENT_PROMPT } from "deepagents";
 import { Script } from "@/adapters/llm/scripted";
 import type { BuilderAgent } from "@/domain";
 import { BUILDER_PROMPT, DATA_ANALYST_PROMPT, GAME_MASTER_PROMPT } from "./prompts";
@@ -20,6 +21,8 @@ export const SYSTEM_INCLUDES: Record<BuilderAgent, string> = {
   "level-builder": BUILDER_PROMPT.split("\n")[0],
   "data-analyst": DATA_ANALYST_PROMPT.split("\n")[0],
   "game-master": GAME_MASTER_PROMPT.split("\n")[0],
+  // deepagents' own subagent (R1-M2), under the prompt it ships with.
+  "general-purpose": DEFAULT_SUBAGENT_PROMPT,
 };
 
 export interface RecordedFrom {
