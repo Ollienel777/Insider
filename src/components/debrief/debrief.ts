@@ -7,6 +7,7 @@ import type { AlarmState, ChiefOrders, ChiefSource, GuardOrder, RunAlarmEvent, R
 import { applyChiefOrders, createRun, LEVELS } from "@/engine";
 import { quietRoute, type PlacedLevel } from "@/level/placer";
 import { roomName, zoneName } from "@/components/run/board";
+import { objectiveNoun } from "@/lib/objective-noun";
 
 export type Grade = "S" | "A" | "B" | "C" | "D";
 
@@ -176,7 +177,7 @@ export function debriefOf(placed: PlacedLevel, log: RunLog, par: number | null =
     detail = [tripLine, by.length > 0 ? `${joinAnd(by)} reached you on turn ${turns}.` : null].filter(Boolean).join(" ");
   } else if (outcome === "won") {
     const exit = placed.entries.find((e) => e.nodeId === last.player)?.label ?? where(last.player);
-    headline = "Out with the files.";
+    headline = `Out with the ${objectiveNoun(level.missionId)}.`;
     detail =
       detections === 0
         ? `Out through the ${exit.toLowerCase()} in ${plural(turns, "turn")}, never seen.`

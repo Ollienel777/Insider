@@ -11,6 +11,7 @@ import { validatePlan } from "@/level/validate-plan";
 import crewF1 from "../../../fixtures/llm/crew-F1.json";
 import { act, createRun, type Action, type RunState } from "@/engine";
 import { placeLevel } from "@/level/placer";
+import { objectiveLabel } from "@/lib/objective-noun";
 import cached from "../../../data/levels/F1.romaine-1974.json";
 import { actionForKey, cameraMount, choices as choicesOf } from "./board";
 import { DISC, fixedLabels, movingLabels, standingOf, type GhostPlan } from "./board-view";
@@ -46,7 +47,7 @@ function drawn(run: RunState, ghost: GhostPlan | null = null): { name: string; q
     ...fixed.rooms.map((r) => ({ name: r.text, quad: r.quad })),
     ...[objective, ...exits].map((id) => {
       const p = atNode(id);
-      const text = id === objective ? "FILES" : (entryLabel.get(id) ?? "EXIT");
+      const text = id === objective ? objectiveLabel(placed.level.missionId) : (entryLabel.get(id) ?? "EXIT");
       return { name: text, quad: textBox(p.x, p.y + DISC.ry + 14, text.length, MARK_FONT, "middle", 0) };
     }),
     ...run.board.cameras.map((camera) => {

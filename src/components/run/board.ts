@@ -15,6 +15,7 @@ import {
   type RunState,
 } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
+import { objectiveNoun } from "@/lib/objective-noun";
 import { project } from "./iso";
 
 // ---- cones ------------------------------------------------------------------
@@ -369,7 +370,7 @@ export function describeTurn(placed: PlacedLevel, before: RunState, after: RunSt
   const { floor } = placed.level;
   const where = roomName(floor, after.playerNode);
   if (after.status === "caught") return `Caught in the ${where}.`;
-  if (after.status === "won") return `Out with the files in ${after.turn} turns.`;
+  if (after.status === "won") return `Out with the ${objectiveNoun(placed.level.missionId)} in ${after.turn} turns.`;
   const raised = after.alarmEvents.slice(before.alarmEvents.length).find((e) => e.cause.kind !== "decay");
   if (raised) {
     const by = raised.cause.id ?? "Someone";

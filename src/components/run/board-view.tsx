@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 import type { RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
+import { objectiveLabel } from "@/lib/objective-noun";
 import { cameraMount, cones, coverage, guardOrders, roomName, type Choice, type Cone } from "./board";
 import { useHop } from "./hop";
 import { frameOf, hull, LABEL_FONT, matrixAttr, pointsAttr, project, projectRect, round, TILE_DEPTH, type Point } from "./iso";
@@ -457,7 +458,7 @@ export function BoardView({
                     letterSpacing="0.06em"
                     style={{ fill: "var(--text-1)" }}
                   >
-                    {isObjective ? "FILES" : (entryLabel.get(node.id) ?? "EXIT").toUpperCase()}
+                    {isObjective ? objectiveLabel(placed.level.missionId) : (entryLabel.get(node.id) ?? "EXIT").toUpperCase()}
                   </text>
                 ) : null}
                 {layers ? (
@@ -883,7 +884,7 @@ export function fixedLabels(placed: PlacedLevel, cameras: RunState["board"]["cam
   const taken: Taken = { text: [], marks: [] };
   for (const id of named) {
     const p = point(id);
-    const text = id === objective ? "FILES" : (entryLabel.get(id) ?? "EXIT");
+    const text = id === objective ? objectiveLabel(placed.level.missionId) : (entryLabel.get(id) ?? "EXIT");
     taken.text.push(textBox(p.x, p.y + DISC.ry + 14, text.length, MARK_FONT, "middle"));
   }
   for (const camera of cameras) {

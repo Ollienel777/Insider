@@ -5,6 +5,7 @@ import { cameraMount } from "@/components/run/board";
 import { CameraPiece, DISC, Pawn, shortLabel } from "@/components/run/board-view";
 import { frameOf, LABEL_FONT, pointsAttr, project, projectRect, roomLabelTransform, round, TILE_DEPTH, type Point } from "@/components/run/iso";
 import type { PlacedLevel } from "@/level/placer";
+import { objectiveLabel } from "@/lib/objective-noun";
 import type { Frame } from "./debrief";
 
 /** How far apart, in board units, pieces sharing a node stand (as on the run board). */
@@ -140,7 +141,7 @@ export function ReplayBoard({
                   letterSpacing="0.06em"
                   style={{ fill: "var(--text-1)" }}
                 >
-                  {isObjective ? "FILES" : (entryLabel.get(node.id) ?? "EXIT").toUpperCase()}
+                  {isObjective ? objectiveLabel(placed.level.missionId) : (entryLabel.get(node.id) ?? "EXIT").toUpperCase()}
                 </text>
               ) : null}
             </g>
