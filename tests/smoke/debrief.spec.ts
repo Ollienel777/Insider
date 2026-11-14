@@ -85,6 +85,10 @@ test("with no run in storage, the debrief offers to start the run", async ({ pag
 });
 
 test("beat 5 to 6: caught after the wow beat, the debrief says so, with the Chief's decision", async ({ page }) => {
+  // It plays to the catch, waits out each Chief answer's stream, then opens the debrief: 5.6 s alone,
+  // up to 14.9 s with the CPU oversubscribed twice over (#84), against the 30 s default. 60 s leaves room
+  // for the loaded 2-vCPU VM, as #69 sized; a broken step still fails on its own wait, not on this.
+  test.setTimeout(60_000);
   await openRun(page);
   await pressFor(page, "fl-lobby");
   await pressFor(page, "dc-west");
