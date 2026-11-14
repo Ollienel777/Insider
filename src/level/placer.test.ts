@@ -1,10 +1,10 @@
-// The placer on the cached F1 manifest (data/levels/F1.json) and the F1 floor
+// The placer on the cached F1 manifest (data/levels/F1.romaine-1974.json) and the F1 floor
 // (fixtures/floors/F1.json), plus small hand-made floors for the general rules.
 import { describe, expect, it } from "vitest";
 import { F1_DEMO, FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { type FloorGraph, LevelManifest } from "@/domain";
 import { act, type Action, compileBoard, createRun, DEFAULT_HEARING, type RunState, watched } from "@/engine";
-import cached from "../../data/levels/F1.json";
+import cached from "../../data/levels/F1.romaine-1974.json";
 import { ANCHORS, ENTRY_CLEARANCE, placeLevel, PlacementError, type PlacedLevel } from "./placer";
 import { quietRoute } from "./quiet-route";
 
