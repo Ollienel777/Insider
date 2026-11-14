@@ -5,13 +5,30 @@
 //
 // With CoStar live (and not forced to fixtures), a shortlist cast live
 // (`<HEIST_STATE_DIR>/casting/`) wins over the committed fake one
-// (data/casting/). Errors carry fixed messages, never a stack or a schema dump.
+// (data/casting/); a state dir that cannot be read falls through to it.
+// Errors carry fixed messages, never a stack or a schema dump.
 import { z } from "zod";
 import { getCoStar } from "@/adapters/costar";
-import { CASTING_DIR, liveCastingDir, readCachedCasting } from "@/agents/casting/cache";
+import { CASTING_DIR, CastingReadError, liveCastingDir, readCachedCasting } from "@/agents/casting/cache";
+import type { CastingResult } from "@/domain";
 import { forcedFromRequest } from "@/lib/mode";
 
 const MissionId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
+
+/**
+ * The live shortlist, or `null` when there is none or the state dir cannot
+ * be read (logged): either way data/casting/ answers next. A file that is
+ * there but fails its schema still throws.
+ */
+async function readLive(missionId: string): Promise<CastingResult | null> {
+  try {
+    return await readCachedCasting(missionId, [liveCastingDir()]);
+  } catch (error) {
+    if (!(error instanceof CastingReadError)) throw error;
+    console.error(`GET /api/cast/${missionId}: the live shortlist cannot be read (${error.code}); serving data/casting/`);
+    return null;
+  }
+}
 
 export async function GET(request: Request, context: { params: Promise<{ missionId: string }> }): Promise<Response> {
   const parsed = MissionId.safeParse((await context.params).missionId);
@@ -19,9 +36,10 @@ export async function GET(request: Request, context: { params: Promise<{ mission
   const missionId = parsed.data;
 
   const forced = forcedFromRequest(request).has("costar");
-  const dirs = getCoStar({ forced }).mode === "live" ? [liveCastingDir(), CASTING_DIR] : [CASTING_DIR];
   try {
-    const result = await readCachedCasting(missionId, dirs);
+    const result =
+      (getCoStar({ forced }).mode === "live" ? await readLive(missionId) : null) ??
+      (await readCachedCasting(missionId, [CASTING_DIR]));
     if (!result) {
       return Response.json({ error: "no cached shortlist for this mission; run npm run cast" }, { status: 404 });
     }
