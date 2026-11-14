@@ -50,6 +50,14 @@ describe("askFix", () => {
     expect(answer).toEqual({ fix: recordedFix, recorded: true, source: "recorded", reason: "fake mode" });
   });
 
+  it("keeps the server's recorded flag: a model whose change didn't fit was still called", async () => {
+    const summary = fixSummaryOf(summariseBatch(batch), placed);
+    const dropped = { change: { kind: "move-camera", elementId: "C7", to: "dock-corridor" }, reason: 'no camera "C7"' };
+    const fetch = (async () => Response.json({ fix: recordedFix, recorded: false, source: "template", dropped })) as unknown as typeof globalThis.fetch;
+    const answer = await askFix({ buildingId: "F1", summary }, { fetch });
+    expect(answer).toEqual({ fix: recordedFix, recorded: false, source: "template", dropped });
+  });
+
   it("throws the server's message", async () => {
     const summary = fixSummaryOf(summariseBatch(batch), placed);
     const fetch = (async () => Response.json({ error: "no cached level" }, { status: 404 })) as unknown as typeof globalThis.fetch;

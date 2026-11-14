@@ -212,6 +212,9 @@ export function addCamera(setup: OwnerSetup, node: string, kind: OwnerCameraKind
 
 /** Changes a camera. Moved, turned or of another kind, it covers what it now sees: a kept cover goes. */
 export function updateCamera(setup: OwnerSetup, id: string, change: Partial<Omit<OwnerCamera, "id" | "cover">>): OwnerSetup {
+  const camera = setup.cameras.find((c) => c.id === id);
+  // Nothing differs (a click on the active kind or facing): the camera stays as generated.
+  if (!camera || Object.entries(change).every(([k, v]) => camera[k as keyof OwnerCamera] === v)) return setup;
   const out = touched(setup, "cameras", id);
   return {
     ...out,

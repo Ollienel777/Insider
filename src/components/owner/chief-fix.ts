@@ -83,7 +83,8 @@ export async function askFix(
   const source = answer.source === "model" || answer.source === "template" ? answer.source : "recorded";
   return {
     fix: ChiefFix.parse(answer.fix),
-    recorded: answer.recorded === true || source !== "model",
+    // The server's own flag: a model that answered with a change that didn't fit is not recorded.
+    recorded: typeof answer.recorded === "boolean" ? answer.recorded : source !== "model",
     source,
     ...(answer.reason && { reason: answer.reason }),
     ...(answer.dropped && { dropped: answer.dropped }),

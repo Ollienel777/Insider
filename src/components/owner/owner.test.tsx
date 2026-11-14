@@ -1,7 +1,7 @@
 // The Owner screen (issue 128) on the cached F1 level and the F1 fixture floor:
 // the setup made from the generated security and its exact round trip, the
 // editor's states and inline reasons, and the before and after of the Chief's
-// recorded fix, 17 of 50 out before and none after, as PR 148 has it.
+// recorded fix, 17 of 50 out before and none after, as the batch debrief has it.
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
@@ -14,7 +14,7 @@ import cached from "../../../data/levels/F1.romaine-1974.json";
 import fixRecording from "../../../fixtures/llm/fix-F1.json";
 import recording from "../../../fixtures/llm/strategies-F1.json";
 import { BatchPanel } from "./batch-panel";
-import { toEngineFix } from "./chief-fix";
+import { toEngineFix, type FixAnswer } from "./chief-fix";
 import { ownerZones, playOwnerBatch, rerunOwner } from "./owner-batch";
 import { boardCaption, setupKey } from "./owner-ready";
 import {
@@ -212,6 +212,16 @@ describe("the round trip", () => {
     expect(turned.generated?.cameras).toEqual(["C1"]);
   });
 
+  it("a click that changes nothing leaves the camera generated, and the setup as it was", () => {
+    const c2 = starting.cameras.find((c) => c.id === "C2")!;
+    expect(starting.generated?.cameras).toContain("C2");
+    for (const change of [{ facing: c2.facing }, { kind: c2.kind }, { node: c2.node }, {}]) {
+      const same = updateCamera(starting, "C2", change);
+      expect(same).toBe(starting);
+      expect(same.generated?.cameras).toContain("C2");
+    }
+  });
+
   it("plays a setup saved before cleaners, covers and the generated list as it did: every camera's cover from its facing, all the owner's", () => {
     // As a setup was stored before them: no cleaners, no kept covers, no generated list.
     const older = OwnerSetup.parse({
@@ -271,6 +281,7 @@ describe("50 attempts, the fix, and the rerun", () => {
         setupName={null}
         stale={false}
         fixedSaved={null}
+        side="before"
         onEdit={noop}
         onRetry={noop}
         onOpenFixed={noop}
@@ -284,7 +295,101 @@ describe("50 attempts, the fix, and the rerun", () => {
     expect(html).toContain("17 fewer got out");
     expect(html).toContain('data-testid="owner-fix-recorded"');
     expect(html).toContain('data-testid="owner-crew-recorded"');
-    expect(html).toMatch(/data-testid="owner-route" data-count="14"/);
+    expect(html).toMatch(/data-testid="owner-route" data-side="before" data-count="14"/);
     expect(boardCaption(rerun.after, "after")).toBe("After the fix: 0 of 50 got out. No way out to draw");
+  });
+});
+
+describe("the results panel says what the board shows, and who wrote the fix", () => {
+  const result = playOwnerBatch(manifest, floor, starting, answer);
+  const rerun = rerunOwner(manifest, floor, starting, result, recordedFix);
+  const batch: OwnerBatch = { status: "done", key: "generated", setup: starting, result, summary: sum(result), recorded: true, ms: 1 };
+  const panel = (props: { batch?: OwnerBatch; fix: OwnerFix; side?: "before" | "after" }) =>
+    renderToStaticMarkup(
+      <BatchPanel
+        batch={props.batch ?? batch}
+        fix={props.fix}
+        zones={ownerZones(manifest, floor)}
+        generated={generated}
+        setupName={null}
+        stale={false}
+        fixedSaved={null}
+        side={props.side}
+        onEdit={noop}
+        onRetry={noop}
+        onOpenFixed={noop}
+      />,
+    );
+  // The Chief's section alone: the crew's chip above says its own "no model was called".
+  const chief = (html: string) => html.slice(html.indexOf('data-testid="owner-chief"'));
+  const applied = (a: FixAnswer): OwnerFix => ({
+    status: "applied",
+    answer: a,
+    rerun,
+    ms: 1,
+  });
+  const recordedAnswer = { fix: recordedFix, recorded: true, source: "recorded" as const, reason: "fake mode" as const };
+
+  it("after the fix, the route and detector cards describe the after batch the board draws", () => {
+    const html = panel({ fix: applied(recordedAnswer), side: "after" });
+    expect(html).toMatch(/data-testid="owner-route" data-side="after" data-count="0"/);
+    expect(html).toContain("After the fix: The way most got out");
+    expect(html).not.toContain("It is drawn on the board");
+    const top = rerun.after.detectors[0];
+    if (top) expect(html).toContain(`data-detector="${top.kind}:${top.id ?? ""}"`);
+    else expect(html).not.toContain('data-testid="owner-detector"');
+  });
+
+  it("on the Before side, they describe the batch before the fix", () => {
+    const html = panel({ fix: applied(recordedAnswer), side: "before" });
+    expect(html).toMatch(/data-testid="owner-route" data-side="before" data-count="14"/);
+    expect(html).toContain("Before the fix: The way most got out");
+    const top = rerun.before.detectors[0]!;
+    expect(html).toContain(`data-detector="${top.kind}:${top.id ?? ""}"`);
+  });
+
+  it("counts the attempts the batch played, not 50", () => {
+    const fewer = playOwnerBatch(manifest, floor, starting, { strategies: strategies.slice(0, 3), dropped: [] });
+    const html = panel({ batch: { ...batch, result: fewer, summary: sum(fewer) }, fix: { status: "idle" } });
+    expect(sum(fewer).total).toBe(30);
+    expect(html).toContain("The crew&#x27;s 30 attempts");
+    expect(html).not.toContain("50 attempts");
+  });
+
+  it("a model's own fix carries no chip", () => {
+    const html = chief(panel({ fix: { status: "suggested", answer: { fix: recordedFix, recorded: false, source: "model" } } }));
+    expect(html).not.toContain('data-testid="owner-fix-recorded"');
+    expect(html).not.toContain("no model was called");
+  });
+
+  it("a model's change that didn't fit: says a model was called, and shows the change left out", () => {
+    const html = chief(panel({
+      fix: {
+        status: "suggested",
+        answer: {
+          fix: recordedFix,
+          recorded: false,
+          source: "template",
+          dropped: { change: { kind: "move-camera", elementId: "C7", to: "dock-corridor" }, reason: 'no camera "C7"' },
+        },
+      },
+    }));
+    expect(html).toContain('data-testid="owner-fix-recorded"');
+    expect(html).not.toContain("no model was called");
+    expect(html).toContain("A model was called, but its change didn&#x27;t fit");
+    expect(html).toContain('data-testid="owner-fix-left-out"');
+    expect(html).toContain("The model suggested: C7 now covers the dock corridor (no camera &quot;C7&quot;)");
+  });
+
+  it("a recorded fix in fake mode says no model was called, and why", () => {
+    const html = panel({ fix: { status: "suggested", answer: recordedAnswer } });
+    expect(html).toContain('title="Recorded fix: no model was called (fake mode)."');
+    expect(html).not.toContain('data-testid="owner-fix-left-out"');
+  });
+
+  it("a timed-out model is not said to have gone uncalled", () => {
+    const html = chief(panel({ fix: { status: "suggested", answer: { fix: recordedFix, recorded: true, source: "template", reason: "timeout" } } }));
+    expect(html).toContain("the model didn&#x27;t answer (timeout)");
+    expect(html).not.toContain("no model was called");
   });
 });

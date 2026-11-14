@@ -38,10 +38,10 @@ export function boardCaption(summary: BatchSummary, side: Side | null): string {
   return summary.topRoute ? `${lead}${out}. The way most got out is drawn` : `${lead}${out}. No way out to draw`;
 }
 
-/** The setup as the batch keys it: the generated level while untouched, else everything but the name. */
 /** The key of the untouched starting point. */
 export const GENERATED_KEY = "generated";
 
+/** The setup as the batch keys it: the generated level while untouched, else everything but the name. */
 export const setupKey = (draft: Pick<Draft, "setup" | "pristine">) =>
   draft.pristine ? GENERATED_KEY : JSON.stringify({ ...draft.setup, name: "" });
 
@@ -95,7 +95,16 @@ export function OwnerReady({
     return { ...before, level: applied.level, cameras };
   }, [batchBefore, fix, side, manifest, floor]);
 
-  const edit = (next: OwnerSetup) => setDraft({ setup: next, pristine: false, state: "editing" });
+  // An edit that changed nothing (the same object back) leaves the draft as it was.
+  const edit = (next: OwnerSetup) => {
+    if (next !== draft.setup) setDraft({ setup: next, pristine: false, state: "editing" });
+  };
+
+  // The side the board shows: only once a fix is applied and fitted. The caption, the
+  // board's route and ring, and the panel's route and detector cards all describe it.
+  const shownSide: Side | null = fix.status === "applied" && !fix.rerun.dropped ? side : null;
+  const shownSummary: BatchSummary | null =
+    batch.status !== "done" ? null : shownSide === "after" && fix.status === "applied" ? fix.rerun.after : batch.summary;
 
   const save = () => {
     const ok = saveOwnerSetup(draft.setup);
@@ -125,7 +134,7 @@ export function OwnerReady({
   };
 
   const saveFixed = () => {
-    if (batch.status !== "done" || fix.status !== "applied") return;
+    if (batch.status !== "done" || fix.status !== "applied" || fix.rerun.dropped) return;
     const base = batch.setup;
     const engineFix = toEngineFix(fix.answer.fix, ownerZones(manifest, floor));
     const name = `${base.name}, after the fix`.slice(0, 80);
@@ -175,6 +184,10 @@ export function OwnerReady({
       <Button variant="primary" data-testid="owner-apply" onClick={apply}>
         Apply and rerun
       </Button>
+    ) : fix.rerun.dropped ? (
+      <Button variant="primary" data-testid="owner-save-fixed" disabled>
+        The change didn&apos;t fit: nothing to save
+      </Button>
     ) : (
       <Button variant="primary" data-testid="owner-save-fixed" onClick={saveFixed} disabled={fixedSaved?.ok === true}>
         {fixedSaved?.ok ? "Saved on this device" : "Save the fixed setup"}
@@ -187,15 +200,15 @@ export function OwnerReady({
       visual={
         <div className="absolute inset-0 flex flex-col">
           <div className="flex h-14 shrink-0 items-center gap-3 px-6">
-            <span className="label-caps text-text-2">{view === "setup" ? "Your security" : "50 attempts"}</span>
+            <span className="label-caps text-text-2">{view === "setup" ? "Your security" : shownSummary ? `${shownSummary.total} attempts` : "The crew's attempts"}</span>
             <span aria-hidden className="h-4 w-px bg-border" />
             <span data-testid="owner-board-caption" className="truncate text-sm text-text-1">
               {view === "setup"
                 ? draft.pristine
                   ? "The building's generated security, as a starting point"
                   : draft.setup.name || "Unnamed setup"
-                : batch.status === "done"
-                  ? boardCaption(fix.status === "applied" ? (side === "after" ? fix.rerun.after : fix.rerun.before) : batch.summary, fix.status === "applied" ? side : null)
+                : shownSummary
+                  ? boardCaption(shownSummary, shownSide)
                   : "The crew is planning its ways in"}
             </span>
             {view === "results" && fix.status === "applied" && !fix.rerun.dropped ? (
@@ -236,11 +249,8 @@ export function OwnerReady({
               <OwnerBoard
                 placed={batchBoard}
                 result={{
-                  route: side === "after" && fix.status === "applied" ? (fix.rerun.after.topRoute?.nodes ?? null) : batch.status === "done" ? (batch.summary.topRoute?.nodes ?? null) : null,
-                  detector:
-                    batch.status === "done"
-                      ? ((side === "after" && fix.status === "applied" ? fix.rerun.after : batch.summary).detectors[0] ?? null)
-                      : null,
+                  route: shownSummary?.topRoute?.nodes ?? null,
+                  detector: shownSummary?.detectors[0] ?? null,
                 }}
               />
             ) : (
@@ -289,6 +299,8 @@ export function OwnerReady({
               setupName={batch.status === "done" && batch.key !== GENERATED_KEY ? batch.setup.name : null}
               stale={batch.status === "done" && !fresh}
               fixedSaved={fixedSaved}
+              side={side}
+              board={batchBoard ?? undefined}
               onEdit={() => setView("setup")}
               onRetry={runBatch}
               onOpenFixed={openFixed}
