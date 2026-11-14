@@ -61,7 +61,8 @@ async function resolveModel(buildingId: string, options: BuildOptions): Promise<
           "fake mode cannot build it",
       );
     }
-    return { model: selection.model, label: `recorded turns (${script.id})` };
+    // Say plainly what ran: no language model, only the recorded script (#17, R1-M5).
+    return { model: selection.model, label: `ScriptedChatModel (script ${script.id}, no LLM)` };
   }
   const id = (selection.model as { model?: unknown }).model;
   return { model: selection.model, label: `${selection.provider}${typeof id === "string" ? ` ${id}` : ""}` };

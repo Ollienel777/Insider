@@ -169,7 +169,7 @@ describe("the cached F1 level in data/levels/", () => {
   it("is what the builder writes today (rerun npm run build:levels -- F1 when this fails)", async () => {
     const fresh = await buildLevel("F1");
     expect(read("F1.json")).toEqual(fresh.manifest);
-    expect(fresh.trace.model).toBe("recorded turns (builder-F1)");
+    expect(fresh.trace.model).toBe("ScriptedChatModel (script builder-F1, no LLM)");
   });
 
   it("has a trace with a todo list, both subagents and five tool calls", () => {

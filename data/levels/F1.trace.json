@@ -1,39 +1,39 @@
 {
   "buildingId": "F1",
-  "recordedAt": "2026-11-13T11:39:34.402Z",
-  "model": "recorded turns (builder-F1)",
+  "recordedAt": "2026-11-13T12:28:55.495Z",
+  "model": "ScriptedChatModel (script builder-F1, no LLM)",
   "events": [
     {
-      "atMs": 122,
+      "atMs": 131,
       "kind": "todo",
       "agent": "level-builder",
       "label": "Read F1's CoStar record and Vexcel aerial, and derive its security",
       "status": "in_progress"
     },
     {
-      "atMs": 122,
+      "atMs": 131,
       "kind": "todo",
       "agent": "level-builder",
       "label": "Pick the mission for its city and era, and write the briefing",
       "status": "pending"
     },
     {
-      "atMs": 122,
+      "atMs": 131,
       "kind": "todo",
       "agent": "level-builder",
       "label": "Write the level manifest",
       "status": "pending"
     },
     {
-      "atMs": 136,
+      "atMs": 146,
       "kind": "subagent",
       "agent": "data-analyst",
       "label": "Read building F1's CoStar record, available space and aerial entries, then derive its security profile with the rules table.",
       "status": "completed",
-      "durationMs": 54
+      "durationMs": 56
     },
     {
-      "atMs": 155,
+      "atMs": 165,
       "kind": "tool",
       "agent": "data-analyst",
       "label": "get_building",
@@ -41,7 +41,7 @@
       "durationMs": 3
     },
     {
-      "atMs": 155,
+      "atMs": 165,
       "kind": "tool",
       "agent": "data-analyst",
       "label": "get_available_space",
@@ -49,7 +49,7 @@
       "durationMs": 3
     },
     {
-      "atMs": 156,
+      "atMs": 166,
       "kind": "tool",
       "agent": "data-analyst",
       "label": "get_aerial_entries",
@@ -57,7 +57,7 @@
       "durationMs": 2
     },
     {
-      "atMs": 167,
+      "atMs": 177,
       "kind": "tool",
       "agent": "data-analyst",
       "label": "derive_security_profile",
@@ -65,36 +65,36 @@
       "durationMs": 16
     },
     {
-      "atMs": 198,
+      "atMs": 210,
       "kind": "todo",
       "agent": "level-builder",
       "label": "Read F1's CoStar record and Vexcel aerial, and derive its security",
       "status": "completed"
     },
     {
-      "atMs": 198,
+      "atMs": 210,
       "kind": "todo",
       "agent": "level-builder",
       "label": "Pick the mission for its city and era, and write the briefing",
       "status": "in_progress"
     },
     {
-      "atMs": 198,
+      "atMs": 210,
       "kind": "todo",
       "agent": "level-builder",
       "label": "Write the level manifest",
       "status": "pending"
     },
     {
-      "atMs": 198,
+      "atMs": 211,
       "kind": "subagent",
       "agent": "game-master",
       "label": "Building F1, Halvorsen Tower, LA, built 1974. Analog era: key locks, sweeping analog CCTV, 2 cameras. Class A: 4 guards on tight rounds. Staged on floor 22, quiet suites 2202-2210. Entries: loading dock, roof hatch, garage ramp, main lobby, stair A exit. Pick the mission and write the briefing.",
       "status": "completed",
-      "durationMs": 24
+      "durationMs": 23
     },
     {
-      "atMs": 217,
+      "atMs": 227,
       "kind": "tool",
       "agent": "game-master",
       "label": "list_missions",
@@ -102,29 +102,29 @@
       "durationMs": 1
     },
     {
-      "atMs": 230,
+      "atMs": 241,
       "kind": "tool",
       "agent": "level-builder",
       "label": "write_manifest",
       "status": "completed",
-      "durationMs": 10
+      "durationMs": 12
     },
     {
-      "atMs": 247,
+      "atMs": 261,
       "kind": "todo",
       "agent": "level-builder",
       "label": "Read F1's CoStar record and Vexcel aerial, and derive its security",
       "status": "completed"
     },
     {
-      "atMs": 247,
+      "atMs": 261,
       "kind": "todo",
       "agent": "level-builder",
       "label": "Pick the mission for its city and era, and write the briefing",
       "status": "completed"
     },
     {
-      "atMs": 247,
+      "atMs": 261,
       "kind": "todo",
       "agent": "level-builder",
       "label": "Write the level manifest",
