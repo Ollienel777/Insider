@@ -125,9 +125,12 @@ lists each sponsor's technology and the exact files that use it.
   that produced it, and showing it on a click, took the rules table, the Why
   card and the Layer lens.
 - **Saying only what is true.** The README went through seven review rounds
-  ([#81](https://github.com/Ollienel777/heist-anywhere/pull/81)), and the
-  claims the reviews found untrue against the code were corrected before it
-  merged. One, taken from the plan, said the live Vexcel path proxies
+  ([#81](https://github.com/Ollienel777/heist-anywhere/pull/81)), and every
+  Critical finding the reviews upheld was corrected before it merged. A Nit
+  left open at merge, that the Chief is called on "every alarm transition",
+  has since been made exact in the README: it is called once after each
+  player action that logs an alarm event, with that action's latest event.
+  One Critical, taken from the plan, said the live Vexcel path proxies
   imagery; the code has no proxy, and the README now says it passes Vexcel's
   image URLs through.
 
@@ -186,8 +189,10 @@ have not been called. OpenStreetMap is the data for the static basemap.
   tools run for real, but the model's turns are replayed from a recording; it
   has not yet run on Claude.
 - **Amazon "Best Practical AI Innovation":** the Security Chief re-plans the
-  guards on every alarm change and says why, and Drill Mode turns a building
-  record into a drill scenario for a fire safety director. The Chief answers
+  guards once after each player action that logs an alarm event (a change of
+  level, or, at Lockdown, a sighting in a new zone or after a turn unseen),
+  with that action's latest event, and says why; and Drill Mode turns a
+  building record into a drill scenario for a fire safety director. The Chief answers
   from recordings or rules, with no live model yet; Amazon Bedrock is wired in
   as an alternative provider but has never been called.
 
