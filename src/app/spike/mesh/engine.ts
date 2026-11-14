@@ -27,6 +27,8 @@ export interface WalkHud {
   projection: boolean;
   /** How the panoramas are weighted (lib/scan-mesh/blend.ts). */
   blend: BlendMode;
+  /** Whether the blend's fixes for doubles and unseen points are on (lib/scan-mesh/combine.ts). */
+  fixes: boolean;
   /** The player's mouse sensitivity, as a multiple of the default. */
   sensitivity: number;
   panos: PanoUse[];
@@ -137,6 +139,7 @@ export class ScanWalk {
   private gaps: [number, number][] = [];
   private eyeLift = 0;
   private holdLift = false;
+  private fixes = true;
   private hud: WalkHud;
 
   constructor(
@@ -159,6 +162,7 @@ export class ScanWalk {
       speed: 0,
       projection: true,
       blend: "view",
+      fixes: true,
       exposure: null,
       detail: { state: "none", triangles: 0, megabytes: 0, seconds: 0 },
       sensitivity: 1,
@@ -331,6 +335,7 @@ export class ScanWalk {
     if (event.code === "KeyG") this.view.toggleWire();
     if (event.code === "KeyE") this.setExposure(!(this.hud.exposure?.on ?? true));
     if (event.code === "KeyB") this.setBlend(this.hud.blend === "view" ? "nearest" : "view");
+    if (event.code === "KeyF") this.setFixes({ agree: !this.fixes, fill: !this.fixes });
     const count = this.view.scanPositions().length;
     if ((event.code === "KeyP" || event.code === "KeyN") && this.state && count > 0) {
       const here = this.view.nearestScan(this.eye());
@@ -378,9 +383,12 @@ export class ScanWalk {
     this.push();
   }
 
-  /** For the console: the blend's fixes off, to compare (scan-view.ts). */
+  /** The blend's fixes off, to compare (scan-view.ts): `F`, or the console. */
   setFixes(fixes: Partial<ScanFixes>): void {
     this.view.setFixes(fixes);
+    this.fixes = fixes.agree ?? fixes.fill ?? this.fixes;
+    this.hud.fixes = this.fixes;
+    this.push();
   }
 
   /** For the console: this view's coverage and doubles (lib/scan-mesh/pose.ts). */

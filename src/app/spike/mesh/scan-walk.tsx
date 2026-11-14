@@ -37,6 +37,7 @@ const HINTS: [string, string][] = [
   ["N", "next scan position"],
   ["G", "mesh edges"],
   ["B", "blend rule"],
+  ["F", "blend fixes"],
   ["E", "exposure match"],
   ["Esc", "release"],
 ];
@@ -133,7 +134,7 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, detail, debug }: P
           <Row label="View">
             {hud?.projection === false
               ? "Mesh only"
-              : `Panoramas (${hud?.faces ?? faces}) · ${hud?.blend === "nearest" ? "nearest" : "by view"}`}
+              : `Panoramas (${hud?.faces ?? faces}) · ${hud?.blend === "nearest" ? "nearest" : "by view"}${hud && !hud.fixes ? " · fixes off" : ""}`}
           </Row>
           <Row label="In use">
             {hud && hud.panos.length > 0
