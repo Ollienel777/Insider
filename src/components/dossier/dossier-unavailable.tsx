@@ -2,6 +2,7 @@ import Link from "next/link";
 import { BuildingScreen } from "@/components/shell/building-screen";
 import { buttonVariants } from "@/components/ui/button";
 import type { Building } from "@/domain";
+import { FACTS_ONLY_NOTE } from "@/components/shell/steps";
 import type { DossierFact } from "./dossier-screen";
 
 interface DossierUnavailableProps {
@@ -37,7 +38,7 @@ export function DossierUnavailable({ buildingId, missionId, name, reason, detail
           </h1>
           <p className="text-base text-text-2">
             {kit
-              ? "This building comes from the CoStar data kit. Its level is not built here: the kit's data stays out of the repository."
+              ? `${FACTS_ONLY_NOTE} It comes from the CoStar data kit, whose data stays out of the repository.`
               : reason === "missing"
                 ? "The Level Builder runs ahead of the demo, per building. Build this one, then reload."
                 : "The cached manifest or trace in data/levels/ does not match the schema. Rebuild it, then reload."}

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { BuildingScreen } from "@/components/shell/building-screen";
+import { FACTS_ONLY_NOTE, isFactsOnly } from "@/components/shell/steps";
 import { buildingHref } from "@/lib/building-href";
 import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
@@ -29,7 +30,8 @@ import { MassingSvg } from "./massing-view";
 export type ScoutBuilding = Pick<
   Building,
   "id" | "name" | "city" | "neighbourhood" | "yearBuilt" | "buildingClass" | "stories"
->;
+> &
+  Partial<Pick<Building, "source">>;
 
 export type Load =
   | { status: "loading" }
@@ -206,9 +208,21 @@ export function ScoutScreen({ building, initialLoad }: { building: ScoutBuilding
         />
       }
       action={
-        <Link href={buildingHref(building.id, "dossier", missionId)} className={buttonVariants({ variant: "primary" })}>
-          Plan the job
-        </Link>
+        isFactsOnly(building.source) ? (
+          // A kit building has no level, so there is no job to plan (Plan, Run, Debrief, Drill would 404).
+          <div className="flex items-center gap-3">
+            <p data-testid="facts-only" className="text-sm text-text-2">
+              {FACTS_ONLY_NOTE}
+            </p>
+            <Link href="/map" className={buttonVariants({ variant: "secondary" })}>
+              Pick another building
+            </Link>
+          </div>
+        ) : (
+          <Link href={buildingHref(building.id, "dossier", missionId)} className={buttonVariants({ variant: "primary" })}>
+            Plan the job
+          </Link>
+        )
       }
     />
   );
