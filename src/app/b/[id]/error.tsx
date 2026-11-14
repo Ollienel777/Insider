@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { startTransition } from "react";
 import { BuildingScreen } from "@/components/shell/building-screen";
 import { Button, buttonVariants } from "@/components/ui/button";
 
@@ -9,6 +11,15 @@ import { Button, buttonVariants } from "@/components/ui/button";
 // generic error page. A bad cached level has its own state on each screen;
 // this catches the rest.
 export default function BuildingError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  const router = useRouter();
+  // These screens are server components, so `reset()` alone re-renders the
+  // same payload and throws again. Refresh fetches the segment from the
+  // server again, and the reset in the same transition clears the boundary.
+  const retry = () =>
+    startTransition(() => {
+      router.refresh();
+      reset();
+    });
   return (
     <BuildingScreen
       visualLabel="Error"
@@ -22,8 +33,8 @@ export default function BuildingError({ error, reset }: { error: Error & { diges
       }
       panel={
         <div className="flex flex-col gap-3">
-          <h2 className="text-lg font-semibold text-text-1">Nothing to show</h2>
-          <Button variant="secondary" onClick={reset}>
+          <h2 className="text-lg font-semibold text-text-1">Load it again</h2>
+          <Button variant="secondary" onClick={retry}>
             Try again
           </Button>
         </div>
