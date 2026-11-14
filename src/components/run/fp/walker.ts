@@ -164,7 +164,14 @@ export function stepWalker(
   // Move. A run that is over stops the body where it stands.
   const wish = playing ? wishVelocity(controls, controls.yaw) : { x: 0, y: 0 };
   const moved = ground.collide(walker.pos, accelerate(walker.vel, wish, dt), dt, run.locked);
-  walker = { ...walker, pos: moved.pos, vel: moved.vel, walked: walker.walked + distance(moved.pos, walker.pos) };
+  // The body stays where the engine can follow it (#134): in a room that holds the engine's node, the
+  // move it was handed, or a node the engine would move to. A step out of such ground into a room further
+  // on is not taken, so no room is reached without its move. A body already elsewhere (put there by
+  // anything but walking) walks freely back.
+  const held = playing && followable(walker, ground, run, walker.pos) && !followable(walker, ground, run, moved.pos);
+  walker = held
+    ? { ...walker, vel: { x: 0, y: 0 } }
+    : { ...walker, pos: moved.pos, vel: moved.vel, walked: walker.walked + distance(moved.pos, walker.pos) };
 
   if (walker.pending) {
     const age = walker.pending.age + dt;
@@ -199,6 +206,21 @@ export function stepWalker(
     if (legal) return emit(walker, { kind: "move", to: under }, under);
   }
   return { walker, action: null };
+}
+
+/**
+ * Whether the engine can follow a body at `pos`: the room it stands in (the room of the nearest node with no
+ * wall between) holds the engine's node, the node of the move handed back, or a node the engine would move
+ * to now. Inside those rooms the body walks freely; it never reaches a room further on without a move. With
+ * no node in clear view there is nothing to stray towards, so the body may stand there.
+ */
+export function followable(walker: Walker, ground: Ground, run: RunState, pos: Vec): boolean {
+  const near = nearestNode(ground, run, pos);
+  if (near === null) return true;
+  const roomOf = new Map(run.board.level.floor.nodes.map((n) => [n.id, n.roomId]));
+  const room = roomOf.get(near);
+  const nodes = [walker.node, walker.pending?.to, ...choices(run).flatMap((c) => (c.kind === "move" ? [c.nodeId] : []))];
+  return nodes.some((id) => id != null && roomOf.get(id) === room);
 }
 
 function emit(walker: Walker, action: Action, to: string | null): { walker: Walker; action: Action } {

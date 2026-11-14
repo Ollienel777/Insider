@@ -36,6 +36,11 @@ export interface FirstPersonViewProps {
   onAct: (action: Action) => void;
   /** WebGL is not there, or its context was lost: the Run screen goes back to the board. */
   onUnavailable: () => void;
+  /**
+   * Live mode's HUD already shows the alarm, the turn and the objective around the view (issue 100),
+   * so the view leaves out its own cards for them (#134).
+   */
+  hudAround?: boolean;
 }
 
 interface Hud {
@@ -68,7 +73,7 @@ function hasWebGL(): boolean {
   }
 }
 
-export default function FirstPersonView({ placed, run, objective, onAct, onUnavailable }: FirstPersonViewProps) {
+export default function FirstPersonView({ placed, run, objective, onAct, onUnavailable, hudAround = false }: FirstPersonViewProps) {
   const surface = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const labelLayer = useRef<HTMLDivElement>(null);
@@ -337,6 +342,9 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
       ) : null}
 
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-between px-6 py-3">
+        {hudAround ? (
+          <div />
+        ) : (
         <div className="flex flex-col items-start gap-2">
           <div data-testid="fp-alarm" data-state={run.alarm} className={cn("rounded-sm border-l-2 bg-surface-1 px-3 py-2 shadow-e-1", alarm.bar)}>
             <p className="label-caps text-text-3">
@@ -351,6 +359,7 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
             </p>
           </div>
         </div>
+        )}
 
         <div className="flex flex-col items-center gap-2">
           {over ? (

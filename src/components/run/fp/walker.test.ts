@@ -274,6 +274,35 @@ describe.each(CASES)("free movement on $id", ({ id, cached }) => {
     expect(openingBetween(world, "no", "edge")).toBeNull();
   });
 
+  it("never reaches a room the engine cannot follow it into: walking straight at every node from the start (#134)", () => {
+    // The #119 review (R1-M1): a straight walk could carry the body past a neighbour, more than 1 m off it,
+    // into a room further on while the engine still had the player at the start (F1: the lift straight at the
+    // dock corridor). After every step, the body's room must hold the engine's node, the move handed back,
+    // or a node the engine would move to.
+    const roomOf = new Map(placed.level.floor.nodes.map((n) => [n.id, n.roomId]));
+    for (const target of world.nodes.values()) {
+      const s = session(world, empty());
+      for (let i = 0; i < 8 / FP.stepS && distance(s.walker.pos, target) > 0.06; i++) {
+        step(s, { forward: 1, strafe: 0, walk: false, yaw: Math.atan2(target.y - s.walker.pos.y, target.x - s.walker.pos.x), interact: false });
+        const near = nearestNode(s.ground, s.run, s.walker.pos);
+        if (near === null) continue;
+        const rooms = new Set([s.walker.node, s.walker.pending?.to, ...choices(s.run).flatMap((c) => (c.kind === "move" ? [c.nodeId] : []))].map((id) => id && roomOf.get(id)));
+        expect(rooms.has(roomOf.get(near)), `towards ${target.id}: the body is in ${roomOf.get(near)} with the engine at ${s.run.playerNode}`).toBe(true);
+      }
+    }
+  });
+
+  it("goes back to the engine's node on a restart even when that is the node it last read (#134)", () => {
+    // The #119 review (R1-N1): a turn count that went backwards is a new run, whatever the node says.
+    const s = session(world, { ...fresh(), locked: [] });
+    const start = s.run.playerNode;
+    const aside = { ...s.walker, turn: 5, pos: { x: s.walker.pos.x + 0.7, y: s.walker.pos.y }, vel: { x: 1, y: 0 } };
+    const back = reconcile(aside, s.ground, { ...fresh(), locked: [] });
+    expect(back.pos).toEqual({ x: world.nodes.get(start)!.x, y: world.nodes.get(start)!.y });
+    expect(back.vel).toEqual({ x: 0, y: 0 });
+    expect(back.turn).toBe(0);
+  });
+
   it("stops the body when the run is over", () => {
     const s = session(world, { ...fresh(), locked: [] });
     for (let i = 0; i < 30; i++) step(s, { forward: 1, strafe: 0, walk: false, yaw: 0.3, interact: false });

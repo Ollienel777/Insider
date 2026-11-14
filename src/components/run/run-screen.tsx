@@ -493,6 +493,7 @@ export function RunScreen({
                 run={run}
                 objective={manifest.mission.objective}
                 onAct={play}
+                hudAround={hud !== null}
                 onUnavailable={() => {
                   runView.fail();
                   setStatus(FP_UNAVAILABLE);
