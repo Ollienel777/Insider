@@ -165,7 +165,7 @@ describe("placeLevel on F1 from the cached manifest", () => {
 
   it("keeps a quiet route and a guard on a round with the watch post of a second run (#35)", { timeout: 30_000 }, () => {
     // Hops from the dock over the floor's edges, doors included.
-    const dockHops = new Map([[F1_DEMO.dockEntry, 0]]);
+    const dockHops = new Map<string, number>([[F1_DEMO.dockEntry, 0]]);
     for (const at of dockHops.keys()) {
       for (const e of floor().edges) {
         const to = e.a === at ? e.b : e.b === at ? e.a : null;
