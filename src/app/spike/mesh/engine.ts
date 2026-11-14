@@ -1,39 +1,19 @@
-// The free-walk sandbox's scene (issue 118): loads one scan's mesh, lets the
-// player run around inside it like a shooter, and paints it from the scan's
-// panoramas. All of the scan lives in this tab's memory; nothing is stored.
-import {
-  BoxGeometry,
-  BufferAttribute,
-  BufferGeometry,
-  Color,
-  Mesh,
-  MeshBasicMaterial,
-  PerspectiveCamera,
-  Scene,
-  WebGLRenderer,
-  type CubeTexture,
-  type ShaderMaterial,
-} from "three";
+// The free-walk sandbox (issue 118): lets the player run around inside one
+// scan like a shooter. The scan itself is drawn by scan-view.ts, which this
+// drives the way a game's first-person view would: input and movement here,
+// then a pose and a render each frame.
 import type { BlendMode } from "@/lib/scan-mesh/blend";
 import type { Vec3 } from "@/lib/scan-mesh/coords";
-import {
-  isAllowedAssetUrl,
-  type MeshResolution,
-  type PanoResolution,
-  type ScanDetail,
-  type ScanManifest,
-} from "@/lib/scan-mesh/manifest";
+import type { MeshResolution, PanoResolution } from "@/lib/scan-mesh/manifest";
 import { applyLook, stepMove, TUNING, viewBob, type MoveState } from "@/lib/scan-mesh/movement";
-import { parseObj } from "@/lib/scan-mesh/obj";
-import { MeshWorld } from "./collider";
-import { blankCube, PanoStore, type PanoUse } from "./panos";
-import type { DetailReply, DetailRequest } from "./detail-worker";
-import { matchExposure } from "./exposure-match";
-import { createScanMaterial } from "./projection";
-import { RECORD_STEP, WalkRecorder, type RecordOptions } from "./recorder";
+import type { ViewStats } from "@/lib/scan-mesh/pose";
 import type { WalkSample } from "@/lib/scan-mesh/walk-stats";
+import type { MeshWorld } from "./collider";
+import type { PanoUse } from "./panos";
+import { RECORD_STEP, WalkRecorder, type RecordOptions } from "./recorder";
+import { ScanView, type ScanFixes, type ScanPhase, type ScanViewStatus } from "./scan-view";
 
-export type WalkPhase = "manifest" | "mesh" | "building" | "ready" | "no-mesh" | "error";
+export type WalkPhase = ScanPhase;
 
 export interface WalkHud {
   phase: WalkPhase;
@@ -101,11 +81,7 @@ export interface WalkOptions {
   onHud(hud: WalkHud): void;
 }
 
-/** Vertical field of view: about 103° across on a 16:9 screen, a shooter's default. */
-const FOV = 71;
 const HUD_EVERY = 0.2;
-/** Fetch new links when the current ones have this little time left, ms. */
-const LINK_MARGIN = 20_000;
 /** A mouse report longer than this, in counts, is a glitch, not a flick. */
 const MOUSE_JUMP = 600;
 /** A drag with the button held turns the view this much faster than a locked mouse, pixel for pixel. */
@@ -130,28 +106,11 @@ const MOVE_KEYS = new Set([
   "ArrowDown",
 ]);
 
-class LoadError extends Error {}
-
 export class ScanWalk {
-  private readonly renderer: WebGLRenderer;
-  private readonly scene = new Scene();
-  private readonly camera = new PerspectiveCamera(FOV, 1, 0.05, 3000);
-  private readonly blank: CubeTexture;
-  private readonly material: ShaderMaterial;
-  private readonly backdropMaterial: ShaderMaterial;
-  private readonly backdrop: Mesh;
+  /** The scan, drawn from the pose this sets each frame. */
+  readonly view: ScanView;
   private readonly keys = new Set<string>();
   private readonly abort = new AbortController();
-  /** The walkable mesh (collision, floors), and the one drawn: the detailed mesh once it is in. */
-  private geometry: BufferGeometry | null = null;
-  private drawn: Mesh | null = null;
-  private detailGeometry: BufferGeometry | null = null;
-  private detailWorker: Worker | null = null;
-  private wire: Mesh | null = null;
-  private world: MeshWorld | null = null;
-  private panos: PanoStore | null = null;
-  private manifest: ScanManifest | null = null;
-  private refreshing = false;
   private state: MoveState | null = null;
   private yaw = 0;
   private pitch = 0;
@@ -168,8 +127,6 @@ export class ScanWalk {
   private sinceHud = 0;
   private frames = 0;
   private fps = 0;
-  private used: PanoUse[] = [];
-  private exposureStarted = false;
   /** The debug recorder's walk, while one is running. */
   private recorder: WalkRecorder | null = null;
   private readonly opened = performance.now();
@@ -178,23 +135,21 @@ export class ScanWalk {
   private canMove = false;
   /** Recent frames: when each ended and how long after the one before, ms. */
   private gaps: [number, number][] = [];
+  private eyeLift = 0;
+  private holdLift = false;
   private hud: WalkHud;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly options: WalkOptions,
   ) {
-    this.renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.setClearColor(new Color().setRGB(0.027, 0.035, 0.047), 1);
-    this.camera.rotation.order = "YXZ";
-    this.blank = blankCube();
-    this.material = createScanMaterial(this.blank);
-    this.backdropMaterial = createScanMaterial(this.blank, true);
-    this.backdrop = new Mesh(new BoxGeometry(1000, 1000, 1000), this.backdropMaterial);
-    this.backdrop.renderOrder = -1;
-    this.backdrop.frustumCulled = false;
-    this.scene.add(this.backdrop);
+    this.view = new ScanView(canvas, {
+      modelId: options.modelId,
+      faces: options.faces,
+      mesh: options.mesh,
+      detail: options.detail,
+      onChange: () => this.push(),
+    });
     this.hud = {
       phase: "manifest",
       message: null,
@@ -248,113 +203,27 @@ export class ScanWalk {
 
     if (options.debug) (window as unknown as { __scanWalk?: ScanWalk }).__scanWalk = this;
     this.frame = requestAnimationFrame(this.tick);
-    void this.load();
-  }
-
-  // ---- loading ----
-
-  private async fetchManifest(): Promise<ScanManifest> {
-    const { modelId, faces, mesh } = this.options;
-    const query = new URLSearchParams({ m: modelId, faces, mesh });
-    const response = await fetch(`/api/scan-mesh?${query}`, { cache: "no-store", signal: this.abort.signal });
-    const body = (await response.json().catch(() => null)) as (ScanManifest & { message?: string }) | null;
-    if (!response.ok || !body) {
-      throw new LoadError(body?.message ?? "The scan couldn't be loaded.");
-    }
-    return body;
-  }
-
-  private async load(): Promise<void> {
-    try {
-      let at = performance.now();
-      const manifest = await this.fetchManifest();
-      if (this.disposed) return;
-      this.manifest = manifest;
-      this.hud.timings.manifest = (performance.now() - at) / 1000;
-      this.hud.panoCount = manifest.panos.length;
-      if (!manifest.mesh || !isAllowedAssetUrl(manifest.mesh.url)) {
-        this.hud.phase = "no-mesh";
-        this.hud.message = "No mesh for this scan. It can only be toured in the embedded viewer.";
-        this.push();
-        return;
-      }
-
-      this.hud.phase = "mesh";
-      this.push();
-      at = performance.now();
-      const response = await fetch(manifest.mesh.url, {
-        cache: "no-store",
-        credentials: "omit",
-        referrerPolicy: "no-referrer",
-        signal: this.abort.signal,
-      });
-      if (!response.ok) throw new LoadError("The scan's mesh couldn't be downloaded. Reload to try again.");
-      const text = await response.text();
-      if (this.disposed) return;
-      this.hud.timings.download = (performance.now() - at) / 1000;
-      this.hud.timings.megabytes = text.length / 1e6;
-
-      this.hud.phase = "building";
-      this.push();
-      // Let the HUD paint before the parse holds the thread.
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      at = performance.now();
-      const parsed = parseObj(text);
-      if (parsed.index.length === 0) {
-        this.hud.phase = "no-mesh";
-        this.hud.message = "This scan's mesh is empty.";
-        this.push();
-        return;
-      }
-      const geometry = new BufferGeometry();
-      geometry.setAttribute("position", new BufferAttribute(parsed.positions, 3));
-      geometry.setIndex(new BufferAttribute(parsed.index, 1));
-      geometry.computeBoundingSphere();
-      this.geometry = geometry;
-      this.world = new MeshWorld(geometry, TUNING.stepUp);
-      this.hud.timings.build = (performance.now() - at) / 1000;
-      this.hud.triangles = parsed.index.length / 3;
-      this.drawn = new Mesh(geometry, this.material);
-      this.scene.add(this.drawn);
-
-      // The sharp layer's size: six 2k cubes are about 800 MB of GPU memory.
-      const { faces } = this.options;
-      const capacity = faces === "4k" ? 3 : faces === "2k" ? 6 : 8;
-      const sharpSize = faces === "4k" ? 4096 : faces === "2k" ? 2048 : faces === "high" ? 1024 : 512;
-      this.panos = new PanoStore(this.renderer, geometry, capacity, sharpSize);
-      this.panos.onStale = () => void this.refreshLinks();
-      this.panos.setPanos(manifest.panos);
-
-      this.spawn(parsed.bounds);
-      this.loadDetail(manifest.detail);
+    void this.view.ready.then((ok) => {
+      if (!ok || this.disposed) return;
+      this.spawn();
       this.readyAt = performance.now();
-      this.hud.phase = "ready";
       this.push();
-    } catch (error) {
-      if (this.disposed) return;
-      this.hud.phase = "error";
-      this.hud.message = error instanceof LoadError ? error.message : "The scan couldn't be loaded.";
-      this.push();
-    }
+    });
   }
 
-  /** Stand at the first scan position, facing the second; with none, in the middle of the mesh. */
-  private spawn(bounds: { min: [number, number, number]; max: [number, number, number] } | null): void {
-    const panos = this.manifest?.panos ?? [];
-    if (panos.length > 0) {
+  /** Stand at the first scan position, facing the second; with none, on whatever floor is under the origin. */
+  private spawn(): void {
+    const positions = this.view.scanPositions();
+    if (positions.length > 0) {
       this.standAt(0);
-      if (panos.length > 1) {
-        const [ax, , az] = panos[0].position;
-        const [bx, , bz] = panos[1].position;
+      if (positions.length > 1) {
+        const [ax, , az] = positions[0];
+        const [bx, , bz] = positions[1];
         this.yaw = Math.atan2(-(bx - ax), -(bz - az));
       }
       return;
     }
-    const b = bounds ?? { min: [0, 0, 0], max: [0, 0, 0] };
-    const x = (b.min[0] + b.max[0]) / 2;
-    const z = (b.min[2] + b.max[2]) / 2;
-    const floor = this.world?.floorBelow(x, b.max[1], z, b.max[1] - b.min[1] + 1) ?? b.min[1];
-    this.state = { x, y: floor, z, vx: 0, vz: 0, walked: 0, grounded: true };
+    this.state = { x: 0, y: this.view.floorAt(0, 100, 0, 200) ?? 0, z: 0, vx: 0, vz: 0, walked: 0, grounded: true };
   }
 
   /**
@@ -364,48 +233,23 @@ export class ScanWalk {
    * difference is held as a lift until the player moves, then eased away.
    */
   standAt(index: number): void {
-    const pano = this.manifest?.panos[index];
-    if (!pano || !this.world) return;
-    const [x, y, z] = pano.position;
-    const floor = this.world.floorBelow(x, y, z, 3) ?? pano.floor?.[1] ?? y - 1.4;
-    this.state = { x, y: floor, z, vx: 0, vz: 0, walked: 0, grounded: true };
-    this.eyeLift = y - (floor + TUNING.eyeHeight);
+    const feet = this.view.feetAt(index);
+    const camera = this.view.scanPositions()[index];
+    if (!feet || !camera) return;
+    this.state = { x: feet[0], y: feet[1], z: feet[2], vx: 0, vz: 0, walked: 0, grounded: true };
+    this.eyeLift = camera[1] - (feet[1] + TUNING.eyeHeight);
     this.holdLift = true;
   }
 
-  private eyeLift = 0;
-  private holdLift = false;
-
-  private async refreshLinks(): Promise<void> {
-    if (this.refreshing || this.disposed) return;
-    this.refreshing = true;
-    try {
-      const manifest = await this.fetchManifest();
-      if (this.disposed) return;
-      this.manifest = { ...manifest, mesh: this.manifest?.mesh ?? manifest.mesh };
-      this.panos?.setPanos(manifest.panos);
-    } catch {
-      // Keep what is loaded; the next stale link asks again.
-    } finally {
-      // Not straight away: a scan whose links keep failing must not hammer the API.
-      setTimeout(() => (this.refreshing = false), 5000);
-    }
-  }
-
-  /** Whether the links in hand still have time on them. New ones are asked for only when a panorama needs one. */
-  private linksUsable(): boolean {
-    const until = this.manifest?.validUntil;
-    return !until || Date.parse(until) - Date.now() > LINK_MARGIN;
+  /** The walkable mesh, for the console and the recorder. */
+  get world(): MeshWorld | null {
+    return this.view.meshTree;
   }
 
   // ---- input ----
 
   private readonly resize = (): void => {
-    const width = this.canvas.clientWidth || window.innerWidth;
-    const height = this.canvas.clientHeight || window.innerHeight;
-    this.renderer.setSize(width, height, false);
-    this.camera.aspect = width / Math.max(1, height);
-    this.camera.updateProjectionMatrix();
+    this.view.resize(this.canvas.clientWidth || window.innerWidth, this.canvas.clientHeight || window.innerHeight);
   };
 
   private readonly requestLock = (): void => {
@@ -484,21 +328,24 @@ export class ScanWalk {
     if (event.code === "Equal" || event.code === "NumpadAdd") this.setSensitivity(this.sensitivity * 1.1);
     if (event.repeat) return;
     if (event.code === "KeyT") this.setProjection(!this.projection);
-    if (event.code === "KeyG") this.toggleWire();
+    if (event.code === "KeyG") this.view.toggleWire();
     if (event.code === "KeyE") this.setExposure(!(this.hud.exposure?.on ?? true));
     if (event.code === "KeyB") this.setBlend(this.hud.blend === "view" ? "nearest" : "view");
-    if (event.code === "KeyP" && this.state && this.panos) {
-      this.standAt(this.panos.nearest([this.state.x, this.state.y + TUNING.eyeHeight + this.eyeLift, this.state.z]));
-    }
-    if (event.code === "KeyN" && this.state && this.panos && this.panos.count > 0) {
-      const here = this.panos.nearest([this.state.x, this.state.y + TUNING.eyeHeight + this.eyeLift, this.state.z]);
-      this.standAt((here + 1) % this.panos.count);
+    const count = this.view.scanPositions().length;
+    if ((event.code === "KeyP" || event.code === "KeyN") && this.state && count > 0) {
+      const here = this.view.nearestScan(this.eye());
+      this.standAt(event.code === "KeyP" ? here : (here + 1) % count);
     }
   };
 
   private readonly keyUp = (event: KeyboardEvent): void => {
     this.keys.delete(event.code);
   };
+
+  private eye(): Vec3 {
+    const s = this.state;
+    return s ? [s.x, s.y + TUNING.eyeHeight + this.eyeLift, s.z] : [0, 0, 0];
+  }
 
   setSensitivity(value: number): void {
     this.sensitivity = Math.min(5, Math.max(0.2, value));
@@ -512,30 +359,7 @@ export class ScanWalk {
     this.push();
   }
 
-  /** The mesh's edges over the picture: how to judge whether the panoramas line up. */
-  toggleWire(): void {
-    if (!this.geometry) return;
-    if (this.wire) {
-      this.scene.remove(this.wire);
-      (this.wire.material as MeshBasicMaterial).dispose();
-      this.wire = null;
-      return;
-    }
-    const material = new MeshBasicMaterial({
-      color: new Color().setRGB(0.95, 0.66, 0.23),
-      wireframe: true,
-      transparent: true,
-      opacity: 0.35,
-      depthTest: true,
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
-    });
-    this.wire = new Mesh(this.drawn?.geometry ?? this.geometry, material);
-    this.scene.add(this.wire);
-  }
-
-  /** For the console (`?debug=1`): look somewhere, or show the depth check. */
+  /** For the console (`?debug=1`): look somewhere. */
   setLook(yaw: number, pitch: number): void {
     this.yaw = yaw;
     this.pitch = pitch;
@@ -543,93 +367,29 @@ export class ScanWalk {
 
   /** Apply the exposure gains or not: to see what they do. */
   setExposure(on: boolean): void {
-    if (this.panos) this.panos.useGains = on;
-    if (this.hud.exposure) this.hud.exposure = { ...this.hud.exposure, on };
+    this.view.setExposure(on);
     this.push();
-  }
-
-  /**
-   * Fetch the Matterpak's detailed mesh in a worker and, once in, draw it and
-   * see the panoramas' occlusion against it. Walking stays on the 50k mesh,
-   * whose floors are clean. Only the mesh file is pulled from the archive.
-   */
-  private loadDetail(detail: ScanDetail | null): void {
-    const hud = this.hud.detail;
-    if (!this.options.detail) {
-      hud.state = "off";
-      return;
-    }
-    if (!detail || detail.bytes === null || !isAllowedAssetUrl(detail.url)) return;
-    hud.state = "loading";
-    // The 9 MB or so of mesh first: the full-size faces, hundreds of megabytes, wait for it.
-    if (this.panos) this.panos.holdSharp = true;
-    const release = () => {
-      if (this.panos) this.panos.holdSharp = false;
-    };
-    try {
-      const worker = new Worker(new URL("./detail-worker.ts", import.meta.url), { type: "module" });
-      this.detailWorker = worker;
-      worker.onmessage = (event: MessageEvent<DetailReply>) => {
-        worker.terminate();
-        this.detailWorker = null;
-        release();
-        const reply = event.data;
-        if (this.disposed) return;
-        if ("failed" in reply) {
-          hud.state = "failed";
-          hud.reason = reply.failed;
-          this.push();
-          return;
-        }
-        const geometry = new BufferGeometry();
-        geometry.setAttribute("position", new BufferAttribute(reply.positions, 3));
-        geometry.setIndex(new BufferAttribute(reply.index, 1));
-        geometry.computeBoundingSphere();
-        this.detailGeometry = geometry;
-        if (this.drawn) this.drawn.geometry = geometry;
-        if (this.wire) this.wire.geometry = geometry;
-        this.panos?.setGeometry(geometry);
-        Object.assign(hud, { state: "ready", triangles: reply.index.length / 3, megabytes: reply.megabytes, seconds: reply.seconds });
-        this.push();
-      };
-      worker.onerror = (event) => {
-        worker.terminate();
-        this.detailWorker = null;
-        release();
-        hud.state = "failed";
-        hud.reason = `worker: ${event.message}`;
-        this.push();
-      };
-      const request: DetailRequest = { url: detail.url, bytes: detail.bytes };
-      worker.postMessage(request);
-    } catch {
-      release();
-      hud.state = "failed";
-    }
-  }
-
-  /** Once every panorama has its small cube, compare neighbours' colours and even out their exposures. */
-  private startExposure(): void {
-    const panos = this.panos;
-    const world = this.world;
-    if (this.exposureStarted || !panos || !world) return;
-    const counts = panos.counts();
-    if (counts.total === 0 || counts.low < counts.total) return;
-    this.exposureStarted = true;
-    void matchExposure(panos.exposureSources(), world, this.abort.signal).then(({ gains, pairs, before, after }) => {
-      if (this.disposed || gains.size === 0) return;
-      panos.setGains(gains);
-      const all = [...gains.values()].flat();
-      this.hud.exposure = { pairs, low: Math.min(...all), high: Math.max(...all), on: panos.useGains, before, after };
-      this.push();
-    });
   }
 
   /** Switch the rule that weights the panoramas: to judge the difference by eye, or to measure it. */
   setBlend(mode: BlendMode): void {
-    if (this.panos) this.panos.mode = mode;
+    this.view.setBlend(mode);
     this.hud.blend = mode;
     this.push();
+  }
+
+  /** For the console: the blend's fixes off, to compare (scan-view.ts). */
+  setFixes(fixes: Partial<ScanFixes>): void {
+    this.view.setFixes(fixes);
+  }
+
+  /** For the console: this view's coverage and doubles (lib/scan-mesh/pose.ts). */
+  measure(): ViewStats {
+    return this.view.measure();
+  }
+
+  setDebugView(mode: number): void {
+    this.view.setDebugView(mode);
   }
 
   /**
@@ -649,11 +409,7 @@ export class ScanWalk {
 
   /** The scan positions, y-up, in the scan's order: for choosing a route to record. */
   panoPositions(): Vec3[] {
-    return (this.manifest?.panos ?? []).map((p) => p.position);
-  }
-
-  setDebugView(on: boolean): void {
-    this.material.uniforms.uDebug.value = on ? 1 : 0;
+    return this.view.scanPositions();
   }
 
   snapshot(): WalkHud {
@@ -675,10 +431,10 @@ export class ScanWalk {
     if (this.last !== 0) this.gaps.push([time, time - this.last]);
     while (this.gaps.length > 0 && time - this.gaps[0][0] > WORST_OVER) this.gaps.shift();
     this.last = time;
-    this.step(dt);
-    this.renderer.render(this.scene, this.camera);
-    if (this.recorder && this.world) {
-      this.recorder.capture(this.renderer, this.scene, this.camera, this.world, this.used, this.panos?.mode ?? "view");
+    this.view.render(this.step(dt));
+    const world = this.view.meshTree;
+    if (this.recorder && world) {
+      this.recorder.capture(this.view.renderer, this.view.scene, this.view.camera, world, this.view.inUse(), this.view.blend);
     }
 
     this.frames++;
@@ -691,11 +447,12 @@ export class ScanWalk {
     }
   };
 
-  private step(dt: number): void {
+  /** Moves the player and hands the view its pose; returns the step taken, seconds. */
+  private step(dt: number): number {
     const { keys } = this;
     const state = this.state;
-    const world = this.world;
-    if (!state || !world) return;
+    const world = this.view.world;
+    if (!state || !world) return dt;
 
     const turn = (keys.has("ArrowLeft") ? 1 : 0) - (keys.has("ArrowRight") ? 1 : 0);
     const tilt = (keys.has("ArrowUp") ? 1 : 0) - (keys.has("ArrowDown") ? 1 : 0);
@@ -708,9 +465,8 @@ export class ScanWalk {
     // The player looks around from the first frame, and walks once there is a
     // picture to walk into (or the wait has gone on too long).
     if (!this.canMove) {
-      const eye: [number, number, number] = [state.x, state.y + TUNING.eyeHeight + this.eyeLift, state.z];
       const waited = performance.now() - this.readyAt;
-      if (!this.panos || this.panos.settled(eye) || waited > MOVE_WAIT) {
+      if (this.view.settled(this.eye()) || waited > MOVE_WAIT) {
         this.canMove = true;
         this.hud.canMove = true;
         this.push();
@@ -745,39 +501,31 @@ export class ScanWalk {
     const bobTarget = recorder ? 0 : viewBob(next.walked, speed, this.options.reducedMotion);
     this.bob += (bobTarget - this.bob) * (1 - Math.exp(-30 * dt));
     const eyeY = next.y + TUNING.eyeHeight + this.eyeLift;
-    this.camera.position.set(next.x, eyeY + this.bob, next.z);
-    this.camera.rotation.set(this.pitch, this.yaw, 0);
-    this.backdrop.position.copy(this.camera.position);
 
     const toward = this.projection ? 1 : 0;
     this.projectionShown += (toward - this.projectionShown) * (1 - Math.exp(-12 * dt));
-    this.material.uniforms.uProjection.value = this.projectionShown;
-    this.backdropMaterial.uniforms.uProjection.value = this.projectionShown;
-
-    if (this.panos) {
-      // Shares follow where the player stands, not the bob.
-      const eye: [number, number, number] = [next.x, eyeY, next.z];
-      this.used = this.panos.update(
-        eye,
-        [next.vx, next.vz],
-        dt,
-        [this.material, this.backdropMaterial],
-        this.blank,
-        this.linksUsable(),
-      );
-      if (this.panos.needsLinks) void this.refreshLinks();
-      this.startExposure();
-    }
+    this.view.setProjection(this.projectionShown);
+    this.view.setPose({ x: next.x, y: eyeY + this.bob, z: next.z, yaw: this.yaw, pitch: this.pitch }, [next.vx, next.vz]);
 
     this.hud.position = [next.x, next.y, next.z];
     this.hud.grounded = next.grounded;
     this.hud.speed = speed;
+    return dt;
   }
 
   private push(): void {
     if (this.disposed) return;
-    const counts = this.panos?.counts();
-    this.hud.panos = this.used;
+    const status: ScanViewStatus = this.view.status();
+    this.hud.phase = status.phase;
+    this.hud.message = status.message;
+    this.hud.triangles = status.triangles;
+    this.hud.panoCount = status.panoCount;
+    this.hud.detail = status.detail;
+    this.hud.exposure = status.exposure;
+    this.hud.timings = status.timings;
+    this.hud.blend = this.view.blend;
+    const counts = this.view.counts();
+    this.hud.panos = this.view.inUse();
     this.hud.panosReady = counts?.sharp ?? 0;
     this.hud.panosLoading = counts?.sharpLoading ?? 0;
     if (counts) {
@@ -804,15 +552,6 @@ export class ScanWalk {
     this.abort.abort();
     if (document.pointerLockElement === this.canvas) document.exitPointerLock();
     if (this.options.debug) delete (window as unknown as { __scanWalk?: ScanWalk }).__scanWalk;
-    this.panos?.dispose();
-    if (this.wire) (this.wire.material as MeshBasicMaterial).dispose();
-    this.geometry?.dispose();
-    this.detailGeometry?.dispose();
-    this.detailWorker?.terminate();
-    this.material.dispose();
-    this.backdropMaterial.dispose();
-    this.backdrop.geometry.dispose();
-    this.blank.dispose();
-    this.renderer.dispose();
+    this.view.dispose();
   }
 }
