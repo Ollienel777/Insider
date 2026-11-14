@@ -18,8 +18,14 @@
     "check:floor": "node scripts/check-floor.mjs"
   },
   "dependencies": {
+    "@langchain/anthropic": "1.6.4",
+    "@langchain/aws": "1.5.2",
+    "@langchain/core": "1.4.0",
+    "@langchain/langgraph": "1.7.4",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
+    "deepagents": "1.16.5",
+    "langchain": "1.6.5",
     "lucide-react": "1.72.0",
     "next": "16.4.6",
     "react": "19.3.1",

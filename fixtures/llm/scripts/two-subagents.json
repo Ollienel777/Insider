@@ -1,0 +1,77 @@
+{
+  "id": "two-subagents",
+  "agents": [
+    {
+      "agent": "level-builder",
+      "systemIncludes": "You are the Level Builder for Heist Anywhere.",
+      "turns": [
+        {
+          "content": "Planning the level.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  { "content": "Read the building's record and aerial", "status": "in_progress" },
+                  { "content": "Pick the mission and write the briefing", "status": "in_progress" },
+                  { "content": "Write the manifest", "status": "pending" }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "Dispatching the analyst and the game master together.",
+          "toolCalls": [
+            {
+              "name": "task",
+              "args": { "subagent_type": "data-analyst", "description": "Derive the security profile for F1." }
+            },
+            {
+              "name": "task",
+              "args": { "subagent_type": "game-master", "description": "Pick the mission for F1 and brief the crew." }
+            }
+          ]
+        },
+        {
+          "content": "Both reports are in.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  { "content": "Read the building's record and aerial", "status": "completed" },
+                  { "content": "Pick the mission and write the briefing", "status": "completed" },
+                  { "content": "Write the manifest", "status": "completed" }
+                ]
+              }
+            }
+          ]
+        },
+        { "content": "Level built for F1: analog era, four guards, mission romaine-1974." }
+      ]
+    },
+    {
+      "agent": "data-analyst",
+      "systemIncludes": "You are the data analyst.",
+      "turns": [
+        {
+          "content": "Reading the record.",
+          "toolCalls": [{ "name": "get_building", "args": { "id": "F1" } }]
+        },
+        { "content": "Profile: built 1974, analog era; Class A, four guards." }
+      ]
+    },
+    {
+      "agent": "game-master",
+      "systemIncludes": "You are the game master.",
+      "turns": [
+        {
+          "content": "Checking the mission library.",
+          "toolCalls": [{ "name": "list_missions", "args": { "city": "LA" } }]
+        },
+        { "content": "Mission: romaine-1974, The Romaine Street Papers." }
+      ]
+    }
+  ]
+}
