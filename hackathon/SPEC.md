@@ -655,7 +655,8 @@ reviews the PRs.
 | T1 | #99 | feat: Live mode and the turn clock | `area:run` | M | Tactical unchanged; in Live a `wait` every `LIVE_TURN_MS` with no input; pause; clock turns in the log; tests under fake timers |
 | T2 | #100 | feat: the play HUD and the radio line | `area:run` | M | three elements in Live, the panels behind Details; `ui-craft` rubric at 1440×900 and 390×844. Depends on T1 |
 | T3 | #101 | feat: sound cues for the run | `area:run` | S | `cuesFor` pure, with a test per cue; no audio files; mute |
-| T4 | to file | feat: the scan session | `area:adapter-matterport` | M | a visible player stays open; each position's floor point; long hops pruned |
-| T5 | to file | feat: the first-person scan view | `area:run` | L | the page owns look and step; the engine stays in step with the camera; board fallback. Depends on T4 |
-| T6 | to file | feat: guards and sight over the scan | `area:run` | M | the overlay tracks the pose; hidden by sightlines; the Why card opens. Depends on T4 |
+| T4 | #106 | feat: the Inside view reports its pose and takes a look | `area:adapter-matterport` | M | a visible player stays open; each position's floor point; long hops pruned |
+| T5 | #107 | feat: the scan as the first-person Run view | `area:run` | L | the page owns look and step; the engine stays in step with the camera; board fallback. Depends on T4 |
+| T6 | #108 | feat: guards and sight drawn over the scan | `area:run` | M | the overlay tracks the pose; hidden by sightlines; the Why card opens. Depends on T4 |
 | T7 | to file | docs: the Live demo beat and the default mode | `area:docs` | S | the 02:00 decision recorded; the script and the smoke follow it |
+| W | #109 | chore: make walking the scan feel smooth | `area:run` | S | by hand, in the sandbox on `chore/98-scan-walk-spike`: holding W walks without a stop between hops; `controls.ts` keeps its `target` and `step` contract |
