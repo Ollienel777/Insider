@@ -176,8 +176,11 @@ export function builderTools(run: BuildRun) {
       if (!derivation) throw new Error("call derive_security_profile (through the data-analyst) before write_manifest");
       const problems = briefingProblems(briefing);
       // Verbatim: the briefing must appear, word for word, in what the game master answered (R1-M1).
+      // With no answer captured there is nothing to check it against, so it is refused, not waved through.
       const squash = (t: string) => t.replace(/\s+/g, " ").trim();
-      if (run.gameMasterAnswer !== undefined && !squash(run.gameMasterAnswer).includes(squash(briefing))) {
+      if (run.gameMasterAnswer === undefined) {
+        problems.push("no game-master answer to check the briefing against: dispatch the game-master first");
+      } else if (!squash(run.gameMasterAnswer).includes(squash(briefing))) {
         problems.push("the briefing is not the game master's word for word: copy it exactly, every sentence");
       }
       if (problems.length > 0) {

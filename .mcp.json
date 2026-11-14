@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "skein": {
+      "type": "http",
+      "url": "https://insider.skeinai.ca/mcp",
+      "headers": { "Authorization": "Bearer ${SKEIN_SECRET}" }
+    }
+  }
+}

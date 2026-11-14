@@ -13,6 +13,7 @@ import { clearRunLog, loadRunLog, runLogKey, runLogOf, saveRunLog } from "@/comp
 import { RUN_SEED } from "@/components/run/run-screen";
 import cached from "../../../data/levels/F1.romaine-1974.json";
 import { debriefOf, LATE_NOTE, notStarted, parOf, UnreadableLog, type Debrief } from "./debrief";
+import { tryAgainLine } from "./debrief-screen";
 import { ReplayBoard } from "./replay-board";
 
 const manifest = LevelManifest.parse(structuredClone(cached));
@@ -392,6 +393,25 @@ describe("the replay board", () => {
       }
       if (frame === 0) expect(html).not.toContain('data-testid="player-path"');
       else expect(html).toContain('data-testid="player-path"');
+    }
+  });
+});
+
+describe("the line above Try again (#113)", () => {
+  const stats = (turns: number, par: number | null) => ({ turns, par }) as Debrief["stats"];
+
+  it("tells a caught run to try another way in", () => {
+    expect(tryAgainLine({ outcome: "caught", stats: stats(3, PAR) })).toBe("Same floor, same rounds. Try another way in.");
+  });
+
+  it("asks a clean exit over par to make par", () => {
+    expect(tryAgainLine({ outcome: "won", stats: stats(PAR! + 4, PAR) })).toBe("Clean exit. Run it again and make par.");
+  });
+
+  it("never asks a clean exit on par, or with no par, to beat it: par is the shortest quiet route", () => {
+    for (const line of [tryAgainLine({ outcome: "won", stats: stats(PAR!, PAR) }), tryAgainLine({ outcome: "won", stats: stats(20, null) })]) {
+      expect(line).toBe("Clean exit. Run it again by a different way out.");
+      expect(line).not.toMatch(/par/);
     }
   });
 });

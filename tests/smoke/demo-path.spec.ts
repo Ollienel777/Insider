@@ -1,7 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// The demo path (SPEC §2 beats 1 to 7, §6 step 6, issue #25): one walk across
-// every screen on the production build in fake mode, the way the presenter
+// The demo path (SPEC §2, §6 step 6, issues #25 and #113): one walk from the
+// map to the Debrief and back into a fresh run (Drill Mode is on hold and
+// keeps its own spec), on the production build in fake mode, the way the presenter
 // drives it, at the demo's 1440×900. Each beat waits on what the judge sees,
 // asserts it, and saves a screenshot to test-results/demo-path/. The
 // per-screen specs cover each screen's details; this one proves the screens
@@ -39,7 +40,7 @@ async function moveTo(page: Page, nodeId: string) {
   await expect(page.getByTestId("player-piece")).toHaveAttribute("data-node", nodeId);
 }
 
-test("the demo path: beats 1 to 7 on F1, in fake mode", async ({ page }) => {
+test("the demo path: map to Debrief and Try again on F1, in fake mode", async ({ page }) => {
   // The walk takes about 25-30 s in the gate, and Playwright's default test
   // timeout is 30 s: with another gate on the 2-vCPU VM it ran out at 31-33 s
   // (#82). Its budget is #25's "under 90 seconds on CI". A broken beat still
@@ -214,18 +215,14 @@ test("the demo path: beats 1 to 7 on F1, in fake mode", async ({ page }) => {
   await expect(page.getByTestId("replay-board")).toHaveAttribute("data-frame", String(log.turns.length));
   await expect(page.getByTestId("player-piece")).toHaveAttribute("data-node", last.player.nodeId);
   await shot(page, "beat-6-debrief");
-  await page.getByRole("link", { name: "Run the drill" }).click();
 
-  // Beat 7: Drill Mode. Same building; the evacuation plays out to a time to clear.
-  await expect(page).toHaveURL(/\/b\/F1\/drill\?m=romaine-1974$/, { timeout: 15_000 });
-  await expect(page.getByTestId("drill-board")).toBeVisible();
-  const time = page.getByTestId("drill-time");
-  await expect(time).toHaveAttribute("data-phase", "done", { timeout: 12_000 });
-  await expect(time).toHaveAttribute("aria-label", /^\d[\d,]* s$/);
-  await expect(page.getByText("Time to clear", { exact: true })).toBeVisible();
-  const blocked = await page.getByTestId("blocked-stair").getAttribute("data-label");
-  expect(blocked).toBeTruthy();
-  await expect(page.getByTestId("blocked-stair-name")).toHaveText(`${blocked} blocked`);
-  await expect(page.locator('[data-testid="zone-row"][data-cleared="false"]')).toHaveCount(0);
-  await shot(page, "beat-7-drill");
+  // The heist ends at the Debrief (#113; Drill Mode is on hold, SPEC Q8, and
+  // keeps its own assertion in drill.spec.ts): Try again opens a fresh run.
+  await expect(page.getByRole("link", { name: "Run the drill" })).toHaveCount(0);
+  await page.getByTestId("debrief-try-again").click();
+  await expect(page).toHaveURL(/\/b\/F1\/run\?m=romaine-1974$/, { timeout: 15_000 });
+  await expect(page.getByTestId("turn")).toHaveText("0");
+  await expect(page.getByTestId("player-piece")).toHaveAttribute("data-node", "fl-car");
+  await expect(page.getByTestId("alarm-banner")).toHaveAttribute("data-state", "calm");
+  await shot(page, "beat-7-try-again");
 });

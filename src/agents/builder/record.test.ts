@@ -4,7 +4,7 @@
 // fixtures/llm/recorded/pre-119/ predates the mission input and the briefing
 // rules (#119): it is kept as the run those rules catch, and no longer
 // replays to a manifest (see the README there).
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { loadScript, ScriptedChatModel } from "@/adapters/llm";
@@ -62,8 +62,9 @@ describe("scriptFromTurns", () => {
   });
 });
 
-describe("the stale pre-#119 F1 recording in fixtures/llm/recorded/pre-119/", () => {
-  const STALE = path.join(RECORDED_DIR, "pre-119");
+// The re-record deletes the folder, and these with it.
+const STALE = path.join(RECORDED_DIR, "pre-119");
+describe.skipIf(!existsSync(STALE))("the stale pre-#119 F1 recording in fixtures/llm/recorded/pre-119/", () => {
   const read = (file: string): unknown => JSON.parse(readFileSync(path.join(STALE, file), "utf8"));
 
   // The recorded write_manifest call and the game master's last answer.

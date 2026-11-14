@@ -182,10 +182,16 @@ test("beat 5 to 6: caught after the wow beat, the debrief says so, with the Chie
   await expect(page.getByTestId("replay-board")).toHaveAttribute("data-frame", String(decided[0].turn));
   await expect(page.getByTestId("replay-slider")).toHaveValue(String(decided[0].turn));
 
-  // The hand-over to beat 7.
-  await expect(page.getByTestId("drill-bridge")).toBeVisible();
-  await page.getByRole("link", { name: "Run the drill" }).click();
-  await expect(page).toHaveURL(/\/b\/F1\/drill\?m=romaine-1974$/, { timeout: 15_000 });
+  // The heist ends here (#113): no hand-over to the drill, and Try again opens a fresh run.
+  await expect(page.getByRole("link", { name: "Run the drill" })).toHaveCount(0);
+  await expect(page.getByTestId("try-again-line")).toHaveText("Same floor, same rounds. Try another way in.");
+  await expect(page.getByTestId("debrief-to-map")).toHaveAttribute("href", "/");
+  await page.getByTestId("debrief-try-again").click();
+  await expect(page).toHaveURL(/\/b\/F1\/run\?m=romaine-1974$/, { timeout: 15_000 });
+  await expectFreshRun(page);
+  await expect(page.getByTestId("player-piece")).toHaveAttribute("data-node", "fl-car");
+  await railToDebrief(page);
+  await expectNotStarted(page);
 });
 
 test("opened from the step rail mid-run, after the Chief's answer, the debrief lists it and claims no end", async ({ page }) => {
@@ -310,6 +316,10 @@ test('"Start the run over" from a mid-run debrief: the debrief opened next shows
   await expect.poll(async () => (await storedLog(page)).turns.length).toBe(2);
   await railToDebrief(page);
   await expect(page.getByTestId("debrief-detail")).toContainText("2 turns played so far.");
+  // A run left mid-way has no Try again: "Start the run over" says what the link does.
+  await expect(page.getByTestId("debrief-try-again")).toHaveCount(0);
+  await expect(page.getByTestId("try-again-line")).toHaveCount(0);
+  await expect(page.getByTestId("debrief-to-map")).toHaveAttribute("href", "/");
 
   await page.getByTestId("debrief-run-again").click();
   await expect(page).toHaveURL(/\/b\/F1\/run\?m=romaine-1974$/, { timeout: 15_000 });
@@ -364,6 +374,9 @@ test("the quiet route to a clean exit: the debrief grades it S, never seen, with
   expect(await stats(page)).toEqual({ turns: "17", noise: "2", detections: "0" });
   await expect(page.getByTestId("chief-decision")).toHaveCount(0);
   await expect(page.getByTestId("chief-none")).toHaveText("The alarm never moved, so the Chief never re-planned.");
+  // On par already: the line asks for another way out, never to beat par (par is the shortest quiet route).
+  await expect(page.getByTestId("try-again-line")).toHaveText("Clean exit. Run it again by a different way out.");
+  await expect(page.getByTestId("debrief-try-again")).toHaveAttribute("href", "/b/F1/run?m=romaine-1974");
 
   for (const frame of [0, 9, 10, 17]) {
     await scrubTo(page, frame);

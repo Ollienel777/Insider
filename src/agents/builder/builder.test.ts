@@ -210,6 +210,7 @@ describe("the builder takes the chosen mission as input (#119)", () => {
     await tool(analystTools(r), "derive_security_profile").invoke({ buildingId: "F1" });
     const write = tool(builderTools(r), "write_manifest");
     const args = { buildingId: "F1", briefing: "In by the dock. The security is game fiction.", objective: { name: "R", rule: "Take" } };
+    r.gameMasterAnswer = `Mission: romaine-1974. Briefing: ${args.briefing}`;
     await expect(write.invoke({ ...args, missionId: "sunset-1986" })).rejects.toThrow("not sunset-1986");
     await write.invoke({ ...args, missionId: "romaine-1974" });
     expect(r.manifest?.missionId).toBe("romaine-1974");
@@ -220,6 +221,8 @@ describe("the builder takes the chosen mission as input (#119)", () => {
     await tool(analystTools(r), "derive_security_profile").invoke({ buildingId: "F1" });
     const write = tool(builderTools(r), "write_manifest");
     const args = { buildingId: "F1", missionId: "romaine-1974", objective: { name: "R", rule: "Take" } };
+    // Each briefing is the game master's own, so only the rule under test refuses it.
+    r.gameMasterAnswer = [`${words(118)} It is game fiction.`, "In by the dock, out by the roof.", `${words(116)} It is game fiction.`].join("\n");
     await expect(write.invoke({ ...args, briefing: `${words(118)} It is game fiction.` })).rejects.toThrow(
       "the briefing is 122 words; the limit is 120. Send it back to the game-master",
     );
@@ -243,6 +246,36 @@ describe("the builder takes the chosen mission as input (#119)", () => {
     await write.invoke({ ...args, briefing: "In by the dock, out by the roof. The security is game fiction." });
     expect(r.manifest).toBeDefined();
   });
+
+  it("write_manifest refuses a briefing when no game-master answer was captured, rather than pass it", async () => {
+    const r = run();
+    await tool(analystTools(r), "derive_security_profile").invoke({ buildingId: "F1" });
+    const write = tool(builderTools(r), "write_manifest");
+    await expect(
+      write.invoke({
+        buildingId: "F1",
+        missionId: "romaine-1974",
+        briefing: "In by the dock. The security is game fiction.",
+        objective: { name: "R", rule: "Take" },
+      }),
+    ).rejects.toThrow("no game-master answer to check the briefing against");
+    expect(r.manifest).toBeUndefined();
+  });
+
+  it("refuses, in a full build, a written briefing that differs from what the game master answered", async () => {
+    // The recorded script, with the builder's write_manifest briefing changed:
+    // only the answer kept by keepAnswer can tell the two apart.
+    const script = structuredClone(await loadScript("builder-F1-romaine-1974"));
+    const call = script.agents.flatMap((a) => a.turns.flatMap((t) => t.toolCalls)).find((c) => c.name === "write_manifest")!;
+    call.args.briefing = "In by the dock, out by the roof. The security is game fiction.";
+    const error = (await buildLevel("F1", "romaine-1974", { model: new ScriptedChatModel({ script }) }).catch(
+      (e: unknown) => e,
+    )) as LevelBuildError;
+    expect(error).toBeInstanceOf(LevelBuildError);
+    const failed = error.trace.events.find((e) => e.kind === "tool" && e.label === "write_manifest");
+    expect(failed).toMatchObject({ status: "failed" });
+    expect(String(failed?.output)).toContain("the briefing is not the game master's word for word");
+  }, 30_000);
 
   it("copies the game master's briefing into write_manifest verbatim on the recorded script", async () => {
     const script = await loadScript("builder-F1-romaine-1974");
