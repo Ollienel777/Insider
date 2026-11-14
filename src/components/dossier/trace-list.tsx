@@ -10,6 +10,10 @@ interface TraceListProps {
   header: string;
   /** Skip or Replay, beside the header. */
   control: ReactNode;
+  /** What the replay is of (`traceBanner`). */
+  banner: string;
+  /** The subagents the builder could dispatch, as the trace recorded them. */
+  subagents?: string[];
 }
 
 /**
@@ -20,7 +24,7 @@ interface TraceListProps {
  * task or tool row is a button that opens what it was given and what it
  * returned, as recorded (#79).
  */
-export function TraceList({ view, header, control }: TraceListProps) {
+export function TraceList({ view, header, control, banner, subagents }: TraceListProps) {
   return (
     <section aria-labelledby="trace-title" data-testid="trace-list" className="flex flex-col gap-4">
       <div>
@@ -43,8 +47,8 @@ export function TraceList({ view, header, control }: TraceListProps) {
             ))}
           </p>
       </div>
-      <p className="rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm text-text-2">
-        A replay of a run recorded on fixtures. Nothing on this screen calls a model.
+      <p data-testid="trace-banner" className="rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm text-text-2">
+        {banner}
       </p>
 
       <div>
@@ -70,6 +74,17 @@ export function TraceList({ view, header, control }: TraceListProps) {
 
       <div>
         <h3 className="label-caps text-text-3">Subagents and tools</h3>
+        {subagents?.length ? (
+          <p data-testid="trace-subagents" className="mt-1 text-xs text-text-2">
+            Available:{" "}
+            {subagents.map((name, i) => (
+              <Fragment key={name}>
+                <span className="font-mono whitespace-nowrap text-text-1">{name}</span>
+                {i < subagents.length - 1 ? " · " : null}
+              </Fragment>
+            ))}
+          </p>
+        ) : null}
         <ol aria-label="Subagents and tools" className="mt-2 flex flex-col">
           {view.steps.map((step) => (
             <StepRow key={step.index} step={step} />
@@ -126,7 +141,9 @@ function StepRow({ step }: { step: StepView }) {
               <span className="text-text-2">task</span> <span data-testid="trace-subagent">{step.agent}</span>
             </span>
             <span className="flex shrink-0 items-baseline gap-2">
-              {failed ? <span className="font-mono text-xs text-danger">subagent failed</span> : null}
+              {failed ? (
+                <span className="font-mono text-xs text-danger">{step.failure === "returned" ? "task error" : "subagent failed"}</span>
+              ) : null}
               <Duration step={step} />
               <Chevron open={open} />
             </span>
@@ -180,11 +197,19 @@ function Chevron({ open }: { open: boolean }) {
 export function StepDetail({ id, step }: { id: string; step: StepView }) {
   const subagent = step.kind === "subagent";
   const failed = step.status === "failed";
-  const outputLabel = failed ? (subagent ? "Subagent run failed" : "Tool error") : subagent ? "Answer" : "Output";
+  let outputLabel = subagent ? "Answer" : "Output";
+  if (failed && !subagent) outputLabel = "Tool error";
+  else if (failed) outputLabel = step.failure === "returned" ? "Task returned an error" : "Subagent run failed";
   return (
     <div id={id} data-testid="trace-step-detail" className={cn("mt-2 flex flex-col gap-3 rounded-sm border border-border bg-surface-2 p-3", subagent && "ml-6")}>
-      <RecordedText label={subagent ? "Brief" : "Input"} text={step.input} />
-      <RecordedText label={outputLabel} text={step.output} danger={failed} />
+      {step.withheld ? (
+        <p className="text-xs text-text-2">Not recorded: live data stays out of the trace.</p>
+      ) : (
+        <>
+          <RecordedText label={subagent ? "Brief" : "Input"} text={step.input} />
+          <RecordedText label={outputLabel} text={step.output} danger={failed} />
+        </>
+      )}
     </div>
   );
 }
@@ -198,10 +223,11 @@ function RecordedText({ label, text, danger = false }: { label: string; text?: s
       ) : (
         <pre
           tabIndex={0}
+          role="region"
           aria-label={label}
           className="mt-1 max-h-40 overflow-auto font-mono text-xs break-words whitespace-pre-wrap text-text-1"
         >
-          {text}
+          <TruncatedText text={text} />
         </pre>
       )}
     </div>
@@ -212,4 +238,20 @@ function Duration({ step }: { step: StepView }) {
   if (step.status === "in_progress") return <span className="font-mono text-xs text-text-2">running</span>;
   if (step.durationMs === undefined) return null;
   return <span className="shrink-0 font-mono text-xs text-text-2 tabular-nums">{formatDuration(step.durationMs)}</span>;
+}
+
+/** The recorder's "… [N more characters not recorded]" marker, set apart from the recorded text. */
+const CUT = /… \[\d+ more characters not recorded\]$/;
+
+function TruncatedText({ text }: { text: string }) {
+  const cut = CUT.exec(text);
+  if (!cut) return text;
+  return (
+    <>
+      {text.slice(0, cut.index)}
+      <span data-testid="trace-cut" className="text-text-3 italic">
+        {cut[0]}
+      </span>
+    </>
+  );
 }

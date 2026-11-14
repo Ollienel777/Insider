@@ -59,7 +59,12 @@ describe("buildLevel(F1) on the recorded script", () => {
   beforeAll(async () => {
     model = new ScriptedChatModel({ script: await loadScript("builder-F1") });
     adapters = spiedAdapters();
-    built = await buildLevel("F1", { model, costar: adapters.costar, vexcel: adapters.vexcel });
+    built = await buildLevel("F1", {
+      model,
+      costar: adapters.costar,
+      vexcel: adapters.vexcel,
+      dataModes: { costar: "fake", vexcel: "fake" },
+    });
   });
 
   it("runs the deep agent and its two subagents through every recorded turn", () => {
@@ -275,6 +280,49 @@ describe("the builder's guard rails", () => {
       expect.objectContaining({ kind: "subagent", agent: "general-purpose", status: "failed" }),
     ]);
     expect(error.trace.events[0].output).toMatch(/^Error: the general-purpose subagent's run failed: /);
+  });
+
+  it("keeps live adapters' data out of the trace: no input or output on any event (SPEC §4.5, M1)", async () => {
+    const adapters = spiedAdapters();
+    // The same fixture data, but passed with no modes, so treated as live.
+    const live = await buildLevel("F1", {
+      model: new ScriptedChatModel({ script: await loadScript("builder-F1") }),
+      costar: adapters.costar,
+      vexcel: adapters.vexcel,
+    });
+    expect(live.trace.liveData).toBe(true);
+    expect(live.trace.events.filter((e) => e.kind === "tool")).toHaveLength(6);
+    for (const event of live.trace.events) {
+      expect(event).not.toHaveProperty("input");
+      expect(event).not.toHaveProperty("output");
+    }
+    const vexcelLive = await buildLevel("F1", {
+      model: new ScriptedChatModel({ script: await loadScript("builder-F1") }),
+      costar: adapters.costar,
+      vexcel: adapters.vexcel,
+      dataModes: { costar: "fake", vexcel: "live" },
+    });
+    expect(vexcelLive.trace.liveData).toBe(true);
+    expect(vexcelLive.trace.events.some((e) => e.input !== undefined || e.output !== undefined)).toBe(false);
+  });
+
+  it("offers general-purpose to the task tool exactly once, beside the two subagents, and lists all three in the trace (R1-M2)", async () => {
+    /** Keeps each call's bound tools. */
+    class Watching extends ScriptedChatModel {
+      readonly bound: unknown[][] = [];
+      override async _generate(...args: Parameters<ScriptedChatModel["_generate"]>) {
+        this.bound.push(args[1].tools ?? []);
+        return super._generate(...args);
+      }
+    }
+    const model = new Watching({ script: await loadScript("builder-F1") });
+    const { trace } = await buildLevel("F1", { model });
+    const task = (model.bound[0] as { name?: string; function?: { name?: string; description?: string }; description?: string }[])
+      .map((t) => t.function ?? t)
+      .find((t) => t.name === "task")!;
+    const listed = [...task.description!.matchAll(/^- ([a-z-]+): /gm)].map((m) => m[1]);
+    expect(listed).toEqual(["general-purpose", "data-analyst", "game-master"]);
+    expect(trace.subagents).toEqual(["general-purpose", "data-analyst", "game-master"]);
   });
 
   it("fails clearly in fake mode when a building has no recorded script", async () => {

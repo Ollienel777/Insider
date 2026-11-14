@@ -58,6 +58,8 @@ export const BuildTraceEvent = z.object({
   input: Text.optional(),
   /** What came back: a subagent's answer, a tool's result, or its error. */
   output: Text.optional(),
+  /** How a failed call failed: it threw (for a `task`, the subagent's whole run), or it returned an error result. */
+  failure: z.enum(["thrown", "returned"]).optional(),
 });
 export type BuildTraceEvent = z.infer<typeof BuildTraceEvent>;
 
@@ -71,6 +73,13 @@ export const BuildTrace = z.object({
    */
   recordedAt: z.iso.datetime().optional(),
   model: Text.optional(),
+  /**
+   * True when live CoStar or Vexcel served the run. Its events then carry no
+   * input or output: nothing from a kit record is ever committed (SPEC §4.5).
+   */
+  liveData: z.boolean().optional(),
+  /** The subagents the builder could dispatch, whether or not it did. */
+  subagents: z.array(BuilderAgent).optional(),
   events: z.array(BuildTraceEvent).min(1),
 });
 export type BuildTrace = z.infer<typeof BuildTrace>;

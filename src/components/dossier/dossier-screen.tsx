@@ -9,7 +9,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import type { BriefedMission, BuildTrace } from "@/domain";
 import type { DataToLevelRow } from "./data-to-level";
 import { ProvenanceRow } from "./provenance-row";
-import { recordedRunHeader, replaySchedule, traceView } from "./replay";
+import { recordedRunHeader, replaySchedule, traceBanner, traceView } from "./replay";
 import { Reveal } from "./reveal";
 import { TraceList } from "./trace-list";
 
@@ -211,7 +211,15 @@ export function DossierScreen(props: DossierScreenProps) {
           </article>
         </div>
       }
-      panel={<TraceList view={view} header={recordedRunHeader(trace)} control={control} />}
+      panel={
+        <TraceList
+          view={view}
+          header={recordedRunHeader(trace)}
+          control={control}
+          banner={traceBanner(trace)}
+          subagents={trace.subagents}
+        />
+      }
       action={
         <Link href={`/b/${buildingId}/plan`} className={buttonVariants({ variant: "primary" })}>
           Brief the crew

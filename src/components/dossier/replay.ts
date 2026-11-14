@@ -75,6 +75,10 @@ export interface StepView {
   /** The recorded input and output, shown when the row is expanded. */
   input?: string;
   output?: string;
+  /** True when live data served the run, so nothing went into or came out of the trace. */
+  withheld: boolean;
+  /** How a failed call failed: threw, or returned an error. */
+  failure?: BuildTraceEvent["failure"];
   /** 1 for a tool a subagent called, under its task. */
   depth: 0 | 1;
 }
@@ -111,6 +115,8 @@ export function traceView(trace: BuildTrace, shown: (index: number) => boolean):
       durationMs: event.durationMs,
       input: event.input,
       output: event.output,
+      withheld: trace.liveData === true,
+      failure: event.failure,
       depth: event.kind === "tool" && event.agent !== "level-builder" ? 1 : 0,
     });
   });
@@ -144,6 +150,21 @@ export function formatRecordedAt(iso: string | undefined): string {
  */
 export function recordedRunHeader(trace: Pick<BuildTrace, "recordedAt" | "model">): string {
   return ["Recorded replay", formatRecordedAt(trace.recordedAt), `model turns: ${trace.model ?? "not recorded"}`].join(" · ");
+}
+
+/**
+ * The line under the trace's header: what the replay is of, read from the
+ * trace, so a live run is never called fixtures (#79).
+ */
+export function traceBanner(trace: Pick<BuildTrace, "model" | "liveData">): string {
+  const data = trace.liveData ? "on live data" : "on fixtures";
+  const turns =
+    trace.model === undefined
+      ? ""
+      : trace.model.startsWith("scripted")
+        ? ", with scripted model turns"
+        : `, with model turns from ${trace.model}`;
+  return `A replay of a run recorded ${data}${turns}. Nothing on this screen calls a model.`;
 }
 
 /** "3 ms", "1.2 s". */

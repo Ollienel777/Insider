@@ -66,6 +66,7 @@ test("a trace row opens on its recorded input and output, by mouse and by keyboa
     "data-analyst",
     "game-master",
   ]);
+  await expect(page.getByTestId("trace-subagents")).toHaveText("Available: general-purpose · data-analyst · game-master");
 
   // By mouse: get_building opens on its arguments and the record it returned.
   const tool = steps.filter({ hasText: "get_building" }).getByTestId("trace-step-toggle");

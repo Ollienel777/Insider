@@ -13,6 +13,7 @@ import {
   recordedRunHeader,
   REPLAY_START_MS,
   replaySchedule,
+  traceBanner,
   traceView,
 } from "./replay";
 
@@ -301,7 +302,7 @@ describe("the trace's rows (#79)", () => {
       { atMs: 1, kind: "tool", agent: "level-builder", label: "write_manifest", status: "failed", durationMs: 1, output: "Error: no profile" },
     ];
     const view = traceView({ buildingId: "F1", events: failed }, () => true);
-    const list = textOf(renderToStaticMarkup(<TraceList view={view} header="h" control={null} />));
+    const list = textOf(renderToStaticMarkup(<TraceList view={view} header="h" control={null} banner="b" />));
     expect(list).toContain("task general-purpose subagent failed");
     expect(list).toContain("write_manifest tool error");
     expect(list.match(/subagent failed/g)).toHaveLength(1);
@@ -318,6 +319,51 @@ describe("the trace's rows (#79)", () => {
     ];
     const view = traceView({ buildingId: "F1", events }, () => true);
     expect(view.steps.map((s) => s.depth)).toEqual([0, 1]);
-    expect(textOf(renderToStaticMarkup(<TraceList view={view} header="h" control={null} />))).toContain("task general-purpose");
+    expect(textOf(renderToStaticMarkup(<TraceList view={view} header="h" control={null} banner="b" />))).toContain("task general-purpose");
+  });
+
+  it("open on a plain line instead of input and output when live data served the run (M1)", () => {
+    const step = { ...stepOf("get_building"), withheld: true, input: undefined, output: undefined };
+    const text = textOf(renderToStaticMarkup(<StepDetail id="d" step={step} />));
+    expect(text.trim()).toBe("Not recorded: live data stays out of the trace.");
+    expect(traceView({ ...trace, liveData: true }, () => true).steps.every((s) => s.withheld)).toBe(true);
+    expect(traceView(trace, () => true).steps.some((s) => s.withheld)).toBe(false);
+  });
+
+  it("tell a task that returned an error from a subagent run that failed (S3)", () => {
+    const events: BuildTraceEvent[] = [
+      { atMs: 0, kind: "subagent", agent: "game-master", label: "Pick", status: "failed", failure: "returned", output: "Error: refused" },
+    ];
+    const view = traceView({ buildingId: "F1", events }, () => true);
+    expect(textOf(renderToStaticMarkup(<TraceList view={view} header="h" control={null} banner="b" />))).toContain("task error");
+    expect(textOf(renderToStaticMarkup(<StepDetail id="d" step={view.steps[0]} />))).toContain("Task returned an error Error: refused");
+  });
+
+  it("scroll recorded text in a labelled region, and set the cut marker apart from the record (S4)", () => {
+    const step = { ...stepOf("get_building"), output: "abc… [12 more characters not recorded]" };
+    const markup = renderToStaticMarkup(<StepDetail id="d" step={step} />);
+    expect(markup).toMatch(/<pre[^>]*role="region"[^>]*aria-label="Output"/);
+    expect(markup).toMatch(/abc<span data-testid="trace-cut" class="[^"]*text-text-3[^"]*">… \[12 more characters not recorded\]<\/span>/);
+  });
+
+  it("list the subagents the builder had, whether or not they ran (R1-M2)", () => {
+    expect(trace.subagents).toEqual(["general-purpose", "data-analyst", "game-master"]);
+    expect(textOf(html)).toContain("Available: general-purpose · data-analyst · game-master");
+  });
+});
+
+describe("the trace banner (S1)", () => {
+  it("says a scripted run on fixtures is one", () => {
+    expect(traceBanner(trace)).toBe(
+      "A replay of a run recorded on fixtures, with scripted model turns. Nothing on this screen calls a model.",
+    );
+    expect(textOf(screen(true))).toContain(traceBanner(trace));
+  });
+
+  it("names the live model, and live data, when they served the run", () => {
+    expect(traceBanner({ model: "anthropic claude-opus-5-5", liveData: true })).toBe(
+      "A replay of a run recorded on live data, with model turns from anthropic claude-opus-5-5. Nothing on this screen calls a model.",
+    );
+    expect(traceBanner({})).toBe("A replay of a run recorded on fixtures. Nothing on this screen calls a model.");
   });
 });
