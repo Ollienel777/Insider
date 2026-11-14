@@ -205,11 +205,13 @@ export function debriefOf(placed: PlacedLevel, log: RunLog, par: number | null =
   }
 
   // The log keeps the orders as the Chief gave them; the engine's own clamp
-  // says which it kept. It refuses only unknown guards and zones, and zones
-  // with no lockable door, none of which depends on the turn.
+  // says which it kept. It refuses unknown guards and zones, and zones with no
+  // lockable door, none of which depends on the turn; and everything given at
+  // Calm, which is the alarm of the frame the decision was given on.
   const fresh = createRun(level);
   const decisionOf = (turn: number, chief: ChiefOrders, source: ChiefSource | undefined, late: boolean): Decision => {
-    const { applied, locked, dropped } = applyChiefOrders(fresh, chief);
+    const alarm = frames[turn]?.alarm ?? "calm";
+    const { applied, locked, dropped } = applyChiefOrders({ ...fresh, alarm }, chief);
     return {
       turn,
       rationale: chief.rationale,

@@ -148,6 +148,27 @@ describe("a sighting at Lockdown (PR #58, R1-M1)", () => {
     ]);
   });
 
+  it("is still an event after a turn unseen when noise was heard in between (#94)", () => {
+    // A locked door between n0 and n1; a deaf guard on n3 that never moves hears a pick on n1.
+    const noisy = lineLevel(8, {
+      floor: lineFloor(8, { door: [0, "d-01"] }),
+      guards: [{ id: "G1", patrol: ["n3"] }],
+      cameras: [{ id: "C1", kind: "fixed-ip", cover: ["n2"] }],
+      lockedDoors: ["d-01"],
+      pickTurns: 9,
+      patrolTempo: 99,
+      start: "n1",
+    });
+    const locked = setAlarm(play(createRun(noisy), [{ kind: "move", to: "n2" }]), "lockdown");
+    const before = locked.alarmEvents.length;
+    const heard = play(locked, [{ kind: "move", to: "n1" }, wait, { kind: "pick", doorId: "d-01" }]);
+    expect(heard.alarmEvents).toHaveLength(before);
+    const run = play(heard, [{ kind: "move", to: "n2" }]);
+    expect(run.alarmEvents.slice(before)).toEqual([
+      { turn: 4, from: "lockdown", to: "lockdown", lastKnownZone: "west", cause: { kind: "camera", id: "C1" } },
+    ]);
+  });
+
   it("leaves a guard on a Chief's hold where it is", () => {
     const locked = setAlarm(play(createRun(level()), [{ kind: "move", to: "n1" }, { kind: "move", to: "n2" }]), "lockdown");
     const held = orderGuard(locked, "G1", "east", "hold");
@@ -226,8 +247,8 @@ describe("applyChiefOrders", () => {
   });
 
   it("moves an ordered guard one hop per turn along the path the board previews", () => {
-    // At Calm, so no new sighting re-targets the guard while it walks.
-    const { run } = applyChiefOrders(createRun(f1Level()), orders({ orders: [{ guardId: "G2", intent: "sweep", zoneId: "quiet-2210" }] }));
+    // At Lockdown with no contact: no guard converges, and the alarm never decays while it walks.
+    const { run } = applyChiefOrders(setAlarm(createRun(f1Level()), "lockdown"), orders({ orders: [{ guardId: "G2", intent: "sweep", zoneId: "quiet-2210" }] }));
     const guard = run.guards[1];
     const preview = plannedPath(run.board, guard);
     expect(preview).toHaveLength(4);
@@ -252,6 +273,40 @@ describe("applyChiefOrders", () => {
     const next = play(result.run, [wait]);
     expect(next.turns.at(-1)!.chief?.rationale).toBe("Lock the records room.");
     expect(play(next, [wait]).turns.at(-1)!.chief).toBeUndefined();
+  });
+
+  it("drops every order and lock given at Calm, leaving the guards and doors as they were (#94)", () => {
+    const calm = { ...createRun(f1Level()), locked: [] };
+    const result = applyChiefOrders(
+      calm,
+      orders({ orders: [{ guardId: "G2", intent: "hold", zoneId: "quiet-2210" }], lockZones: ["objective"] }),
+    );
+    expect(result.applied).toEqual([]);
+    expect(result.locked).toEqual([]);
+    expect(result.dropped).toEqual([
+      { order: { guardId: "G2", intent: "hold", zoneId: "quiet-2210" }, reason: "the alarm is calm" },
+      { order: { lockZone: "objective" }, reason: "the alarm is calm" },
+    ]);
+    expect(result.run.guards).toEqual(calm.guards);
+    expect(result.run.locked).toEqual([]);
+  });
+
+  it("ends the Chief's targets and unlocks the Chief's doors when the alarm decays to Calm, but not the level's own (#94)", () => {
+    // Alert with no contact, so the guards walk only on the Chief's orders.
+    const alert = setAlarm(createRun(f1Level()), "alert");
+    const ordered = applyChiefOrders(
+      { ...alert, locked: [] },
+      orders({ orders: [{ guardId: "G2", intent: "hold", zoneId: "quiet-2210" }], lockZones: ["objective"] }),
+    ).run;
+    expect(ordered.locked).toEqual([F1_DEMO.recordsDoor]);
+    const calm = play(ordered, waits(6));
+    expect(calm.alarm).toBe("calm");
+    expect(calm.guards.map((g) => g.target)).toEqual([null, null]);
+    expect(calm.locked).toEqual([]);
+    // The level's own locked door stays locked through a decay.
+    const own = play(applyChiefOrders(alert, orders({ lockZones: ["objective"] })).run, waits(6));
+    expect(own.alarm).toBe("calm");
+    expect(own.locked).toEqual([F1_DEMO.recordsDoor]);
   });
 
   it("never changes the run it is given", () => {
