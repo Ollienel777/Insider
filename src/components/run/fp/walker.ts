@@ -13,6 +13,9 @@
 //   `pick` for that door when the engine's node is beside it.
 // - E at the objective hands back `take`. Carrying it onto an exit is the
 //   engine's win, by the move that gets there.
+// - Sprinting (Q held, the board's S, issue 121): reaching a node two open
+//   hops away hands back the engine's `sprint` to it, and the node between is
+//   passed over without a move of its own.
 // - The engine is the truth. When its player node is not the one this view
 //   expected (a restart, a number key, a refused move), the body is put back
 //   on the engine's node.
@@ -20,7 +23,7 @@
 // Pure: no DOM, no renderer, no clock but the `dt` it is given. It reads the
 // floor only through `Ground` (ground.ts), so any floor that can move a body
 // and place the engine's nodes can be walked.
-import type { Action, RunState } from "@/engine";
+import { neighbours, type Action, type RunState } from "@/engine";
 import { canTake, choices } from "../board";
 import type { Ground, GroundDoor, Vec } from "./ground";
 import { accelerate, facing, nearestOn, wishVelocity, type Wish } from "./motion";
@@ -47,6 +50,8 @@ export interface Controls extends Wish {
   yaw: number;
   /** E went down since the last step. */
   interact: boolean;
+  /** The sprint key is held: two open hops in one turn. */
+  sprint?: boolean;
 }
 
 /** A walker standing on the engine's player node. */
@@ -207,10 +212,39 @@ export function stepWalker(
   }
 
   if (under !== null && under !== walker.node && under !== walker.refused) {
+    if (controls.sprint) {
+      const dash = sprintTo(run, under);
+      if (dash) return emit(walker, dash, under);
+      // The node between: passed over on the way to one two hops on.
+      if (firstHop(run, under)) return { walker, action: null };
+    }
     const legal = choices(run).some((c) => c.kind === "move" && c.nodeId === under);
     if (legal) return emit(walker, { kind: "move", to: under }, under);
   }
   return { walker, action: null };
+}
+
+const openExit = (run: RunState, doorId: string | undefined) => doorId === undefined || !run.locked.includes(doorId);
+
+/** The engine's sprint to `to` when it is two open hops from the player's node and not a neighbour, else null. */
+export function sprintTo(run: RunState, to: string): Action | null {
+  const here = run.playerNode;
+  const firsts = neighbours(run.board, here);
+  if (to === here || firsts.some((e) => e.to === to)) return null;
+  for (const first of firsts) {
+    if (!openExit(run, first.doorId)) continue;
+    if (neighbours(run.board, first.to).some((e) => e.to === to && openExit(run, e.doorId))) return { kind: "sprint", to, via: first.to };
+  }
+  return null;
+}
+
+/** Whether `node` is an open first hop with somewhere to sprint on to beyond it. */
+function firstHop(run: RunState, node: string): boolean {
+  const here = run.playerNode;
+  const firsts = neighbours(run.board, here);
+  const exit = firsts.find((e) => e.to === node);
+  if (!exit || !openExit(run, exit.doorId)) return false;
+  return neighbours(run.board, node).some((e) => e.to !== here && openExit(run, e.doorId) && !firsts.some((f) => f.to === e.to));
 }
 
 function emit(walker: Walker, action: Action, to: string | null): { walker: Walker; action: Action } {

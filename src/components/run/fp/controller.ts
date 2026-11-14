@@ -10,6 +10,7 @@
 //   ← →       turn without a mouse; ↑ ↓ move forwards and back
 //   E         use: pick a locked door, take the objective
 //   F         wait a turn
+//   Q         held: sprint, two hops in one turn (the board's S)
 // On the board W waits and S sprints (run-screen.tsx). Those are the Run
 // screen's own listeners on `window`; this one listens in the capture phase
 // and marks each key it takes as handled, which the Run screen already
@@ -20,7 +21,7 @@ import { FP } from "./tuning";
 
 const MOVE = { KeyW: [1, 0], KeyS: [-1, 0], KeyD: [0, 1], KeyA: [0, -1], ArrowUp: [1, 0], ArrowDown: [-1, 0] } as const;
 const TURN = { ArrowLeft: -1, ArrowRight: 1 } as const;
-const TAKEN = new Set<string>([...Object.keys(MOVE), ...Object.keys(TURN), "KeyE", "KeyF"]);
+const TAKEN = new Set<string>([...Object.keys(MOVE), ...Object.keys(TURN), "KeyE", "KeyF", "KeyQ"]);
 
 const typing = (target: EventTarget | null) =>
   (target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable=true], [contenteditable='']") != null;
@@ -142,7 +143,7 @@ export class Controller {
     }
     const interact = this.interact;
     this.interact = false;
-    return { forward: Math.sign(forward), strafe: Math.sign(strafe), walk: this.shift, yaw: this.yaw, interact };
+    return { forward: Math.sign(forward), strafe: Math.sign(strafe), walk: this.shift, yaw: this.yaw, interact, sprint: this.down.has("KeyQ") };
   }
 
   /** Whether F was pressed since the last call. */

@@ -540,7 +540,7 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
       data-alarm={run.alarm}
       data-pointer={hud.locked ? "locked" : "free"}
       role="application"
-      aria-label="First-person view of the floor. W, A, S and D move, the arrow keys turn, E uses, F waits."
+      aria-label="First-person view of the floor. W, A, S and D move, the arrow keys turn, E uses, F waits, Q held sprints."
       tabIndex={0}
       className={cn("absolute inset-0 overflow-hidden bg-surface-0 select-none", hud.locked ? "cursor-none" : "cursor-pointer")}
     >
@@ -620,6 +620,9 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
                   <Key>F</Key> wait
                 </span>
                 <span className="flex items-center gap-1.5">
+                  <Key>Q</Key> sprint
+                </span>
+                <span className="flex items-center gap-1.5">
                   <Key>Esc</Key> free the mouse
                 </span>
               </>
@@ -643,6 +646,9 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
                 </span>
                 <span className="flex items-center gap-1.5">
                   <Key>F</Key> wait
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <Key>Q</Key> sprint
                 </span>
               </>
             )}

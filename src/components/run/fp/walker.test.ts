@@ -54,11 +54,11 @@ function step(s: Session, controls: Controls): void {
 }
 
 /** Runs (or walks) straight at `target` until within 6 cm of it, or `seconds` pass. */
-function walkTo(s: Session, target: Vec, { walk = false, seconds = 12 } = {}): void {
+function walkTo(s: Session, target: Vec, { walk = false, seconds = 12, sprint = false } = {}): void {
   for (let i = 0; i < seconds / FP.stepS && distance(s.walker.pos, target) > 0.06; i++) {
     const yaw = Math.atan2(target.y - s.walker.pos.y, target.x - s.walker.pos.x);
     const near = distance(s.walker.pos, target) < 0.4;
-    step(s, { forward: 1, strafe: 0, walk: walk || near, yaw, interact: false });
+    step(s, { forward: 1, strafe: 0, walk: walk || near, yaw, interact: false, sprint });
   }
 }
 
@@ -224,6 +224,32 @@ describe.each(CASES)("free movement on $id", ({ id, cached }) => {
     expect(s.run.playerNode).toBe(run0.playerNode);
     // Back to a neighbour of the engine's node: that one is a move.
     walkEdge(s, second, first);
+    expect(s.played).toEqual([{ kind: "move", to: first }]);
+  });
+
+  it("sprints with Q held: over the node between without a move, and the engine's sprint on the node beyond", () => {
+    const run0 = empty();
+    const s = session(world, { ...run0, locked: [] });
+    const start = s.run.playerNode;
+    // A node two open hops on, and the node between.
+    const first = choices(s.run)[0].nodeId;
+    const beyond = choices({ ...s.run, playerNode: first }).find(
+      (c) => c.kind === "move" && c.nodeId !== start && !s.run.board.adjacency.get(start)!.some((e) => e.to === c.nodeId),
+    )!.nodeId;
+    for (const point of s.ground.path(start, first).slice(1)) walkTo(s, point, { sprint: true });
+    expect(s.played).toEqual([]);
+    for (const point of s.ground.path(first, beyond).slice(1)) walkTo(s, point, { sprint: true });
+    expect(s.played).toEqual([{ kind: "sprint", to: beyond, via: first }]);
+    expect(s.run.playerNode).toBe(beyond);
+    expect(s.run.turn).toBe(1);
+  });
+
+  it("moves to the node between once Q is let go there", () => {
+    const s = session(world, { ...empty(), locked: [] });
+    const first = choices(s.run)[0].nodeId;
+    for (const point of s.ground.path(s.run.playerNode, first).slice(1)) walkTo(s, point, { sprint: true });
+    expect(s.played).toEqual([]);
+    rest(s);
     expect(s.played).toEqual([{ kind: "move", to: first }]);
   });
 
