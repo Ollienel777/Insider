@@ -12,7 +12,9 @@
 // arguments as JSON) and what came back (the answer, the tool's result or its
 // error), each cut to TRACE_TEXT_MAX characters, so the dossier can show them.
 // A run on live CoStar or Vexcel data records neither (`recordPayloads:
-// false`): nothing derived from a kit record is ever committed (SPEC §4.5).
+// false`), and no model-written text either: todos become "Step 2 of 3" and
+// tasks "Run <subagent>", since the model writes them from that data.
+// Nothing derived from a kit record is ever committed (SPEC §4.5).
 //
 // A tool that throws is answered with an error ToolMessage instead of ending
 // the run, so a live model sees what went wrong and can call again.
@@ -64,11 +66,12 @@ export class TraceRecorder {
   todos(agent: BuilderAgent, todos: unknown): void {
     if (!Array.isArray(todos)) return;
     const atMs = this.elapsed();
-    for (const todo of todos as TodoArg[]) {
-      if (typeof todo?.content !== "string" || todo.content === "") continue;
+    const written = (todos as TodoArg[]).filter((todo) => typeof todo?.content === "string" && todo.content !== "");
+    written.forEach((todo, i) => {
       const status = TODO_STATUSES.has(String(todo.status)) ? (todo.status as BuildTraceEvent["status"]) : "pending";
-      this.events.push({ atMs, kind: "todo", agent, label: todo.content, status });
-    }
+      const label = this.recordPayloads ? (todo.content as string) : `Step ${i + 1} of ${written.length}`;
+      this.events.push({ atMs, kind: "todo", agent, label, status });
+    });
   }
 
   /** Starts a timed event with what went in; the returned function ends it with what came back. */
@@ -104,7 +107,7 @@ export class TraceRecorder {
         }
         const end =
           name === "task"
-            ? this.start("subagent", subagentName(args), describeTask(args), describeTask(args))
+            ? this.start("subagent", subagentName(args), this.recordPayloads ? describeTask(args) : runLabel(args), describeTask(args))
             : this.start("tool", agent, name, JSON.stringify(args, null, 2));
         try {
           const result = await handler(request);
@@ -151,6 +154,12 @@ function toolMessageOf(result: unknown): ToolMessage | undefined {
 function contentText(content: unknown): string {
   if (typeof content === "string") return content;
   return JSON.stringify(content, null, 2) ?? "";
+}
+
+/** A task's label on live data: the subagent's name only, if it is one the builder has. */
+function runLabel(args: Record<string, unknown>): string {
+  const parsed = BuilderAgent.safeParse(args.subagent_type);
+  return parsed.success && parsed.data !== "level-builder" ? `Run ${parsed.data}` : "Run a subagent";
 }
 
 function describeTask(args: Record<string, unknown>): string {

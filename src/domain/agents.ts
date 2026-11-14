@@ -63,6 +63,9 @@ export const BuildTraceEvent = z.object({
 });
 export type BuildTraceEvent = z.infer<typeof BuildTraceEvent>;
 
+/** How a trace's `model` label starts when no LLM ran, only a recorded script. */
+export const SCRIPTED_MODEL_PREFIX = "scripted (";
+
 /** The trace cached beside a manifest in `data/levels/`. */
 export const BuildTrace = z.object({
   buildingId: Id,
