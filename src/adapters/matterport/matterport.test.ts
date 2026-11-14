@@ -146,9 +146,11 @@ describe("fixtures/floors/F1.json (Halvorsen Tower, floor 22)", () => {
     const fromDock = distances(f1, F1_DEMO.dockEntry);
     const cover = [...F1_DEMO.c2Cover];
 
-    it("C2's cover is the dock corridor", () => {
+    it("C2's cover is the dock corridor short of the records door, which is picked from the rest of it", () => {
       expect(cover.map((id) => room(node(id)!.roomId)!.label)).toEqual(cover.map(() => "Dock Corridor"));
-      expect(f1.nodes.filter((n) => n.roomId === "dock-corridor").map((n) => n.id).sort()).toEqual([...cover].sort());
+      const corridor = f1.nodes.filter((n) => n.roomId === "dock-corridor").map((n) => n.id);
+      const pickFrom = f1.edges.find((e) => e.door?.id === F1_DEMO.recordsDoor)!.a;
+      expect(corridor.filter((id) => !cover.includes(id))).toEqual([pickFrom]);
     });
 
     it("its nearest node is reached in 2–3 moves from the dock entry", () => {

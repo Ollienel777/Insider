@@ -105,7 +105,7 @@ describe("placeLevel on F1 from the cached manifest", () => {
     const c2 = placed.cameras.find((c) => c.id === "C2")!;
     // The dock corridor short of the records door, where the lock is picked (see the quiet-route test).
     expect(c2.cover).toEqual(["dc-west", "dc-mid"]);
-    expect(F1_DEMO.c2Cover.slice(0, 2)).toEqual(c2.cover);
+    expect(c2.cover).toEqual(F1_DEMO.c2Cover);
     expect(c2.kind).toBe("analog-sweep");
     expect(c2.approach.nodeId).toBe("dc-west");
     expect(c2.approach.hops).toBeGreaterThanOrEqual(2);

@@ -26,8 +26,13 @@ export const F1_DEMO = Object.freeze({
   roofEntry: "es-landing",
   /** "Wait one turn at the freight lift": next to the entry, outside C2's cover. */
   freightLiftWait: "fl-lobby",
-  /** Camera C2's cover: the dock corridor. Its nearest node is 2 moves from the dock entry and visible from it. */
-  c2Cover: Object.freeze(["dc-west", "dc-mid", "dc-east"]),
+  /**
+   * Camera C2's cover: the dock corridor short of the records door. Its
+   * nearest node is 2 moves from the dock entry and visible from it. The
+   * corridor's east end, `dc-east`, is left uncovered: the records door is
+   * picked from there (the placer keeps cameras off pick nodes).
+   */
+  c2Cover: Object.freeze(["dc-west", "dc-mid"]),
   /** The objective: the records room's file stacks, behind the lockable records door. */
   objective: "rr-files",
   /** The records room door, the one the Chief locks in beat 5. */

@@ -93,7 +93,7 @@ function beat5Level(overrides: Partial<Level> = {}): Level {
       dock: [...F1_DEMO.c2Cover],
       "east-stair": [F1_DEMO.roofEntry],
     },
-    // Halves [dc-west] and [dc-mid, dc-east]; phase 1 watches dc-west on odd turns.
+    // Halves [dc-west] and [dc-mid]; phase 1 watches dc-west on odd turns.
     cameras: [{ id: "C2", kind: "analog-sweep", cover: F1_DEMO.c2Cover, phase: 1 }],
     ...overrides,
   };
