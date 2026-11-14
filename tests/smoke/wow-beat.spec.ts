@@ -6,7 +6,7 @@ import { expect, test, type Page } from "@playwright/test";
 // that record:
 //   1. Calm: grey cones, Calm banner.
 //   2. The trip: on the frame the banner first reads Alert, C2's whole cone is
-//      already `--danger`, and the banner's colour has no transition to run.
+//      already `--danger` and flashing, and the banner's colour has no transition to run.
 //   3. The re-plan: the Chief's rationale streams word by word, then the
 //      orders list row by row; from the moment the Chief answers, no guard's
 //      dashed `--danger` route is on the board before its order row.
@@ -18,6 +18,9 @@ test.use({ viewport: { width: 1440, height: 900 } });
 interface Frame {
   banner: string;
   tripped: boolean;
+  /** Whether the tripped cone is running the `cone-flash` animation, and its fill-opacity as drawn. */
+  flashing: boolean;
+  opacity: number;
   words: number;
   orders: number;
   routes: string[];
@@ -50,9 +53,12 @@ test("the Alert moment plays DESIGN.md's four steps in order", async ({ page }) 
     w.__frames = [];
     const sample = () => {
       const rationale = document.querySelector('[data-testid="chief-rationale"]');
+      const cone = document.querySelector<SVGElement>('[data-testid="cone-tripped"]');
       w.__frames.push({
         banner: document.querySelector('[data-testid="alarm-banner"]')?.getAttribute("data-state") ?? "",
-        tripped: document.querySelector('[data-testid="cone-tripped"]') !== null,
+        tripped: cone !== null,
+        flashing: cone ? cone.getAnimations().some((a) => (a as CSSAnimation).animationName === "cone-flash") : false,
+        opacity: cone ? parseFloat(getComputedStyle(cone).fillOpacity) : 0,
         words: rationale?.textContent?.trim() ? rationale.textContent.trim().split(/\s+/).length : 0,
         orders: document.querySelectorAll('[data-testid="chief-order"]').length,
         routes: [...document.querySelectorAll('[data-testid="guard-route"]')].map((el) => el.getAttribute("data-guard") ?? ""),
@@ -72,6 +78,12 @@ test("the Alert moment plays DESIGN.md's four steps in order", async ({ page }) 
   expect(tripAt, "a frame with the banner at Alert").toBeGreaterThanOrEqual(0);
   expect(frames.slice(0, tripAt).every((f) => !f.tripped), "no tripped cone before the trip").toBe(true);
   expect(frames[tripAt].tripped, "the cone is --danger on the trip's frame").toBe(true);
+  // The flash (`.cone-flash` over --t-slow): it runs from the trip's frame, starts well above the
+  // cone's resting 30%, and is over once the stream is done, leaving the cone at 30%.
+  expect(frames[tripAt].flashing, "the tripped cone flashes from the trip's frame").toBe(true);
+  expect(frames[tripAt].opacity, "the flash starts above the resting 30%").toBeGreaterThan(0.5);
+  expect(frames[frames.length - 1].flashing, "the flash is over").toBe(false);
+  expect(frames[frames.length - 1].opacity).toBeCloseTo(0.3, 2);
   const transition = await page.getByTestId("alarm-state").evaluate((el) => getComputedStyle(el).transitionDuration);
   expect(transition).toBe("0s");
   const danger = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--danger").trim());

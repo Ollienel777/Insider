@@ -196,10 +196,12 @@ export function backEdgeIsOuter(room: Pick<FloorGraph["rooms"][number], "id" | "
  * fits whole (the default), else slid along it, else along the front edge,
  * else smaller. Then a corridor whose back edge is the floor's outer wall,
  * when every spot on its tile covers a node or a pawn (#83 R1-N2: at the wow
- * beat they all stand on it), takes its name just outside that edge instead,
- * where nothing ever stands: the first spot there clear of every label in
- * `outside` and of the names placed so far. Without `outside` no name goes
- * outside, so the other rooms keep the places they had.
+ * beat they all stand on it), takes its name just outside that edge instead:
+ * the first spot there, largest first, inside `frame` and clear of every label
+ * in `outside` and of the names placed so far. Its nodes and pawns are not
+ * checked there: a pawn's head on the corridor can still reach over it (on F1,
+ * one standing at dc-mid or dc-east). Without `outside` no name goes outside,
+ * so the other rooms keep the places they had.
  */
 export function placeRoomLabels(
   floor: Pick<FloorGraph, "rooms">,
