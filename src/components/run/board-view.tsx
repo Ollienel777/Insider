@@ -582,6 +582,7 @@ export function BoardView({
               choice={choice}
               at={at(choice.nodeId)}
               room={roomName(floor, choice.nodeId)}
+              via={choice.via ? roomName(floor, choice.via) : undefined}
               onChoose={onChoose}
             />
           ))}
@@ -1147,18 +1148,22 @@ function ChoiceHint({
   choice,
   at,
   room,
+  via,
   onChoose,
 }: {
   choice: Choice;
   at: Point;
   room: string;
+  /** For a sprint: the room of the node it runs through. */
+  via?: string;
   onChoose: (choice: Choice) => void;
 }) {
   const label =
     choice.kind === "pick"
       ? `Pick the door to ${room}, ${choice.progress!.done} of ${choice.progress!.of} (${choice.key})`
       : choice.kind === "sprint"
-        ? `Sprint to ${room}, two hops, loud (${choice.key})`
+        ? // Rooms are the finest names the board has: a sprint inside one room says so.
+          `Sprint to ${room}, ${via && via !== room ? `through ${via}` : `two hops within ${room}`}, loud (${choice.key})`
         : `Move to ${room} (${choice.key})`;
   const onKey = (event: KeyboardEvent) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -1175,11 +1180,14 @@ function ChoiceHint({
       data-key={choice.key}
       data-node={choice.nodeId}
       data-kind={choice.kind}
+      data-via={choice.via}
       className="group cursor-pointer outline-none"
       transform={`translate(${round(at.x)}, ${round(at.y)})`}
       onClick={() => onChoose(choice)}
       onKeyDown={onKey}
     >
+      {/* On hover, the label says the way: for a sprint, the room it runs through. */}
+      <title>{label}</title>
       <rect x="-20" y="-20" width="40" height="40" fill="transparent" />
       <ellipse
         cx="0"

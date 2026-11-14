@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { F1_DEMO, FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { LevelManifest, type AlarmState } from "@/domain";
-import { act, createRun, moveGuards, type Action, type RunState } from "@/engine";
+import { act, createRun, moveGuards, neighbours, type Action, type RunState } from "@/engine";
 import { sightingsAt } from "@/engine/vision";
 import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.json";
@@ -17,8 +17,12 @@ import {
   coverage,
   describeTurn,
   guardOrders,
+  NO_SPRINT_STATUS,
   planSteps,
+  SPRINT_STATUS,
   sprintChoices,
+  toggleSprint,
+  WALK_STATUS,
 } from "./board";
 import { BoardView } from "./board-view";
 import { frameOf, hull, project } from "./iso";
@@ -227,23 +231,85 @@ describe("choices and keys", () => {
 
   it("offer, in sprint mode, every node two open hops away and no neighbour, each a sprint the engine takes (#121)", () => {
     // From the start the one neighbour is the freight lift lobby, so the only sprint is on to the dock corridor.
-    expect(sprintChoices(start()).map((c) => [c.key, c.nodeId, c.kind])).toEqual([[1, "dc-west", "sprint"]]);
+    expect(sprintChoices(start()).map((c) => [c.key, c.nodeId, c.kind, c.via])).toEqual([[1, "dc-west", "sprint", F1_DEMO.freightLiftWait]]);
     expect(choices(start(), "sprint")).toEqual(sprintChoices(start()));
 
-    let run = start();
-    for (const step of QUIET_ROUTE.slice(0, 5)) run = press(run, [keyOf(run, step)]);
-    for (const state of [press(start(), ["1"]), run]) {
+    // From every node on F1, as the board stands at the start (both doors locked) and with both picked.
+    const base = start();
+    const states = [base, { ...base, locked: [] }].flatMap((s) => [...s.board.nodes.keys()].map((id) => ({ ...s, playerNode: id })));
+    let offered = 0;
+    for (const state of states) {
+      const here = state.board.nodes.get(state.playerNode)!;
+      const adjacent = new Set(neighbours(state.board, state.playerNode).map((e) => e.to));
       const sprints = sprintChoices(state);
-      const adjacent = new Set(choices(state).map((c) => c.nodeId));
+      offered += sprints.length;
       expect(sprints.map((c) => c.key)).toEqual(sprints.map((_, i) => i + 1));
+      // Clockwise on screen from twelve o'clock, as moves are numbered.
+      const bearings = sprints.map((c) => {
+        const from = project(here.x, here.y);
+        const n = state.board.nodes.get(c.nodeId)!;
+        const to = project(n.x, n.y);
+        const a = Math.atan2(to.x - from.x, -(to.y - from.y));
+        return a < 0 ? a + 2 * Math.PI : a;
+      });
+      expect(bearings, `order from ${state.playerNode}`).toEqual([...bearings].sort((a, b) => a - b));
       for (const c of sprints) {
-        expect(adjacent.has(c.nodeId), c.nodeId).toBe(false);
+        expect(adjacent.has(c.nodeId), `${c.nodeId} from ${state.playerNode} is a neighbour`).toBe(false);
         expect(c.nodeId).not.toBe(state.playerNode);
+        expect(adjacent.has(c.via!), `${c.via} is a neighbour of ${state.playerNode}`).toBe(true);
         const result = act(state, c.action);
-        expect(result.ok, `${c.nodeId}: ${result.ok ? "" : result.reason}`).toBe(true);
-        if (result.ok) expect(result.run.turns.at(-1)!.player).toEqual({ kind: "sprint", nodeId: c.nodeId });
+        expect(result.ok, `${state.playerNode} → ${c.nodeId}: ${result.ok ? "" : result.reason}`).toBe(true);
+        if (!result.ok) continue;
+        expect(result.run.turns.at(-1)!.player.kind).toBe("sprint");
+        // A guard on the middle node stops the sprint there; otherwise it lands on the target.
+        if (!state.guards.some((g) => g.nodeId === c.via)) expect(result.run.playerNode).toBe(c.nodeId);
       }
     }
+    // 84 sprints from F1's 30 nodes with both doors locked (the PR 123 review's count), more with them open.
+    expect(offered).toBeGreaterThan(84);
+  });
+
+  it("leave out a neighbour that is also two hops away, as in a triangle", () => {
+    // S2's three nodes form a triangle: from s2-e, s2-s is two hops through s2-nw, but it is a neighbour.
+    const run = { ...start(), playerNode: "s2-e" };
+    expect(choices(run).map((c) => c.nodeId)).toContain("s2-s");
+    expect(sprintChoices(run).map((c) => c.nodeId)).toEqual(["mc-3"]);
+    // The Open Office: o-north, o-south and o-west form one too.
+    const office = { ...start(), playerNode: "o-north" };
+    expect(sprintChoices(office).map((c) => c.nodeId)).not.toContain("o-south");
+    expect(sprintChoices(office).map((c) => c.nodeId)).not.toContain("o-west");
+  });
+
+  it("number the sprints clockwise, as moves are", () => {
+    const run = { ...start(), playerNode: "mc-3" };
+    expect(sprintChoices(run).map((c) => [c.key, c.nodeId, c.via])).toEqual([
+      [1, "o-south", "mc-4"],
+      [2, "mc-e", "mc-4"],
+      [3, "s2-e", "s2-nw"],
+      [4, "s2-s", "s2-nw"],
+      [5, "s1-ne", "mc-2"],
+      [6, "mc-1", "mc-2"],
+      [7, "el-south", "mc-2"],
+    ]);
+  });
+
+  it("make S sprint, S again walk, and S with nowhere to sprint stay walking and say why", () => {
+    expect(toggleSprint(start(), "walk")).toEqual({ mode: "sprint", status: SPRINT_STATUS });
+    expect(toggleSprint(start(), "sprint")).toEqual({ mode: "walk", status: WALK_STATUS });
+    // The server rack's one way out is through the locked server closet door.
+    const shut = { ...start(), playerNode: "sc-rack" };
+    expect(sprintChoices(shut)).toEqual([]);
+    expect(toggleSprint(shut, "walk")).toEqual({ mode: "walk", status: NO_SPRINT_STATUS });
+    let won = start();
+    for (const step of QUIET_ROUTE) won = press(won, [keyOf(won, step)]);
+    expect(toggleSprint(won, "walk")).toBeNull();
+  });
+
+  // The real one-line check is the sprint smoke test at 1440×900; this keeps the text from growing past it.
+  it("keep the sprint status line true for every sprint, and short enough for one line", () => {
+    expect(SPRINT_STATUS).not.toMatch(/room/i);
+    expect(SPRINT_STATUS.length).toBeLessThanOrEqual(60);
+    expect(SPRINT_STATUS).toContain("S or Esc to walk");
   });
 
   it("make a sprint a guard can hear raise Suspicious, as noise, and log it as a sprint for the Debrief", () => {

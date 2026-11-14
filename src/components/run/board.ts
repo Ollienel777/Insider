@@ -128,6 +128,8 @@ export interface Choice {
   doorId?: string;
   /** For a pick: picks so far, and the picks it needs. */
   progress?: { done: number; of: number };
+  /** For a sprint: the node it runs through on the way. */
+  via?: string;
 }
 
 /**
@@ -177,9 +179,14 @@ function bearingFrom(run: RunState): (id: string) => number {
 
 /**
  * The sprint targets: every node exactly two open hops away (not the player's
- * node, not a neighbour), as the engine's `sprint` accepts them, each through
- * the first open middle node in board order. Numbered clockwise like moves; at
- * most nine. A locked door on either hop rules that way out.
+ * node, not a neighbour), as the engine's `sprint` accepts them. Numbered
+ * clockwise like moves; at most nine. A locked door on either hop rules that
+ * way out.
+ *
+ * When more than one neighbour leads to a target, the sprint goes through the
+ * first of them clockwise from twelve o'clock. The player does not choose the
+ * middle node; the badge names it (`Choice.via`), since that node decides
+ * which cameras and guards see the sprint.
  */
 export function sprintChoices(run: RunState): Choice[] {
   if (run.status !== "playing") return [];
@@ -200,7 +207,27 @@ export function sprintChoices(run: RunState): Choice[] {
   return [...via.keys()]
     .sort((a, b) => bearing(a) - bearing(b) || a.localeCompare(b))
     .slice(0, 9)
-    .map((to, i): Choice => ({ key: i + 1, nodeId: to, action: { kind: "sprint", to, via: via.get(to)! }, kind: "sprint" }));
+    .map((to, i): Choice => {
+      const middle = via.get(to)!;
+      return { key: i + 1, nodeId: to, action: { kind: "sprint", to, via: middle }, kind: "sprint", via: middle };
+    });
+}
+
+/** The status line when sprint mode comes on, and when it goes off again (issue 121). */
+export const SPRINT_STATUS = "Sprinting: two hops in one turn, loud. S or Esc to walk.";
+export const WALK_STATUS = "Walking again. Pick a number to move.";
+export const NO_SPRINT_STATUS = "Nowhere to sprint from here: nothing is two open hops away.";
+
+/**
+ * What `S` does (issue 121): from sprint mode, walk again; from walking,
+ * sprint if there is anywhere to sprint to, and otherwise stay walking and
+ * say why. Null when the run is over and `S` does nothing.
+ */
+export function toggleSprint(run: RunState, mode: Mode): { mode: Mode; status: string } | null {
+  if (run.status !== "playing") return null;
+  if (mode === "sprint") return { mode: "walk", status: WALK_STATUS };
+  if (sprintChoices(run).length === 0) return { mode: "walk", status: NO_SPRINT_STATUS };
+  return { mode: "sprint", status: SPRINT_STATUS };
 }
 
 /** Whether the player stands on the objective and can take it. */
