@@ -6,19 +6,14 @@
 // same the run board's cones draw and the same that catches the player.
 // Pure and deterministic, so it can run on every edit.
 import { createRun, moveGuards } from "@/engine";
-import { roundOf } from "@/engine/autoplay";
 import { visibleFrom, watched } from "@/engine/vision";
 import type { Board, Level } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
 import { objectiveNoun } from "@/lib/objective-noun";
+import { cycleLength } from "./night";
+import { openWindows, type OpenWindows } from "./open-windows";
 
-/**
- * The longest night the measure steps through. A night is the least common
- * multiple of every guard's round (its hops times its tempo) and every
- * camera's sweep (2 or 3 turns); with odd round lengths that can grow large,
- * so it stops at 240 turns, which is longer than any attempt (120 turns).
- */
-export const CYCLE_CAP = 240;
+export { CYCLE_CAP, cycleLength } from "./night";
 
 export interface SetupMeasure {
   /** Positions on the floor (nodes). */
@@ -35,25 +30,8 @@ export interface SetupMeasure {
   noun: string;
   /** The turns stepped through: the night's length, capped at `CYCLE_CAP`. */
   cycle: number;
-}
-
-const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
-const lcm = (a: number, b: number) => (a / gcd(a, b)) * b;
-
-/** The night's length on this board: the least common multiple of the rounds and sweeps, capped. */
-export function cycleLength(board: Board): number {
-  const { level } = board;
-  const tempo = (id: string) => level.guardTempo?.[id] ?? level.patrolTempo;
-  const lengths = [
-    ...level.guards.map((g) => roundOf(board, g.patrol).length * tempo(g.id)),
-    ...board.cameras.map((c) => c.parts.length),
-  ];
-  let cycle = 1;
-  for (const n of lengths) {
-    cycle = lcm(cycle, Math.max(1, n));
-    if (cycle >= CYCLE_CAP) return CYCLE_CAP;
-  }
-  return cycle;
+  /** The moments a crew could get in and out unseen and unheard (`openWindows`): the timing coverage cannot see. */
+  windows: OpenWindows;
 }
 
 /**
@@ -110,6 +88,7 @@ export function measureSetup(placed: { level: Level; entries: PlacedLevel["entri
     unwatched,
     noun: objectiveNoun(level.missionId),
     cycle,
+    windows: openWindows(level, ways),
   };
 }
 
@@ -124,7 +103,21 @@ export function routesLine(m: SetupMeasure): string {
   return `Unwatched routes: ${m.unwatched} of ${m.entries} ${m.entries === 1 ? "way" : "ways"} in ${verb} the ${m.noun} unseen.`;
 }
 
-/** "62% → 81%, unwatched routes 2 → 0". */
+/** "Open windows: 9 of 120 moments in the night let a crew in and out unseen." */
+export function windowsLine(m: SetupMeasure): string {
+  const { open, moments } = m.windows;
+  return `Open windows: ${open} of ${moments} moments in the night ${open === 1 ? "lets" : "let"} a crew in and out unseen.`;
+}
+
+/** Which way and when, for the first open window: "First: in at turn 3 by lobby-w, out by lobby-w, 14 positions." Null when none is open. */
+export function firstWindowLine(m: SetupMeasure, nameOf: (nodeId: string) => string = (id) => id): string | null {
+  const first = m.windows.first;
+  if (!first) return null;
+  const out = first.route[first.route.length - 1];
+  return `First: in at turn ${first.turn} by ${nameOf(first.entry)}, out by ${nameOf(out)}, through ${first.route.length} positions.`;
+}
+
+/** "62% → 81%, unwatched routes 2 → 0, open windows 9 → 1". */
 export function measureChange(a: SetupMeasure, b: SetupMeasure): string {
-  return `Coverage ${a.coverage}% → ${b.coverage}%, unwatched routes ${a.unwatched} → ${b.unwatched}`;
+  return `Coverage ${a.coverage}% → ${b.coverage}%, unwatched routes ${a.unwatched} → ${b.unwatched}, open windows ${a.windows.open} → ${b.windows.open}`;
 }
