@@ -34,8 +34,12 @@ interface Case {
   trip: { by: string; zone: string; to: string };
   /** Each way in or out the mission's exit text or briefing names, and the aerial entry it is. */
   exitNames: [string, string][];
-  /** Positions a recorded crew or Chief text states: the phrase, and the room its guard or camera is placed in. */
-  claims: { file: "crew" | "chief"; phrase: string; who: string; room: string }[];
+  /**
+   * Every guard or camera a recorded text names: the crew reply or Chief turn
+   * (`text`, its id), the phrase, and either the room the guard or camera is
+   * placed in, or, for a Chief order, the zone that turn orders the guard to.
+   */
+  claims: ({ text: string; phrase: string; who: string } & ({ room: string } | { order: string }))[];
   /** The recorded reply Plan shows clean, and the one it warns about. */
   clean: string;
   warns: { reply: string; text: RegExp };
@@ -64,14 +68,16 @@ const CASES: Case[] = [
       ["helipad", "roof"],
     ],
     claims: [
-      { file: "chief", phrase: "C2 has them in the west corridor", who: "C2", room: "west-corridor" },
-      { file: "chief", phrase: "G2, out of suites 4101 to 4118", who: "G2", room: "suites-4101-4118" },
-      { file: "chief", phrase: "G3, from the elevator lobby", who: "G3", room: "elevator-lobby" },
-      { file: "chief", phrase: "G1 leaves the mail room", who: "G1", room: "mail-room" },
-      { file: "crew", phrase: "Camera C2 covers the west corridor", who: "C2", room: "west-corridor" },
-      { file: "crew", phrase: "Camera C2 turns along the west corridor", who: "C2", room: "west-corridor" },
-      { file: "crew", phrase: "the service hall, and C1 turns along that hall", who: "C1", room: "service-hall" },
-      { file: "crew", phrase: "the service hall, where C1 turns", who: "C1", room: "service-hall" },
+      { text: "c2-west-corridor", phrase: "C2 has them in the west corridor", who: "C2", room: "west-corridor" },
+      { text: "c2-west-corridor", phrase: "G2, out of suites 4101 to 4118", who: "G2", room: "suites-4101-4118" },
+      { text: "c2-west-corridor", phrase: "G3, from the elevator lobby", who: "G3", room: "elevator-lobby" },
+      { text: "c2-west-corridor", phrase: "G1 leaves the mail room", who: "G1", room: "mail-room" },
+      { text: "dock-wait", phrase: "Camera C2 turns along the west corridor", who: "C2", room: "west-corridor" },
+      { text: "quiet", phrase: "the way to it is the west corridor, and C2 has you", who: "C2", room: "west-corridor" },
+      { text: "lobby", phrase: "the service hall, where C1 turns", who: "C1", room: "service-hall" },
+      { text: "garage", phrase: "the service hall, and C1 turns along that hall", who: "C1", room: "service-hall" },
+      { text: "dock", phrase: "Camera C2 covers the west corridor", who: "C2", room: "west-corridor" },
+      { text: "default", phrase: "Camera C2 covers the west corridor", who: "C2", room: "west-corridor" },
     ],
     objective: { node: "vt-boxes", door: "d-vault", room: "vault" },
     trip: { by: "C2", zone: "west-corridor", to: "alert" },
@@ -94,13 +100,20 @@ const CASES: Case[] = [
       ["the loading dock", "dock-N"],
     ],
     claims: [
-      { file: "chief", phrase: "C1's analytics flagged someone in the north hall", who: "C1", room: "north-hall" },
-      { file: "chief", phrase: "G4, out of suite 2410", who: "G4", room: "suite-2410" },
-      { file: "chief", phrase: "G3, from the south hall", who: "G3", room: "south-hall" },
-      { file: "crew", phrase: "C1 and C2 watch it", who: "C1", room: "north-hall" },
-      { file: "crew", phrase: "C1 and C2 watch it", who: "C2", room: "north-hall" },
-      { file: "crew", phrase: "the north hall's C1 and C2", who: "C2", room: "north-hall" },
-      { file: "crew", phrase: "G3 walks that hall", who: "G3", room: "south-hall" },
+      { text: "c1-north-hall", phrase: "C1's analytics flagged someone in the north hall", who: "C1", room: "north-hall" },
+      { text: "c1-north-hall", phrase: "G4, out of suite 2410", who: "G4", room: "suite-2410" },
+      { text: "c1-north-hall", phrase: "G3, from the south hall", who: "G3", room: "south-hall" },
+      { text: "c1-north-hall", phrase: "G2 holds the prototype lab", who: "G2", order: "objective" },
+      { text: "c1-north-hall", phrase: "G1 blocks the loading dock", who: "G1", order: "dock-N" },
+      { text: "quiet", phrase: "the south hall's glass wall looks into the middle of the suite, and G3 walks that hall", who: "G3", room: "south-hall" },
+      { text: "lobby", phrase: "the north hall's C1 and C2", who: "C1", room: "north-hall" },
+      { text: "lobby", phrase: "the north hall's C1 and C2", who: "C2", room: "north-hall" },
+      { text: "garage", phrase: "the north hall's C1 and C2", who: "C1", room: "north-hall" },
+      { text: "garage", phrase: "the north hall's C1 and C2", who: "C2", room: "north-hall" },
+      { text: "dock", phrase: "The north hall is the short way, but C1 and C2 watch it", who: "C1", room: "north-hall" },
+      { text: "dock", phrase: "The north hall is the short way, but C1 and C2 watch it", who: "C2", room: "north-hall" },
+      { text: "default", phrase: "the short way is the north hall, and C1 and C2 there", who: "C1", room: "north-hall" },
+      { text: "default", phrase: "the short way is the north hall, and C1 and C2 there", who: "C2", room: "north-hall" },
     ],
     objective: { node: "lab-bench", door: "d-lab", room: "prototype-lab" },
     // IP cameras with analytics raise the alarm one step more: calm goes straight to lockdown.
@@ -248,15 +261,38 @@ describe.each(CASES)("$id on its fixture floor", (c) => {
   });
 
   it("puts each guard and camera a recorded crew or Chief text places where that text says (#39 review)", () => {
-    const texts = { crew: JSON.stringify(c.crew), chief: JSON.stringify(c.chief) };
+    // Each crew reply's and Chief turn's own text, by its id; a claim is checked against that text alone.
+    const recording = ChiefRecording.parse(c.chief);
+    const texts = new Map<string, string>([
+      ...c.crew.replies.map((r): [string, string] => {
+        const plan = CrewPlan.parse(r.plan);
+        return [r.id, [plan.pushback, ...plan.steps.map((s) => s.action)].join(" ")];
+      }),
+      ...recording.turns.map((t): [string, string] => [t.id, t.orders.rationale]),
+    ]);
+    expect(texts.size, "a crew reply and a Chief turn share an id").toBe(c.crew.replies.length + recording.turns.length);
     const roomOf = new Map(placed.level.floor.nodes.map((n) => [n.id, n.roomId]));
-    for (const { file, phrase, who, room } of c.claims) {
-      expect(texts[file], phrase).toContain(phrase);
+    for (const claim of c.claims) {
+      const { text, phrase, who } = claim;
+      expect(texts.get(text), `${text}: ${phrase}`).toContain(phrase);
+      expect(phrase, `${text}: ${phrase}`).toMatch(new RegExp(`\\b${who}\\b`));
+      if ("order" in claim) {
+        const turn = recording.turns.find((t) => t.id === text);
+        expect(turn, `${text} is a Chief turn`).toBeDefined();
+        expect(turn!.orders.orders.map((o) => [o.guardId, o.zoneId]), `${text}: ${phrase}`).toContainEqual([who, claim.order]);
+        continue;
+      }
       const guard = placed.guards.find((g) => g.id === who);
       const camera = placed.cameras.find((cam) => cam.id === who);
       const rooms = guard ? [guard.roomId] : (camera?.cover ?? []).map((id) => roomOf.get(id));
-      expect(rooms.length, who).toBeGreaterThan(0);
-      for (const r of rooms) expect(r, `${phrase}: ${who}`).toBe(room);
+      expect(rooms.length, `${text}: ${who} is on the board`).toBeGreaterThan(0);
+      for (const r of rooms) expect(r, `${text}: ${phrase}: ${who}`).toBe(claim.room);
+    }
+    // Every guard or camera a recorded text names has a claim for that text, so none goes unchecked.
+    for (const [id, text] of texts) {
+      for (const who of new Set(text.match(/\b[CG]\d+\b/g) ?? [])) {
+        expect(c.claims.some((cl) => cl.text === id && cl.who === who), `${id} names ${who} with no claim`).toBe(true);
+      }
     }
   });
 });

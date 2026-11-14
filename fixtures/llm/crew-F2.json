@@ -66,7 +66,7 @@
             "action": "Out by the east stair to the helipad"
           }
         ],
-        "pushback": "Suite 4125 is dark and empty, but the way to it is the west corridor, and C2 has you there on your first step unless you wait at the freight lift first. Sound carries further in an empty suite, too.",
+        "pushback": "Suite 4125 is dark and empty, but the way to it is the west corridor, and C2 has you on your first step into it unless you wait at the freight lift first. Sound carries further in an empty suite, too.",
         "confidence": 0.45
       }
     },
@@ -95,7 +95,7 @@
             "action": "Back up to the helipad"
           }
         ],
-        "pushback": "The helipad stair door is alarmed, and the stair is the long way round to the vault. The freight lift from the dock is shorter.",
+        "pushback": "The helipad stair is the short way to the vault, but the run starts at the dock, so the stair is your way out, not in.",
         "confidence": 0.4
       }
     },
@@ -121,7 +121,7 @@
             "action": "Back down the passenger lifts"
           }
         ],
-        "pushback": "The passenger lifts come up from the Figueroa lobby, past two guards at the desk, and up here they open a step from the service hall, where C1 turns. If you go that way, you pass the desk twice.",
+        "pushback": "The passenger lifts come up from the Figueroa lobby, past two guards at the desk, and up here they open two steps from the service hall, where C1 turns. If you go that way, you pass the desk twice.",
         "confidence": 0.3
       }
     },
@@ -195,7 +195,7 @@
             "action": "Back down the freight lift"
           }
         ],
-        "pushback": "You didn't say how you want in, so it's the dock: the freight lift is the shortest way to the vault. Camera C2 covers the west corridor on a three-turn cycle.",
+        "pushback": "You didn't say how you want in, so it's the dock: that's where the run starts. Camera C2 covers the west corridor on a three-turn cycle.",
         "confidence": 0.5
       }
     }
