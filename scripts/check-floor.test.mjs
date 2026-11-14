@@ -8,7 +8,8 @@ import { checkFloor } from "./check-floor.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const script = path.join(here, "check-floor.mjs");
-const f1 = JSON.parse(readFileSync(path.join(here, "..", "fixtures", "floors", "F1.json"), "utf8"));
+const floor = (id) => JSON.parse(readFileSync(path.join(here, "..", "fixtures", "floors", `${id}.json`), "utf8"));
+const f1 = floor("F1");
 
 // A three-node floor: hall (two nodes) and an office behind a door.
 const small = () => ({
@@ -28,6 +29,10 @@ describe("checkFloor", () => {
   it("passes the F1 fixture and a small valid floor", () => {
     expect(checkFloor(f1)).toEqual([]);
     expect(checkFloor(small())).toEqual([]);
+  });
+
+  it.each(["F2", "F3"])("passes the %s fixture (#39)", (id) => {
+    expect(checkFloor(floor(id))).toEqual([]);
   });
 
   it("reports a floor that is not connected", () => {
@@ -68,6 +73,8 @@ describe("checkFloor", () => {
     const ok = spawnSync(process.execPath, [script], { encoding: "utf8" });
     expect(ok.status, ok.stderr).toBe(0);
     expect(ok.stdout).toMatch(/F1\.json: ok/);
+    expect(ok.stdout).toMatch(/F2\.json: ok/);
+    expect(ok.stdout).toMatch(/F3\.json: ok/);
 
     const dir = mkdtempSync(path.join(os.tmpdir(), "check-floor-"));
     try {
