@@ -21,7 +21,15 @@ export function crewRequest(buildingId: string, order: string, missionId?: strin
 /** The demo's order (SPEC §2 beat 4), offered as an example under the order box. */
 export const EXAMPLE_ORDER = "Go in through the dock, wait for the 2 am round to pass, take the records room.";
 
-/** Asks the crew; throws with the server's message on a failure. */
+/**
+ * The crew had no reply to give: the model didn't answer and the building has no recorded replies
+ * (a kit building, issue 140). The Plan screen then works the plan out from the board.
+ */
+export class NoCrewReplyError extends Error {
+  override name = "NoCrewReplyError";
+}
+
+/** Asks the crew; throws with the server's message on a failure (`NoCrewReplyError` when there is no reply to give). */
 export async function askCrew(
   request: CrewRequest,
   options: { signal?: AbortSignal; fetch?: typeof fetch } = {},
@@ -34,6 +42,7 @@ export async function askCrew(
     signal: options.signal,
   });
   const body = (await response.json().catch(() => null)) as (Partial<CrewAnswer> & { error?: string }) | null;
+  if (response.status === 503) throw new NoCrewReplyError(body?.error ?? "the crew has no reply for this building");
   if (!response.ok || !body) throw new Error(body?.error ?? `the crew didn't answer (HTTP ${response.status})`);
   noteResponse(body);
   return {

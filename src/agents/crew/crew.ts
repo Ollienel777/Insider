@@ -17,6 +17,11 @@ export interface CrewAnswer {
   reason?: "fake mode" | "configuration" | "timeout" | "error";
   /** The recorded reply's id, when one answered. */
   recording?: string;
+  /**
+   * Set in the browser when no reply came and the plan was worked out from the board instead
+   * (issue 140, `fallbackPlan`): no model was called and nothing was recorded.
+   */
+  fallback?: "board";
 }
 
 /** An order the crew will not read. */

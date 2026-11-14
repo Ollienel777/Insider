@@ -44,6 +44,14 @@ export function CrewReply({ answer, checked }: { answer: CrewAnswer; checked: Ch
           >
             Recorded
           </span>
+        ) : answer.fallback === "board" ? (
+          <span
+            data-testid="board-plan-chip"
+            title="The crew had no reply for this building, and no recorded reply to stand in, so this plan was worked out from the board itself. No model was called."
+            className="rounded-sm border border-border px-1.5 py-0.5 label-caps text-text-2"
+          >
+            Worked out on the board
+          </span>
         ) : null}
         <span className="ml-auto font-mono text-xs text-text-2" title="The crew's confidence in this plan">
           {Math.round(plan.confidence * 100)}% sure
