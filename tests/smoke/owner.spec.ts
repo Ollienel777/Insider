@@ -50,8 +50,10 @@ test("Debrief to Owner Mode: 50 attempts, the Chief's fix, before and after", as
   expect(escapedBy).toEqual({ "dock-patient": 9, "dock-fast": 6, "dock-in-roof-out": 2, "suite-detour": 0, "roof-quiet": 0 });
   await expect(page.getByTestId("owner-route")).toHaveAttribute("data-count", "14");
   await expect(page.getByTestId("owner-measure")).toHaveAttribute("data-coverage", "47");
-  // No route is unwatched, so the 17 got out by timing; the note says what the numbers leave out.
-  await expect(page.getByTestId("owner-measure-timing")).toContainText("so the 17 attempts that got out did it by timing, or were seen and not caught.");
+  // No night leaves a route unwatched, so the 17 got out by timing; the note says what the numbers leave out.
+  await expect(page.getByTestId("owner-measure-timing")).toHaveText(
+    "On every night the crew plays, every route to the files crosses ground a camera or guard watches at some point that night, so the 17 attempts that got out did it by timing, or were seen and not caught.",
+  );
   await expect(page.getByTestId("owner-measure-note")).toContainText("being seen is not being caught");
   await expect(page.getByTestId("owner-detector")).toBeVisible();
   await expect(page.getByTestId("owner-detector-ring")).toBeVisible();
@@ -142,7 +144,7 @@ test("the prepared pair: 7 of 50, C2 moved, 1 of 50, then the two side by side",
     "Coverage: 43% of the floor is watched at some point in every night the crew plays.",
   );
   await expect(page.getByTestId("owner-setup-measure-routes")).toHaveText(
-    "Unwatched routes: 0 of 2 ways in have a route to the files that no camera or guard ever sees.",
+    "Unwatched routes: 0 of 2 ways in have, on any of the 10 nights the crew plays, a route to the files that no camera or guard sees that night.",
   );
   await page.getByTestId("owner-run").click();
   await expect(page.getByTestId("owner-count")).toHaveAttribute("data-escaped", "7");

@@ -5,14 +5,17 @@
 import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { ChiefFix, LevelManifest, type FloorGraph } from "@/domain";
-import { BATCH_SEEDS, compileBoard, createRun, varyLevel, type Level } from "@/engine";
+import type { OwnerSetup } from "@/domain/owner-setup";
+import { AUTOPLAY_MAX_TURNS, BATCH_SEEDS, compileBoard, createRun, moveGuards, varyLevel, type Level } from "@/engine";
+import { sightingsAt } from "@/engine/vision";
 import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.romaine-1974.json";
+import cachedF3 from "../../../data/levels/F3.night-desk.json";
 import { demoSetups } from "./demo-setups";
 import fixRecording from "../../../fixtures/llm/fix-F1.json";
 import { toEngineFix } from "./chief-fix";
 import { ownerBatchInput, ownerZones } from "./owner-batch";
-import { extendRound, setupFromPlaced, setupWithFix, startRound, updateCamera } from "./owner-edit";
+import { boardOf, extendRound, setupFromPlaced, setupWithFix, startRound, updateCamera } from "./owner-edit";
 import {
   coverageLine,
   CYCLE_CAP,
@@ -109,6 +112,8 @@ describe("the night's length", () => {
       }),
     );
     expect(cycleLength(board)).toBe(CYCLE_CAP);
+    // The measure steps no further than an attempt lasts: nothing watched only later meets the crew.
+    expect(watchedPositions(board.level).cycle).toBe(AUTOPLAY_MAX_TURNS);
   });
 });
 
@@ -117,14 +122,14 @@ describe("coverage and unwatched routes on a small floor", () => {
     const m = measure(diamondLevel(), ways);
     expect(m).toMatchObject({ positions: 5, watched: 0, coverage: 0, entries: 2, unwatched: 2 });
     expect(coverageLine(m)).toBe("Coverage: 0% of the floor is watched at some point in every night the crew plays.");
-    expect(routesLine(m)).toBe("Unwatched routes: 2 of 2 ways in have a route to the files that no camera or guard ever sees.");
+    expect(routesLine(m)).toBe("Unwatched routes: 2 of 2 ways in have, on the one night the crew plays, a route to the files that no camera or guard sees that night.");
   });
 
   it("counts a locked door as passable: the crew picks it", () => {
     const m = measure(diamondLevel({ lockedDoors: ["d-ab"], cameras: [{ id: "C1", kind: "fixed-ip", cover: ["c"] }] }), ways);
     // a still reaches d through the locked door to b; e has only the watched c.
     expect(m).toMatchObject({ watched: 1, coverage: 20, unwatched: 1 });
-    expect(routesLine(m)).toBe("Unwatched routes: 1 of 2 ways in has a route to the files that no camera or guard ever sees.");
+    expect(routesLine(m)).toBe("Unwatched routes: 1 of 2 ways in has, on the one night the crew plays, a route to the files that no camera or guard sees that night.");
   });
 
   it("with every route watched, no way in reaches the objective unseen", () => {
@@ -136,7 +141,7 @@ describe("coverage and unwatched routes on a small floor", () => {
       ways,
     );
     expect(m).toMatchObject({ watched: 2, coverage: 40, unwatched: 0 });
-    expect(routesLine(m)).toBe("Unwatched routes: 0 of 2 ways in have a route to the files that no camera or guard ever sees.");
+    expect(routesLine(m)).toBe("Unwatched routes: 0 of 2 ways in have, on the one night the crew plays, a route to the files that no camera or guard sees that night.");
   });
 
   it("counts a sweeping camera's whole cover, and every node a guard's round passes", () => {
@@ -162,13 +167,28 @@ describe("coverage and unwatched routes on a small floor", () => {
     expect(measureNights(nights)).toMatchObject({ positions: 5, watched: 5, coverage: 100, unwatched: 0, cycle: 1 });
   });
 
-  it("over several nights: coverage counts what every night watches, a route is unwatched only if no night watches it", () => {
-    // The camera is over b one night and over c the next: neither is watched every night, and neither route is never watched.
-    const overB = { level: diamondLevel({ cameras: [{ id: "C1", kind: "fixed-ip", cover: ["b"] }] }), entries: ways };
-    const overC = { level: diamondLevel({ cameras: [{ id: "C1", kind: "fixed-ip", cover: ["c"] }] }), entries: ways };
-    expect(measureNights([overB])).toMatchObject({ watched: 1, unwatched: 2 });
-    expect(measureNights([overC])).toMatchObject({ watched: 1, unwatched: 1 });
-    expect(measureNights([overB, overC])).toMatchObject({ watched: 0, coverage: 0, unwatched: 0 });
+  it("over several nights, the owner's worst case: coverage counts what every night watches, a way in is unwatched if any night leaves it open", () => {
+    // The camera is over b one night, over c the next, and over both on a third.
+    const night = (cover: string[]) => ({ level: diamondLevel({ cameras: [{ id: "C1", kind: "fixed-ip" as const, cover }] }), entries: ways });
+    const [overB, overC, shut] = [night(["b"]), night(["c"]), night(["b", "c"])];
+    expect(measureNights([overB])).toMatchObject({ watched: 1, unwatched: 2, openNights: 1 });
+    expect(measureNights([overC])).toMatchObject({ watched: 1, unwatched: 1, openNights: 1 });
+    expect(measureNights([shut])).toMatchObject({ watched: 2, unwatched: 0, openNights: 0 });
+    // Neither b nor c is watched every night; a is open on both nights (via c, then via b), e only on the first.
+    expect(measureNights([overB, overC])).toMatchObject({ watched: 0, coverage: 0, unwatched: 2, openNights: 2, nights: 2 });
+    // A night that shuts every route does not close the one another night leaves open.
+    const m = measureNights([shut, overC, shut]);
+    expect(m).toMatchObject({ watched: 1, unwatched: 1, openNights: 1, nights: 3 });
+    expect(routesLine(m)).toBe("Unwatched routes: 1 of 2 ways in has, on 1 of the 3 nights the crew plays, a route to the files that no camera or guard sees that night.");
+    expect(timingLine(m, 5)).toBeNull();
+    expect(routesLine(measureNights([overC, overC]))).toBe(
+      "Unwatched routes: 1 of 2 ways in has, on every one of the 2 nights the crew plays, a route to the files that no camera or guard sees that night.",
+    );
+  });
+
+  it("with no way in, says so instead of 0 of 0", () => {
+    expect(routesLine(measure(diamondLevel(), []))).toBe("Unwatched routes: this floor has no way in to measure.");
+    expect(timingLine(measure(diamondLevel(), []), 3)).toBeNull();
   });
 
   it("keeps a whole percent honest at the ends: never 100 with a position unwatched, nor 0 with one watched", () => {
@@ -187,6 +207,62 @@ describe("coverage and unwatched routes on a small floor", () => {
   });
 });
 
+/** The levels the batch plays: its own input for the setup, varied as `runBatch` varies it (the owner's input leaves `vary` on). */
+function playedNights(manifest: LevelManifest, floor: FloorGraph, setup: OwnerSetup): Level[] {
+  const input = ownerBatchInput(manifest, floor, setup, [], BATCH_SEEDS);
+  expect(input.vary).toBeUndefined();
+  return BATCH_SEEDS.map((seed) => varyLevel(input.levelFor(seed), seed));
+}
+
+/**
+ * The two numbers read without `watchedPositions` or the measure's search:
+ * on each night the batch plays, the engine's own sighting check
+ * (`sightingsAt`: cameras and guards, no cleaners) on every node, in the order
+ * `act` plays a turn (the crew's half against this turn's cameras and the
+ * guards where they stand, then the guards' look once they move), for as long
+ * as an attempt lasts. Routes by a plain search of the floor's edges.
+ */
+function oracle(manifest: LevelManifest, floor: FloorGraph, setup: OwnerSetup) {
+  const levels = playedNights(manifest, floor, setup);
+  const seenBy = levels.map((level) => {
+    const { board, guards: start } = createRun(level);
+    const seen = new Set<string>();
+    let guards = start;
+    const look = (turn: number | null) => {
+      for (const n of level.floor.nodes) if (sightingsAt(board, { guards, cleaners: [] }, n.id, turn).length > 0) seen.add(n.id);
+    };
+    for (let turn = 0; turn < AUTOPLAY_MAX_TURNS; turn++) {
+      look(turn);
+      guards = moveGuards(board, guards);
+      look(null);
+    }
+    return seen;
+  });
+  const next = new Map<string, string[]>();
+  for (const e of floor.edges) {
+    next.set(e.a, [...(next.get(e.a) ?? []), e.b]);
+    next.set(e.b, [...(next.get(e.b) ?? []), e.a]);
+  }
+  const unseenPath = (seen: Set<string>, from: string, to: string) => {
+    const reached = new Set(seen.has(from) ? [] : [from]);
+    for (const at of reached) for (const n of next.get(at) ?? []) if (!seen.has(n)) reached.add(n);
+    return reached.has(to);
+  };
+  const open = levels.map((level, i) => {
+    const ways = boardOf(manifest, floor, setup, BATCH_SEEDS[i])!.entries.map((e) => e.nodeId);
+    return new Set(ways.filter((w) => unseenPath(seenBy[i], w, level.objective)));
+  });
+  const opened = new Set(open.flatMap((o) => [...o]));
+  return {
+    measure: {
+      watched: floor.nodes.filter((n) => seenBy.every((s) => s.has(n.id))).length,
+      unwatched: opened.size,
+      openNights: open.filter((o) => o.size > 0).length,
+    },
+    perNight: open.map((o) => o.size),
+  };
+}
+
 describe("on F1", () => {
   const manifest = LevelManifest.parse(structuredClone(cached));
   const floor = FIXTURE_FLOORS.F1;
@@ -195,11 +271,15 @@ describe("on F1", () => {
   const recordedFix = ChiefFix.parse(fixRecording.fix);
   const [night, moved] = demoSetups("F1").map((d) => d.setup);
 
-  /** The levels the batch plays for a setup, built by the batch's own input and `runBatch`'s variation. */
-  const played = (setup: typeof starting) => {
-    const input = ownerBatchInput(manifest, floor, setup, [], BATCH_SEEDS);
-    return BATCH_SEEDS.map((seed) => (input.vary === false ? input.levelFor(seed) : varyLevel(input.levelFor(seed), seed)));
-  };
+  const played = (setup: typeof starting) => playedNights(manifest, floor, setup);
+
+  it("matches an independent reading of what each night the batch plays watches, and which ways in it leaves open", () => {
+    for (const setup of [starting, night, moved]) {
+      const { measure: read, perNight } = oracle(manifest, floor, setup);
+      expect(measureSetup(manifest, floor, setup)).toMatchObject(read);
+      expect(perNight).toEqual(Array(10).fill(0));
+    }
+  });
 
   it("measures the nights the batch plays: every position it counts is watched on each of them", () => {
     for (const setup of [starting, night, moved]) {
@@ -216,12 +296,14 @@ describe("on F1", () => {
 
   it("measures the generated security over the batch's nights", () => {
     const m = measureSetup(manifest, floor, starting)!;
-    expect(m).toMatchObject({ positions: 30, watched: 14, coverage: 47, entries: 2, unwatched: 0 });
+    expect(m).toMatchObject({ positions: 30, watched: 14, coverage: 47, entries: 2, unwatched: 0, openNights: 0, nights: 10 });
     expect(coverageLine(m)).toBe("Coverage: 47% of the floor is watched at some point in every night the crew plays.");
-    expect(routesLine(m)).toBe("Unwatched routes: 0 of 2 ways in have a route to the files that no camera or guard ever sees.");
-    // 17 of 50 got out with no route unwatched: by timing, or seen and not caught.
+    expect(routesLine(m)).toBe(
+      "Unwatched routes: 0 of 2 ways in have, on any of the 10 nights the crew plays, a route to the files that no camera or guard sees that night.",
+    );
+    // 17 of 50 got out with no route unwatched on any night: by timing, or seen and not caught.
     expect(timingLine(m, 17)).toBe(
-      "Every route to the files crosses ground a camera or guard watches at some point, so the 17 attempts that got out did it by timing, or were seen and not caught.",
+      "On every night the crew plays, every route to the files crosses ground a camera or guard watches at some point that night, so the 17 attempts that got out did it by timing, or were seen and not caught.",
     );
     expect(timingLine(m, 1)).toContain("so the one attempt that got out did it by timing, or was seen and not caught.");
     expect(timingLine(m, 0)).toBeNull();
@@ -250,5 +332,33 @@ describe("on F1", () => {
   it("measures nothing for a setup with a problem: the batch would not play it", () => {
     const broken = extendRound(startRound(starting, "G1"), "G1", "mc-4");
     expect(measureSetup(manifest, floor, broken)).toBeNull();
+  });
+});
+
+describe("on F3, where some nights leave a way in open (issue 132)", () => {
+  const manifest = LevelManifest.parse(structuredClone(cachedF3));
+  const floor = FIXTURE_FLOORS.F3;
+  const starting = setupFromPlaced(placeLevel(manifest, floor, 1));
+
+  it("counts a way in that any night leaves open, and on how many nights", () => {
+    // On seeds 4, 7, 8 and 9 the dock way in has a route to the prototype that nothing watches that night.
+    const { measure: read, perNight } = oracle(manifest, floor, starting);
+    expect(perNight).toEqual([0, 0, 0, 1, 0, 0, 1, 1, 1, 0]);
+    const m = measureSetup(manifest, floor, starting)!;
+    expect(m).toMatchObject(read);
+    expect(m).toMatchObject({ positions: 24, watched: 11, coverage: 46, entries: 2, unwatched: 1, openNights: 4, nights: 10 });
+    expect(routesLine(m)).toBe(
+      "Unwatched routes: 1 of 2 ways in has, on 4 of the 10 nights the crew plays, a route to the prototype that no camera or guard sees that night.",
+    );
+    // So attempts that got out need not have timed anything: no timing line.
+    expect(timingLine(m, 40)).toBeNull();
+  });
+
+  it("finds that route on seed 4: from the service lift to the lab bench, watched by nothing all night", () => {
+    const night4 = playedNights(manifest, floor, starting)[3];
+    const seen = watchedPositions(night4).nodes;
+    const path = ["sl-car", "sl-door", "s1-nw", "s1-mid", "s1-ne", "nh-e", "lab-door", "lab-bench"];
+    expect(path.filter((id) => seen.has(id))).toEqual([]);
+    expect(night4.objective).toBe("lab-bench");
   });
 });

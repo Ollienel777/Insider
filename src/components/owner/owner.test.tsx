@@ -474,7 +474,9 @@ describe("50 attempts, the fix, and the rerun", () => {
       />,
     );
     // Under the count, the floor plan's two numbers, what they mean, and how 17 got out with no route unwatched.
-    expect(html).toContain("Unwatched routes: 0 of 2 ways in have a route to the files that no camera or guard ever sees.");
+    expect(html).toContain(
+      "Unwatched routes: 0 of 2 ways in have, on any of the 10 nights the crew plays, a route to the files that no camera or guard sees that night.",
+    );
     expect(html).toContain('data-testid="owner-measure-note"');
     expect(html).toContain("so the 17 attempts that got out did it by timing, or were seen and not caught.");
     expect(html).toContain("47% watched · 0/2 ways in unwatched");

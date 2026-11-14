@@ -80,4 +80,4 @@ export function MeasureChange({ from, to, testId }: { from: SetupMeasure; to: Se
 
 /** What the two numbers mean, in one line, and what they leave out. */
 export const MEASURE_NOTE = (m: Pick<SetupMeasure, "noun">) =>
-  `Coverage is the share of the floor a camera or guard watches at some point in every night the crew plays; an unwatched route is a way in with a path to the ${m.noun} that no camera or guard sees on any of those nights. From the floor plan alone, with no attempts played: it leaves out hearing and night cleaners, and being seen is not being caught.`;
+  `Coverage is the share of the floor a camera or guard watches at some point in every night the crew plays; a way in is unwatched if, on any of those nights, it has a route to the ${m.noun} that no camera or guard sees that night. From the floor plan alone, with no attempts played: it leaves out hearing and night cleaners, and being seen is not being caught.`;
