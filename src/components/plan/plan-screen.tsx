@@ -6,8 +6,11 @@ import { getMatterport } from "@/adapters/matterport";
 import { BoardView } from "@/components/run/board-view";
 import { saveCrewPlan } from "@/components/run/crew-plan-store";
 import { LensLegend, LensToggle, useLayerLens } from "@/components/run/layer-lens";
+import { loadRunHistory, postureOf } from "@/components/run/run-history";
 import { RUN_SEED, type RunBuilding } from "@/components/run/run-screen";
 import { BuildingScreen } from "@/components/shell/building-screen";
+import { buildingHref } from "@/lib/building-href";
+import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -55,6 +58,7 @@ export function PlanScreen({
   const [order, setOrder] = useState("");
   const [ask, setAsk] = useState<Ask>({ status: "idle" });
   const [lens, toggleLens] = useLayerLens();
+  const missionId = useMissionId();
   const pending = useRef<AbortController | null>(null);
   const orderId = useId();
 
@@ -70,13 +74,15 @@ export function PlanScreen({
       .then((floor) => {
         if (!live) return;
         if (!floor) return setLoad({ status: "no-floor" });
-        setLoad({ status: "ready", placed: placeLevel(manifest, floor, RUN_SEED), live: floor.source === "matterport" });
+        // The same posture the Run screen places with (#35), so the board the crew plans on is the one they run.
+        const posture = postureOf(loadRunHistory(building.id, undefined, missionId));
+        setLoad({ status: "ready", placed: placeLevel(manifest, floor, RUN_SEED, undefined, posture), live: floor.source === "matterport" });
       }, fail)
       .catch(fail);
     return () => {
       live = false;
     };
-  }, [building, manifest, heistMode]);
+  }, [building, manifest, heistMode, missionId]);
 
   useEffect(() => warmModel(warm), [warm]);
 
@@ -105,11 +111,11 @@ export function PlanScreen({
     pending.current = controller;
     setAsk({ status: "planning" });
     try {
-      const reply = await askCrew(crewRequest(building.id, text), { signal: controller.signal });
+      const reply = await askCrew(crewRequest(building.id, text, missionId), { signal: controller.signal });
       if (!controller.signal.aborted) {
         setAsk({ status: "answered", answer: reply });
         // The run follows the briefed plan (beat 4 into beat 5).
-        saveCrewPlan(building.id, { plan: reply.plan, recorded: reply.recorded });
+        saveCrewPlan(building.id, { plan: reply.plan, recorded: reply.recorded }, undefined, missionId);
       }
     } catch (error) {
       if (!controller.signal.aborted) setAsk({ status: "error", message: error instanceof Error ? error.message : String(error) });
@@ -152,9 +158,9 @@ export function PlanScreen({
                 testId="board-empty"
                 label="No floor yet"
                 title="This building's level isn't ready yet."
-                body="Only Halvorsen Tower has a board so far. Pick it on the map to plan the job."
+                body="Only the Los Angeles buildings have a board so far. Pick one on the map to plan the job."
                 action={
-                  <Link href="/" className={buttonVariants({ variant: "secondary" })}>
+                  <Link href="/map" className={buttonVariants({ variant: "secondary" })}>
                     Back to the map
                   </Link>
                 }
@@ -267,7 +273,7 @@ export function PlanScreen({
         </div>
       }
       action={
-        <Link href={`/b/${encodeURIComponent(building.id)}/run`} className={buttonVariants({ variant: "primary" })}>
+        <Link href={buildingHref(building.id, "run", missionId)} className={buttonVariants({ variant: "primary" })}>
           Start the run
         </Link>
       }

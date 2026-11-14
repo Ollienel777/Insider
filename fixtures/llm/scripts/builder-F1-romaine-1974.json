@@ -1,5 +1,5 @@
 {
-  "id": "builder-F1",
+  "id": "builder-F1-romaine-1974",
   "agents": [
     {
       "agent": "level-builder",
@@ -13,7 +13,7 @@
               "args": {
                 "todos": [
                   { "content": "Read F1's CoStar record and Vexcel aerial, and derive its security", "status": "in_progress" },
-                  { "content": "Pick the mission for its city and era, and write the briefing", "status": "pending" },
+                  { "content": "Write the briefing for mission romaine-1974", "status": "pending" },
                   { "content": "Write the level manifest", "status": "pending" }
                 ]
               }
@@ -33,14 +33,14 @@
           ]
         },
         {
-          "content": "Analog era, four guards, staged on floor 22. Handing that to the game master.",
+          "content": "Analog era, four guards, staged on floor 22. Handing that and the mission to the game master.",
           "toolCalls": [
             {
               "name": "write_todos",
               "args": {
                 "todos": [
                   { "content": "Read F1's CoStar record and Vexcel aerial, and derive its security", "status": "completed" },
-                  { "content": "Pick the mission for its city and era, and write the briefing", "status": "in_progress" },
+                  { "content": "Write the briefing for mission romaine-1974", "status": "in_progress" },
                   { "content": "Write the level manifest", "status": "pending" }
                 ]
               }
@@ -49,7 +49,7 @@
               "name": "task",
               "args": {
                 "subagent_type": "game-master",
-                "description": "Building F1, Halvorsen Tower, LA, built 1974. Analog era: key locks, sweeping analog CCTV, 2 cameras. Class A: 4 guards on tight rounds. Staged on floor 22, quiet suites 2202-2210. Entries: loading dock, roof hatch, garage ramp, main lobby, stair B exit. Pick the mission and write the briefing."
+                "description": "Building F1, Halvorsen Tower, LA, built 1974. Analog era: key locks, sweeping analog CCTV, 2 cameras. Class A: 4 guards on tight rounds. Staged on floor 22, quiet suites 2202-2210. Entries: loading dock, roof hatch, garage ramp, main lobby, stair B exit. Mission romaine-1974: write its briefing."
               }
             }
           ]
@@ -79,7 +79,7 @@
               "args": {
                 "todos": [
                   { "content": "Read F1's CoStar record and Vexcel aerial, and derive its security", "status": "completed" },
-                  { "content": "Pick the mission for its city and era, and write the briefing", "status": "completed" },
+                  { "content": "Write the briefing for mission romaine-1974", "status": "completed" },
                   { "content": "Write the level manifest", "status": "completed" }
                 ]
               }
@@ -117,11 +117,11 @@
       "systemIncludes": "You are the game master of the Level Builder.",
       "turns": [
         {
-          "content": "Checking the LA library.",
-          "toolCalls": [{ "name": "list_missions", "args": { "city": "LA" } }]
+          "content": "Reading the mission.",
+          "toolCalls": [{ "name": "get_mission", "args": { "missionId": "romaine-1974" } }]
         },
         {
-          "content": "Mission: romaine-1974, The Romaine Street Papers. It fits a 1974 analog building. Objective zone: Records room, take the files, then reach an exit. Briefing: Halvorsen Tower, Bunker Hill, a 1974 tower and the security to match: key locks, analog cameras that sweep, four guards on tight rounds. Floor 22 is mostly vacant, so suites 2202 to 2210 are dark and quiet tonight. Come in through the loading dock on the north face after deliveries stop, take the files from the records room, and leave the way you came or by the roof hatch. Nobody gets hurt and nothing leaves but paper. The security here is game fiction, drawn from the building's class and era."
+          "content": "Mission: romaine-1974, The Romaine Street Papers, staged in a 1974 analog building. Objective zone: Records room, take the files, then reach an exit. Briefing: Halvorsen Tower, Bunker Hill, a 1974 tower and the security to match: key locks, analog cameras that sweep, four guards on tight rounds. Floor 22 is mostly vacant, so suites 2202 to 2210 are dark and quiet tonight. Come in through the loading dock on the north face after deliveries stop, take the files from the records room, and leave the way you came or by the roof hatch. Nobody gets hurt and nothing leaves but paper. The security here is game fiction, drawn from the building's class and era."
         }
       ]
     }

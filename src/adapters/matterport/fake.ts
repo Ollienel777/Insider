@@ -9,7 +9,7 @@ import { FloorGraph } from "@/domain";
 import { FLOOR_FIXTURES } from "@/lib/fixture-floors";
 import type { MatterportAdapter } from "./types";
 
-/** Building id → its fixture floor. F2–F5 floors are later tickets. */
+/** Building id → its fixture floor. F4 and F5 floors are a later ticket (#40). */
 export const FIXTURE_FLOORS: Readonly<Record<string, FloorGraph>> = Object.freeze(
   Object.fromEntries(Object.entries(FLOOR_FIXTURES).map(([id, raw]) => [id, FloorGraph.parse(raw)])),
 );

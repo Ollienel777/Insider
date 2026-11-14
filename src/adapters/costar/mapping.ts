@@ -3,13 +3,26 @@
 // Open question Q1 (SPEC §11) is unanswered: which fields the event toolkit
 // exposes, and whether through OpenAPI or MCP. Every endpoint path, query
 // parameter, field name and response envelope below is therefore a guess
-// shaped like a typical REST property API. When Q1 is answered (#27), this is
+// shaped like a typical REST property API. When Q1 is answered (#2), this is
 // the file to change; live.ts only does transport.
 //
 // Taste rule (SPEC §1): no tenant field is ever requested. `REQUESTED_FIELDS`
 // is the complete list sent to CoStar, and a test checks it.
 import { z } from "zod";
 import { AvailableSpace, Building, type City } from "@/domain";
+
+/**
+ * The only kit files the casting search may read, relative to
+ * `COSTAR_KIT_DIR`: buildings, space for lease or sale, and the join to
+ * Matterport models. Unverified: the paths are SPEC §4.5's, never checked
+ * against a kit, and their fields are not pinned until the kit's `schemas/`
+ * are read (#2). Nothing reads them yet.
+ */
+export const KIT_FILES = {
+  properties: "data/commercial-property.jsonl",
+  listings: "data/commercial-listing-summary.jsonl",
+  scans: "commercial-properties.csv",
+} as const;
 
 /** Request paths, relative to `COSTAR_API_BASE`. */
 export const ENDPOINTS = {

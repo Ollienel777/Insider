@@ -9,32 +9,34 @@
 import { RunLog, type ChiefSource, type LateChief } from "@/domain";
 import { toRunLog, type RunState } from "@/engine";
 
-export const runLogKey = (buildingId: string) => `heist:run-log:${buildingId}`;
+/** Keyed by building and mission (issue 119), so two missions on one building never share a run log. */
+export const runLogKey = (buildingId: string, missionId?: string | null) =>
+  missionId ? `heist:run-log:${buildingId}:${missionId}` : `heist:run-log:${buildingId}`;
 
 /** The browser's storage, read inside the caller's `try`: the getter itself throws when site data is blocked. */
 const browserStorage = (): Storage | undefined => globalThis.localStorage;
 
-export function saveRunLog(log: RunLog, storage?: Pick<Storage, "setItem">): void {
+export function saveRunLog(log: RunLog, storage?: Pick<Storage, "setItem">, missionId?: string | null): void {
   try {
-    (storage ?? browserStorage())?.setItem(runLogKey(log.buildingId), JSON.stringify(log));
+    (storage ?? browserStorage())?.setItem(runLogKey(log.buildingId, missionId), JSON.stringify(log));
   } catch {
     // The run itself goes on; only the hand-off to the Debrief is lost.
   }
 }
 
 /** Forgets the stored log for `buildingId`: the board has no run on it, so the Debrief has none to show. */
-export function clearRunLog(buildingId: string, storage?: Pick<Storage, "removeItem">): void {
+export function clearRunLog(buildingId: string, storage?: Pick<Storage, "removeItem">, missionId?: string | null): void {
   try {
-    (storage ?? browserStorage())?.removeItem(runLogKey(buildingId));
+    (storage ?? browserStorage())?.removeItem(runLogKey(buildingId, missionId));
   } catch {
     // As with a save: the Run screen goes on without it.
   }
 }
 
 /** The stored log for `buildingId`, or null when there is none, it no longer parses, or storage is blocked. */
-export function loadRunLog(buildingId: string, storage?: Pick<Storage, "getItem">): RunLog | null {
+export function loadRunLog(buildingId: string, storage?: Pick<Storage, "getItem">, missionId?: string | null): RunLog | null {
   try {
-    const raw = (storage ?? browserStorage())?.getItem(runLogKey(buildingId));
+    const raw = (storage ?? browserStorage())?.getItem(runLogKey(buildingId, missionId));
     if (!raw) return null;
     const log = RunLog.safeParse(JSON.parse(raw));
     return log.success && log.data.buildingId === buildingId ? log.data : null;
@@ -48,8 +50,14 @@ export function loadRunLog(buildingId: string, storage?: Pick<Storage, "getItem"
  * Chief's orders gets their source (`sources`, by turn number). Orders applied
  * to a run still being played, that no turn's entry carries yet, ride along as
  * `pendingChief`; a Chief answer that landed after the run ended, as `lateChief`.
+ * `watchEntry` is the posture the level was placed with, so the Debrief places the same board.
  */
-export function runLogOf(run: RunState, sources: ReadonlyMap<number, ChiefSource>, late: LateChief | null = null): RunLog {
+export function runLogOf(
+  run: RunState,
+  sources: ReadonlyMap<number, ChiefSource>,
+  late: LateChief | null = null,
+  watchEntry?: string,
+): RunLog {
   const log = toRunLog(run);
   const source = (turn: number) => (sources.has(turn) ? { chiefSource: sources.get(turn) } : {});
   return {
@@ -57,5 +65,6 @@ export function runLogOf(run: RunState, sources: ReadonlyMap<number, ChiefSource
     turns: log.turns.map((t) => (t.chief ? { ...t, ...source(t.turn) } : t)),
     ...(run.status === "playing" && run.chief ? { pendingChief: { turn: run.turn, chief: run.chief, ...source(run.turn) } } : {}),
     ...(late ? { lateChief: late } : {}),
+    ...(watchEntry ? { watchEntry } : {}),
   };
 }

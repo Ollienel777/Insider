@@ -92,6 +92,14 @@ export const RunLog = z
     lateChief: LateChief.optional(),
     /** The Chief's orders applied to a run still being played, before a turn's entry carries them. */
     pendingChief: PendingChief.optional(),
+    /** The way in a guard stood watch on, from earlier runs (#35): the placer's posture. Absent: the default posture. */
+    watchEntry: Id.optional(),
+    /**
+     * The engine rules the run was played under (engine/log.ts `RUN_RULES`).
+     * Absent from logs written before #94, whose engine applied the Chief's
+     * orders at Calm too; from rules 2 on, orders given at Calm are dropped.
+     */
+    rules: z.int().positive().optional(),
   })
   .superRefine((log, ctx) => {
     log.turns.forEach((t, i) => {
