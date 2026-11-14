@@ -86,6 +86,8 @@ export function applyFix(level: Level, change: FixChange): AppliedFix {
       if (Math.abs(by) > FIX_RETIME_MAX) return refuse(`a round moves at most ${FIX_RETIME_MAX} turns either way`);
       const round = roundOf(board, guard.patrol);
       if (round.length < 2) return refuse(`guard "${guard.id}" holds a post and walks no round`);
+      // A whole number of rounds puts it back where it started: the change would change nothing.
+      if (by % round.length === 0) return refuse(`guard "${guard.id}" walks a round of ${round.length} turns, so ${by} turns changes nothing`);
       // Later by `by` turns: it starts `by` nodes back along its round.
       const at = (((-by % round.length) + round.length) % round.length);
       const patrol = [...round.slice(at), ...round.slice(0, at)];

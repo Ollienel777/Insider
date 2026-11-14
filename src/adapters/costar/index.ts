@@ -10,6 +10,7 @@
 // removes a page (PR #72's note).
 import { syncDemoEpoch } from "@/lib/demo-epoch";
 import { withFallback, type Fallback } from "@/lib/fallback";
+import { showcaseIds } from "@/lib/showcase";
 import { missingForLive, serviceModes, type ServiceMode } from "@/lib/mode";
 import { resetServerSlot, serverSlot } from "@/lib/server-breakers";
 import type { Building } from "@/domain";
@@ -66,6 +67,21 @@ export function knownToFixtures(live: CoStarAdapter, fixtures: CoStarAdapter): C
   };
 }
 
+/**
+ * `live`, showing only the showcase's buildings when the server has a list
+ * (`SHOWCASE_LEVELS`, #93): any other kit building is neither listed nor
+ * found by id. With no list (`ids` null), every kit building shows.
+ */
+export function onlyShowcase(live: CoStarAdapter, ids: Set<string> | null): CoStarAdapter {
+  if (!ids) return live;
+  return {
+    listBuildings: async (city) => (await live.listBuildings(city)).filter((b) => ids.has(b.id)),
+    getBuilding: async (id) => (ids.has(id) ? live.getBuilding(id) : null),
+    getAvailableSpace: async (id) => (ids.has(id) ? live.getAvailableSpace(id) : null),
+    searchInventory: (filters) => live.searchInventory(filters),
+  };
+}
+
 /** `fixtures`, except that a live building already in memory still opens by id. */
 function withCached(fixtures: CoStarAdapter, cached: CoStarSelection["cached"]): CoStarAdapter {
   if (!cached) return fixtures;
@@ -100,7 +116,7 @@ export function getCoStar(options: { forced?: boolean } = {}): CoStarSelection {
   if (!slot.selected) {
     const chosen = selectCoStar(process.env);
     if (chosen.mode === "live") {
-      const guarded = withFallback(knownToFixtures(chosen.adapter, fake), fake, slot.breaker);
+      const guarded = withFallback(knownToFixtures(onlyShowcase(chosen.adapter, showcaseIds()), fake), fake, slot.breaker);
       // The search stays outside the breaker while it has no live
       // implementation (#2): it answers from the fixtures anyway, and a
       // caller's malformed filter is not a CoStar failure.
