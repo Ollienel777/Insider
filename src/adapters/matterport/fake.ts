@@ -1,18 +1,18 @@
 // The fixture-backed Matterport adapter: hand-authored floors, one per
-// building, read from fixtures/floors/. Each file is parsed against
+// building, listed in src/lib/fixture-floors.ts. Each file is parsed against
 // `FloorGraph` when this module loads, so a malformed fixture fails at
 // startup, not on the board.
 //
 // The floors are fiction: no Matterport scan data is involved, so SPEC §4.5's
 // terms stance (browser only, never persisted) does not apply to them.
 import { FloorGraph } from "@/domain";
-import f1 from "../../../fixtures/floors/F1.json";
+import { FLOOR_FIXTURES } from "@/lib/fixture-floors";
 import type { MatterportAdapter } from "./types";
 
 /** Building id → its fixture floor. F2–F5 floors are later tickets. */
-export const FIXTURE_FLOORS: Readonly<Record<string, FloorGraph>> = Object.freeze({
-  F1: FloorGraph.parse(f1),
-});
+export const FIXTURE_FLOORS: Readonly<Record<string, FloorGraph>> = Object.freeze(
+  Object.fromEntries(Object.entries(FLOOR_FIXTURES).map(([id, raw]) => [id, FloorGraph.parse(raw)])),
+);
 
 /**
  * Named places on F1's floor 22 that the demo path relies on (SPEC §2, beats
