@@ -382,12 +382,12 @@ export const PLAYING = "appphase.playing";
 function oncePlaying(sdk: InsideSdk, signal: AbortSignal): Promise<InsideSdk> {
   return new Promise((resolve, reject) => {
     let done = false;
-    let subscription: { cancel(): void } | undefined;
+    const subscriptions: { cancel(): void }[] = [];
     const finish = () => {
       done = true;
       signal.removeEventListener("abort", onAbort);
       // The SDK may call back before `subscribe` returns.
-      queueMicrotask(() => subscription?.cancel());
+      queueMicrotask(() => subscriptions.forEach((s) => s.cancel()));
     };
     const onAbort = () => {
       if (done) return;
@@ -397,11 +397,13 @@ function oncePlaying(sdk: InsideSdk, signal: AbortSignal): Promise<InsideSdk> {
     };
     if (signal.aborted) return onAbort();
     signal.addEventListener("abort", onAbort, { once: true });
-    subscription = sdk.App.state.subscribe((state) => {
-      if (done || state.phase !== PLAYING) return;
-      finish();
-      resolve(sdk);
-    });
+    subscriptions.push(
+      sdk.App.state.subscribe((state) => {
+        if (done || state.phase !== PLAYING) return;
+        finish();
+        resolve(sdk);
+      }),
+    );
   });
 }
 
