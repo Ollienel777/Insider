@@ -79,7 +79,11 @@ describe("validatePlan on the demo order (SPEC §2 beat 4)", () => {
 });
 
 describe("the advised route, played end to end on F1 through the engine", () => {
-  it("stays unseen through the records door to the files and out, on every seed", () => {
+  // Places, validates and plays all 24 seeds, which is the claim: 0.5 s
+  // alone, 2.0 s pinned to one busy CPU, past the 5 s default with two gates
+  // on the 2-vCPU VM (#85). Fewer seeds would test less, so it gets a budget:
+  // 30 s, several times the worst seen.
+  it("stays unseen through the records door to the files and out, on every seed", { timeout: 30_000 }, () => {
     for (const seed of SEEDS) {
       const p = place(seed);
       const advice = validatePlan(p, reply("dock-wait")).advice!;

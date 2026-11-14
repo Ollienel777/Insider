@@ -10,9 +10,20 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Aerial, type AerialEntry, type Building, type ViewDir } from "@/domain";
 import { cityName } from "@/lib/cities";
-import { noteResponse } from "@/lib/demo-status";
+import { fallbackOf } from "@/lib/fallback";
+import { noteResponse, reportLive } from "@/lib/demo-status";
 import { cn } from "@/lib/utils";
-import { buildMassing, entryFace, FRAME, stepView, VIEW_LABEL, VIEW_ORDER, type Marker, type MassingView } from "./massing";
+import {
+  buildImageViews,
+  buildMassing,
+  entryFace,
+  FRAME,
+  VIEW_LABEL,
+  VIEW_ORDER,
+  type ImageView,
+  type Marker,
+  type MassingView,
+} from "./massing";
 import { MassingSvg } from "./massing-view";
 
 export type ScoutBuilding = Pick<
@@ -20,10 +31,33 @@ export type ScoutBuilding = Pick<
   "id" | "name" | "city" | "neighbourhood" | "yearBuilt" | "buildingClass" | "stories"
 >;
 
-type Load =
+export type Load =
   | { status: "loading" }
-  | { status: "ready"; aerial: Aerial; live: boolean }
+  /** `failed`: the live views whose photo didn't load in the browser. */
+  | { status: "ready"; aerial: Aerial; live: boolean; failed?: readonly ViewDir[] }
   | { status: "error"; message: string };
+
+/** What a live photo's alt text calls each view. */
+const PHOTO_ALT: Record<ViewDir, string> = {
+  N: "Vexcel aerial, north face",
+  E: "Vexcel aerial, east face",
+  S: "Vexcel aerial, south face",
+  W: "Vexcel aerial, west face",
+  ortho: "Vexcel aerial, straight down",
+};
+
+/**
+ * The canvas's views: live imagery as photos, a fixture aerial as the massing
+ * render. When every photo has failed to load, the massing is drawn instead,
+ * so the Scout never shows only blank frames.
+ */
+export function scoutViews(aerial: Aerial, stories: number, failed: readonly ViewDir[] = []): CanvasView[] {
+  const photos = buildImageViews(aerial);
+  if (photos.length > 0 && !photos.every((v) => failed.includes(v.dir))) {
+    return photos.map((v) => ({ kind: "image", ...v }));
+  }
+  return buildMassing(aerial, stories).map((v) => ({ kind: "massing", ...v }));
+}
 
 /** Horizontal drag, in CSS pixels, that turns the view one step. */
 const DRAG_STEP = 72;
@@ -34,10 +68,12 @@ const DRAG_STEP = 72;
  * in as markers; the panel holds the CoStar facts, the entries and the
  * selected entry's note, and "Plan the job".
  */
-export function ScoutScreen({ building }: { building: ScoutBuilding }) {
-  const [load, setLoad] = useState<Load>({ status: "loading" });
+export function ScoutScreen({ building, initialLoad }: { building: ScoutBuilding; initialLoad?: Load }) {
+  // `initialLoad` is for tests: the state the screen renders before any fetch.
+  const [load, setLoad] = useState<Load>(initialLoad ?? { status: "loading" });
   const [attempt, setAttempt] = useState(0);
-  const [view, setView] = useState<ViewDir>("N");
+  // `null` until the presenter picks one: then the default view is used.
+  const [chosen, setView] = useState<ViewDir | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const missionId = useMissionId();
 
@@ -53,13 +89,28 @@ export function ScoutScreen({ building }: { building: ScoutBuilding }) {
     return () => controller.abort();
   }, [building.id, attempt]);
 
-  const views = useMemo(
-    () => (load.status === "ready" ? buildMassing(load.aerial, building.stories) : null),
+  const views = useMemo<CanvasView[] | null>(
+    () => (load.status === "ready" ? scoutViews(load.aerial, building.stories, load.failed) : null),
     [load, building.stories],
   );
   const ready = load.status === "ready";
+  // Live Vexcel may lack a direction; the chips, keys and drag skip it.
+  const available = useMemo(() => (views ? VIEW_ORDER.filter((d) => views.some((v) => v.dir === d)) : VIEW_ORDER), [views]);
+  // Live photos open straight down, where the entries are pinned; the massing on its north face.
+  const opening = views?.[0]?.kind === "image" && available.includes("ortho") ? "ortho" : available[0];
+  const view = chosen && available.includes(chosen) ? chosen : opening;
 
-  const turn = useCallback((by: 1 | -1) => setView((v) => stepView(v, by)), []);
+  const turn = useCallback(
+    (by: 1 | -1) => {
+      const i = Math.max(0, available.indexOf(view));
+      setView(available[(i + by + available.length) % available.length]);
+    },
+    [available, view],
+  );
+
+  const photoFailed = useCallback((dir: ViewDir) => {
+    setLoad((l) => (l.status === "ready" && !l.failed?.includes(dir) ? { ...l, failed: [...(l.failed ?? []), dir] } : l));
+  }, []);
 
   useEffect(() => {
     if (!ready) return;
@@ -99,7 +150,7 @@ export function ScoutScreen({ building }: { building: ScoutBuilding }) {
           <div className="flex h-14 shrink-0 items-center gap-3 px-6">
             <span className="flex items-center gap-2 label-caps text-text-2">
               <LayerDot layer="vexcel" decorative />
-              {load.status === "ready" && load.live ? "Vexcel · aerial" : <>Vexcel · massing<span className="max-md:hidden"> from fixtures</span></>}
+              {load.status === "ready" && load.live && views?.[0]?.kind === "image" ? "Vexcel · aerial" : <>Vexcel · massing<span className="max-md:hidden"> from fixtures</span></>}
             </span>
             <span aria-hidden className="h-4 w-px bg-border" />
             <span data-testid="view-caption" aria-live="polite" className="text-sm text-text-1">
@@ -119,6 +170,7 @@ export function ScoutScreen({ building }: { building: ScoutBuilding }) {
                 selectedId={selectedId}
                 onSelect={setSelectedId}
                 onTurn={turn}
+                onPhotoFailed={photoFailed}
               />
             )}
           </FrameArea>
@@ -130,7 +182,7 @@ export function ScoutScreen({ building }: { building: ScoutBuilding }) {
                   key={dir}
                   dir={dir}
                   active={dir === view}
-                  disabled={!ready}
+                  disabled={!ready || !available.includes(dir)}
                   onClick={() => setView(dir)}
                   className={dir === "ortho" ? "ml-3" : undefined}
                 />
@@ -172,7 +224,11 @@ export async function fetchAerial(id: string, signal: AbortSignal): Promise<Load
   }
   const parsed = Aerial.safeParse(body.aerial);
   if (!parsed.success) return { status: "error", message: "The aerial came back in a shape the Scout can't draw." };
-  return { status: "ready", aerial: parsed.data, live: body.mode === "live" };
+  // Live only when the photos came back: a building Vexcel has no coverage for is drawn as its massing.
+  const live = body.mode === "live" && parsed.data.source === "vexcel";
+  // An earlier building's massing switched the chip to fixtures; these photos switch it back.
+  if (live && !fallbackOf(body)) reportLive("vexcel");
+  return { status: "ready", aerial: parsed.data, live };
 }
 
 /**
@@ -197,12 +253,50 @@ function FrameArea({ children }: { children: ReactNode }) {
   );
 }
 
+/** One view on the canvas: a live photo, or the fixture massing's render. */
+type CanvasView = ({ kind: "image" } & ImageView) | ({ kind: "massing" } & MassingView);
+
+/**
+ * A live Vexcel image, fitted whole into the frame. It is fetched through the
+ * image route and drawn with a plain <img>: next/image's optimiser would
+ * write a copy to disk, and the imagery is never stored (SPEC §10).
+ */
+function AerialPhoto({ view, onFailed }: { view: ImageView; onFailed: (dir: ViewDir) => void }) {
+  const [failed, setFailed] = useState(false);
+  const { box } = view;
+  return (
+    <div
+      data-testid="aerial-photo"
+      className="absolute overflow-hidden rounded-md bg-surface-1"
+      style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` }}
+    >
+      {failed ? (
+        <p className="flex size-full items-center justify-center text-sm text-text-2">This view didn&apos;t load.</p>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element -- see above: no optimiser, no copy on disk
+        <img
+          src={view.url}
+          alt={PHOTO_ALT[view.dir]}
+          draggable={false}
+          decoding="async"
+          onError={() => {
+            setFailed(true);
+            onFailed(view.dir);
+          }}
+          className="size-full object-cover"
+        />
+      )}
+    </div>
+  );
+}
+
 interface CanvasProps {
-  views: MassingView[];
+  views: CanvasView[];
   current: ViewDir;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onTurn: (by: 1 | -1) => void;
+  onPhotoFailed: (dir: ViewDir) => void;
 }
 
 /**
@@ -210,7 +304,7 @@ interface CanvasProps {
  * transparent and inert, so changing view is a `--t-base` cross-fade (instant
  * under reduced motion, by the global rule in globals.css).
  */
-function AerialCanvas({ views, current, selectedId, onSelect, onTurn }: CanvasProps) {
+function AerialCanvas({ views, current, selectedId, onSelect, onTurn, onPhotoFailed }: CanvasProps) {
   const drag = useRef<{ id: number; x: number } | null>(null);
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -256,7 +350,7 @@ function AerialCanvas({ views, current, selectedId, onSelect, onTurn }: CanvasPr
               active ? "opacity-100" : "pointer-events-none opacity-0",
             )}
           >
-            <MassingSvg view={v} />
+            {v.kind === "image" ? <AerialPhoto view={v} onFailed={onPhotoFailed} /> : <MassingSvg view={v} />}
             <Leaders markers={v.markers} selectedId={selectedId} />
             {v.markers.map((marker) => (
               <EntryMarker
@@ -521,7 +615,7 @@ export function ScoutPanel({ building, load, selected, onPick, onRetry }: PanelP
               <li key={entry.id}>
                 <EntryRow
                   entry={entry}
-                  face={entryFace(entry, aerial!.heightM)}
+                  face={entryFace(entry, aerial!.heightM, aerial!.footprint)}
                   selected={entry.id === selected?.id}
                   onPick={onPick}
                 />
@@ -535,7 +629,7 @@ export function ScoutPanel({ building, load, selected, onPick, onRetry }: PanelP
         {selected && aerial ? (
           <>
             <p className="label-caps text-text-3">
-              {selected.label} · {entryFace(selected, aerial.heightM)}
+              {selected.label} · {entryFace(selected, aerial.heightM, aerial.footprint)}
             </p>
             <p className="mt-2 text-base text-text-1">{selected.note}</p>
           </>

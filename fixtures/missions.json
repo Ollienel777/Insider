@@ -117,8 +117,8 @@
     "type": "prevent",
     "title": "The Night Desk",
     "inspiredBy": null,
-    "objective": "Keep the prototype in the lab until the morning shift arrives",
-    "exitCondition": "Hold the lab until dawn, or catch the crew before they reach an exit",
+    "objective": "Get the prototype out of the lab before the hired crew reaches it",
+    "exitCondition": "Leave by the service lift or the east stair with the prototype before the alarm reaches Lockdown",
     "casting": [
       {
         "kind": "city",

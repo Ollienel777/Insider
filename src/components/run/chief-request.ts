@@ -5,7 +5,7 @@
 // fixture floor, and by an opaque `area-N` on a scanned (Matterport) floor,
 // so no scan id or label leaves the browser. Orders come back in those ids
 // and are mapped to the engine's before the engine clamps them.
-import { ChiefRequest, type ChiefAnswer } from "@/agents/chief/request";
+import { ChiefRequest, strayHistoryIds, type ChiefAnswer, type ChiefHistory } from "@/agents/chief/request";
 import { ChiefOrders } from "@/domain";
 import { compileBoard, zoneOf, type AlarmEvent, type RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
@@ -70,6 +70,7 @@ export function chiefZones(placed: PlacedLevel): ChiefZones {
  * The request for one alarm event: exactly the `ChiefRequest` fields, parsed so nothing more can ride along.
  * Ids and names are clamped to the request's limits, and past 64 zones it keeps the ones a guard or the
  * last sighting names first. Throws a plain message when it still fails its schema.
+ * `history` is the summary of earlier runs (run-history.ts), for the run's first event only.
  */
 export function chiefRequest(
   /** The building, or the building and the mission whose level is on the board (issue 119). */
@@ -78,6 +79,7 @@ export function chiefRequest(
   zones: ChiefZones,
   run: RunState,
   event: AlarmEvent,
+  history: ChiefHistory | null = null,
 ): ChiefRequest {
   const { buildingId, missionId } = typeof level === "string" ? { buildingId: level, missionId: null } : level;
   const chiefId = (engineId: string) => zones.toChief.get(engineId) ?? clampId(engineId);
@@ -92,6 +94,9 @@ export function chiefRequest(
     zones.zones.length <= MAX_ZONES
       ? zones.zones
       : [...zones.zones.filter((z) => named.has(z.id)), ...zones.zones.filter((z) => !named.has(z.id))].slice(0, MAX_ZONES);
+  // A summary naming an id this request does not carry would fail the parse: the run goes on without it.
+  const fits =
+    history && strayHistoryIds(history, new Set(offered.map((z) => z.id)), new Set(guards.map((g) => g.id))).length === 0;
   const parsed = ChiefRequest.safeParse({
     buildingId,
     ...(missionId && { missionId }),
@@ -104,6 +109,7 @@ export function chiefRequest(
     lastKnownZone,
     guards,
     zones: offered,
+    ...(history && fits && { history }),
   });
   if (!parsed.success) {
     const fields = [...new Set(parsed.error.issues.map((i) => String(i.path[0] ?? "request")))].join(", ");
