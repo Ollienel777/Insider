@@ -12,6 +12,7 @@ import { LayerDot } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Building, LevelManifest, RunLog } from "@/domain";
+import { placeOrFixture } from "@/components/run/scan-fallback";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
 import { debriefOf, LATE_NOTE, notStarted, UnreadableLog, type Debrief, type Decision } from "./debrief";
@@ -83,13 +84,19 @@ export function DebriefScreen({
     const matterport = getMatterport(heistMode);
     matterport.adapter
       .loadFloor(building)
-      .then((floor) => {
+      .then(async (floor) => {
         if (!live) return;
         if (!floor) return setLoad({ status: "no-floor" });
         try {
-          const placed = placeLevel(manifest, floor, log.seed, undefined, { watchEntry: log.watchEntry });
-          setLoad({ status: "ready", placed, debrief: debriefOf(placed, log) });
+          // A scan the level can't be placed on was played on the fixture floor (as on Run): replay it there.
+          const ready = await placeOrFixture(building, floor, (on) => {
+            const placed = placeLevel(manifest, on, log.seed, undefined, { watchEntry: log.watchEntry });
+            return { placed, debrief: debriefOf(placed, log) };
+          });
+          if (!live) return;
+          setLoad(ready ? { status: "ready", ...ready } : { status: "no-floor" });
         } catch (error) {
+          if (!live) return;
           if (error instanceof UnreadableLog) setLoad({ status: "empty", reason: "unreadable" });
           else fail(error);
         }

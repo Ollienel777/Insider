@@ -15,17 +15,25 @@
 // Live, a failed load or a building with no `matterportModelId` gets the
 // fixture floor instead of no board (SPEC §2: fake mode is every beat's
 // fallback). A failure keeps Matterport on fixtures for the page, and each
-// fallback is reported to the mode chip and toasted once.
+// fallback is reported to the mode chip and toasted once. The connection is
+// bounded (live.ts), so a player that never loads costs one timeout.
+//
+// For a local live test, `NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE` points a
+// building at a model id without committing it (kit terms: no model id from
+// the kit enters the repo). It is honoured outside production builds only;
+// see `modelOverride`.
 "use client";
 
 import { isForced, reportFallback, reportLive } from "@/lib/demo-status";
 import { fallbackMessage, newFallback, type Fallback } from "@/lib/fallback";
 import { missingForLive, serviceModes, type ServiceMode } from "@/lib/mode";
 import { createFakeMatterport } from "./fake";
-import { createLiveMatterport } from "./live";
+import { connectInsideView, createLiveMatterport, type InsideView } from "./live";
 import type { MatterportAdapter } from "./types";
+import type { Building } from "@/domain";
 
 export type { MatterportAdapter } from "./types";
+export type { InsideView } from "./live";
 export { F1_DEMO } from "./fake";
 
 type Env = Record<string, string | undefined>;
@@ -36,6 +44,30 @@ export interface MatterportSelection {
   mode: ServiceMode;
   /** One line saying why, for logs and the mode chip's tooltip. */
   reason: string;
+}
+
+/**
+ * The dev-only model id override, as building id → model id. The variable
+ * holds either a bare model id, which points every building at it, or
+ * `buildingId=modelId` pairs separated by commas. Empty in a production build
+ * (`NODE_ENV=production`), so `next build` for the demo ignores it.
+ */
+export function modelOverride(env: Env): { all?: string; byBuilding: Record<string, string> } {
+  const byBuilding: Record<string, string> = {};
+  const value = env.NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE?.trim();
+  if (!value || env.NODE_ENV === "production") return { byBuilding };
+  if (!value.includes("=")) return { all: value, byBuilding };
+  for (const pair of value.split(",")) {
+    const [building, model] = pair.split("=").map((part) => part.trim());
+    if (building && model) byBuilding[building] = model;
+  }
+  return { byBuilding };
+}
+
+/** The model id the live adapter loads for `building`: the override's, else the building's own. */
+export function scanModelId(building: Pick<Building, "id" | "matterportModelId">, env: Env = matterportEnv()): string | undefined {
+  const override = modelOverride(env);
+  return (Object.hasOwn(override.byBuilding, building.id) ? override.byBuilding[building.id] : override.all) ?? building.matterportModelId;
 }
 
 export function selectMatterport(env: Env): MatterportSelection {
@@ -50,7 +82,11 @@ export function selectMatterport(env: Env): MatterportSelection {
       reason: "Matterport: fixtures (live mode, but NEXT_PUBLIC_MATTERPORT_SDK_KEY not set)",
     };
   }
-  return { adapter: createLiveMatterport({ sdkKey }), mode: "live", reason: "Matterport: live" };
+  const live = createLiveMatterport({ sdkKey });
+  const adapter: MatterportAdapter = {
+    loadFloor: (building) => live.loadFloor({ ...building, matterportModelId: scanModelId(building, env) }),
+  };
+  return { adapter, mode: "live", reason: "Matterport: live" };
 }
 
 /**
@@ -61,6 +97,10 @@ export function matterportEnv(): Env {
   return {
     NEXT_PUBLIC_MATTERPORT_MODE: process.env.NEXT_PUBLIC_MATTERPORT_MODE,
     NEXT_PUBLIC_MATTERPORT_SDK_KEY: process.env.NEXT_PUBLIC_MATTERPORT_SDK_KEY,
+    // Read only outside production, so a production bundle never holds the override's value.
+    NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE:
+      process.env.NODE_ENV !== "production" ? process.env.NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE : undefined,
+    NODE_ENV: process.env.NODE_ENV,
   };
 }
 
@@ -70,6 +110,23 @@ export function matterportEnv(): Env {
  */
 export function noScanFallback(buildingId: string): Fallback {
   return { service: "matterport", id: `matterport-no-scan-${buildingId}`, message: fallbackMessage("matterport", "no-scan") };
+}
+
+/**
+ * The fallback for a scan the level can't be placed on (no entry, no room for
+ * the objective): the board goes to the fixture floor. Once per building.
+ */
+export function unplaceableFallback(buildingId: string): Fallback {
+  return {
+    service: "matterport",
+    id: `matterport-unplaceable-${buildingId}`,
+    message: fallbackMessage("matterport", "unplaceable"),
+  };
+}
+
+/** The building's fixture floor, for a scan the level can't be placed on. */
+export function fixtureFloor(building: Pick<Building, "id" | "matterportModelId">) {
+  return fake.loadFloor(building);
 }
 
 /**
@@ -102,9 +159,9 @@ export function withFixtureFloor(
           return floor;
         }
         // A building that has a scan, but no floor came back: a failure, not "no scan".
-        throw new Error(`no floor for model ${building.matterportModelId}`);
+        throw new Error("no floor came back for the building's scan");
       } catch (error) {
-        failed = newFallback("matterport", "failed");
+        failed = newFallback("matterport", (error as { name?: string } | null)?.name === "TimeoutError" ? "timeout" : "failed");
         console.warn(`Matterport: fixtures from now on (live load failed: ${(error as Error)?.message ?? String(error)})`);
         onFallback(failed);
         return fake.loadFloor(building);
@@ -131,9 +188,38 @@ export function getMatterport(heistMode?: string): MatterportSelection {
     return { adapter: fake, mode: "fake", reason: "Matterport: fixtures (forced in demo settings)" };
   }
   if (!selected) {
-    const chosen = selectMatterport({ HEIST_MODE: heistMode, ...matterportEnv() });
-    selected = chosen.mode === "live" ? { ...chosen, adapter: withFixtureFloor(chosen.adapter, fake, reportFallback, () => reportLive("matterport")) } : chosen;
+    const env = { HEIST_MODE: heistMode, ...matterportEnv() };
+    const chosen = selectMatterport(env);
+    if (chosen.mode === "live") {
+      const guarded = withFixtureFloor(chosen.adapter, fake, reportFallback, () => reportLive("matterport"));
+      // The override counts as the building's scan, so an overridden fixture building goes live.
+      const adapter: MatterportAdapter = {
+        loadFloor: (building) => guarded.loadFloor({ ...building, matterportModelId: scanModelId(building, env) }),
+      };
+      selected = { ...chosen, adapter };
+    } else {
+      selected = chosen;
+    }
     console.info(selected.reason);
   }
   return selected;
+}
+
+/**
+ * The Inside view for `building`, when this page plays on a live scan of it:
+ * opens a visible Showcase player in `parent` (SPEC §4.5: it only moves the
+ * camera). Null when Matterport is not live or the building has no scan, so
+ * the caller shows no panel; the Run screen also shows it only on a floor
+ * that came from the scan.
+ */
+export function insideViewFor(
+  building: Pick<Building, "id" | "matterportModelId">,
+  heistMode?: string,
+): ((parent: HTMLElement, signal?: AbortSignal) => Promise<InsideView>) | null {
+  if (getMatterport(heistMode).mode !== "live") return null;
+  const env = matterportEnv();
+  const sdkKey = env.NEXT_PUBLIC_MATTERPORT_SDK_KEY;
+  const modelId = scanModelId(building, env);
+  if (!sdkKey || !modelId) return null;
+  return (parent, signal) => connectInsideView(parent, modelId, sdkKey, undefined, undefined, signal);
 }
