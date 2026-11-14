@@ -107,7 +107,8 @@ test("the elements carry their tints: the dock post both Vexcel and CoStar, a ro
   const board = page.getByTestId("run-board");
   const strokes = (key: string) =>
     board
-      .locator(`[data-lens="${key}"] [data-testid="lens-mark"]`)
+      // A camera's marks are drawn above the pawns, apart from its housing (`data-lens-marks-of`).
+      .locator(`[data-lens="${key}"] [data-testid="lens-mark"], [data-lens-marks-of="${key}"] [data-testid="lens-mark"]`)
       .evaluateAll((els) =>
         els.map((el) => [el.getAttribute("data-layer"), getComputedStyle(el.querySelector("rect")!).stroke]),
       );

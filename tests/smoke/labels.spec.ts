@@ -60,6 +60,33 @@ function collisions(page: Page, board: string): Promise<string[]> {
   });
 }
 
+/**
+ * Each lens chip that a pawn's body covers, as "LAYER chip of KEY × PIECE": a chip that overlaps a
+ * pawn must be painted after it, or the pawn hides it (the player under C2's chip at the wow beat).
+ */
+function chipsUnderPawns(page: Page, board: string): Promise<string[]> {
+  return page.getByTestId(board).evaluate((svg) => {
+    const hits: string[] = [];
+    const pawns = [...svg.querySelectorAll<SVGGElement>('[data-testid$="-piece"][data-node]')];
+    for (const chip of svg.querySelectorAll<SVGGElement>('[data-testid="lens-mark"]')) {
+      const c = chip.querySelector("rect")!.getBoundingClientRect();
+      const owner = chip.closest<SVGElement>("[data-lens], [data-lens-marks-of]");
+      const key = owner?.dataset.lens ?? owner?.dataset.lensMarksOf ?? "?";
+      for (const pawn of pawns) {
+        if (pawn.contains(chip)) continue;
+        // The body: the pawn's own drawing (its shadow, figure and head), not its id or marks.
+        const body = [...pawn.children].find((el) => el.tagName === "g" && el.querySelector("circle"));
+        if (!body) continue;
+        const b = body.getBoundingClientRect();
+        const overlaps = c.left < b.right && b.left < c.right && c.top < b.bottom && b.top < c.bottom;
+        const paintedBefore = (pawn.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_PRECEDING) !== 0;
+        if (overlaps && paintedBefore) hits.push(`${chip.dataset.layer} chip of ${key} × ${pawn.dataset.id}`);
+      }
+    }
+    return hits;
+  });
+}
+
 /** How far, in board units, a plan mark's glyphs may stand from its own node (`GHOST_REACH`). */
 const GHOST_REACH = 30;
 
@@ -190,4 +217,6 @@ test("with the Layer lens on, no label or lens mark covers another on Plan and R
   await expect(page.getByTestId("chief-order")).toHaveCount(4);
   await settled(page, "run-board");
   expect(await collisions(page, "run-board")).toEqual([]);
+  // The player stands below C2 here: C2's chip, the layer behind the trip, is drawn over the pawn.
+  expect(await chipsUnderPawns(page, "run-board")).toEqual([]);
 });

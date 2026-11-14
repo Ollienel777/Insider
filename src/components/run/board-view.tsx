@@ -525,6 +525,7 @@ export function BoardView({
             live={camera.id === tripped}
             selected={why === whyKey.camera(camera.id)}
             layers={layersOf(whyKey.camera(camera.id))}
+            marks={false}
           />
         ))}
 
@@ -557,6 +558,24 @@ export function BoardView({
               />
             ),
           )}
+
+        {/* The cameras' lens marks, above the pawns: a pawn below a camera (the player under C2 at the
+            wow beat) would otherwise hide the chip that names the trip's layer. */}
+        {placed.cameras.map((camera) => {
+          const layers = layersOf(whyKey.camera(camera.id));
+          if (!layers || layers.length === 0) return null;
+          const p = cameraAt(camera.id);
+          return (
+            <g
+              key={camera.id}
+              data-lens-marks-of={whyKey.camera(camera.id)}
+              transform={`translate(${round(p.x)}, ${round(p.y)})`}
+              aria-hidden
+            >
+              <LayerMarks layers={layers} at={cameraMarksAt(layers.length)} />
+            </g>
+          );
+        })}
         </g>
 
         {ghost ? <GhostPath ghost={ghost} at={at} spots={ghostLabels} /> : null}
@@ -1012,7 +1031,8 @@ function fixedLensFootprints(placed: PlacedLevel, cameras: RunState["board"]["ca
     if (n === 0) continue;
     const m = cameraMount(floor, camera.parts.flat());
     const p = project(m.x, m.y);
-    marks.push(markRow(p.x + 24 + (n - 1) * 4, p.y - 28, n));
+    const at = cameraMarksAt(n);
+    marks.push(markRow(p.x + at.x, p.y + at.y, n));
     const grow = (n - 1) * 4 + 1;
     rings.push(box(p.x - 20 - grow, p.y - 34 - grow, p.x + 20 + grow, p.y - 10 + grow));
   }
@@ -1046,14 +1066,20 @@ export function fixedLensRings(placed: PlacedLevel, cameras: RunState["board"]["
   return fixedLensFootprints(placed, cameras).rings;
 }
 
+/** Where a camera's `n` lens marks start, from its mount (`CameraPiece`, `fixedLensFootprints`). */
+function cameraMarksAt(n: number): Point {
+  return { x: 24 + (n - 1) * 4, y: -28 };
+}
+
 /** How far above its mount a camera's lens sits, in board units (see `CameraPiece`). */
 const LENS_RISE = 14;
 
 /**
  * A watcher's cone: a translucent wedge from the guard's node, or the
  * camera's lens, over the nodes it sees this turn (DESIGN.md: `--n-500` at
- * 20%). On the turn a watcher raised the alarm, a `--danger` wedge also runs
- * from it to where it saw the player.
+ * 20%). On the turn a watcher raised the alarm, its whole cone turns `--danger`
+ * and flashes (`.cone-flash`), and a stronger `--danger` wedge runs from it to
+ * where it saw the player.
  */
 function ConeShape({ cone, at, sighting }: { cone: Cone; at: (id: string) => Point; sighting: Point | null }) {
   const mount = project(cone.origin.x, cone.origin.y);
@@ -1239,6 +1265,7 @@ export function CameraPiece({
   live,
   selected = false,
   layers,
+  marks = true,
 }: {
   id: string;
   at: Point;
@@ -1246,6 +1273,8 @@ export function CameraPiece({
   selected?: boolean;
   /** With the Layer lens on: its layers, as an outline round the housing and letter marks beside it. */
   layers?: readonly LensLayer[];
+  /** Whether it draws its own letter marks; the Run and Plan board draws them above the pawns instead. */
+  marks?: boolean;
 }) {
   return (
     <g
@@ -1291,7 +1320,7 @@ export function CameraPiece({
       <text x="20" y="-34" className="font-mono" fontSize="12" fontWeight="500" style={{ fill: "var(--text-1)" }}>
         {id}
       </text>
-      {layers && layers.length > 0 ? <LayerMarks layers={layers} at={{ x: 24 + (layers.length - 1) * 4, y: -28 }} /> : null}
+      {marks && layers && layers.length > 0 ? <LayerMarks layers={layers} at={cameraMarksAt(layers.length)} /> : null}
     </g>
   );
 }
