@@ -9,16 +9,16 @@ interface LevelUnavailableProps {
   name: string;
   /** The screen that could not open: its visual's name and the label above the heading. */
   step: "Plan" | "Run" | "Debrief";
-  /** The error's message: a schema failure, bad JSON or a read error. */
-  detail?: string;
 }
 
 /**
  * Plan, Run or Debrief on a cached level that fails its check (as the Dossier
  * shows it): what happened, the command that fixes it, and the way on. A
  * missing level is each screen's own empty state; this is the error state.
+ * The error itself (a Zod issue list, or a server path) stays off the screen:
+ * the page logs it to the server console.
  */
-export function LevelUnavailable({ buildingId, missionId, name, step, detail }: LevelUnavailableProps) {
+export function LevelUnavailable({ buildingId, missionId, name, step }: LevelUnavailableProps) {
   return (
     <BuildingScreen
       visualLabel={step}
@@ -35,7 +35,6 @@ export function LevelUnavailable({ buildingId, missionId, name, step, detail }: 
           <code className="w-fit rounded-sm border border-border bg-surface-2 px-3 py-2 font-mono text-sm text-text-1">
             {`npm run build:levels -- ${buildingId}:${missionId}`}
           </code>
-          {detail ? <p className="font-mono text-sm break-words text-text-2">{detail}</p> : null}
         </div>
       }
       panel={
@@ -45,7 +44,7 @@ export function LevelUnavailable({ buildingId, missionId, name, step, detail }: 
         </div>
       }
       action={
-        <Link href="/" className={buttonVariants({ variant: "primary" })}>
+        <Link href="/map" className={buttonVariants({ variant: "primary" })}>
           Pick another building
         </Link>
       }

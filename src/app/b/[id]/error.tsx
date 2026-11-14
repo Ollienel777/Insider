@@ -40,7 +40,7 @@ export default function BuildingError({ error, reset }: { error: Error & { diges
         </div>
       }
       action={
-        <Link href="/" className={buttonVariants({ variant: "primary" })}>
+        <Link href="/map" className={buttonVariants({ variant: "primary" })}>
           Pick another building
         </Link>
       }

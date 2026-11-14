@@ -25,8 +25,8 @@ export default async function RunPage({
   try {
     cached = await readCachedLevel(building.id, missionId);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return <LevelUnavailable buildingId={building.id} missionId={missionId} name={building.name} step="Run" detail={message} />;
+    console.error(`[level] ${building.id}:${missionId} failed its check`, error);
+    return <LevelUnavailable buildingId={building.id} missionId={missionId} name={building.name} step="Run" />;
   }
   return (
     <RunScreen
