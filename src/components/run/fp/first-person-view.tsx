@@ -8,7 +8,7 @@
 //
 // Two stages, one game (issue 118). On a fixture floor the stage is ours: the
 // walls of world.ts, drawn by scene.ts. On a floor from a live scan it is the
-// scan itself, drawn by the free-walk renderer (spike/mesh/engine.ts) from the
+// scan itself, drawn by its own renderer (spike/mesh/scan-view.ts) from the
 // scan's mesh and panoramas, and walked over the mesh (scan-ground.ts). On
 // either, the same parts play:
 //   controller.ts  keys and mouse → what the player asks for
@@ -27,10 +27,11 @@ import {
   WebGLRenderer,
   type Object3D,
 } from "three";
-import type { ScanWalk } from "@/app/spike/mesh/engine";
+import type { ScanView } from "@/app/spike/mesh/scan-view";
 import { act, type Action, type RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
 import { objectiveLabel, objectiveNoun } from "@/lib/objective-noun";
+import { viewBob } from "@/lib/scan-mesh/movement";
 import { cn } from "@/lib/utils";
 import { ALARM_STYLE } from "../alarm-banner";
 import { cameraMount, choices, roomName } from "../board";
@@ -80,6 +81,9 @@ const SCAN_PHASE: Record<string, string> = {
   mesh: "Downloading the building",
   building: "Building the walkable floor",
 };
+
+/** The longest the walker waits at the start of a scan for the picture around it, ms (the sandbox's wait). */
+const SCAN_WAIT_MS = 10_000;
 
 /** What the view does each frame on either stage: walk, then draw the labels and the HUD over the picture. */
 interface Session {
@@ -383,18 +387,21 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
     };
 
     /**
-     * A live scan: the free-walk renderer draws the scan's mesh and panoramas,
-     * walked by this view (its `drive` hook), with the actors in its scene. The
-     * renderer fetches the scan's assets into this tab's memory only.
+     * A live scan: the scan's own renderer (spike/mesh/scan-view.ts) draws its
+     * mesh and panoramas from the pose this view's walker gives it each frame,
+     * with the actors in its scene. It fetches the scan's assets into this
+     * tab's memory only.
      */
     const scanStage = (modelId: string): (() => void) => {
       let stopped = false;
-      let engine: ScanWalk | null = null;
+      let view: ScanView | null = null;
       let session: Session | null = null;
       let ground: ScanGround | null = null;
-      let canWalk = false;
       let feet: number | null = null;
+      let walkFrom: number | null = null;
+      let canWalk = false;
       let loadKey = "";
+      let raf = 0;
       const pieces = new Group();
       pieces.name = "run-pieces";
       // The scan's picture needs no light; the guards, cameras and doors do.
@@ -403,91 +410,105 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
       slant.position.set(-0.55, 1, -0.3);
       pieces.add(slant);
 
-      const begin = (on: ScanWalk) => {
-        const walkable = on.walkable;
-        if (session || !walkable) return;
-        const join = joinScan(placed.level.floor, on.scanPanos());
+      const loading = (next: ScanLoad) => {
+        const key = JSON.stringify(next);
+        if (key === loadKey) return;
+        loadKey = key;
+        setScanLoad(next);
+      };
+
+      /** The board stood on the scan's mesh, once both are in; null (and the board back) if they don't line up. */
+      const begin = (on: ScanView): boolean => {
+        const tree = on.meshTree;
+        if (!tree) return false;
+        const join = joinScan(placed.level.floor, on.scanPoints());
         // Counts only: no id or position of the scan is logged.
         console.info(
           `First person on the scan: ${join.matched} of ${join.total} board positions are panoramas, at most ${join.worstM.toFixed(3)} m apart`,
         );
         const refusal = joinRefusal(join);
         if (refusal) {
-          unavailable(refusal);
-          return;
+          unavailable(`${refusal} You're on the board.`);
+          return false;
         }
-        ground = scanGround(placed.level.floor, meshSolid(walkable), join.heights);
+        ground = scanGround(placed.level.floor, meshSolid(tree), join.heights);
         // Just off the scan's floor, so the discs and rings are not lost in its lumps.
         pieces.position.y = ground.floorY + 0.07;
         session = startSession(ground, (object) => pieces.add(object), { liftY: pieces.position.y, canWalk: () => canWalk });
-        on.addToScene(pieces);
+        on.scene.add(pieces);
+        return true;
       };
 
-      import("@/app/spike/mesh/engine")
-        .then(({ ScanWalk: Walk }) => {
+      const fit = () => {
+        const { clientWidth: w, clientHeight: h } = host;
+        if (w > 0 && h > 0) view?.resize(w, h);
+      };
+      const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit);
+
+      let last = performance.now();
+      const frame = (now: number) => {
+        raf = requestAnimationFrame(frame);
+        const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
+        last = now;
+        if (!view || !session || !ground) return;
+        const walker = session.walker();
+        // The walker waits for the picture around the start, as the sandbox does, or ten seconds at most.
+        if (!canWalk) {
+          const eye: [number, number, number] = [walker.pos.x, ground.feetAt(walker.pos) + FP.eyeM, walker.pos.y];
+          walkFrom ??= now;
+          if (view.settled(eye) || now - walkFrom > SCAN_WAIT_MS) canWalk = true;
+          const counts = view.counts();
+          loading(canWalk ? null : { line: "Loading the building around you", held: counts?.held ?? 0, total: counts?.total ?? 0 });
+        }
+        session.advance(now, dt);
+        const moved = session.walker();
+        // The feet settle on the floor's height, as the sandbox's do; a jump (a restart) lands at once.
+        const floor = ground.feetAt(moved.pos);
+        feet = feet === null || Math.abs(floor - feet) > 0.5 ? floor : feet + (floor - feet) * (1 - Math.exp(-14 * dt));
+        const { controller } = session;
+        const speed = Math.hypot(moved.vel.x, moved.vel.y);
+        view.setPose(
+          {
+            x: moved.pos.x,
+            y: feet + FP.eyeM + viewBob(moved.walked, speed, still),
+            z: moved.pos.y,
+            // The renderer's yaw is zero down -z and grows to the left; this view's is zero east (+x) and grows to the right.
+            yaw: -controller.yaw - Math.PI / 2,
+            pitch: controller.pitch,
+          },
+          [moved.vel.x, moved.vel.y],
+        );
+        view.render(dt);
+        session.overlay(view.camera);
+      };
+
+      import("@/app/spike/mesh/scan-view")
+        .then(({ ScanView: View }) => {
           if (stopped) return;
-          const made: ScanWalk = new Walk(target, {
+          const made: ScanView = new View(target, {
             modelId,
-            faces: "2k",
-            mesh: "50k",
-            detail: true,
-            reducedMotion: still,
-            debug: false,
-            onHud(hud) {
-              if (hud.phase === "error" || hud.phase === "no-mesh") {
-                unavailable(`${hud.message ?? "The scan didn't load."} You're on the board.`);
-                return;
-              }
-              if (hud.phase === "ready") begin(made);
-              canWalk = hud.canMove;
-              const { held, total } = hud.building;
-              const next: ScanLoad =
-                hud.phase !== "ready"
-                  ? { line: SCAN_PHASE[hud.phase] ?? "Loading the building", held: 0, total: 0 }
-                  : !hud.canMove
-                    ? { line: "Loading the building around you", held, total }
-                    : null;
-              const key = JSON.stringify(next);
-              if (key !== loadKey) {
-                loadKey = key;
-                setScanLoad(next);
-              }
-            },
-            drive(dt) {
-              if (!session || !ground) return null;
-              session.advance(performance.now(), dt);
-              const walker = session.walker();
-              // The feet settle on the floor's height, as the sandbox's do; a jump (a restart) lands at once.
-              const floor = ground.feetAt(walker.pos);
-              feet = feet === null || Math.abs(floor - feet) > 0.5 ? floor : feet + (floor - feet) * (1 - Math.exp(-14 * dt));
-              const { controller } = session;
-              return {
-                x: walker.pos.x,
-                feetY: feet,
-                z: walker.pos.y,
-                vx: walker.vel.x,
-                vz: walker.vel.y,
-                walked: walker.walked,
-                // The renderer's yaw is zero down -z and grows to the left; this view's is zero east (+x) and grows to the right.
-                yaw: -controller.yaw - Math.PI / 2,
-                pitch: controller.pitch,
-              };
-            },
-            onFrame(camera) {
-              session?.overlay(camera);
+            onChange() {
+              const { phase, message } = made.status();
+              if (phase === "error" || phase === "no-mesh") unavailable(`${message ?? "The scan didn't load."} You're on the board.`);
+              else if (phase !== "ready") loading({ line: SCAN_PHASE[phase] ?? "Loading the building", held: 0, total: 0 });
             },
           });
-          engine = made;
+          view = made;
+          fit();
+          observer?.observe(host);
+          void made.ready.then((ok) => {
+            if (stopped || !ok) return;
+            if (begin(made)) raf = requestAnimationFrame(frame);
+          });
         })
         .catch(() => unavailable("This browser couldn't start the scan's 3D view. You're on the board."));
 
-      const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => engine?.resize());
-      observer?.observe(host);
       return () => {
         stopped = true;
+        cancelAnimationFrame(raf);
         observer?.disconnect();
         session?.dispose();
-        engine?.dispose();
+        view?.dispose();
       };
     };
 

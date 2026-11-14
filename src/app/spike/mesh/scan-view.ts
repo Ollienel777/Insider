@@ -222,6 +222,11 @@ export class ScanView {
     return (this.manifest?.panos ?? []).map((p) => p.position);
   }
 
+  /** Each scan position's id, camera and floor spot: for a game to stand its board's nodes on (the Run screen's first person). */
+  scanPoints(): { id: string; position: Vec3; floor: Vec3 | null }[] {
+    return (this.manifest?.panos ?? []).map((p) => ({ id: p.id, position: p.position, floor: p.floor }));
+  }
+
   /** Where the feet stand under scan position `index`, or null. */
   feetAt(index: number): Vec3 | null {
     const pano = this.manifest?.panos[index];
