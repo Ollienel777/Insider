@@ -43,6 +43,7 @@ import { loadCrewPlan, type StoredCrewPlan } from "./crew-plan-store";
 import { InsideViewPanel } from "./inside-view";
 import { clearRunLog, keepRunLogInMemory, runLogOf, saveRunLog } from "./run-log-store";
 import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postureOf, runRecordOf, type RunRecord } from "./run-history";
+import { MuteToggle, useRunSound } from "./run-sound";
 import { placeOrFixture } from "./scan-fallback";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
@@ -103,6 +104,7 @@ export function RunScreen({
   const [storedRuns, setStoredRuns] = useState(0);
   const [run, setRun] = useState<RunState | null>(null);
   const [status, setStatus] = useState<string>("");
+  const [muted, toggleMute] = useRunSound(run);
   const missionId = useMissionId();
   /** Walking or sprinting (issue 121): `S` switches; any action, and Restart, go back to walking. */
   const [mode, setMode] = useState<Mode>("walk");
@@ -491,6 +493,9 @@ export function RunScreen({
                 lens={lens && open}
               />
             ) : null}
+            {/* Only over a board with a run on it: not over the loading or error state. Below md the
+                Live mode switch takes the top-right corner, so the mute button sits under it there. */}
+            {run ? <MuteToggle muted={muted} onToggle={toggleMute} className="absolute top-2 right-8 max-md:top-16 max-md:right-6" /> : null}
             {run ? <LiveControls mode={playMode} onChange={setPlayMode} clock={clock} /> : null}
           </div>
       }
