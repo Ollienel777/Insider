@@ -25,7 +25,8 @@ import {
   guardOrders,
   planSteps,
   roomName,
-  sprintChoices,
+  toggleSprint,
+  WALK_STATUS,
   zoneName,
   type Choice,
   type Mode,
@@ -44,10 +45,6 @@ export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
 /** The seed every run of the demo uses, so a rehearsed run plays the same way in front of judges. */
 export const RUN_SEED = 7;
-
-/** The status line when sprint mode comes on, and when it goes off again (issue 121). */
-export const SPRINT_STATUS = "Sprinting: pick a number two rooms on. It's loud, and guards nearby may hear. S or Esc to walk.";
-export const WALK_STATUS = "Walking again. Pick a number to move.";
 
 /** Where the run's log is kept for the Debrief (SPEC §4.1: run logs live in localStorage). */
 export { runLogKey } from "./run-log-store";
@@ -344,18 +341,14 @@ export function RunScreen({
       const owner = target?.closest("button, a, [role=button]");
       const ownsKey = owner && (!owner.hasAttribute("data-why-target") || owner.hasAttribute("data-tabbed"));
       if ((event.key === " " || event.key === "Enter") && ownsKey) return;
-      if ((event.key === "s" || event.key === "S") && run!.status === "playing") {
-        event.preventDefault();
-        if (mode === "sprint") {
-          setMode("walk");
-          setStatus(WALK_STATUS);
-        } else if (sprintChoices(run!).length === 0) {
-          setStatus("Nowhere to sprint from here: nothing is two open hops away.");
-        } else {
-          setMode("sprint");
-          setStatus(SPRINT_STATUS);
+      if (event.key === "s" || event.key === "S") {
+        const next = toggleSprint(run!, mode);
+        if (next) {
+          event.preventDefault();
+          setMode(next.mode);
+          setStatus(next.status);
+          return;
         }
-        return;
       }
       // Esc with a Why card open only closes the card. Either listener can run first: the card's
       // marks the event taken (caught above), and if this one runs first the card is still there.
