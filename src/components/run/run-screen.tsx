@@ -4,7 +4,6 @@ import Link from "next/link";
 import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getMatterport, insideViewFor } from "@/adapters/matterport";
-import { BuildingScreen } from "@/components/shell/building-screen";
 import { buildingHref } from "@/lib/building-href";
 import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
@@ -35,6 +34,8 @@ import {
 import { BoardView } from "./board-view";
 import { LensLegend, LensToggle, useLayerLens } from "./layer-lens";
 import { LiveControls } from "./live-controls";
+import { panelsOpen, RunLayout, useDetails } from "./live-layout";
+import { usePlayHud } from "./play-hud";
 import { usePlayMode } from "./play-mode";
 import { useTurnClock } from "./turn-clock";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
@@ -43,6 +44,7 @@ import { loadCrewPlan, type StoredCrewPlan } from "./crew-plan-store";
 import { InsideViewPanel } from "./inside-view";
 import { clearRunLog, keepRunLogInMemory, runLogOf, saveRunLog } from "./run-log-store";
 import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postureOf, runRecordOf, type RunRecord } from "./run-history";
+import { MuteToggle, useRunSound } from "./run-sound";
 import { placeOrFixture } from "./scan-fallback";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
@@ -90,6 +92,8 @@ type Load =
  * it, and the engine plays it. Keys: 1–9 a neighbour, W wait, Space take,
  * S sprint (the numbers then mark nodes two open hops away; S or Esc walks).
  * In Live (issue 99) a turn the player lets run out is played by the clock; P pauses it.
+ * Live also changes what shows (issue 100, live-layout.tsx): the objective line, the danger
+ * meter and the radio line around the board, and the rest closed until Details (D) opens it.
  */
 export function RunScreen({
   building,
@@ -110,7 +114,7 @@ export function RunScreen({
   const [storedRuns, setStoredRuns] = useState(0);
   const [run, setRun] = useState<RunState | null>(null);
   const [status, setStatus] = useState<string>("");
-  const [lens, toggleLens] = useLayerLens();
+  const [muted, toggleMute] = useRunSound(run);
   const missionId = useMissionId();
   /** Walking or sprinting (issue 121): `S` switches; any action, and Restart, go back to walking. */
   const [mode, setMode] = useState<Mode>("walk");
@@ -356,6 +360,22 @@ export function RunScreen({
   const revealed = useChiefStream(chief);
   const hidden = useMemo(() => hiddenRoutes(chief, revealed), [chief, revealed]);
 
+  // Live's layout (issue 100): the HUD around the board, and everything else behind Details.
+  const [details, toggleDetails] = useDetails(playMode === "live");
+  const open = panelsOpen(playMode, details);
+  // The lens is put away with the bar: its key does nothing until Details opens it again.
+  const [lens, toggleLens] = useLayerLens(open);
+  const hud = usePlayHud({
+    live: playMode === "live",
+    placed,
+    run,
+    mission: manifest?.mission ?? null,
+    crewPlan,
+    chief,
+    revealed,
+    status,
+  });
+
   useEffect(() => {
     if (!run) return;
     function onKey(event: KeyboardEvent) {
@@ -403,12 +423,20 @@ export function RunScreen({
   // A kit building's label, once the board is placed: it names the scan only when the board stands on it.
   const placedOn = load.status === "ready" ? placedFloor(load.floor.source) : null;
   const label = placedOn ? recordLabel(source, placedOn) : null;
+  /** The board is still being set up. A board that will not come (no floor, an error) is not loading. */
+  const settingUp = load.status === "loading" || (load.status === "ready" && !run);
 
   return (
-    <BuildingScreen
-      visualLabel="Run board"
-      visual={
-        <div className="absolute inset-0 flex flex-col">
+    <RunLayout
+      mode={playMode}
+      details={details}
+      onDetails={toggleDetails}
+      hud={hud}
+      loading={settingUp}
+      onTake={() => play({ kind: "take" })}
+      onRestart={restart}
+      canRestart={run !== null && run.turn > 0}
+      bar={
           <div className="flex h-14 shrink-0 items-center gap-3 px-6">
             <span className="flex items-center gap-2 label-caps text-text-2">
               <LayerDot layer="matterport" decorative />
@@ -452,7 +480,8 @@ export function RunScreen({
               </Button>
             </div>
           </div>
-
+      }
+      board={
           <div className="relative min-h-0 flex-1">
             {load.status === "loading" ? (
               <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
@@ -492,15 +521,18 @@ export function RunScreen({
                 choices={options}
                 onChoose={(c: Choice) => play(c.action)}
                 hiddenRoutes={hidden}
-                lens={lens}
+                lens={lens && open}
                 source={source}
               />
             ) : null}
+            {/* Only over a board with a run on it: not over the loading or error state. Below md the
+                Live mode switch takes the top-right corner, so the mute button sits under it there. */}
+            {run ? <MuteToggle muted={muted} onToggle={toggleMute} className="absolute top-2 right-8 max-md:top-16 max-md:right-6" /> : null}
             {run ? <LiveControls mode={playMode} onChange={setPlayMode} clock={clock} /> : null}
           </div>
-
-          {lens && run && placed ? <LensLegend placed={placed} locked={run.locked} /> : null}
-
+      }
+      legend={lens && run && placed ? <LensLegend placed={placed} locked={run.locked} /> : null}
+      footer={
           <div className="flex h-16 shrink-0 items-center justify-between gap-6 px-6">
             <p data-testid="run-status" aria-live="polite" className="min-w-0 text-sm text-text-1 md:truncate">
               {status}
@@ -524,7 +556,6 @@ export function RunScreen({
               </span>
             </div>
           </div>
-        </div>
       }
       panel={
         <RunPanel
@@ -532,7 +563,7 @@ export function RunScreen({
           placed={placed}
           run={run}
           crewPlan={crewPlan}
-          loading={load.status === "loading" || (load.status === "ready" && !run)}
+          loading={settingUp}
           awaiting={hidden}
           inside={openInside && run ? <InsideViewPanel open={openInside} sweepId={run.playerNode} /> : null}
           chief={<ChiefPanel state={chief} revealed={revealed} zoneName={(id) => (placed ? zoneName(placed, id) : id)} onRetry={retryChief} />}
