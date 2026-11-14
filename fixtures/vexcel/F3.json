@@ -1,0 +1,74 @@
+{
+  "views": [
+    { "dir": "N", "width": 1600, "height": 1000 },
+    { "dir": "E", "width": 1600, "height": 1000 },
+    { "dir": "S", "width": 1600, "height": 1000 },
+    { "dir": "W", "width": 1600, "height": 1000 },
+    { "dir": "ortho", "width": 1200, "height": 1200 }
+  ],
+  "entries": [
+    {
+      "id": "lobby-S",
+      "kind": "lobby",
+      "label": "Wilshire lobby",
+      "view": "S",
+      "at": {
+        "lngLat": [-118.2751302, 34.0591734],
+        "elevM": 0
+      },
+      "note": "On Wilshire: the lobby and the café share one entrance. Facial-recognition turnstiles past the desk."
+    },
+    {
+      "id": "garage-W",
+      "kind": "garage",
+      "label": "Garage ramp",
+      "view": "W",
+      "at": {
+        "lngLat": [-118.2754056, 34.0593187],
+        "elevM": 0
+      },
+      "note": "A podium garage with plate readers at the gate; residents and tenants share it after 7 pm."
+    },
+    {
+      "id": "dock-N",
+      "kind": "dock",
+      "label": "Loading dock",
+      "view": "N",
+      "at": {
+        "lngLat": [-118.2750473, 34.0595215],
+        "elevM": 0
+      },
+      "note": "Off the rear alley: one bay with a roll-up door on a timed lock, open 7 am to 3 pm."
+    },
+    {
+      "id": "bike-E",
+      "kind": "service",
+      "label": "Bike room door",
+      "view": "E",
+      "at": {
+        "lngLat": [-118.2748314, 34.0593526],
+        "elevM": 0
+      },
+      "note": "A side door to the bike room. Badge only, and a camera over the frame."
+    },
+    {
+      "id": "roof",
+      "kind": "roof",
+      "label": "Roof deck",
+      "view": "ortho",
+      "at": {
+        "lngLat": [-118.2750159, 34.0593648],
+        "elevM": 123
+      },
+      "note": "The tenant roof deck. Its door to the lift lobby locks at 10 pm."
+    }
+  ],
+  "footprint": [
+    [-118.275443, 34.059427],
+    [-118.2749015, 34.0595563],
+    [-118.274797, 34.059253],
+    [-118.2753385, 34.0591237]
+  ],
+  "heightM": 123,
+  "source": "fixture"
+}

@@ -1,0 +1,78 @@
+{
+  "views": [
+    { "dir": "N", "width": 1600, "height": 1000 },
+    { "dir": "E", "width": 1600, "height": 1000 },
+    { "dir": "S", "width": 1600, "height": 1000 },
+    { "dir": "W", "width": 1600, "height": 1000 },
+    { "dir": "ortho", "width": 1200, "height": 1200 }
+  ],
+  "entries": [
+    {
+      "id": "dock-N",
+      "kind": "dock",
+      "label": "Loading dock",
+      "view": "N",
+      "at": {
+        "lngLat": [-118.2527725, 34.0524854],
+        "elevM": 0
+      },
+      "note": "North face, off the service alley: the only truck-height door. Deliveries stop at 6 pm and the bay goes dark."
+    },
+    {
+      "id": "garage-E",
+      "kind": "garage",
+      "label": "Garage ramp",
+      "view": "E",
+      "at": {
+        "lngLat": [-118.2525992, 34.0521789],
+        "elevM": 0
+      },
+      "note": "East face: the ramp down to three levels of parking under the plaza. The gate arm lifts for any badged car."
+    },
+    {
+      "id": "lobby-S",
+      "kind": "lobby",
+      "label": "Main lobby",
+      "view": "S",
+      "at": {
+        "lngLat": [-118.25287, 34.0520346],
+        "elevM": 0
+      },
+      "note": "South face, on the plaza: revolving doors, a desk staffed around the clock, turnstiles to the lift banks."
+    },
+    {
+      "id": "exit-W",
+      "kind": "service",
+      "label": "Stair A exit",
+      "view": "W",
+      "at": {
+        "lngLat": [-118.2531408, 34.0523141],
+        "elevM": 0
+      },
+      "note": "West face, onto Hope Street: a fire exit from stair A. Alarmed, and it opens outward only."
+    },
+    {
+      "id": "roof",
+      "kind": "roof",
+      "label": "Roof hatch",
+      "view": "ortho",
+      "at": {
+        "lngLat": [-118.2529566, 34.0523231],
+        "elevM": 160
+      },
+      "note": "Beside the cooling towers. The hatch drops into the stair B core above the 42nd floor."
+    }
+  ],
+  "footprint": [
+    [-118.2530974, 34.0524854],
+    [-118.2526426, 34.0524854],
+    [-118.2525992, 34.0524493],
+    [-118.2525992, 34.0520707],
+    [-118.2526426, 34.0520346],
+    [-118.2530974, 34.0520346],
+    [-118.2531408, 34.0520707],
+    [-118.2531408, 34.0524493]
+  ],
+  "heightM": 160,
+  "source": "fixture"
+}

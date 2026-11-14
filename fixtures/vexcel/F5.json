@@ -1,0 +1,74 @@
+{
+  "views": [
+    { "dir": "N", "width": 1600, "height": 1000 },
+    { "dir": "E", "width": 1600, "height": 1000 },
+    { "dir": "S", "width": 1600, "height": 1000 },
+    { "dir": "W", "width": 1600, "height": 1000 },
+    { "dir": "ortho", "width": 1200, "height": 1200 }
+  ],
+  "entries": [
+    {
+      "id": "lobby-S",
+      "kind": "lobby",
+      "label": "Front lobby",
+      "view": "S",
+      "at": {
+        "lngLat": [-95.56137, 29.7360537],
+        "elevM": 0
+      },
+      "note": "Facing the surface lot: a glass vestibule with a day-shift receptionist and no guard after 6 pm."
+    },
+    {
+      "id": "dock-E",
+      "kind": "dock",
+      "label": "Loading door",
+      "view": "E",
+      "at": {
+        "lngLat": [-95.5609979, 29.7362161],
+        "elevM": 0
+      },
+      "note": "A single grade-level roll-up door by the dumpsters. The lock is a padlock."
+    },
+    {
+      "id": "garage-N",
+      "kind": "garage",
+      "label": "Parking deck walkway",
+      "view": "N",
+      "at": {
+        "lngLat": [-95.5615561, 29.7363063],
+        "elevM": 8.4
+      },
+      "note": "A covered walkway from the second level of the parking deck behind the building. Badge reader, no camera."
+    },
+    {
+      "id": "exit-W",
+      "kind": "service",
+      "label": "Rear stair exit",
+      "view": "W",
+      "at": {
+        "lngLat": [-95.5617421, 29.7361529],
+        "elevM": 0
+      },
+      "note": "A stair door onto the back lot. Propped open on smoke breaks."
+    },
+    {
+      "id": "roof",
+      "kind": "roof",
+      "label": "Roof hatch",
+      "view": "ortho",
+      "at": {
+        "lngLat": [-95.5611633, 29.73618],
+        "elevM": 25
+      },
+      "note": "A ladder hatch beside the rooftop units, reached from the sixth-floor janitor's closet."
+    }
+  ],
+  "footprint": [
+    [-95.5617421, 29.7363063],
+    [-95.5609979, 29.7363063],
+    [-95.5609979, 29.7360537],
+    [-95.5617421, 29.7360537]
+  ],
+  "heightM": 25,
+  "source": "fixture"
+}

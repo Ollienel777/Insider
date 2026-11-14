@@ -309,6 +309,62 @@ describe("LevelManifest", () => {
   });
 });
 
+describe("Aerial as a massing (keyless fake mode)", () => {
+  // No image anywhere: the Scout screen renders footprint and heightM, and the
+  // entries are anchored in space.
+  const massing = {
+    ...aerial,
+    views: [
+      { dir: "N", width: 1600, height: 1000 },
+      { dir: "ortho", width: 1200, height: 1200 },
+    ],
+    entries: [
+      {
+        id: "dock-N",
+        kind: "dock",
+        label: "Loading dock",
+        view: "N",
+        at: { lngLat: [-118.2537, 34.0525], elevM: 0 },
+        note: "The only truck-height door",
+      },
+      {
+        id: "roof",
+        kind: "roof",
+        label: "Roof hatch",
+        view: "ortho",
+        at: { lngLat: [-118.2536, 34.0522], elevM: 160 },
+        note: "Off the helipad",
+      },
+    ],
+  } satisfies Aerial;
+  const dock = massing.entries[0];
+
+  it("parses with no view url and entries placed by `at`", () => {
+    expect(Aerial.safeParse(massing).error).toBeUndefined();
+  });
+
+  it("rejects an entry on an imageless view that has only a pixel", () => {
+    const entries = [{ ...dock, at: undefined, x: 820, y: 640 }];
+    expect(Aerial.safeParse({ ...massing, entries }).success).toBe(false);
+  });
+
+  it("rejects a live Vexcel aerial with a view that has no url", () => {
+    expect(Aerial.safeParse({ ...massing, source: "vexcel" }).success).toBe(false);
+    expect(Aerial.safeParse({ ...aerial, source: "vexcel" }).success).toBe(true);
+  });
+
+  it("rejects an entry with neither a pixel nor `at`, or with half a pixel", () => {
+    const bare = { ...aerial.entries[0], x: undefined, y: undefined };
+    expect(Aerial.safeParse({ ...aerial, entries: [bare] }).success).toBe(false);
+    expect(Aerial.safeParse({ ...aerial, entries: [{ ...bare, x: 820 }] }).success).toBe(false);
+  });
+
+  it("rejects an anchor above the roof", () => {
+    const entries = [{ ...dock, at: { ...dock.at, elevM: 161 } }];
+    expect(Aerial.safeParse({ ...massing, entries }).success).toBe(false);
+  });
+});
+
 describe("Mission", () => {
   it("accepts a fictional mission with no inspiredBy", () => {
     const fictional = { ...mission, id: "night-desk", type: "prevent", inspiredBy: null };

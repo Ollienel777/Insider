@@ -1,0 +1,76 @@
+{
+  "views": [
+    { "dir": "N", "width": 1600, "height": 1000 },
+    { "dir": "E", "width": 1600, "height": 1000 },
+    { "dir": "S", "width": 1600, "height": 1000 },
+    { "dir": "W", "width": 1600, "height": 1000 },
+    { "dir": "ortho", "width": 1200, "height": 1200 }
+  ],
+  "entries": [
+    {
+      "id": "lobby-E",
+      "kind": "lobby",
+      "label": "Smith Street lobby",
+      "view": "E",
+      "at": {
+        "lngLat": [-95.3693784, 29.7569308],
+        "elevM": 0
+      },
+      "note": "On Smith Street: a granite lobby with a desk and a lift bank zoned by floor."
+    },
+    {
+      "id": "tunnel-N",
+      "kind": "service",
+      "label": "Tunnel concourse",
+      "view": "N",
+      "at": {
+        "lngLat": [-95.3695114, 29.7573314],
+        "elevM": 0
+      },
+      "note": "The downtown pedestrian tunnel enters at the concourse below the north side. Its shutters close at 6 pm."
+    },
+    {
+      "id": "dock-S",
+      "kind": "dock",
+      "label": "Loading dock",
+      "view": "S",
+      "at": {
+        "lngLat": [-95.3696656, 29.756919],
+        "elevM": 0
+      },
+      "note": "Two bays off the service drive, shared with the hotel next door. A guard logs every truck."
+    },
+    {
+      "id": "garage-W",
+      "kind": "garage",
+      "label": "Skybridge to garage",
+      "view": "W",
+      "at": {
+        "lngLat": [-95.3697934, 29.7572944],
+        "elevM": 9
+      },
+      "note": "A skybridge on the third floor to the parking garage across the street; badge readers at both ends."
+    },
+    {
+      "id": "roof",
+      "kind": "roof",
+      "label": "Roof hatch",
+      "view": "ortho",
+      "at": {
+        "lngLat": [-95.3696545, 29.7571215],
+        "elevM": 200
+      },
+      "note": "Between the window-washing davits. The hatch opens onto the mechanical floor."
+    }
+  ],
+  "footprint": [
+    [-95.3696807, 29.7574349],
+    [-95.3692912, 29.7571968],
+    [-95.3692658, 29.7570712],
+    [-95.3694793, 29.7568051],
+    [-95.3698688, 29.7570432],
+    [-95.3698942, 29.7571688]
+  ],
+  "heightM": 200,
+  "source": "fixture"
+}

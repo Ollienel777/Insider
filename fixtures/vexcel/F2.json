@@ -1,0 +1,82 @@
+{
+  "views": [
+    { "dir": "N", "width": 1600, "height": 1000 },
+    { "dir": "E", "width": 1600, "height": 1000 },
+    { "dir": "S", "width": 1600, "height": 1000 },
+    { "dir": "W", "width": 1600, "height": 1000 },
+    { "dir": "ortho", "width": 1200, "height": 1200 }
+  ],
+  "entries": [
+    {
+      "id": "lobby-E",
+      "kind": "lobby",
+      "label": "Figueroa lobby",
+      "view": "E",
+      "at": {
+        "lngLat": [-118.2583947, 34.0507616],
+        "elevM": 0
+      },
+      "note": "Facing Figueroa: a three-storey glass lobby. Two guards at the desk, card readers on every lift."
+    },
+    {
+      "id": "dock-W",
+      "kind": "dock",
+      "label": "Loading dock",
+      "view": "W",
+      "at": {
+        "lngLat": [-118.2589363, 34.051],
+        "elevM": 0
+      },
+      "note": "Off the mid-block alley: two truck bays and a freight lift that serves every floor."
+    },
+    {
+      "id": "garage-N",
+      "kind": "garage",
+      "label": "Garage entrance",
+      "view": "N",
+      "at": {
+        "lngLat": [-118.2585653, 34.0510877],
+        "elevM": 0
+      },
+      "note": "Down to five levels of parking. The ticket machine sits at the top of the ramp, the guard booth at the bottom."
+    },
+    {
+      "id": "exit-S",
+      "kind": "service",
+      "label": "Plaza stair exit",
+      "view": "S",
+      "at": {
+        "lngLat": [-118.2586797, 34.0507111],
+        "elevM": 0
+      },
+      "note": "A fire stair that lets out onto the south plaza, behind the planters."
+    },
+    {
+      "id": "roof",
+      "kind": "roof",
+      "label": "Helipad",
+      "view": "ortho",
+      "at": {
+        "lngLat": [-118.25864, 34.05091],
+        "elevM": 211
+      },
+      "note": "An emergency helipad, as the city required on towers of this era. The stair door from it is alarmed."
+    }
+  ],
+  "footprint": [
+    [-118.2587142, 34.0511777],
+    [-118.2583111, 34.050934],
+    [-118.258343, 34.0508975],
+    [-118.2582992, 34.050871],
+    [-118.2584901, 34.0506522],
+    [-118.258534, 34.0506787],
+    [-118.2585658, 34.0506423],
+    [-118.2589689, 34.050886],
+    [-118.258937, 34.0509225],
+    [-118.2589808, 34.050949],
+    [-118.2587899, 34.0511678],
+    [-118.258746, 34.0511413]
+  ],
+  "heightM": 211,
+  "source": "fixture"
+}
