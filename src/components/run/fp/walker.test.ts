@@ -245,6 +245,22 @@ describe.each(CASES)("free movement on $id", ({ id, cached }) => {
     expect(distance(s.walker.pos, ground.nodes.get(to)!)).toBeLessThan(1e-9);
   });
 
+  it("goes back onto the engine's node on a restart even when that is the node it last read (#134)", () => {
+    // The #119 review (R1-N1): a turn count that went backwards is a new run, whatever the node says. Here the
+    // engine's node is the one the walker last read, so only `reconcile`'s turn check can tell it is a restart.
+    const s = session(world, { ...empty(), locked: [] });
+    const start = s.run.playerNode;
+    const at = { x: ground.nodes.get(start)!.x, y: ground.nodes.get(start)!.y };
+    const later = { ...s.walker, turn: 5, pos: { x: at.x + 0.7, y: at.y }, vel: { x: 1, y: 0 }, region: "elsewhere", queue: [{ kind: "wait" } as const] };
+    const back = reconcile(later, s.ground, { ...empty(), locked: [] });
+    expect(back.turn).toBe(0);
+    expect(back.pos).toEqual(at);
+    expect(back.home).toEqual(at);
+    expect(back.vel).toEqual({ x: 0, y: 0 });
+    expect(back.region).toBe(start);
+    expect(back.queue).toEqual([]);
+  });
+
   it("stays put through turns that leave the player where they were (the clock's waits)", () => {
     const s = session(world, { ...empty(), locked: [] });
     for (let i = 0; i < 20; i++) step(s, { ...IDLE, forward: 1, walk: true, yaw: 0.4 });
