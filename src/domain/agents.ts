@@ -59,6 +59,12 @@ export type BuildTraceEvent = z.infer<typeof BuildTraceEvent>;
 /** The trace cached beside a manifest in `data/levels/`. */
 export const BuildTrace = z.object({
   buildingId: Id,
+  /**
+   * When the run was recorded and on which model, for the dossier's
+   * "Recorded run · <timestamp> · <model>" header (#17, R1-M2).
+   */
+  recordedAt: z.iso.datetime().optional(),
+  model: Text.optional(),
   events: z.array(BuildTraceEvent).min(1),
 });
 export type BuildTrace = z.infer<typeof BuildTrace>;

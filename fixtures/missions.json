@@ -1,0 +1,15 @@
+[
+  {
+    "id": "romaine-1974",
+    "city": "LA",
+    "type": "heist",
+    "title": "The Romaine Street Papers",
+    "inspiredBy": {
+      "event": "The Summa Corporation burglary, 7000 Romaine St, Hollywood",
+      "date": "June 5, 1974",
+      "sourceUrl": "https://www.cia.gov/stories/story/the-exposing-of-project-azorian"
+    },
+    "objective": "Take the files from the records room",
+    "exitCondition": "Leave by any entry with the files before the alarm reaches Lockdown"
+  }
+]
