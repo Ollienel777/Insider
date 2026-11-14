@@ -14,6 +14,7 @@ import {
   type Compass,
   type OwnerCamera,
   type OwnerCameraKind,
+  type OwnerCleaner,
   type OwnerDoorLock,
   type OwnerGenerated,
   type OwnerGuard,
@@ -153,7 +154,11 @@ export function nextId(prefix: string, taken: readonly string[]): string {
   return `${prefix}${n}`;
 }
 
-const takenIds = (setup: OwnerSetup) => [...setup.guards.map((g) => g.id), ...setup.cameras.map((c) => c.id)];
+const takenIds = (setup: OwnerSetup) => [
+  ...setup.guards.map((g) => g.id),
+  ...setup.cameras.map((c) => c.id),
+  ...(setup.cleaners ?? []).map((c) => c.id),
+];
 
 /** The setup with the element taken off the generated list: an edited element is the owner's. */
 export function touched(setup: OwnerSetup, list: keyof OwnerGenerated, id: string): OwnerSetup {
@@ -214,6 +219,50 @@ export function setTempo(setup: OwnerSetup, id: string, tempo: number): OwnerSet
   return guardEdit(setup, id, (g) => ({ ...g, tempo: Math.max(1, Math.round(tempo)) }));
 }
 
+// A night cleaner's round starts on its first node: that node is where it stands, as a guard's post.
+
+const cleanerEdit = (setup: OwnerSetup, id: string, edit: (c: OwnerCleaner) => OwnerCleaner): OwnerSetup => {
+  const out = touched(setup, "cleaners", id);
+  return { ...out, cleaners: (out.cleaners ?? []).map((c) => (c.id === id ? edit(c) : c)) };
+};
+
+export function addCleaner(setup: OwnerSetup, node: string): { setup: OwnerSetup; id: string } {
+  const id = nextId("K", takenIds(setup));
+  return { setup: { ...setup, cleaners: [...(setup.cleaners ?? []), { id, round: [node] }] }, id };
+}
+
+/** Moves the cleaner: on its round, it walks the round from there; off it, it stays on the node. */
+export function moveCleaner(setup: OwnerSetup, id: string, node: string): OwnerSetup {
+  return cleanerEdit(setup, id, (c) => {
+    const at = c.round.indexOf(node);
+    return { ...c, round: at < 0 ? [node] : [...c.round.slice(at), ...c.round.slice(0, at)] };
+  });
+}
+
+export function removeCleaner(setup: OwnerSetup, id: string): OwnerSetup {
+  const out = touched(setup, "cleaners", id);
+  return { ...out, cleaners: (out.cleaners ?? []).filter((c) => c.id !== id) };
+}
+
+/** Starts drawing the cleaner's round: its first node alone, so each next click adds a node. */
+export function startCleanerRound(setup: OwnerSetup, id: string): OwnerSetup {
+  return cleanerEdit(setup, id, (c) => ({ ...c, round: c.round.slice(0, 1) }));
+}
+
+/** Adds `node` to the end of the cleaner's round; the last node again takes it off (the first stays). */
+export function extendCleanerRound(setup: OwnerSetup, id: string, node: string): OwnerSetup {
+  return cleanerEdit(setup, id, (c) => {
+    if (c.round.length === 0) return { ...c, round: [node] };
+    if (c.round[c.round.length - 1] === node && c.round.length > 1) return { ...c, round: c.round.slice(0, -1) };
+    return { ...c, round: [...c.round, node] };
+  });
+}
+
+/** The cleaner stays on its first node all night. */
+export function clearCleanerRound(setup: OwnerSetup, id: string): OwnerSetup {
+  return cleanerEdit(setup, id, (c) => ({ ...c, round: c.round.slice(0, 1) }));
+}
+
 export function addCamera(setup: OwnerSetup, node: string, kind: OwnerCameraKind = "sweeping", facing: Compass = "n"): { setup: OwnerSetup; id: string } {
   const id = nextId("C", takenIds(setup));
   return { setup: { ...setup, cameras: [...setup.cameras, { id, node, kind, facing }] }, id };
@@ -271,13 +320,19 @@ export function problemsOf(setup: OwnerSetup, floor: FloorGraph): { all: OwnerSe
 /**
  * The setup with every element that has a problem taken back or out, for the
  * board to show while the owner fixes it: a guard whose round is wrong stands
- * its post, and whatever still does not fit the floor is left off.
+ * its post, a cleaner whose round is wrong stays on its first node, and whatever still does not fit the floor is left off.
  */
 export function playable(setup: OwnerSetup, floor: FloorGraph): OwnerSetup {
   const roles = (s: OwnerSetup) => new Set(validateOwnerSetup(s, floor).map((e) => e.elementRole));
   let bad = roles(setup);
   if (bad.size === 0) return setup;
-  let out: OwnerSetup = { ...setup, guards: setup.guards.map((g) => (bad.has(`guard:${g.id}`) ? { ...g, round: [] } : g)) };
+  let out: OwnerSetup = {
+    ...setup,
+    guards: setup.guards.map((g) => (bad.has(`guard:${g.id}`) ? { ...g, round: [] } : g)),
+    ...(setup.cleaners && {
+      cleaners: setup.cleaners.map((c) => (bad.has(`cleaner:${c.id}`) ? { ...c, round: c.round.slice(0, 1) } : c)),
+    }),
+  };
   bad = roles(out);
   const once = (ids: readonly string[]) => ids.filter((id, i) => ids.indexOf(id) === i && ids.lastIndexOf(id) === i);
   const guardIds = new Set(once(out.guards.map((g) => g.id)));
@@ -390,4 +445,79 @@ export function describeFix(fix: ChiefFix, zoneName: (id: string) => string): st
     case "add-guard":
       return `Add ${change.elementId} on a round of the ${zoneName(change.to ?? "")}`;
   }
+}
+
+// ---- what changed between two setups --------------------------------------------------
+
+const LOCK_WORDS: Record<OwnerDoorLock, string> = { key: "a key lock", badge: "a badge reader", open: "open" };
+const KIND_WORDS: Record<OwnerCameraKind, string> = { sweeping: "sweeping", ptz: "a PTZ cycle", fixed: "fixed" };
+
+/**
+ * What changed from setup `a` to setup `b`, one line per element, in the
+ * order guards, cameras, doors, desks, cleaners: "C2 moved from the Freight
+ * Lift Lobby to the Dock Corridor". Rooms are the floor's labels; a move
+ * inside one room names the nodes. Empty when both set the same security
+ * (the names and the generated lists aside).
+ */
+export function setupChanges(a: OwnerSetup, b: OwnerSetup, floor: FloorGraph): string[] {
+  const room = (nodeId: string) => {
+    const node = floor.nodes.find((n) => n.id === nodeId);
+    return floor.rooms.find((r) => r.id === node?.roomId)?.label ?? nodeId;
+  };
+  const where = (from: string, to: string) =>
+    room(from) === room(to) ? `from ${from} to ${to} in the ${room(to)}` : `from the ${room(from)} to the ${room(to)}`;
+  const same = (x: readonly string[], y: readonly string[]) => x.length === y.length && x.every((v, i) => v === y[i]);
+  const lines: string[] = [];
+
+  const guardsA = new Map(a.guards.map((g) => [g.id, g]));
+  const guardsB = new Set(b.guards.map((g) => g.id));
+  for (const g of a.guards) if (!guardsB.has(g.id)) lines.push(`${g.id} removed`);
+  for (const g of b.guards) {
+    const was = guardsA.get(g.id);
+    if (!was) {
+      lines.push(`${g.id} added, ${g.round.length > 1 ? "on a round from" : "posted in"} the ${room(g.post)}`);
+      continue;
+    }
+    const parts: string[] = [];
+    if (was.post !== g.post) parts.push(`moved ${where(was.post, g.post)}`);
+    if (!same(was.round, g.round)) parts.push(g.round.length > 1 ? `walks a new round of ${g.round.length} nodes` : "stands its post");
+    if (was.tempo !== g.tempo) parts.push(`takes ${g.tempo} ${g.tempo === 1 ? "turn" : "turns"} per hop (was ${was.tempo})`);
+    if (parts.length > 0) lines.push(`${g.id} ${parts.join(", ")}`);
+  }
+
+  const camerasA = new Map(a.cameras.map((c) => [c.id, c]));
+  const camerasB = new Set(b.cameras.map((c) => c.id));
+  for (const c of a.cameras) if (!camerasB.has(c.id)) lines.push(`${c.id} removed`);
+  for (const c of b.cameras) {
+    const was = camerasA.get(c.id);
+    if (!was) {
+      lines.push(`${c.id} added over the ${room(c.node)}, facing ${c.facing.toUpperCase()}`);
+      continue;
+    }
+    const parts: string[] = [];
+    if (was.node !== c.node) parts.push(`moved ${where(was.node, c.node)}`);
+    if (was.facing !== c.facing) parts.push(`turned to face ${c.facing.toUpperCase()} (was ${was.facing.toUpperCase()})`);
+    if (was.kind !== c.kind) parts.push(`is now ${KIND_WORDS[c.kind]} (was ${KIND_WORDS[was.kind]})`);
+    if (parts.length === 0 && !same(was.cover ?? [], c.cover ?? [])) parts.push("watches a different view");
+    if (parts.length > 0) lines.push(`${c.id} ${parts.join(", ")}`);
+  }
+
+  for (const id of [...new Set([...Object.keys(a.doors), ...Object.keys(b.doors)])].sort()) {
+    const was = a.doors[id] ?? "open";
+    const now = b.doors[id] ?? "open";
+    if (was !== now) lines.push(`Door ${id} is ${now === "open" ? "left open" : `now ${LOCK_WORDS[now]}`} (was ${LOCK_WORDS[was]})`);
+  }
+
+  for (const d of a.desks) if (!b.desks.includes(d)) lines.push(`No desk in the ${room(d)}`);
+  for (const d of b.desks) if (!a.desks.includes(d)) lines.push(`A staffed desk in the ${room(d)}`);
+
+  const cleanersA = new Map((a.cleaners ?? []).map((c) => [c.id, c]));
+  const cleanersB = new Set((b.cleaners ?? []).map((c) => c.id));
+  for (const c of a.cleaners ?? []) if (!cleanersB.has(c.id)) lines.push(`Cleaner ${c.id} removed`);
+  for (const c of b.cleaners ?? []) {
+    const was = cleanersA.get(c.id);
+    if (!was) lines.push(`Cleaner ${c.id} added in the ${room(c.round[0])}`);
+    else if (!same(was.round, c.round)) lines.push(`Cleaner ${c.id} walks a new round`);
+  }
+  return lines;
 }

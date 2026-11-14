@@ -7,7 +7,7 @@
 // plays it (issue 127).
 "use client";
 
-import type { BatchResult, ChiefFix, FloorGraph, LevelManifest } from "@/domain";
+import type { BatchResult, BatchSummary, ChiefFix, FloorGraph, LevelManifest } from "@/domain";
 import type { OwnerSetup } from "@/domain/owner-setup";
 import { applyFix, BATCH_SEEDS, runBatch, summariseBatch, type BatchInput, type Rerun } from "@/engine";
 import { chiefZones, type ChiefZones } from "@/components/run/chief-request";
@@ -47,6 +47,33 @@ export function playOwnerBatch(
 ): BatchResult {
   const result = runBatch(ownerBatchInput(manifest, floor, setup, answer.strategies, seeds));
   return { ...result, dropped: [...answer.dropped, ...result.dropped] };
+}
+
+/** One side of a compare: the setup, its batch, and the batch summed up. */
+export interface PairSide {
+  setup: OwnerSetup;
+  result: BatchResult;
+  summary: BatchSummary;
+}
+
+/**
+ * Two setups played on the same strategies and the same nights (issue 31), so
+ * the counts differ by the setups alone. Throws when either setup cannot be
+ * played.
+ */
+export function compareOwnerSetups(
+  manifest: LevelManifest,
+  floor: FloorGraph,
+  a: OwnerSetup,
+  b: OwnerSetup,
+  answer: Pick<StrategiesAnswer, "strategies" | "dropped">,
+  seeds: readonly number[] = BATCH_SEEDS,
+): [PairSide, PairSide] {
+  const side = (setup: OwnerSetup): PairSide => {
+    const result = playOwnerBatch(manifest, floor, setup, answer, seeds);
+    return { setup, result, summary: summariseBatch(result) };
+  };
+  return [side(a), side(b)];
 }
 
 /** The zones as the Chief names them: the placer's, which a setup never changes. */

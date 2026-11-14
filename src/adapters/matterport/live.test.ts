@@ -9,10 +9,17 @@ import {
   connectInsideView,
   connectWithin,
   createLiveMatterport,
+  FLOOR_POINTS_MS,
   FLY,
+  LOOK_SPEED,
   MatterportNotConfiguredError,
+  SWEEPS_QUIET_MS,
   type InsideConnect,
+  type InsidePlayer,
+  type InsidePose,
   type InsideSdk,
+  type InsideView,
+  type ScanPoint,
   type ShowcaseConnect,
 } from "./live";
 import {
@@ -307,10 +314,28 @@ describe("the live Matterport adapter (stubbed SDK, no key)", () => {
   });
 });
 
+/**
+ * A stubbed player for a test that only moves the view. Whatever the view
+ * could read of the scan fails the test if it is touched: a view that is only
+ * moved subscribes to nothing and measures nothing.
+ */
+function movedOnly(moveTo: InsideSdk["Sweep"]["moveTo"], disconnect: () => void = () => {}): InsidePlayer {
+  const untouched = (what: string) => () => {
+    throw new Error(`${what} was used by a view that was only moved`);
+  };
+  return {
+    Sweep: { moveTo, data: { subscribe: untouched("Sweep.data") } },
+    Camera: { pose: { subscribe: untouched("Camera.pose") }, rotate: untouched("Camera.rotate") },
+    Conversion: { worldToScreen: untouched("Conversion.worldToScreen") },
+    frameSize: untouched("the frame's size"),
+    disconnect,
+  };
+}
+
 describe("the Inside view (stubbed SDK)", () => {
   function stubInside(moveTo: InsideSdk["Sweep"]["moveTo"] = vi.fn(async () => undefined)) {
     const disconnect = vi.fn();
-    const connect = vi.fn(async () => ({ Sweep: { moveTo }, disconnect }));
+    const connect = vi.fn(async () => movedOnly(moveTo, disconnect));
     return { connect, disconnect, moveTo };
   }
 
@@ -480,7 +505,7 @@ describe("deadlines let go of what they gave up on", () => {
     vi.useFakeTimers();
     try {
       const disconnect = vi.fn();
-      let open: (sdk: InsideSdk) => void = () => {};
+      let open: (sdk: InsidePlayer) => void = () => {};
       let seen: AbortSignal | undefined;
       const connect = vi.fn<InsideConnect>((_p, _m, _k, signal) => {
         seen = signal;
@@ -491,7 +516,7 @@ describe("deadlines let go of what they gave up on", () => {
       await vi.advanceTimersByTimeAsync(100);
       await settled;
       expect(seen?.aborted).toBe(true);
-      open({ Sweep: { moveTo: vi.fn() }, disconnect });
+      open(movedOnly(vi.fn(), disconnect));
       await Promise.resolve();
       expect(disconnect).toHaveBeenCalledTimes(1);
     } finally {
@@ -521,7 +546,7 @@ describe("the Inside view's moves never overlap", () => {
         });
       });
     });
-    const view = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ Sweep: { moveTo }, disconnect() {} }));
+    const view = await connectInsideView({} as HTMLElement, "m", "k", async () => movedOnly(moveTo));
     const a = view.moveTo("A");
     await Promise.resolve();
     await Promise.resolve();
@@ -538,7 +563,7 @@ describe("the Inside view's moves never overlap", () => {
 
   it("does not fly again to where it already is, and stops once disconnected", async () => {
     const moveTo = vi.fn(async () => undefined);
-    const view = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ Sweep: { moveTo }, disconnect() {} }));
+    const view = await connectInsideView({} as HTMLElement, "m", "k", async () => movedOnly(moveTo));
     await view.moveTo("A");
     await view.moveTo("A");
     expect(moveTo).toHaveBeenCalledTimes(1);
@@ -592,7 +617,7 @@ describe("the Inside view waits out a flight it did not start", () => {
         .mockRejectedValueOnce(new Error("SweepTransitionActiveException: Tried to start transition while another transition was active"))
         .mockResolvedValue(undefined);
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-      const view = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ Sweep: { moveTo }, disconnect() {} }));
+      const view = await connectInsideView({} as HTMLElement, "m", "k", async () => movedOnly(moveTo));
       const moved = view.moveTo("A");
       await vi.advanceTimersByTimeAsync(1_000);
       await moved;
@@ -611,7 +636,7 @@ describe("the Inside view waits out a flight it did not start", () => {
         throw new Error("Tried to start transition while another transition was active");
       });
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-      const view = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ Sweep: { moveTo: busy }, disconnect() {} }));
+      const view = await connectInsideView({} as HTMLElement, "m", "k", async () => movedOnly(busy));
       const moved = view.moveTo("A");
       await vi.advanceTimersByTimeAsync(10_000);
       await moved;
@@ -621,7 +646,7 @@ describe("the Inside view waits out a flight it did not start", () => {
       const missing = vi.fn<InsideSdk["Sweep"]["moveTo"]>(async () => {
         throw new Error("sweep not found");
       });
-      const other = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ Sweep: { moveTo: missing }, disconnect() {} }));
+      const other = await connectInsideView({} as HTMLElement, "m", "k", async () => movedOnly(missing));
       await other.moveTo("B");
       expect(missing).toHaveBeenCalledTimes(1);
       warn.mockRestore();
@@ -634,7 +659,7 @@ describe("the Inside view waits out a flight it did not start", () => {
 describe("review fixes: the Inside view lets go, and a lost move does not freeze it", () => {
   it("gives up on the player at once when the caller aborts, and disconnects one that opens after", async () => {
     const disconnect = vi.fn();
-    let open: (sdk: InsideSdk) => void = () => {};
+    let open: (sdk: InsidePlayer) => void = () => {};
     let inner: AbortSignal | undefined;
     const connect = vi.fn<InsideConnect>((_p, _m, _k, signal) => {
       inner = signal;
@@ -646,7 +671,7 @@ describe("review fixes: the Inside view lets go, and a lost move does not freeze
     stop.abort();
     await settled;
     expect(inner?.aborted).toBe(true);
-    open({ Sweep: { moveTo: vi.fn() }, disconnect });
+    open(movedOnly(vi.fn(), disconnect));
     await Promise.resolve();
     expect(disconnect).toHaveBeenCalledTimes(1);
   });
@@ -659,7 +684,7 @@ describe("review fixes: the Inside view lets go, and a lost move does not freeze
         .fn<InsideSdk["Sweep"]["moveTo"]>()
         .mockImplementationOnce(() => new Promise(() => {}))
         .mockResolvedValue(undefined);
-      const view = await connectInsideView({} as HTMLElement, "m", "k", async () => ({ Sweep: { moveTo }, disconnect() {} }));
+      const view = await connectInsideView({} as HTMLElement, "m", "k", async () => movedOnly(moveTo));
       void view.moveTo("A");
       await vi.advanceTimersByTimeAsync(10);
       const next = view.moveTo("B");
@@ -691,7 +716,7 @@ describe("second review: an Inside view that opened is the panel's to close", ()
     const disconnect = vi.fn();
     const connect = vi.fn<InsideConnect>(async (_p, _m, _k, signal) => {
       inner = signal;
-      return { Sweep: { moveTo: vi.fn(async () => undefined) }, disconnect };
+      return movedOnly(vi.fn(async () => undefined), disconnect);
     });
     const stop = new AbortController();
     const view = await connectInsideView({} as HTMLElement, "m", "k", connect, 20_000, stop.signal);
@@ -699,5 +724,737 @@ describe("second review: an Inside view that opened is the panel's to close", ()
     expect(inner?.aborted).toBe(false);
     view.disconnect();
     expect(disconnect).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---- the Inside view steers its camera and reads for its caller -------------
+//
+// The poses and positions below are hand-written in the shapes a real scan
+// sent on localhost (SDK 26.11): nothing here is recorded from Matterport.
+
+/** A pose as `Camera.pose` sends it: the view reads `position` and `rotation` (degrees; `y` is yaw). */
+const rawPose = (x: number, z: number, yaw: number) => ({
+  position: { x, y: 1.5, z },
+  rotation: { x: 0, y: yaw },
+  projection: new Float32Array(16),
+  sweep: "s1",
+  mode: "mode.inside",
+});
+/** What a listener is handed for `rawPose(x, z, yaw)`. */
+const pose = (x: number, z: number, yaw: number): InsidePose => ({ position: { x, y: 1.5, z }, rotation: { x: 0, y: yaw } });
+
+/** A scan position as `Sweep.data` holds it: `position` is the camera, `puckPosition` its floor point. */
+const scanPosition = (sid: string, x: number, z: number) => ({
+  sid,
+  id: sid,
+  enabled: true,
+  neighbors: [],
+  position: { x, y: 1.5, z },
+  puckPosition: { x, y: 0.02, z },
+});
+
+/**
+ * A stand-in for `Conversion.worldToScreen` that behaves as the real one was
+ * measured to: at yaw θ the camera looks along (-sin θ, 0, -cos θ); a point
+ * straight ahead lands at the centre of the frame with `z` just under 1; a
+ * point behind comes back mirrored with `z` just over 1; a point exactly to
+ * the side divides by zero.
+ */
+function worldToScreen(point: ScanPoint, sdkPose: unknown, size: { w: number; h: number }) {
+  const { position, rotation } = sdkPose as ReturnType<typeof rawPose>;
+  const yaw = (rotation.y * Math.PI) / 180;
+  const [dx, dy, dz] = [point.x - position.x, point.y - position.y, point.z - position.z];
+  const ahead = -dx * Math.sin(yaw) - dz * Math.cos(yaw);
+  const right = dx * Math.cos(yaw) - dz * Math.sin(yaw);
+  const focal = size.w / 2;
+  return { x: size.w / 2 + (focal * right) / ahead, y: size.h / 2 - (focal * dy) / ahead, z: 1 - 0.05 / ahead };
+}
+
+/**
+ * A stubbed player whose pose, positions and frame a test drives by hand.
+ * `poseOnSubscribe` is a pose the SDK sends before `subscribe` returns.
+ */
+function stubPlayer(poseOnSubscribe?: unknown) {
+  const poseObservers: ((pose: unknown) => void)[] = [];
+  const sweepObservers = new Set<{ onCollectionUpdated(collection: Record<string, unknown>): void }>();
+  let scan: Record<string, unknown> | undefined;
+  const frame = { w: 1280, h: 720 };
+  const cancelPose = vi.fn();
+  const cancelSweeps = vi.fn();
+  const player = {
+    Sweep: {
+      moveTo: vi.fn<InsideSdk["Sweep"]["moveTo"]>(async () => undefined),
+      data: {
+        subscribe: vi.fn<InsideSdk["Sweep"]["data"]["subscribe"]>((observer) => {
+          sweepObservers.add(observer);
+          // As the SDK does: a new subscriber is sent the collection as it stands, before `subscribe` returns.
+          if (scan) observer.onCollectionUpdated(scan);
+          return {
+            cancel() {
+              cancelSweeps();
+              sweepObservers.delete(observer);
+            },
+          };
+        }),
+      },
+    },
+    Camera: {
+      pose: {
+        subscribe: vi.fn<InsideSdk["Camera"]["pose"]["subscribe"]>((observer) => {
+          poseObservers.push(observer);
+          if (poseOnSubscribe !== undefined) observer(poseOnSubscribe);
+          return { cancel: cancelPose };
+        }),
+      },
+      rotate: vi.fn<InsideSdk["Camera"]["rotate"]>(async () => undefined),
+    },
+    Conversion: { worldToScreen: vi.fn<InsideSdk["Conversion"]["worldToScreen"]>(worldToScreen) },
+    frameSize: vi.fn(() => ({ ...frame })),
+    disconnect: vi.fn(),
+  } satisfies InsidePlayer;
+  return {
+    player,
+    /** The frame's size: a test changes it to resize the player. */
+    frame,
+    cancelPose,
+    cancelSweeps,
+    open: () => connectInsideView({} as HTMLElement, "m", "k", async () => player),
+    /** The player sends a pose. A cancelled subscription still gets it, as a callback already on its way would. */
+    pose: (raw: unknown) => poseObservers.forEach((observer) => observer(raw)),
+    /** The scan's positions arrive, or arrive again with more. */
+    sweeps(collection: Record<string, unknown>) {
+      scan = collection;
+      sweepObservers.forEach((observer) => observer.onCollectionUpdated(collection));
+    },
+  };
+}
+
+/** Lets a listener's first pose, which is told in a microtask, reach it. */
+const told = () => Promise.resolve();
+
+describe("the Inside view takes a travel time for one move", () => {
+  it("passes a move's travel time to the SDK, and flies in 600 ms when it has none", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    await view.moveTo("A", 350);
+    await view.moveTo("B");
+    await view.moveTo("C", 0);
+    expect(stub.player.Sweep.moveTo.mock.calls).toEqual([
+      ["A", { transition: FLY, transitionTime: 350 }],
+      ["B", { transition: FLY, transitionTime: 600 }],
+      ["C", { transition: FLY, transitionTime: 0 }],
+    ]);
+  });
+
+  it("flies in 600 ms when the travel time is not a finite number of at least 0", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    const times = [Number.NaN, -1, Number.POSITIVE_INFINITY];
+    for (const [i, ms] of times.entries()) await view.moveTo(`s${i}`, ms);
+    expect(stub.player.Sweep.moveTo.mock.calls.map(([, options]) => options?.transitionTime)).toEqual([600, 600, 600]);
+  });
+
+  it("flies a held move in its own travel time, not in the one before it", async () => {
+    const stub = stubPlayer();
+    const landings: (() => void)[] = [];
+    stub.player.Sweep.moveTo.mockImplementation(() => new Promise<void>((resolve) => landings.push(resolve)));
+    const view = await stub.open();
+    const a = view.moveTo("A", 900);
+    await vi.waitFor(() => expect(landings).toHaveLength(1));
+    void view.moveTo("B", 900);
+    const c = view.moveTo("C", 350);
+    landings[0]();
+    await vi.waitFor(() => expect(landings).toHaveLength(2));
+    landings[1]();
+    await Promise.all([a, c]);
+    expect(stub.player.Sweep.moveTo.mock.calls).toEqual([
+      ["A", { transition: FLY, transitionTime: 900 }],
+      ["C", { transition: FLY, transitionTime: 350 }],
+    ]);
+  });
+
+  it("gives a slow flight its travel time, and the same wait after it, before it counts as lost", async () => {
+    vi.useFakeTimers();
+    try {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const stub = stubPlayer();
+      stub.player.Sweep.moveTo.mockImplementationOnce(() => new Promise(() => {}));
+      const view = await stub.open();
+      void view.moveTo("A", 3_000);
+      await vi.advanceTimersByTimeAsync(10);
+      const next = view.moveTo("B");
+      // A 600 ms flight is given up on 5.6 s in; this one flies for 3 s, so it has until 8 s.
+      await vi.advanceTimersByTimeAsync(7_900);
+      expect(stub.player.Sweep.moveTo.mock.calls.map(([id]) => id)).toEqual(["A"]);
+      expect(warn).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(200);
+      await next;
+      expect(stub.player.Sweep.moveTo.mock.calls.map(([id]) => id)).toEqual(["A", "B"]);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("did not settle within 8000 ms"));
+      warn.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("the Inside view takes a look", () => {
+  it("turns the camera by degrees, at a speed that lands the turn at once", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    await expect(view.rotate(12, -3)).resolves.toBeUndefined();
+    expect(stub.player.Camera.rotate.mock.calls).toEqual([[12, -3, { speed: 3000 }]]);
+    expect(LOOK_SPEED).toBe(3000);
+  });
+
+  it("does not hold a turn behind a flight", async () => {
+    const stub = stubPlayer();
+    stub.player.Sweep.moveTo.mockImplementation(() => new Promise(() => {}));
+    const view = await stub.open();
+    void view.moveTo("A");
+    await vi.waitFor(() => expect(stub.player.Sweep.moveTo).toHaveBeenCalledTimes(1));
+    void view.rotate(5, 0);
+    expect(stub.player.Camera.rotate).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a turn the player refuses, whether it rejects or throws", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    stub.player.Camera.rotate.mockRejectedValueOnce(new Error("cannot rotate during a transition"));
+    await expect(view.rotate(1, 0)).resolves.toBeUndefined();
+    stub.player.Camera.rotate.mockImplementationOnce(() => {
+      throw new Error("not ready");
+    });
+    await expect(view.rotate(1, 0)).resolves.toBeUndefined();
+  });
+
+  it("turns nothing once disconnected", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    view.disconnect();
+    await view.rotate(10, 0);
+    expect(stub.player.Camera.rotate).not.toHaveBeenCalled();
+  });
+});
+
+describe("the Inside view reports its pose", () => {
+  it("reads nothing until it is asked: a view that is only steered subscribes to nothing", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    await view.moveTo("A");
+    await view.rotate(1, 1);
+    view.disconnect();
+    expect(stub.player.Camera.pose.subscribe).not.toHaveBeenCalled();
+    expect(stub.player.Sweep.data.subscribe).not.toHaveBeenCalled();
+    expect(stub.player.frameSize).not.toHaveBeenCalled();
+    expect(stub.player.Conversion.worldToScreen).not.toHaveBeenCalled();
+  });
+
+  it("hands the listener each pose, as its position and rotation and nothing else of the SDK's", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    const heard: InsidePose[] = [];
+    view.onPose((p) => heard.push(p));
+    stub.pose(rawPose(1, 2, 90));
+    stub.pose(rawPose(1, 3, 45));
+    expect(heard).toStrictEqual([
+      { position: { x: 1, y: 1.5, z: 2 }, rotation: { x: 0, y: 90 } },
+      { position: { x: 1, y: 1.5, z: 3 }, rotation: { x: 0, y: 45 } },
+    ]);
+  });
+
+  it("keeps one SDK subscription for every listener and for project", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    const a = vi.fn();
+    const b = vi.fn();
+    view.onPose(a);
+    view.project({ x: 0, y: 0, z: 0 });
+    view.onPose(b);
+    expect(stub.player.Camera.pose.subscribe).toHaveBeenCalledTimes(1);
+    stub.pose(rawPose(0, 0, 0));
+    expect(a.mock.calls).toEqual([[pose(0, 0, 0)]]);
+    expect(b.mock.calls).toEqual([[pose(0, 0, 0)]]);
+  });
+
+  it("gives a listener added later the latest pose first: once, and only after onPose has returned", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    const first = vi.fn();
+    view.onPose(first);
+    stub.pose(rawPose(0, 0, 10));
+    const later = vi.fn();
+    view.onPose(later);
+    expect(later).not.toHaveBeenCalled();
+    await told();
+    expect(later.mock.calls).toEqual([[pose(0, 0, 10)]]);
+    expect(first).toHaveBeenCalledTimes(1);
+    stub.pose(rawPose(0, 0, 20));
+    expect(later.mock.calls).toEqual([[pose(0, 0, 10)], [pose(0, 0, 20)]]);
+    expect(first).toHaveBeenCalledTimes(2);
+  });
+
+  it("holds a pose the SDK sends before subscribe returns until onPose has returned", async () => {
+    const stub = stubPlayer(rawPose(0, 0, 30));
+    const view = await stub.open();
+    const listener = vi.fn();
+    view.onPose(listener);
+    expect(listener).not.toHaveBeenCalled();
+    await told();
+    expect(listener.mock.calls).toEqual([[pose(0, 0, 30)]]);
+  });
+
+  it("tells a listener a pose once, even when one arrives before its first has been told", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    const listener = vi.fn();
+    view.onPose(listener);
+    stub.pose(rawPose(0, 0, 40));
+    await told();
+    expect(listener.mock.calls).toEqual([[pose(0, 0, 40)]]);
+  });
+
+  it("delivers nothing after its unsubscribe, and goes on telling the other listeners", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    const left = vi.fn();
+    const stayed = vi.fn();
+    const off = view.onPose(left);
+    view.onPose(stayed);
+    stub.pose(rawPose(0, 0, 0));
+    off();
+    stub.pose(rawPose(0, 0, 5));
+    off();
+    stub.pose(rawPose(0, 0, 9));
+    expect(left.mock.calls).toEqual([[pose(0, 0, 0)]]);
+    expect(stayed).toHaveBeenCalledTimes(3);
+  });
+
+  it("delivers nothing to a listener that unsubscribes before the latest pose has been told to it", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    view.onPose(() => {});
+    stub.pose(rawPose(0, 0, 0));
+    const listener = vi.fn();
+    view.onPose(listener)();
+    await told();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("delivers nothing after disconnect, and cancels its SDK subscription before it lets the SDK go", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    const listener = vi.fn();
+    view.onPose(listener);
+    stub.pose(rawPose(0, 0, 0));
+    expect(listener).toHaveBeenCalledTimes(1);
+    view.disconnect();
+    expect(stub.cancelPose).toHaveBeenCalledTimes(1);
+    expect(stub.player.disconnect).toHaveBeenCalledTimes(1);
+    expect(stub.cancelPose.mock.invocationCallOrder[0]).toBeLessThan(stub.player.disconnect.mock.invocationCallOrder[0]);
+    // A callback that was already on its way when the subscription was cancelled.
+    stub.pose(rawPose(0, 0, 90));
+    await told();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("forgets the pose at disconnect, and keeps none that arrives after it", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    view.onPose(() => {});
+    stub.pose(rawPose(0, 0, 0));
+    expect(view.project({ x: 0, y: 1.5, z: -5 })).not.toBeNull();
+    view.disconnect();
+    expect(view.project({ x: 0, y: 1.5, z: -5 })).toBeNull();
+    stub.pose(rawPose(0, 0, 0));
+    expect(view.project({ x: 0, y: 1.5, z: -5 })).toBeNull();
+  });
+
+  it("delivers nothing to a listener added just before disconnect, and takes none after it", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    view.onPose(() => {});
+    stub.pose(rawPose(0, 0, 0));
+    const before = vi.fn();
+    view.onPose(before);
+    view.disconnect();
+    const after = vi.fn();
+    const off = view.onPose(after);
+    await told();
+    stub.pose(rawPose(0, 0, 5));
+    expect(before).not.toHaveBeenCalled();
+    expect(after).not.toHaveBeenCalled();
+    expect(stub.player.Camera.pose.subscribe).toHaveBeenCalledTimes(1);
+    off();
+  });
+
+  it("skips a pose it cannot read, and keeps the last one it could", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    const listener = vi.fn();
+    view.onPose(listener);
+    stub.pose(rawPose(0, 0, 0));
+    const unreadable = [
+      null,
+      {},
+      { position: { x: 0, y: 1.5, z: 0 } },
+      { position: { x: 0, y: Number.NaN, z: 0 }, rotation: { x: 0, y: 0 } },
+      { position: { x: 0, y: 1.5, z: 0 }, rotation: { x: 0, y: Number.POSITIVE_INFINITY } },
+    ];
+    for (const raw of unreadable) stub.pose(raw);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(view.project({ x: 0, y: 1.5, z: -5 })).toEqual({ x: 640, y: 360 });
+  });
+
+  it("still tells the other listeners when one throws", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const stub = stubPlayer();
+    const view = await stub.open();
+    view.onPose(() => {
+      throw new Error("a bug in a listener");
+    });
+    const other = vi.fn();
+    view.onPose(other);
+    stub.pose(rawPose(0, 0, 0));
+    expect(other).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledTimes(1);
+    error.mockRestore();
+  });
+});
+
+describe("the Inside view projects a point into the player's frame", () => {
+  // The camera stands at the origin, 1.5 m up, with yaw 0: it looks along -z.
+  const AHEAD = { x: 0, y: 1.5, z: -5 };
+  const BEHIND = { x: 0, y: 1.5, z: 5 };
+  const BESIDE = { x: 5, y: 1.5, z: 0 };
+
+  async function looking() {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    view.onPose(() => {});
+    stub.pose(rawPose(0, 0, 0));
+    return { stub, view };
+  }
+
+  it("answers null before any pose has arrived, without asking the SDK, and answers once one has", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    expect(view.project(AHEAD)).toBeNull();
+    expect(stub.player.Conversion.worldToScreen).not.toHaveBeenCalled();
+    // The first call started listening, so no `onPose` is needed for the next to answer.
+    stub.pose(rawPose(0, 0, 0));
+    expect(view.project(AHEAD)).toEqual({ x: 640, y: 360 });
+  });
+
+  it("puts a point in front of the camera at its pixels in the frame", async () => {
+    const { view } = await looking();
+    expect(view.project(AHEAD)).toStrictEqual({ x: 640, y: 360 });
+    // A floor point 5 m ahead shows below the centre.
+    expect(view.project({ x: 0, y: 0, z: -5 })).toStrictEqual({ x: 640, y: 552 });
+    // In front of the camera but outside the frame: the pixels still come back, for the caller to clip.
+    expect(view.project({ x: 10, y: 1.5, z: -1 })).toStrictEqual({ x: 7040, y: 360 });
+  });
+
+  it("answers null for a point behind the camera, and for one exactly beside it", async () => {
+    const { stub, view } = await looking();
+    expect(view.project(BEHIND)).toBeNull();
+    // Behind and off to one side, on the floor: the SDK's numbers are finite, mirrored, with z just over 1.
+    expect(view.project({ x: -2, y: 0, z: 5 })).toBeNull();
+    expect(view.project(BESIDE)).toBeNull();
+    // The SDK was asked each time: the answer is read off its z, not guessed.
+    expect(stub.player.Conversion.worldToScreen).toHaveBeenCalledTimes(3);
+  });
+
+  it("answers null when the SDK's numbers are not finite, whatever z says", async () => {
+    const { stub, view } = await looking();
+    for (const screen of [
+      { x: Number.NaN, y: 360, z: 0.99 },
+      { x: 640, y: Number.NEGATIVE_INFINITY, z: 0.99 },
+      { x: 640, y: 360, z: Number.NaN },
+      { x: 640, y: 360, z: Number.NEGATIVE_INFINITY },
+      { x: 640, y: 360, z: 1 },
+    ]) {
+      stub.player.Conversion.worldToScreen.mockReturnValueOnce(screen);
+      expect(view.project(AHEAD), JSON.stringify(screen)).toBeNull();
+    }
+    expect(view.project(AHEAD)).not.toBeNull();
+  });
+
+  it("uses the latest pose, whole, as the SDK sent it", async () => {
+    const { stub, view } = await looking();
+    // Turned to yaw 90, the camera looks along -x: what was ahead is now beside it.
+    const turned = rawPose(0, 0, 90);
+    stub.pose(turned);
+    const seen = view.project({ x: -5, y: 1.5, z: 0 });
+    expect(seen?.x).toBeCloseTo(640);
+    expect(seen?.y).toBeCloseTo(360);
+    // `worldToScreen` needs the SDK's own pose (its `projection` too), not the one listeners get.
+    expect(stub.player.Conversion.worldToScreen.mock.lastCall?.[1]).toBe(turned);
+    // And what was beside it at yaw 0 is now behind it.
+    expect(view.project(BESIDE)).toBeNull();
+  });
+
+  it("uses the frame's size as it is now", async () => {
+    const { stub, view } = await looking();
+    expect(view.project(AHEAD)).toEqual({ x: 640, y: 360 });
+    stub.frame.w = 800;
+    stub.frame.h = 600;
+    expect(view.project(AHEAD)).toEqual({ x: 400, y: 300 });
+    expect(stub.player.Conversion.worldToScreen.mock.lastCall?.[2]).toEqual({ w: 800, h: 600 });
+  });
+
+  it("answers null while the frame has no size, without asking the SDK", async () => {
+    const { stub, view } = await looking();
+    stub.frame.h = 0;
+    expect(view.project(AHEAD)).toBeNull();
+    expect(stub.player.Conversion.worldToScreen).not.toHaveBeenCalled();
+  });
+});
+
+describe("the Inside view reads the scan's floor points", () => {
+  /** Asks for the floor points and waits out the quiet that says the positions have all arrived. */
+  async function ask(view: InsideView) {
+    const asked = view.floorPoints();
+    await vi.advanceTimersByTimeAsync(SWEEPS_QUIET_MS);
+    return asked;
+  }
+
+  it("keys each position's floor point by its node id: the puck, not the camera", async () => {
+    vi.useFakeTimers();
+    try {
+      const stub = stubPlayer();
+      const view = await stub.open();
+      stub.sweeps({ s1: scanPosition("s1", 0, 0), s2: scanPosition("s2", 2, -4) });
+      const points = await ask(view);
+      expect([...points]).toStrictEqual([
+        ["s1", { x: 0, y: 0.02, z: 0 }],
+        ["s2", { x: 2, y: 0.02, z: -4 }],
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves out a position the scan gives no floor point", async () => {
+    vi.useFakeTimers();
+    try {
+      const stub = stubPlayer();
+      const view = await stub.open();
+      stub.sweeps({
+        s1: scanPosition("s1", 0, 0),
+        s2: { sid: "s2", id: "s2", enabled: true, neighbors: [], position: { x: 2, y: 1.5, z: 0 } },
+        s3: { ...scanPosition("s3", 4, 0), puckPosition: { x: 4, y: Number.NaN, z: 0 } },
+        s4: null,
+      });
+      expect([...(await ask(view)).keys()]).toEqual(["s1"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits for the positions to stop arriving, and takes the last collection whole", async () => {
+    vi.useFakeTimers();
+    try {
+      const stub = stubPlayer();
+      const view = await stub.open();
+      let answered = false;
+      const asked = view.floorPoints().finally(() => (answered = true));
+      // Before the player plays it can send an empty collection: not an answer.
+      stub.sweeps({});
+      stub.sweeps({ s1: scanPosition("s1", 0, 0) });
+      await vi.advanceTimersByTimeAsync(SWEEPS_QUIET_MS - 1);
+      stub.sweeps({ s1: scanPosition("s1", 0, 0), s2: scanPosition("s2", 2, 0), s3: scanPosition("s3", 4, 0) });
+      await vi.advanceTimersByTimeAsync(SWEEPS_QUIET_MS - 1);
+      expect(answered).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect([...(await asked).keys()]).toEqual(["s1", "s2", "s3"]);
+      expect(stub.cancelSweeps).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not hang on a scan that sends nothing: it answers empty at the deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const stub = stubPlayer();
+      const view = await stub.open();
+      let answered = false;
+      const asked = view.floorPoints().finally(() => (answered = true));
+      stub.sweeps({});
+      await vi.advanceTimersByTimeAsync(FLOOR_POINTS_MS - 1);
+      expect(answered).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect((await asked).size).toBe(0);
+      expect(stub.cancelSweeps).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("answers at the deadline with what has arrived, when the positions never stop arriving", async () => {
+    vi.useFakeTimers();
+    try {
+      const stub = stubPlayer();
+      const view = await stub.open();
+      let answered = false;
+      const asked = view.floorPoints().finally(() => (answered = true));
+      const scan: Record<string, unknown> = {};
+      const step = SWEEPS_QUIET_MS - 100;
+      for (let i = 0; i * step < FLOOR_POINTS_MS; i += 1) {
+        expect(answered).toBe(false);
+        scan[`s${i}`] = scanPosition(`s${i}`, i, 0);
+        stub.sweeps({ ...scan });
+        await vi.advanceTimersByTimeAsync(step);
+      }
+      expect(answered).toBe(true);
+      expect((await asked).size).toBe(Object.keys(scan).length);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reads the scan afresh on every call and keeps nothing: each answer is the caller's own", async () => {
+    vi.useFakeTimers();
+    try {
+      const stub = stubPlayer();
+      const view = await stub.open();
+      stub.sweeps({ s1: scanPosition("s1", 0, 0) });
+      const first = await ask(view);
+      expect([...first.keys()]).toEqual(["s1"]);
+      (first as Map<string, ScanPoint>).clear();
+      // The scan as it stands by the second call, which no subscription was open to hear.
+      stub.sweeps({ s1: scanPosition("s1", 0, 0), s2: scanPosition("s2", 2, 0) });
+      const second = await ask(view);
+      expect([...second.keys()]).toEqual(["s1", "s2"]);
+      expect(stub.player.Sweep.data.subscribe).toHaveBeenCalledTimes(2);
+      expect(stub.cancelSweeps).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("answers empty when the view is disconnected while it waits, and lets go of its subscription first", async () => {
+    vi.useFakeTimers();
+    try {
+      const stub = stubPlayer();
+      const view = await stub.open();
+      stub.sweeps({ s1: scanPosition("s1", 0, 0) });
+      const asked = view.floorPoints();
+      view.disconnect();
+      expect((await asked).size).toBe(0);
+      expect(stub.cancelSweeps).toHaveBeenCalledTimes(1);
+      expect(stub.cancelSweeps.mock.invocationCallOrder[0]).toBeLessThan(stub.player.disconnect.mock.invocationCallOrder[0]);
+      expect(vi.getTimerCount()).toBe(0);
+      // A view that is gone is asked nothing.
+      expect((await view.floorPoints()).size).toBe(0);
+      expect(stub.player.Sweep.data.subscribe).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("review fixes: no move or turn is left waiting", () => {
+  it("flies a move that asks for more than 10 s in 10 s, and does not give it up early", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const stub = stubPlayer();
+      const landings: (() => void)[] = [];
+      stub.player.Sweep.moveTo.mockImplementationOnce(() => new Promise<void>((resolve) => landings.push(resolve)));
+      const view = await stub.open();
+      // Past setTimeout's limit: unclamped, the deadline would fire after about 1 ms.
+      const a = view.moveTo("A", 2 ** 31);
+      await vi.advanceTimersByTimeAsync(10);
+      const next = view.moveTo("B");
+      await vi.advanceTimersByTimeAsync(14_000);
+      expect(stub.player.Sweep.moveTo.mock.calls).toEqual([["A", { transition: FLY, transitionTime: 10_000 }]]);
+      expect(warn).not.toHaveBeenCalled();
+      landings[0]();
+      await Promise.all([a, next]);
+      expect(stub.player.Sweep.moveTo.mock.calls.map(([id]) => id)).toEqual(["A", "B"]);
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("resolves a turn the player never finishes within 1 s", async () => {
+    vi.useFakeTimers();
+    try {
+      const stub = stubPlayer();
+      stub.player.Camera.rotate.mockImplementationOnce(() => new Promise(() => {}));
+      const view = await stub.open();
+      const done = vi.fn();
+      void view.rotate(5, 0).then(done);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(done).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(done).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("resolves a turn still pending when the view disconnects", async () => {
+    vi.useFakeTimers();
+    try {
+      const stub = stubPlayer();
+      stub.player.Camera.rotate.mockImplementationOnce(() => new Promise(() => {}));
+      const view = await stub.open();
+      const done = vi.fn();
+      void view.rotate(5, 0).then(done);
+      await vi.advanceTimersByTimeAsync(10);
+      view.disconnect();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(done).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops listening for disconnect once a turn lands or times out", async () => {
+    vi.useFakeTimers();
+    const add = vi.spyOn(EventTarget.prototype, "addEventListener");
+    const remove = vi.spyOn(EventTarget.prototype, "removeEventListener");
+    try {
+      const stub = stubPlayer();
+      const view = await stub.open();
+      stub.player.Camera.rotate.mockImplementationOnce(() => new Promise(() => {}));
+      add.mockClear();
+      remove.mockClear();
+      const lost = view.rotate(5, 0);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await lost;
+      await view.rotate(5, 0);
+      const added = add.mock.calls.filter(([type]) => type === "abort").map(([, listener]) => listener);
+      const removed = remove.mock.calls.filter(([type]) => type === "abort").map(([, listener]) => listener);
+      expect(added).toHaveLength(2);
+      expect(removed).toEqual(added);
+    } finally {
+      add.mockRestore();
+      remove.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("subscribes to the pose again when the first subscribe threw, without the failed listener", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    stub.player.Camera.pose.subscribe.mockImplementationOnce(() => {
+      throw new Error("not ready");
+    });
+    const ghost = vi.fn();
+    expect(() => view.onPose(ghost)).toThrow("not ready");
+    const heard: InsidePose[] = [];
+    view.onPose((p) => heard.push(p));
+    stub.pose(rawPose(1, 2, 90));
+    await told();
+    expect(stub.player.Camera.pose.subscribe).toHaveBeenCalledTimes(2);
+    expect(heard).toStrictEqual([pose(1, 2, 90)]);
+    expect(ghost).not.toHaveBeenCalled();
   });
 });
