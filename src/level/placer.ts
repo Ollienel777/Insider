@@ -31,7 +31,7 @@ import type {
   Zone,
   ZoneRole,
 } from "@/domain";
-import { DEFAULT_HEARING, type CameraSpec, type GuardSpec, type Level } from "@/engine";
+import { compileBoard, DEFAULT_HEARING, zoneOf, type CameraSpec, type GuardSpec, type Level } from "@/engine";
 
 // The quiet route is computed from a placement (quiet-route.ts); it is
 // exported here too, since the placer owns it (#15, #19).
@@ -117,8 +117,11 @@ export interface PlacedLevel {
   locks: readonly PlacedLock[];
   cameras: readonly PlacedCamera[];
   guards: readonly PlacedGuard[];
-  /** The guard the posture stood near a way in used before (#35); null on a default placement. */
-  watch: { guardId: string; entryId: string } | null;
+  /**
+   * The guard the posture stood near a way in used before (#35), and the engine zone its post is in;
+   * null on a default placement, or when no node is nearer the way in than the guards already start.
+   */
+  watch: { guardId: string; entryId: string; startZone: string } | null;
   cleaners: readonly PlacedCleaner[];
   unplaced: readonly Unplaced[];
 }
@@ -206,7 +209,7 @@ const ROOM_WORDS: Partial<Record<ZoneRole, readonly string[]>> = {
  */
 const DOCK_POST_RULE = "Posted on the nearest node to the dock that keeps out of sight of the way in and out of earshot of the door to the files";
 const WATCH_POST_RULE =
-  "Posted near the way in the crew used on earlier runs, on the nearest node to it out of sight of the way in and out of earshot of the door to the files";
+  "Posted near the way in the crew used on earlier runs, nearer it than any guard starts on a first run, on the nearest node to it out of sight of the way in and out of earshot of the door to the files";
 
 /**
  * How a night cleaner's room is chosen, in the words the Why card shows. The
@@ -590,31 +593,39 @@ export function placeLevel(
   const { guardCount } = manifest.securityProfile;
   const dock = entries.find((e) => e.kind === "dock");
   /**
-   * The nearest node to `entry` a guard may stand a post on, other than `taken`. A watch post may stand
-   * under a camera, since it is there to make the way used before harder; it keeps out of earshot of the
-   * locks like the dock post, or the quiet route goes (placer.test.ts).
+   * The nearest node to `entry` a guard may stand a post on, other than `taken`. The dock post keeps off
+   * the cameras and out of the locked rooms. A watch post (`watch` set) is there to make the way used
+   * before harder: it may stand under a camera or in a secure room, never the objective's, and only on
+   * a node strictly nearer `entry` than `watch.within` hops. Either keeps out of sight of the way in
+   * and out of earshot of the locks, or the quiet route goes (placer.test.ts).
    */
-  const postNear = (entry: PlacedEntry, taken: ReadonlySet<string>, offCameras: boolean): string | null => {
+  const objectiveRooms = new Set(objectiveZone.roomIds);
+  const postNear = (entry: PlacedEntry, taken: ReadonlySet<string>, watch?: { within: number }): string | null => {
     const fromEntry = hops(adj, [entry.nodeId]);
+    const barred = watch ? objectiveRooms : lockedRooms;
     const candidates = floor.nodes
-      .filter((n) => !lockedRooms.has(n.roomId) && !quietNodes.has(n.id) && !crowdedNodes.has(n.id) && !isEntry(n.id) && !(offCameras && covered.has(n.id)))
+      .filter((n) => !barred.has(n.roomId) && !quietNodes.has(n.id) && !crowdedNodes.has(n.id) && !isEntry(n.id) && !(!watch && covered.has(n.id)))
       .filter((n) => !nearStart.has(n.id) && !earshot.has(n.id) && (fromEntries.get(n.id) ?? Infinity) > ENTRY_CLEARANCE)
       .filter((n) => !(floor.sightlines[n.id] ?? []).some((id) => nearStart.has(id)))
-      .filter((n) => fromEntry.has(n.id) && !taken.has(n.id))
+      .filter((n) => fromEntry.has(n.id) && !taken.has(n.id) && (!watch || fromEntry.get(n.id)! < watch.within))
       .sort((a, b) => fromEntry.get(a.id)! - fromEntry.get(b.id)! || a.id.localeCompare(b.id));
     return candidates[0]?.id ?? null;
   };
   let post: { node: string; entry: PlacedEntry } | null = null;
   if (dock && guardCount >= 2) {
-    const node = postNear(dock, new Set(), true);
+    const node = postNear(dock, new Set());
     if (node) post = { node, entry: dock };
   }
   let roundCount = post ? guardCount - 1 : guardCount;
-  // The watch post (#35): the last guard on a round stands near the way in used before, if another still walks.
+  // The watch post (#35): the last guard on a round stands near the way in used before, if another still
+  // walks, on a node nearer it than any guard starts on the default placement. With no such node the
+  // posture changes nothing: a post no nearer than the guards already start would only relabel them.
   let watch: { node: string; entry: PlacedEntry; id: string } | null = null;
   const watched = entries.find((e) => e.entryId === posture.watchEntry);
   if (watched && roundCount >= 2) {
-    const node = postNear(watched, new Set(post ? [post.node] : []), false);
+    const fromWatched = hops(adj, [watched.nodeId]);
+    const within = Math.min(...placeLevel(manifest, floor, seed, anchors).level.guards.map((g) => fromWatched.get(g.patrol[0]) ?? Infinity));
+    const node = postNear(watched, new Set(post ? [post.node] : []), { within });
     if (node) {
       watch = { node, entry: watched, id: `G${roundCount}` };
       roundCount -= 1;
@@ -773,7 +784,7 @@ export function placeLevel(
     locks,
     cameras,
     guards,
-    watch: watch && { guardId: watch.id, entryId: watch.entry.entryId },
+    watch: watch && { guardId: watch.id, entryId: watch.entry.entryId, startZone: zoneOf(compileBoard(level), watch.node).zoneId },
     cleaners,
     unplaced,
   };

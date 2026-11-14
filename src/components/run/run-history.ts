@@ -120,18 +120,19 @@ export function postureOf(records: readonly RunRecord[]): Posture {
 export function chiefHistory(
   records: readonly RunRecord[],
   zones: ChiefZones,
-  posted?: { guardId: string; zoneId: string },
+  posted?: { guardId: string; zoneId: string; startZone?: string },
 ): ChiefHistory | null {
   if (records.length === 0) return null;
   const known = (ids: readonly string[]) => ids.flatMap((id) => (zones.toChief.has(id) ? [zones.toChief.get(id)!] : []));
   const noise = records.reduce((sum, r) => sum + r.noise, 0) / records.length;
   const postedZone = posted && zones.toChief.get(posted.zoneId);
+  const startZone = posted?.startZone && zones.toChief.get(posted.startZone);
   return {
     runs: Math.min(records.length, 99),
     entries: tally(known(records.map((r) => r.entryZone))).slice(0, 16),
     exits: tally(known(records.flatMap((r) => (r.exitZone ? [r.exitZone] : [])))).slice(0, 16),
     detectedZones: tally(known(records.flatMap((r) => r.detectedZones))).slice(0, 16),
     averageNoise: Math.min(Math.round(noise * 10) / 10, 999),
-    ...(posted && postedZone && { posted: { guardId: posted.guardId, zoneId: postedZone } }),
+    ...(posted && postedZone && { posted: { guardId: posted.guardId, zoneId: postedZone, ...(startZone && { startZone }) } }),
   };
 }

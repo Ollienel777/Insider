@@ -13,7 +13,7 @@
           { "guardId": "G3", "intent": "block", "zoneId": "dock-N" }
         ],
         "lockZones": ["objective"],
-        "rationale": "They used the loading dock before. G3 starts there tonight. C2 has them in the dock corridor. G1 and G4 converge. G2 holds the records room door. G3 closes the loading dock behind them. Lock the records room."
+        "rationale": "They used the loading dock before. G3 starts in the secure room off the dock corridor tonight. C2 has them in the dock corridor. G1 and G4 converge. G2 holds the records room door. G3 closes the loading dock behind them. Lock the records room."
       }
     },
     {

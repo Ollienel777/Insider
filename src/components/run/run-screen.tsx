@@ -194,7 +194,7 @@ export function RunScreen({
         const watch = placed.watch;
         const summary =
           seq === 0 && history
-            ? chiefHistory(history, zones, watch ? { guardId: watch.guardId, zoneId: watch.entryId } : undefined)
+            ? chiefHistory(history, zones, watch ? { guardId: watch.guardId, zoneId: watch.entryId, startZone: watch.startZone } : undefined)
             : null;
         request = chiefRequest({ buildingId: building.id, missionId }, placed, zones, state, state.alarmEvents[seq], summary);
       } catch (error) {

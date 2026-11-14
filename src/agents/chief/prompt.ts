@@ -39,7 +39,7 @@ function historyLines(request: ChiefRequest): string {
   const list = (items: { zoneId: string; count: number }[]) =>
     items.length ? items.map((i) => `${i.zoneId} x${i.count}`).join(", ") : "none";
   const posted = h.posted
-    ? `\n${h.posted.guardId} started this run posted near ${h.posted.zoneId} because of it. Open your rationale by saying so, in one short sentence.`
+    ? `\n${h.posted.guardId} started this run posted ${h.posted.startZone ? `in ${h.posted.startZone}, ` : ""}near ${h.posted.zoneId}, because of it. Open your rationale by saying so, in one short sentence, naming where it stands.`
     : "";
   return `\nThe intruder's earlier runs here: ${h.runs}. Came in by: ${list(h.entries)}. Left by: ${list(h.exits)}. Seen in: ${list(h.detectedZones)}. Noisy turns per run: ${h.averageNoise}.${posted}`;
 }

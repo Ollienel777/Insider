@@ -66,7 +66,7 @@ async function firstAnswer(placed: PlacedLevel, records: readonly RunRecord[]) {
   const zones = chiefZones(placed);
   const run = trip(placed);
   const w = placed.watch;
-  const summary = chiefHistory(records, zones, w ? { guardId: w.guardId, zoneId: w.entryId } : undefined);
+  const summary = chiefHistory(records, zones, w ? { guardId: w.guardId, zoneId: w.entryId, startZone: w.startZone } : undefined);
   const request = chiefRequest("F1", placed, zones, run, run.alarmEvents[0], summary);
   return { request, answer: (await replanChief(request))! };
 }
@@ -165,11 +165,18 @@ describe("the second run of F1, in by the dock", () => {
     const first = place([]);
     const records = [runRecordOf(caughtRun(first))!];
     const second = place(records);
-    expect(second.watch).toEqual({ guardId: "G3", entryId: "dock-N" });
-    const start = (p: PlacedLevel) => p.level.guards.find((g) => g.id === "G3")!.patrol[0];
+    expect(second.watch).toEqual({ guardId: "G3", entryId: "dock-N", startZone: "secure" });
     const dock = F1_DEMO.dockEntry;
-    expect(hopsTo(second, start(second), dock)).toBeLessThan(hopsTo(first, start(first), dock));
+    const starts = (p: PlacedLevel) => p.level.guards.map((g) => hopsTo(p, g.patrol[0], dock));
+    const posted = second.level.guards.find((g) => g.id === "G3")!.patrol[0];
+    // Not a relabel: G3 stands nearer the dock than any guard starts on the first run, so the nearest guard is nearer.
+    expect(posted).toBe("sc-rack");
+    expect(hopsTo(second, posted, dock)).toBeLessThan(Math.min(...starts(first)));
+    expect(Math.min(...starts(second))).toBeLessThan(Math.min(...starts(first)));
+    expect(new Set(second.level.guards.map((g) => g.patrol[0]))).not.toEqual(new Set(first.level.guards.map((g) => g.patrol[0])));
     expect(second.guards.find((g) => g.id === "G3")!.post?.entryId).toBe("dock-N");
+    // The night cleaners still walk, and nothing the posture adds stands on their walk.
+    expect(second.cleaners.map((c) => c.id)).toEqual(first.cleaners.map((c) => c.id));
     // Pure: the same history gives the same placement.
     expect(place(records)).toEqual(second);
   });
@@ -177,10 +184,10 @@ describe("the second run of F1, in by the dock", () => {
   it("the Chief's first rationale names the dock and the guard posted there (recorded fake, keyless)", async () => {
     const records = [runRecordOf(caughtRun(place([])))!];
     const { request, answer } = await firstAnswer(place(records), records);
-    expect(request.history).toMatchObject({ runs: 1, entries: [{ zoneId: "dock-N", count: 1 }], posted: { guardId: "G3", zoneId: "dock-N" } });
+    expect(request.history).toMatchObject({ runs: 1, entries: [{ zoneId: "dock-N", count: 1 }], posted: { guardId: "G3", zoneId: "dock-N", startZone: "secure" } });
     expect(answer.source).toBe("recorded");
     expect(answer.recording).toBe("c2-trip-second-run");
-    expect(answer.orders.rationale).toMatch(/^They used the loading dock before\. G3 starts there tonight\./);
+    expect(answer.orders.rationale).toMatch(/^They used the loading dock before\. G3 starts in the secure room off the dock corridor tonight\./);
   });
 
   it("the template, standing in with no recording, opens the same way", async () => {
@@ -188,12 +195,12 @@ describe("the second run of F1, in by the dock", () => {
     const placed = place(records);
     const zones = chiefZones(placed);
     const run = trip(placed);
-    const summary = chiefHistory([...records, ...records], zones, { guardId: "G3", zoneId: "dock-N" });
+    const summary = chiefHistory([...records, ...records], zones, { guardId: "G3", zoneId: "dock-N", startZone: placed.watch!.startZone });
     // A transition no recorded turn matches: suspicious, from a noise.
     const request = { ...chiefRequest("F1", placed, zones, run, run.alarmEvents[0], summary), transition: { turn: 1, from: "calm" as const, to: "suspicious" as const, cause: { kind: "noise" as const, id: "G1" } } };
     const answer = (await replanChief(request))!;
     expect(answer.source).toBe("template");
-    expect(answer.orders.rationale).toMatch(/^They came in by the Loading dock twice\. G3 starts there tonight\./);
+    expect(answer.orders.rationale).toMatch(/^They came in by the Loading dock twice\. G3 starts in the Secure room tonight\./);
   });
 
   it("clearing the history restores the default posture and the first run's answer", async () => {

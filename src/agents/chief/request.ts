@@ -40,7 +40,8 @@ export const ChiefHistory = z.strictObject({
   detectedZones: z.array(ZoneCount).max(16),
   /** Noisy turns (sprints and picks) per run, to one decimal. */
   averageNoise: z.number().nonnegative().max(999),
-  posted: z.strictObject({ guardId: ShortId, zoneId: ShortId }).optional(),
+  /** `zoneId` is the way in the guard was posted near; `startZone`, the zone its post stands in. */
+  posted: z.strictObject({ guardId: ShortId, zoneId: ShortId, startZone: ShortId.optional() }).optional(),
 });
 export type ChiefHistory = z.infer<typeof ChiefHistory>;
 
@@ -55,7 +56,7 @@ export function strayHistoryIds(
   guardIds: ReadonlySet<string>,
 ): string[] {
   const zones = [...history.entries, ...history.exits, ...history.detectedZones].map((z) => z.zoneId);
-  if (history.posted) zones.push(history.posted.zoneId);
+  if (history.posted) zones.push(history.posted.zoneId, ...(history.posted.startZone ? [history.posted.startZone] : []));
   return [
     ...zones.filter((id) => !zoneIds.has(id)),
     ...(history.posted && !guardIds.has(history.posted.guardId) ? [history.posted.guardId] : []),

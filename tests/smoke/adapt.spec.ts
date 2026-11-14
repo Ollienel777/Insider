@@ -41,7 +41,7 @@ test("a second run of F1 by the dock: G3 starts posted nearer it, the Chief says
   await trip(page);
   const rationale = page.getByTestId("chief-rationale");
   await expect(rationale).toHaveAttribute("data-done", "true", { timeout: 4_000 });
-  await expect(rationale).not.toContainText("starts there tonight");
+  await expect(rationale).not.toContainText("starts in the secure room");
   await caught(page);
   // The run that just ended counts at once, before any reload (R1-M1).
   await expect(page.getByTestId("forget-history")).toHaveText("Forget 1 earlier run");
@@ -55,9 +55,11 @@ test("a second run of F1 by the dock: G3 starts posted nearer it, the Chief says
   await expect(page.getByTestId("forget-history")).toHaveText("Forget 1 earlier run");
   const adaptedG3 = await g3(page).getAttribute("data-node");
   expect(adaptedG3).not.toBe(defaultG3);
+  // The secure room off the dock corridor: nearer the dock than any guard starts on a first run.
+  expect(adaptedG3).toBe("sc-rack");
   await trip(page);
   await expect(rationale).toHaveAttribute("data-done", "true", { timeout: 4_000 });
-  await expect(rationale).toContainText("They used the loading dock before. G3 starts there tonight.");
+  await expect(rationale).toContainText("They used the loading dock before. G3 starts in the secure room off the dock corridor tonight.");
 
   // Mid-run, forgetting would throw the run away: it waits for the start or the end.
   await expect(page.getByTestId("forget-history")).toBeDisabled();
@@ -86,7 +88,7 @@ test("Restart after a caught run places the guards from it, as a reload would, a
   await trip(page);
   const rationale = page.getByTestId("chief-rationale");
   await expect(rationale).toHaveAttribute("data-done", "true", { timeout: 4_000 });
-  await expect(rationale).toContainText("They used the loading dock before. G3 starts there tonight.");
+  await expect(rationale).toContainText("They used the loading dock before. G3 starts in the secure room off the dock corridor tonight.");
 
   // A Restart mid-run records nothing and keeps the board it was on.
   await page.getByRole("button", { name: "Restart" }).click();
@@ -113,6 +115,8 @@ test("the Plan board and the Debrief's replay stand the guards where the second 
   await open(page);
   const adaptedG3 = await g3(page).getAttribute("data-node");
   expect(adaptedG3).not.toBe(defaultG3);
+  // The secure room off the dock corridor: nearer the dock than any guard starts on a first run.
+  expect(adaptedG3).toBe("sc-rack");
   await trip(page);
   await caught(page);
 
