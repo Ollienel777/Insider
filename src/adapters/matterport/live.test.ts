@@ -1356,3 +1356,105 @@ describe("the Inside view reads the scan's floor points", () => {
     }
   });
 });
+
+describe("review fixes: no move or turn is left waiting", () => {
+  it("flies a move that asks for more than 10 s in 10 s, and does not give it up early", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const stub = stubPlayer();
+      const landings: (() => void)[] = [];
+      stub.player.Sweep.moveTo.mockImplementationOnce(() => new Promise<void>((resolve) => landings.push(resolve)));
+      const view = await stub.open();
+      // Past setTimeout's limit: unclamped, the deadline would fire after about 1 ms.
+      const a = view.moveTo("A", 2 ** 31);
+      await vi.advanceTimersByTimeAsync(10);
+      const next = view.moveTo("B");
+      await vi.advanceTimersByTimeAsync(14_000);
+      expect(stub.player.Sweep.moveTo.mock.calls).toEqual([["A", { transition: FLY, transitionTime: 10_000 }]]);
+      expect(warn).not.toHaveBeenCalled();
+      landings[0]();
+      await Promise.all([a, next]);
+      expect(stub.player.Sweep.moveTo.mock.calls.map(([id]) => id)).toEqual(["A", "B"]);
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("resolves a turn the player never finishes within 1 s", async () => {
+    vi.useFakeTimers();
+    try {
+      const stub = stubPlayer();
+      stub.player.Camera.rotate.mockImplementationOnce(() => new Promise(() => {}));
+      const view = await stub.open();
+      const done = vi.fn();
+      void view.rotate(5, 0).then(done);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(done).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(done).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("resolves a turn still pending when the view disconnects", async () => {
+    vi.useFakeTimers();
+    try {
+      const stub = stubPlayer();
+      stub.player.Camera.rotate.mockImplementationOnce(() => new Promise(() => {}));
+      const view = await stub.open();
+      const done = vi.fn();
+      void view.rotate(5, 0).then(done);
+      await vi.advanceTimersByTimeAsync(10);
+      view.disconnect();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(done).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops listening for disconnect once a turn lands or times out", async () => {
+    vi.useFakeTimers();
+    const add = vi.spyOn(EventTarget.prototype, "addEventListener");
+    const remove = vi.spyOn(EventTarget.prototype, "removeEventListener");
+    try {
+      const stub = stubPlayer();
+      const view = await stub.open();
+      stub.player.Camera.rotate.mockImplementationOnce(() => new Promise(() => {}));
+      add.mockClear();
+      remove.mockClear();
+      const lost = view.rotate(5, 0);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await lost;
+      await view.rotate(5, 0);
+      const added = add.mock.calls.filter(([type]) => type === "abort").map(([, listener]) => listener);
+      const removed = remove.mock.calls.filter(([type]) => type === "abort").map(([, listener]) => listener);
+      expect(added).toHaveLength(2);
+      expect(removed).toEqual(added);
+    } finally {
+      add.mockRestore();
+      remove.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("subscribes to the pose again when the first subscribe threw, without the failed listener", async () => {
+    const stub = stubPlayer();
+    const view = await stub.open();
+    stub.player.Camera.pose.subscribe.mockImplementationOnce(() => {
+      throw new Error("not ready");
+    });
+    const ghost = vi.fn();
+    expect(() => view.onPose(ghost)).toThrow("not ready");
+    const heard: InsidePose[] = [];
+    view.onPose((p) => heard.push(p));
+    stub.pose(rawPose(1, 2, 90));
+    await told();
+    expect(stub.player.Camera.pose.subscribe).toHaveBeenCalledTimes(2);
+    expect(heard).toStrictEqual([pose(1, 2, 90)]);
+    expect(ghost).not.toHaveBeenCalled();
+  });
+});
