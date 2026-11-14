@@ -2,7 +2,7 @@
 // first person was chosen, and never an error when storage is blocked.
 import { describe, expect, it } from "vitest";
 import type { FloorGraph } from "@/domain";
-import { firstPersonOn } from "./run-view";
+import { firstPersonOffered, firstPersonOn } from "./run-view";
 import { DEFAULT_RUN_VIEW, loadRunView, RUN_VIEW_KEY, saveRunView, type RunViewState } from "./view-store";
 
 function memory(): Storage & { map: Map<string, string> } {
@@ -55,7 +55,7 @@ describe("the Run screen's view choice", () => {
 });
 
 describe("whether the Run screen shows first person", () => {
-  const state = (view: RunViewState["view"]): RunViewState => ({ view, choose: () => {}, unavailable: false, fail: () => {} });
+  const state = (view: RunViewState["view"]): RunViewState => ({ view, choose: () => {}, unavailable: false, reason: null, fail: () => {} });
   const floor = (source: FloorGraph["source"]) => ({ source }) as FloorGraph;
 
   it("shows it on a fixture floor once chosen", () => {
@@ -63,7 +63,16 @@ describe("whether the Run screen shows first person", () => {
     expect(firstPersonOn(state("board"), floor("fixture"))).toBe(false);
   });
 
-  it("never shows it on a floor from a live scan, whatever was chosen", () => {
+  it("shows it on a floor from a live scan only when the scan's mesh can be asked for", () => {
     expect(firstPersonOn(state("first-person"), floor("matterport"))).toBe(false);
+    expect(firstPersonOn(state("first-person"), floor("matterport"), null)).toBe(false);
+    expect(firstPersonOn(state("first-person"), floor("matterport"), "mOdel1")).toBe(true);
+    expect(firstPersonOn(state("board"), floor("matterport"), "mOdel1")).toBe(false);
+  });
+
+  it("offers it on a fixture floor always, and on a scan only with a model to draw", () => {
+    expect(firstPersonOffered(floor("fixture"))).toBe(true);
+    expect(firstPersonOffered(floor("matterport"))).toBe(false);
+    expect(firstPersonOffered(floor("matterport"), "mOdel1")).toBe(true);
   });
 });

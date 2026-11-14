@@ -206,6 +206,18 @@ export function getMatterport(heistMode?: string): MatterportSelection {
 }
 
 /**
+ * The model id whose mesh and panoramas first person draws for `building`
+ * (issue 118), when this page plays on a live scan of it; null when
+ * Matterport is not live or the building has no scan. Like the board, it is
+ * held in browser memory only: the server route it is sent to asks the Model
+ * API and keeps nothing.
+ */
+export function scanMeshModelFor(building: Pick<Building, "id" | "matterportModelId">, heistMode?: string): string | null {
+  if (getMatterport(heistMode).mode !== "live") return null;
+  return scanModelId(building, matterportEnv()) ?? null;
+}
+
+/**
  * The Inside view for `building`, when this page plays on a live scan of it:
  * opens a visible Showcase player in `parent` (SPEC §4.5: what it reads of the
  * scan goes to its caller and nowhere else). Null when Matterport is not live

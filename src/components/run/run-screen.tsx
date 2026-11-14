@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getMatterport, insideViewFor } from "@/adapters/matterport";
+import { getMatterport, insideViewFor, scanMeshModelFor } from "@/adapters/matterport";
 import { buildingHref } from "@/lib/building-href";
 import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
@@ -215,6 +215,9 @@ export function RunScreen({
   // Runs that stay out of storage: on a live scan, and for a kit building on any floor (`boardOn`).
   const inMemory = load.status === "ready" && load.inMemory;
   const openInside = useMemo(() => (liveScan ? insideViewFor(building, heistMode) : null), [liveScan, building, heistMode]);
+  // First person on a live scan stands on the scan's own mesh (issue 118): the model id stays in this page's memory.
+  const scanModel = useMemo(() => (liveScan ? scanMeshModelFor(building, heistMode) : null), [liveScan, building, heistMode]);
+  const firstPerson = placed !== null && firstPersonOn(runView, placed.level.floor, scanModel);
 
   // The crew's plan from the Plan screen, read after mount (storage is the browser's).
   const [crewPlan, setCrewPlan] = useState<StoredCrewPlan | null>(null);
@@ -490,7 +493,7 @@ export function RunScreen({
       }
       board={
           <div className="relative min-h-0 flex-1">
-            {run && placed ? <ViewSwitch state={runView} floor={placed.level.floor} /> : null}
+            {run && placed ? <ViewSwitch state={runView} floor={placed.level.floor} scanModelId={scanModel} /> : null}
             {load.status === "loading" ? (
               <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
             ) : load.status === "no-floor" ? (
@@ -522,15 +525,16 @@ export function RunScreen({
                   </Button>
                 }
               />
-            ) : run && placed && manifest && firstPersonOn(runView, placed.level.floor) ? (
+            ) : run && placed && manifest && firstPerson ? (
               <FirstPersonView
                 placed={placed}
                 run={run}
                 objective={manifest.mission.objective}
                 onAct={play}
-                onUnavailable={() => {
-                  runView.fail();
-                  setStatus(FP_UNAVAILABLE);
+                scanModelId={scanModel}
+                onUnavailable={(why) => {
+                  runView.fail(why);
+                  setStatus(why ?? FP_UNAVAILABLE);
                 }}
               />
             ) : run && placed ? (
@@ -556,7 +560,7 @@ export function RunScreen({
             <p data-testid="run-status" aria-live="polite" className="min-w-0 text-sm text-text-1 md:truncate">
               {status}
             </p>
-            <div className={cn("flex shrink-0 items-center gap-4 text-sm text-text-2 max-md:hidden", placed && firstPersonOn(runView, placed.level.floor) ? "hidden" : null)}>
+            <div className={cn("flex shrink-0 items-center gap-4 text-sm text-text-2 max-md:hidden", firstPerson ? "hidden" : null)}>
               <span className="flex items-center gap-2">
                 <Kbd>1–9</Kbd> {mode === "sprint" ? "sprint" : "move"}
               </span>

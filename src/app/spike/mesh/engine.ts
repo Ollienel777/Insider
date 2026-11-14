@@ -9,6 +9,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
+  type Object3D,
   Scene,
   WebGLRenderer,
   type CubeTexture,
@@ -22,6 +23,7 @@ import {
   type PanoResolution,
   type ScanDetail,
   type ScanManifest,
+  type ScanPano,
 } from "@/lib/scan-mesh/manifest";
 import { applyLook, stepMove, TUNING, viewBob, type MoveState } from "@/lib/scan-mesh/movement";
 import { parseObj } from "@/lib/scan-mesh/obj";
@@ -89,6 +91,22 @@ export interface WalkBuilding {
   allHeld: number | null;
 }
 
+/**
+ * Where another screen has the player this frame (the Run screen's first
+ * person, components/run/fp/): the feet, y-up, the horizontal velocity, the
+ * metres walked, and the look in this file's convention (yaw 0 down -z).
+ */
+export interface WalkPose {
+  x: number;
+  feetY: number;
+  z: number;
+  vx: number;
+  vz: number;
+  walked: number;
+  yaw: number;
+  pitch: number;
+}
+
 export interface WalkOptions {
   modelId: string;
   faces: PanoResolution;
@@ -99,6 +117,14 @@ export interface WalkOptions {
   /** Exposes the engine on `window` for poking at from the console. */
   debug: boolean;
   onHud(hud: WalkHud): void;
+  /**
+   * Set when another screen walks the player: each frame the pose comes from
+   * here (null holds the last one), and this engine takes no keys, mouse or
+   * pointer lock of its own.
+   */
+  drive?: (dt: number) => WalkPose | null;
+  /** Called after each frame is drawn, with the camera it was drawn from. */
+  onFrame?: (camera: PerspectiveCamera) => void;
 }
 
 /** Vertical field of view: about 103° across on a 16:9 screen, a shooter's default. */
@@ -232,6 +258,16 @@ export class ScanWalk {
 
     const listen: AddEventListenerOptions = { signal: this.abort.signal };
     window.addEventListener("resize", this.resize, listen);
+    if (!options.drive) this.listen(canvas, listen);
+    this.resize();
+
+    if (options.debug) (window as unknown as { __scanWalk?: ScanWalk }).__scanWalk = this;
+    this.frame = requestAnimationFrame(this.tick);
+    void this.load();
+  }
+
+  /** The keys, the mouse and the pointer lock, when this engine walks the player itself. */
+  private listen(canvas: HTMLCanvasElement, listen: AddEventListenerOptions): void {
     window.addEventListener("keydown", this.keyDown, listen);
     window.addEventListener("keyup", this.keyUp, listen);
     window.addEventListener("blur", () => this.keys.clear(), listen);
@@ -244,11 +280,21 @@ export class ScanWalk {
     canvas.addEventListener("pointermove", this.dragMove, listen);
     canvas.addEventListener("pointerup", this.dragEnd, listen);
     canvas.addEventListener("pointercancel", this.dragEnd, listen);
-    this.resize();
+  }
 
-    if (options.debug) (window as unknown as { __scanWalk?: ScanWalk }).__scanWalk = this;
-    this.frame = requestAnimationFrame(this.tick);
-    void this.load();
+  /** Puts another screen's pieces (guards, markers) into the scene, drawn over the scan. */
+  addToScene(object: Object3D): void {
+    this.scene.add(object);
+  }
+
+  /** The walkable mesh, once loaded: for another screen to collide and look against. */
+  get walkable(): MeshWorld | null {
+    return this.world;
+  }
+
+  /** The scan positions as the manifest gave them, once loaded. */
+  scanPanos(): readonly ScanPano[] {
+    return this.manifest?.panos ?? [];
   }
 
   // ---- loading ----
@@ -400,7 +446,8 @@ export class ScanWalk {
 
   // ---- input ----
 
-  private readonly resize = (): void => {
+  /** Fits the drawing to the canvas: on a window resize, and when another screen resizes the canvas. */
+  readonly resize = (): void => {
     const width = this.canvas.clientWidth || window.innerWidth;
     const height = this.canvas.clientHeight || window.innerHeight;
     this.renderer.setSize(width, height, false);
@@ -677,6 +724,7 @@ export class ScanWalk {
     this.last = time;
     this.step(dt);
     this.renderer.render(this.scene, this.camera);
+    if (this.world) this.options.onFrame?.(this.camera);
     if (this.recorder && this.world) {
       this.recorder.capture(this.renderer, this.scene, this.camera, this.world, this.used, this.panos?.mode ?? "view");
     }
@@ -734,6 +782,18 @@ export class ScanWalk {
       this.holdLift = false;
       this.yaw = recorder.yaw;
       this.pitch = 0;
+    } else if (this.options.drive) {
+      // Another screen walks the player: its pose, as is.
+      const pose = this.options.drive(dt);
+      next = pose
+        ? { x: pose.x, y: pose.feetY, z: pose.z, vx: pose.vx, vz: pose.vz, walked: pose.walked, grounded: true }
+        : { ...state, vx: 0, vz: 0 };
+      if (pose) {
+        this.yaw = pose.yaw;
+        this.pitch = pose.pitch;
+      }
+      this.eyeLift = 0;
+      this.holdLift = false;
     } else {
       next = stepMove(state, input, this.yaw, dt, world);
     }

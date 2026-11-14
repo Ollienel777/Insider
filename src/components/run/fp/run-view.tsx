@@ -23,12 +23,18 @@ export const FirstPersonView = dynamic(() => import("./first-person-view"), {
 export const FP_UNAVAILABLE = "First person needs WebGL, which this browser isn't giving it. You're on the board.";
 
 /**
- * Whether the Run screen shows first person: it was chosen, it can be drawn,
- * and the floor is a fixture floor. A floor from a live scan has no room
- * rectangles of ours to build walls from (and its own Inside view).
+ * Whether first person can stand on `floor`: a fixture floor (our own walls,
+ * world.ts), or a floor from a live scan whose mesh can be asked for
+ * (`scanModelId`, issue 118). A scan with no mesh, or whose mesh doesn't load,
+ * sends the view back to the board with a line saying why.
  */
-export function firstPersonOn(state: RunViewState, floor: FloorGraph): boolean {
-  return state.view === "first-person" && floor.source === "fixture";
+export function firstPersonOffered(floor: FloorGraph, scanModelId?: string | null): boolean {
+  return floor.source === "fixture" || (floor.source === "matterport" && Boolean(scanModelId));
+}
+
+/** Whether the Run screen shows first person: it was chosen, it can be drawn, and it is offered on this floor. */
+export function firstPersonOn(state: RunViewState, floor: FloorGraph, scanModelId?: string | null): boolean {
+  return state.view === "first-person" && firstPersonOffered(floor, scanModelId);
 }
 
 const VIEWS: readonly { view: RunView; label: string; hint: string; icon: LucideIcon }[] = [
@@ -43,10 +49,21 @@ const VIEWS: readonly { view: RunView; label: string; hint: string; icon: Lucide
  * the top right one (`top-2 right-8`, about 70 px wide), the play mode switch
  * and the turn timer (PR 105) the bottom two, so this stands 128 px in from the
  * right edge, on the mute button's line. Nothing shows on a floor from a live
- * scan, or on a phone showing the board: first person needs a keyboard.
+ * scan that first person can't stand on, or on a phone showing the board:
+ * first person needs a keyboard.
  */
-export function ViewSwitch({ state, floor, className }: { state: RunViewState; floor: FloorGraph; className?: string }) {
-  if (floor.source !== "fixture") return null;
+export function ViewSwitch({
+  state,
+  floor,
+  scanModelId,
+  className,
+}: {
+  state: RunViewState;
+  floor: FloorGraph;
+  scanModelId?: string | null;
+  className?: string;
+}) {
+  if (!firstPersonOffered(floor, scanModelId)) return null;
   return (
     <div
       role="group"
@@ -70,7 +87,7 @@ export function ViewSwitch({ state, floor, className }: { state: RunViewState; f
             data-testid={`run-view-${view}`}
             aria-pressed={on}
             disabled={off}
-            title={off ? "First person needs WebGL, which this browser isn't giving it" : hint}
+            title={off ? (state.reason ?? "First person needs WebGL, which this browser isn't giving it") : hint}
             onClick={(event) => {
               state.choose(view);
               // The keys go to the view, not back to this button: Space would press it again.
