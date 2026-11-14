@@ -9,8 +9,8 @@ beforeEach(() => resetStatus());
 
 describe("which services can answer live (missingForLive, configuredModes)", () => {
   it("names the variables each service still needs", () => {
-    expect(missingForLive("costar", {})).toEqual(["COSTAR_API_BASE", "COSTAR_API_KEY"]);
-    expect(missingForLive("costar", { COSTAR_API_BASE: "b" })).toEqual(["COSTAR_API_KEY"]);
+    expect(missingForLive("costar", {})).toEqual(["COSTAR_KIT_DIR"]);
+    expect(missingForLive("costar", { COSTAR_KIT_DIR: "/kits/costar" })).toEqual([]);
     expect(missingForLive("vexcel", { VEXCEL_API_KEY: "k" })).toEqual(["VEXCEL_API_BASE"]);
     expect(missingForLive("matterport", {})).toEqual(["NEXT_PUBLIC_MATTERPORT_SDK_KEY"]);
     expect(missingForLive("llm", {})).toEqual(["ANTHROPIC_API_KEY"]);
@@ -21,7 +21,7 @@ describe("which services can answer live (missingForLive, configuredModes)", () 
   it("is live only where live is asked for and nothing is missing", () => {
     expect(configuredModes({ HEIST_MODE: "live" })).toEqual({ llm: "fake", costar: "fake", vexcel: "fake", matterport: "fake" });
     expect(
-      configuredModes({ HEIST_MODE: "live", COSTAR_API_BASE: "b", COSTAR_API_KEY: "k", VEXCEL_MODE: "fake", VEXCEL_API_BASE: "b", VEXCEL_API_KEY: "k" }),
+      configuredModes({ HEIST_MODE: "live", COSTAR_KIT_DIR: "/kits/costar", VEXCEL_MODE: "fake", VEXCEL_API_BASE: "b", VEXCEL_API_KEY: "k" }),
     ).toEqual({ llm: "fake", costar: "live", vexcel: "fake", matterport: "fake" });
   });
 });

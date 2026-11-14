@@ -22,7 +22,7 @@ export default async function DossierPage({ params }: { params: Promise<{ id: st
     const message = error instanceof Error ? error.message : String(error);
     return <DossierUnavailable buildingId={building.id} name={building.name} reason="invalid" detail={message} />;
   }
-  if (!level) return <DossierUnavailable buildingId={building.id} name={building.name} reason="missing" />;
+  if (!level) return <DossierUnavailable buildingId={building.id} name={building.name} reason="missing" facts={dossierFacts(building)} />;
 
   return (
     <DossierScreen

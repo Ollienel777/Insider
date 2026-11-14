@@ -1,8 +1,11 @@
+import { rmSync } from "node:fs";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Building } from "@/domain";
 import raw from "../../../fixtures/costar/buildings.json";
 import { FIXTURE_BUILDINGS, createFakeCoStar } from "./fake";
 import { getCoStar, resetCoStar, selectCoStar } from "./index";
+import { smallFictionalKit } from "./test-kit";
 
 // SPEC §7's table of fixture buildings.
 const TABLE = [
@@ -124,7 +127,7 @@ describe("the fake adapter", () => {
 });
 
 describe("selectCoStar (the mode switch)", () => {
-  const KEYS = { COSTAR_API_BASE: "https://costar.invalid/api", COSTAR_API_KEY: "test-key" };
+  const KIT = { COSTAR_KIT_DIR: "/kits/costar-test" };
 
   it("is fake with an empty environment", () => {
     const s = selectCoStar({});
@@ -132,72 +135,96 @@ describe("selectCoStar (the mode switch)", () => {
     expect(s.reason).toBe("CoStar: fixtures (fake mode)");
   });
 
-  it("is fake when COSTAR_MODE is fake, even with keys and HEIST_MODE=live", () => {
-    const s = selectCoStar({ ...KEYS, HEIST_MODE: "live", COSTAR_MODE: "fake" });
+  it("is fake when COSTAR_MODE is fake, even with a kit and HEIST_MODE=live", () => {
+    const s = selectCoStar({ ...KIT, HEIST_MODE: "live", COSTAR_MODE: "fake" });
     expect(s.mode).toBe("fake");
   });
 
-  it("falls back to fake when COSTAR_MODE is live but COSTAR_API_KEY is missing, and says why", async () => {
-    const s = selectCoStar({ COSTAR_MODE: "live", COSTAR_API_BASE: KEYS.COSTAR_API_BASE });
+  it("falls back to fake when COSTAR_MODE is live but COSTAR_KIT_DIR is missing, and says why", async () => {
+    const s = selectCoStar({ COSTAR_MODE: "live" });
     expect(s.mode).toBe("fake");
-    expect(s.reason).toBe("CoStar: fixtures (live mode, but COSTAR_API_KEY not set)");
+    expect(s.reason).toBe("CoStar: fixtures (live mode, but COSTAR_KIT_DIR not set)");
     expect((await s.adapter.listBuildings("LA")).map((b) => b.id)).toEqual(["F1", "F2", "F3"]);
   });
 
-  it("treats an empty COSTAR_API_KEY as missing", () => {
-    expect(selectCoStar({ ...KEYS, COSTAR_MODE: "live", COSTAR_API_KEY: "" }).mode).toBe("fake");
+  it("treats an empty COSTAR_KIT_DIR as missing", () => {
+    expect(selectCoStar({ COSTAR_MODE: "live", COSTAR_KIT_DIR: "" }).mode).toBe("fake");
   });
 
-  it("names both variables when neither is set", () => {
-    expect(selectCoStar({ HEIST_MODE: "live" }).reason).toBe(
-      "CoStar: fixtures (live mode, but COSTAR_API_BASE and COSTAR_API_KEY not set)",
-    );
-  });
-
-  it("is live with COSTAR_MODE=live and both variables, or HEIST_MODE=live alone", () => {
-    expect(selectCoStar({ ...KEYS, COSTAR_MODE: "live" })).toMatchObject({ mode: "live", reason: "CoStar: live" });
-    expect(selectCoStar({ ...KEYS, HEIST_MODE: "live" }).mode).toBe("live");
+  it("is live with COSTAR_MODE=live and a kit, or HEIST_MODE=live alone", () => {
+    expect(selectCoStar({ ...KIT, COSTAR_MODE: "live" })).toMatchObject({ mode: "live", reason: "CoStar: live (data kit)" });
+    expect(selectCoStar({ ...KIT, HEIST_MODE: "live" }).mode).toBe("live");
   });
 });
 
-describe("a building live CoStar does not know (#93)", () => {
+describe("live CoStar beside the fixtures (issue 27; the PR #106 note)", () => {
+  const dirs: string[] = [];
   afterEach(() => {
     vi.unstubAllEnvs();
-    vi.unstubAllGlobals();
     vi.restoreAllMocks();
     resetCoStar();
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   });
 
-  function liveAnswering404() {
+  function live(dir: string) {
     vi.spyOn(console, "info").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.stubEnv("HEIST_MODE", "");
     vi.stubEnv("COSTAR_MODE", "live");
-    vi.stubEnv("COSTAR_API_BASE", "https://costar.test/api");
-    vi.stubEnv("COSTAR_API_KEY", "test-key");
-    vi.stubGlobal("fetch", async () => new Response("", { status: 404 }));
+    vi.stubEnv("COSTAR_KIT_DIR", dir);
     resetCoStar();
   }
+  const fictional = () => {
+    const dir = smallFictionalKit();
+    dirs.push(dir);
+    return dir;
+  };
 
-  it("falls back to the fixture building, and the mode chip says fixtures", async () => {
-    liveAnswering404();
-    expect(getCoStar().mode).toBe("live");
+  it("the map lists the fixtures, then the kit's pins, per city", async () => {
+    live(fictional());
+    const { adapter } = getCoStar();
+    expect((await adapter.listBuildings("LA")).map((b) => [b.id, b.source])).toEqual([
+      ["F1", "fixture"],
+      ["F2", "fixture"],
+      ["F3", "fixture"],
+      ["900001", "costar"],
+    ]);
+    expect((await adapter.listBuildings("Houston")).map((b) => b.id)).toEqual(["F4", "F5", "900004"]);
+    expect(getCoStar()).toMatchObject({ mode: "live" });
+  });
+
+  it("F1 is served by the fixtures without tripping CoStar, and a kit building still reads live after it", async () => {
+    live(fictional());
     expect((await getCoStar().adapter.getBuilding("F1"))?.name).toBe("Halvorsen Tower");
-    const after = getCoStar();
-    expect(after.mode).toBe("fake");
-    expect(after.fallback?.message).toBe("CoStar doesn't know this building, so buildings use fixtures.");
-  });
-
-  it("does the same for its available space", async () => {
-    liveAnswering404();
     expect(await getCoStar().adapter.getAvailableSpace("F1")).toHaveLength(13);
-    expect(getCoStar().mode).toBe("fake");
+    expect(getCoStar().mode).toBe("live");
+    expect(getCoStar().fallback).toBeUndefined();
+
+    const kitBuilding = await getCoStar().adapter.getBuilding("900001");
+    expect(kitBuilding).toMatchObject({ id: "900001", source: "costar" });
+    expect(getCoStar().mode).toBe("live");
   });
 
-  it("stays not found, and live, for an id the fixtures do not know either", async () => {
-    liveAnswering404();
+  it("an id neither knows stays not found, and live", async () => {
+    live(fictional());
     expect(await getCoStar().adapter.getBuilding("NOPE")).toBeNull();
     expect(getCoStar()).toMatchObject({ mode: "live" });
     expect(getCoStar().fallback).toBeUndefined();
+  });
+
+  it("a kit that fails to load trips CoStar to the fixtures, with one fallback", async () => {
+    live(path.join(fictional(), "missing"));
+    expect((await getCoStar().adapter.listBuildings("LA")).map((b) => b.id)).toEqual(["F1", "F2", "F3"]);
+    expect(getCoStar()).toMatchObject({ mode: "fake", fallback: { service: "costar" } });
+  });
+
+  it("a kit building already read still opens when CoStar is forced to fixtures (the PR #72 note)", async () => {
+    live(fictional());
+    await getCoStar().adapter.listBuildings("LA");
+    const forced = getCoStar({ forced: true });
+    expect(forced.mode).toBe("fake");
+    expect((await forced.adapter.getBuilding("900001"))?.id).toBe("900001");
+    expect(await forced.adapter.getAvailableSpace("900001")).toHaveLength(2);
+    expect((await forced.adapter.listBuildings("LA")).map((b) => b.id)).toEqual(["F1", "F2", "F3"]);
   });
 });

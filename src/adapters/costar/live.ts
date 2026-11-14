@@ -1,17 +1,17 @@
-// The live CoStar adapter: HTTP transport only. What it requests and how the
-// response maps onto `Building` lives in mapping.ts (open question Q1).
-//
-// Not exercised against CoStar: there is no key yet. Its unit tests run it on
-// a stubbed `fetch`.
+// The live CoStar adapter: CoStar's data kit, read from `COSTAR_KIT_DIR`
+// (SPEC §4.5). The kit is indexed once per adapter, lazily, on the first call
+// (kit.ts); every call after that answers from memory. A failed load rejects
+// that call (the breaker in index.ts then serves fixtures) and is retried on
+// the next adapter, after `npm run demo:reset`.
 import type { Building, City } from "@/domain";
-import { ENDPOINTS, propertyQuery, spaceQuery, toAvailableSpace, toBuilding, unwrapItem, unwrapList } from "./mapping";
+import { loadKitIndex, type KitIndex } from "./kit";
+import { mapSelection } from "./mapping";
 import type { CoStarAdapter } from "./types";
 
 export interface LiveCoStarConfig {
-  base?: string;
-  key?: string;
-  fetch?: typeof fetch;
-  timeoutMs?: number;
+  kitDir?: string;
+  /** The kit reader; tests pass one over fictional records. */
+  load?: (dir: string) => Promise<KitIndex>;
 }
 
 export class CoStarNotConfiguredError extends Error {
@@ -21,52 +21,57 @@ export class CoStarNotConfiguredError extends Error {
   }
 }
 
-export function createLiveCoStar(config: LiveCoStarConfig): CoStarAdapter {
-  const { base: rawBase, key } = config;
-  if (!rawBase || !key) {
-    const missing = [!rawBase && "COSTAR_API_BASE", !key && "COSTAR_API_KEY"];
-    throw new CoStarNotConfiguredError(missing.filter((m): m is string => Boolean(m)));
+export interface LiveCoStar extends CoStarAdapter {
+  /** A building from the index already in memory, without loading it; `null` when not loaded or unknown. */
+  cached(id: string): Building | null;
+}
+
+export function createLiveCoStar(config: LiveCoStarConfig): LiveCoStar {
+  const { kitDir } = config;
+  if (!kitDir) throw new CoStarNotConfiguredError(["COSTAR_KIT_DIR"]);
+  const load = config.load ?? loadKitIndex;
+
+  let loaded: KitIndex | null = null;
+  let pending: Promise<KitIndex> | null = null;
+  function index(): Promise<KitIndex> {
+    pending ??= load(kitDir!).then(
+      (kit) => {
+        loaded = kit;
+        const { records, indexed, scanned, malformed, ms } = kit.stats;
+        const bad = malformed.properties + malformed.listings + malformed.scans;
+        console.info(`CoStar kit: ${indexed} of ${records} properties staged (${scanned} with a scan) in ${ms} ms; ${bad} malformed records skipped`);
+        return kit;
+      },
+      (error: unknown) => {
+        pending = null;
+        throw error;
+      },
+    );
+    return pending;
   }
 
-  const base = rawBase.replace(/\/+$/, "");
-  const doFetch = config.fetch ?? fetch;
-  const timeoutMs = config.timeoutMs ?? 8_000;
-
-  /** GET a path; `null` on 404, an error naming the status on anything else. */
-  async function get(path: string, query: URLSearchParams): Promise<unknown | null> {
-    const response = await doFetch(`${base}${path}?${query}`, {
-      headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
-      signal: AbortSignal.timeout(timeoutMs),
-      cache: "no-store",
-    });
-    if (response.status === 404) return null;
-    if (!response.ok) throw new Error(`CoStar: GET ${path} answered ${response.status}`);
-    return response.json();
-  }
-
-  async function spacesOf(id: string): Promise<unknown[] | null> {
-    const body = await get(ENDPOINTS.spaces(id), spaceQuery());
-    return body === null ? null : unwrapList(body);
-  }
-
-  async function building(property: unknown): Promise<Building> {
-    const id = String((property as { propertyId?: unknown }).propertyId);
-    return toBuilding(property, (await spacesOf(id)) ?? []);
-  }
+  const copy = <T>(value: T): T => structuredClone(value);
+  const building = (kit: KitIndex, id: string) => kit.properties.get(id)?.building ?? null;
 
   return {
     async listBuildings(city: City) {
-      const body = await get(ENDPOINTS.properties, propertyQuery(city));
-      const list = await Promise.all(unwrapList(body ?? []).map(building));
-      return list.sort((a, b) => a.id.localeCompare(b.id, "en", { numeric: true }));
+      const kit = await index();
+      return mapSelection(
+        [...kit.properties.values()].map((p) => p.building),
+        city,
+      ).map(copy);
     },
     async getBuilding(id: string) {
-      const body = await get(ENDPOINTS.property(id), propertyQuery());
-      return body === null ? null : building(unwrapItem(body));
+      const found = building(await index(), id);
+      return found ? copy(found) : null;
     },
     async getAvailableSpace(id: string) {
-      const rows = await spacesOf(id);
-      return rows === null ? null : toAvailableSpace(rows);
+      const found = building(await index(), id);
+      return found ? copy(found.availableSpace) : null;
+    },
+    cached(id: string) {
+      const found = loaded ? building(loaded, id) : null;
+      return found ? copy(found) : null;
     },
   };
 }

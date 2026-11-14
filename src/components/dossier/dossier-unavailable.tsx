@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BuildingScreen } from "@/components/shell/building-screen";
 import { buttonVariants } from "@/components/ui/button";
+import type { DossierFact } from "./dossier-screen";
 
 interface DossierUnavailableProps {
   buildingId: string;
@@ -8,10 +9,12 @@ interface DossierUnavailableProps {
   /** `missing`: no cached level yet; `invalid`: the cached files fail their schema. */
   reason: "missing" | "invalid";
   detail?: string;
+  /** The building's CoStar facts, shown while its level is not built yet. */
+  facts?: DossierFact[];
 }
 
 /** The dossier without a cached level: what happened, and the way to fix it or go on. */
-export function DossierUnavailable({ buildingId, name, reason, detail }: DossierUnavailableProps) {
+export function DossierUnavailable({ buildingId, name, reason, detail, facts }: DossierUnavailableProps) {
   const command = `npm run build:levels -- ${buildingId}`;
   return (
     <BuildingScreen
@@ -31,6 +34,16 @@ export function DossierUnavailable({ buildingId, name, reason, detail }: Dossier
             {command}
           </code>
           {detail ? <p className="font-mono text-sm break-words text-text-2">{detail}</p> : null}
+          {facts?.length ? (
+            <dl data-testid="costar-facts" className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-5">
+              {facts.map((fact) => (
+                <div key={fact.label} className="rounded-sm border border-border bg-surface-1 px-3 py-2">
+                  <dt className="label-caps text-text-3">{fact.label}</dt>
+                  <dd className="mt-1 font-mono text-sm text-text-1">{fact.value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
         </div>
       }
       panel={

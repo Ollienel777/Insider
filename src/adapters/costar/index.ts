@@ -1,14 +1,18 @@
 // Picks the live or the fake CoStar adapter from the environment (SPEC §7)
 // and exports the one interface. Live needs `COSTAR_MODE` (or `HEIST_MODE`)
-// set to `live` *and* both `COSTAR_API_BASE` and `COSTAR_API_KEY`; with
-// either missing it falls back to the fixtures and says so. A live call that
-// fails is answered by the fixtures too, and from then on CoStar stays on
-// fixtures (`Breaker`); the selection then carries that `fallback`. So does a
-// building live CoStar does not know but the fixtures do (`knownToFixtures`).
+// set to `live` *and* `COSTAR_KIT_DIR`, the unpacked data kit; without it the
+// fixtures answer and say so. Live, the map shows the kit's buildings next to
+// the fixtures, and a fixture id (the demo's F1) is answered by the fixtures
+// without touching the kit (`knownToFixtures`). A kit that fails to load is
+// answered by the fixtures too, and from then on CoStar stays on fixtures
+// (`Breaker`); the selection then carries that `fallback`. A kit building
+// already read still opens after that, from memory, so a fallback never
+// removes a page (PR #72's note).
 import { syncDemoEpoch } from "@/lib/demo-epoch";
-import { UnknownToLiveError, withFallback, type Fallback } from "@/lib/fallback";
+import { withFallback, type Fallback } from "@/lib/fallback";
 import { missingForLive, serviceModes, type ServiceMode } from "@/lib/mode";
 import { resetServerSlot, serverSlot } from "@/lib/server-breakers";
+import type { Building } from "@/domain";
 import { createFakeCoStar } from "./fake";
 import { createLiveCoStar } from "./live";
 import type { CoStarAdapter } from "./types";
@@ -25,6 +29,8 @@ export interface CoStarSelection {
   reason: string;
   /** Set once a live call has failed and the fixtures took over. */
   fallback?: Fallback;
+  /** A live building already in memory, for the fixtures to serve after a fallback. */
+  cached?: (id: string) => Building | null;
 }
 
 export function selectCoStar(env: Env): CoStarSelection {
@@ -40,29 +46,32 @@ export function selectCoStar(env: Env): CoStarSelection {
       reason: `CoStar: fixtures (live mode, but ${missing.join(" and ")} not set)`,
     };
   }
-  return {
-    adapter: createLiveCoStar({ base: env.COSTAR_API_BASE, key: env.COSTAR_API_KEY }),
-    mode: "live",
-    reason: "CoStar: live",
-  };
+  const live = createLiveCoStar({ kitDir: env.COSTAR_KIT_DIR });
+  return { adapter: live, mode: "live", reason: "CoStar: live (data kit)", cached: (id) => live.cached(id) };
 }
 
 /**
- * `live`, except that a building it answers `null` for but `fixtures` know
- * throws `UnknownToLiveError`. Under `withFallback` that trips the breaker,
- * so the fixture building (the demo's, whose cached levels exist only under
- * fixture ids) is served and the mode chip reports fixtures. An id neither
- * knows stays `null`.
+ * `live` beside `fixtures`: the map lists the fixtures' buildings, then the
+ * live ones; an id the fixtures know is answered by them, and only other ids
+ * reach live. So a visit to F1 never touches live CoStar and never trips the
+ * breaker: the fallback is scoped to the building, not the process (the
+ * PR #106 note). Fixture ids (`F1`…) and kit ids (integers) cannot collide.
  */
 export function knownToFixtures(live: CoStarAdapter, fixtures: CoStarAdapter): CoStarAdapter {
-  async function orFixture<T>(id: string, answer: T | null, fixture: () => Promise<T | null>): Promise<T | null> {
-    if (answer === null && (await fixture()) !== null) throw new UnknownToLiveError("costar", id);
-    return answer;
-  }
   return {
-    listBuildings: (city) => live.listBuildings(city),
-    getBuilding: async (id) => orFixture(id, await live.getBuilding(id), () => fixtures.getBuilding(id)),
-    getAvailableSpace: async (id) => orFixture(id, await live.getAvailableSpace(id), () => fixtures.getAvailableSpace(id)),
+    listBuildings: async (city) => [...(await fixtures.listBuildings(city)), ...(await live.listBuildings(city))],
+    getBuilding: async (id) => (await fixtures.getBuilding(id)) ?? live.getBuilding(id),
+    getAvailableSpace: async (id) => (await fixtures.getAvailableSpace(id)) ?? live.getAvailableSpace(id),
+  };
+}
+
+/** `fixtures`, except that a live building already in memory still opens by id. */
+function withCached(fixtures: CoStarAdapter, cached: CoStarSelection["cached"]): CoStarAdapter {
+  if (!cached) return fixtures;
+  return {
+    ...fixtures,
+    getBuilding: async (id) => (await fixtures.getBuilding(id)) ?? cached(id),
+    getAvailableSpace: async (id) => (await fixtures.getAvailableSpace(id)) ?? cached(id)?.availableSpace ?? null,
   };
 }
 
@@ -81,14 +90,21 @@ export function getCoStar(options: { forced?: boolean } = {}): CoStarSelection {
   // A new demo epoch (`npm run demo:reset`) resets the breaker here too, not
   // only when a page renders.
   syncDemoEpoch();
-  if (options.forced) return { adapter: fake, mode: "fake", reason: "CoStar: fixtures (forced in demo settings)" };
+  if (options.forced) {
+    return { adapter: withCached(fake, slot.selected?.cached), mode: "fake", reason: "CoStar: fixtures (forced in demo settings)" };
+  }
   if (!slot.selected) {
     const chosen = selectCoStar(process.env);
     slot.selected = chosen.mode === "live" ? { ...chosen, adapter: withFallback(knownToFixtures(chosen.adapter, fake), fake, slot.breaker) } : chosen;
     console.info(slot.selected.reason);
   }
   if (slot.breaker.tripped) {
-    return { adapter: fake, mode: "fake", reason: "CoStar: fixtures (a live call failed)", fallback: slot.breaker.tripped };
+    return {
+      adapter: withCached(fake, slot.selected.cached),
+      mode: "fake",
+      reason: "CoStar: fixtures (a live call failed)",
+      fallback: slot.breaker.tripped,
+    };
   }
   return slot.selected;
 }
