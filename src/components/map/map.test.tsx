@@ -1,9 +1,10 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { FIXTURE_BUILDINGS } from "@/adapters/costar/fake";
 import { FIXTURE_FLOORS, createFakeMatterport } from "@/adapters/matterport/fake";
+import { FLOOR_FIXTURES } from "@/lib/fixture-floors";
 import { buildingsWithLevel } from "@/lib/levels";
 import { ATTRIBUTION, BASEMAPS, project } from "./basemap";
 import { cardPlacement } from "./building-card";
@@ -99,9 +100,11 @@ describe("buildingsWithLevel", () => {
     for (const id of ready) expect(await matterport.loadFloor({ id }), id).not.toBeNull();
   });
 
-  it("follows the registry it is given, and is empty for none", () => {
-    expect([...buildingsWithLevel({ F4: {} })]).toEqual(["F4"]);
-    expect(buildingsWithLevel({}).size).toBe(0);
+  it("registers every floor file in fixtures/floors, and nothing else", () => {
+    const files = readdirSync(path.join(root, "fixtures", "floors"))
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => name.slice(0, -".json".length));
+    expect(Object.keys(FLOOR_FIXTURES).sort()).toEqual(files.sort());
   });
 });
 

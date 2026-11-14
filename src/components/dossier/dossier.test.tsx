@@ -72,6 +72,12 @@ function visibleText(html: string): string {
   return textOf(out);
 }
 
+/** Each `<tr data-testid="provenance-row">`, its own markup only. */
+const provenanceRows = (html: string) => [...html.matchAll(/<tr data-testid="provenance-row"[\s\S]*?<\/tr>/g)].map((m) => m[0]);
+
+/** Each CoStar fact's value cell. */
+const factCells = (html: string) => [...html.matchAll(/<dd[^>]*>[\s\S]*?<\/dd>/g)].map((m) => m[0]);
+
 describe("the Data → Level table for F1", () => {
   const row = (id: string) => rows.find((r) => r.id === id);
 
@@ -254,6 +260,31 @@ describe("DossierScreen", () => {
     expect(before).toContain("Data → Level");
   });
 
+  it("holds back every fact and every row, short values included, until its own reveal", () => {
+    const facts = dossierFacts(building);
+    const factsBefore = factCells(screen(false));
+    const factsAfter = factCells(screen(true));
+    expect(factsBefore).toHaveLength(facts.length);
+    facts.forEach((fact, i) => {
+      expect(factsBefore[i], fact.label).toContain('data-shown="false"');
+      expect(factsBefore[i], fact.label).toContain('data-testid="skeleton"');
+      expect(visibleText(factsBefore[i]).trim(), fact.label).toBe("");
+      expect(visibleText(factsAfter[i]).trim(), fact.label).toBe(fact.value);
+    });
+
+    const rowsBefore = provenanceRows(screen(false));
+    const rowsAfter = provenanceRows(screen(true));
+    expect(rowsBefore).toHaveLength(rows.length);
+    rows.forEach((row, i) => {
+      expect(rowsBefore[i], row.id).toMatch(/^<tr data-testid="provenance-row"[^>]*data-shown="false"/);
+      expect(rowsBefore[i], row.id).toContain('data-testid="skeleton"');
+      expect(visibleText(rowsBefore[i]).trim(), row.id).toBe("");
+      for (const piece of [row.field, row.value, row.rule, row.result]) {
+        expect(visibleText(rowsAfter[i]), row.id).toContain(piece);
+      }
+    });
+  });
+
   it("complete, shows the facts, the table and the briefing with its source and disclaimer", () => {
     const html = screen(true);
     const text = textOf(html);
@@ -305,10 +336,15 @@ describe("Reveal", () => {
         </tbody>
       </table>,
     );
-    const text = visibleText(html);
+    const trs = provenanceRows(html);
+    expect(trs).toHaveLength(rows.length);
     rows.forEach((row, i) => {
-      if (i < 2) expect(text, row.id).toContain(row.result);
-      else expect(text, row.id).not.toContain(row.result);
+      const text = visibleText(trs[i]);
+      if (i < 2) {
+        for (const piece of [row.field, row.value, row.rule, row.result]) expect(text, row.id).toContain(piece);
+      } else {
+        expect(text.trim(), row.id).toBe("");
+      }
     });
   });
 });
