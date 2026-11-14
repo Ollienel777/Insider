@@ -7,7 +7,14 @@ import type { InsideView } from "@/adapters/matterport";
 import { openInsideSession, type InsideStatus } from "./inside-view";
 
 function opener() {
-  const view = { moveTo: vi.fn<InsideView["moveTo"]>(async () => undefined), disconnect: vi.fn() } satisfies InsideView;
+  const view = {
+    moveTo: vi.fn<InsideView["moveTo"]>(async () => undefined),
+    rotate: vi.fn<InsideView["rotate"]>(async () => undefined),
+    onPose: vi.fn<InsideView["onPose"]>(() => () => {}),
+    floorPoints: vi.fn<InsideView["floorPoints"]>(async () => new Map()),
+    project: vi.fn<InsideView["project"]>(() => null),
+    disconnect: vi.fn(),
+  } satisfies InsideView;
   let resolve: (v: InsideView) => void = () => {};
   let reject: (e: unknown) => void = () => {};
   const open = vi.fn(() => new Promise<InsideView>((res, rej) => ((resolve = res), (reject = rej))));
@@ -40,6 +47,22 @@ describe("the Inside view panel's session", () => {
     o.opened();
     await tick();
     expect(o.view.moveTo.mock.calls.map(([id]) => id)).toEqual(["s2"]);
+  });
+
+  it("only moves the view: it turns nothing and reads nothing from the scan", async () => {
+    const o = opener();
+    const session = openInsideSession(o.open, parent, () => {});
+    session.moveTo("s1");
+    o.opened();
+    await tick();
+    session.moveTo("s2");
+    session.close();
+    // The panel moves without a travel time, so the view flies as it always has.
+    expect(o.view.moveTo.mock.calls).toEqual([["s1"], ["s2"]]);
+    expect(o.view.rotate).not.toHaveBeenCalled();
+    expect(o.view.onPose).not.toHaveBeenCalled();
+    expect(o.view.floorPoints).not.toHaveBeenCalled();
+    expect(o.view.project).not.toHaveBeenCalled();
   });
 
   it("disconnects when the panel closes", async () => {
