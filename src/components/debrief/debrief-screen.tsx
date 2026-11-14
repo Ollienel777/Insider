@@ -134,7 +134,7 @@ export function DebriefScreen({
         title="This building has no board to replay on yet."
         body="Only Halvorsen Tower has a floor plan so far. Pick it on the map to play the run."
         action={
-          <Link href="/" className={buttonVariants({ variant: "secondary" })}>
+          <Link href="/map" className={buttonVariants({ variant: "secondary" })}>
             Back to the map
           </Link>
         }
@@ -288,7 +288,7 @@ function DebriefReady({
             </>
           )}
           <Link
-            href="/"
+            href="/map"
             data-testid="debrief-to-map"
             className={cn(buttonVariants({ variant: "ghost" }), "w-full")}
           >

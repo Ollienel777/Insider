@@ -344,7 +344,7 @@ test("a building with no level yet says so and offers the map", async ({ page })
   await page.goto("/b/F2/run");
   await expect(page.getByTestId("board-empty")).toContainText("This building's level isn't ready yet.");
   await page.getByRole("link", { name: "Back to the map" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/map$/);
 });
 
 test("S sprints: the numbers mark nodes two hops on, a click sprints there in one turn, and the board walks again (#121)", async ({ page }) => {
