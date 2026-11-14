@@ -3,8 +3,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getCoStar, resetCoStar } from "@/adapters/costar";
+import { fictionalListing, fictionalProperty, writeFictionalKit } from "@/adapters/costar/test-kit";
 import { readCachedCasting } from "@/agents/casting/cache";
 import { CastingResult } from "@/domain";
+import { FORCE_COOKIE } from "@/lib/mode";
 import expected from "../../../../../fixtures/inventory-finalists.json";
 import { GET } from "./route";
 
@@ -126,6 +128,82 @@ describe("GET /api/cast/[missionId] with CoStar live", () => {
     const response = await get("romaine-1974");
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: "the cached shortlist for this mission is invalid" });
+  });
+});
+
+// #103, on the fictional test kit (src/adapters/costar/test-kit.ts) only.
+describe("GET /api/cast/[missionId] with a showcase building", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "cast-showcase-"));
+  const kit = writeFictionalKit({
+    properties: [fictionalProperty(900001, { contacts: [{ name: "Brokerly Person" }] })],
+    listings: [fictionalListing(700001, 900001, [{}], { listingContacts: [{ name: "Agently Person" }] })],
+    scans: [[900001, "mpTestAAAA001"]],
+  });
+
+  beforeAll(() => {
+    vi.stubEnv("COSTAR_KIT_DIR", kit);
+    vi.stubEnv("HEIST_STATE_DIR", path.join(root, "state"));
+    vi.stubEnv("SHOWCASE_LEVELS", "900001:romaine-1974");
+  });
+  afterAll(() => {
+    vi.stubEnv("COSTAR_MODE", "fake");
+    vi.stubEnv("SHOWCASE_LEVELS", "");
+    resetCoStar();
+    rmSync(root, { recursive: true, force: true });
+    rmSync(kit, { recursive: true, force: true });
+  });
+  const mode = (costar: "live" | "fake") => {
+    vi.stubEnv("COSTAR_MODE", costar);
+    resetCoStar();
+  };
+
+  it("returns the mission's showcase building beside its shortlist, live", async () => {
+    mode("live");
+    const response = await get("romaine-1974");
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    const body = JSON.parse(text);
+    expect(body.showcase).toMatchObject({ id: "900001", name: "Testwood Tower 900001", buildingClass: "B" });
+    expect(body.showcase.reasons.find((r: { need: string }) => r.need === "built 1974 or earlier")).toEqual({
+      need: "built 1974 or earlier",
+      value: "built 1981",
+      status: "miss",
+    });
+    // The shortlist is unchanged: the committed one, F1 first.
+    const rest = { ...body };
+    delete rest.showcase;
+    expect(CastingResult.parse(rest).finalists.map((c) => c.id)).toEqual(expected["romaine-1974"]);
+    expect(text).not.toMatch(/Brokerly|Agently/);
+  });
+
+  it("returns the shortlist alone for a mission with no showcase building", async () => {
+    mode("live");
+    const body = await (await get("sunset-1986")).json();
+    expect(body).not.toHaveProperty("showcase");
+  });
+
+  it("returns the shortlist alone in fake mode and with CoStar forced to fixtures", async () => {
+    mode("fake");
+    expect(await (await get("romaine-1974")).json()).not.toHaveProperty("showcase");
+    mode("live");
+    const forced = await GET(new Request("http://localhost/api/cast/romaine-1974", { headers: { cookie: `${FORCE_COOKIE}=costar` } }), {
+      params: Promise.resolve({ missionId: "romaine-1974" }),
+    });
+    expect(await forced.json()).not.toHaveProperty("showcase");
+  });
+
+  it("says the level can't be built while the model is forced to fixtures", async () => {
+    mode("live");
+    vi.stubEnv("LLM_MODE", "live");
+    vi.stubEnv("LLM_PROVIDER", "anthropic");
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-placeholder");
+    const forced = await GET(new Request("http://localhost/api/cast/romaine-1974", { headers: { cookie: `${FORCE_COOKIE}=llm` } }), {
+      params: Promise.resolve({ missionId: "romaine-1974" }),
+    });
+    expect((await forced.json()).showcase.level).toBe("model-forced");
+    expect((await (await get("romaine-1974")).json()).showcase.level).toBe("none");
+    vi.stubEnv("LLM_MODE", "fake");
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
   });
 });
 
