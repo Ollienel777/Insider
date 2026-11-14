@@ -89,10 +89,15 @@ describe("the mute button", () => {
 describe("the Run screen", () => {
   const manifest = LevelManifest.parse(structuredClone(cached));
 
-  it("carries the mute button, with sound on until the stored choice is read", () => {
+  it("shows no mute button while the board is still loading", () => {
+    // A static render has no run yet: the loading board, which the button is kept off.
     const out = renderToStaticMarkup(<RunScreen building={{ id: "F1", name: "Halvorsen Tower" }} manifest={manifest} />);
-    expect(out).toMatch(/<button[^>]*data-testid="mute-toggle"[^>]*aria-pressed="false"/);
-    expect(out.match(/data-testid="mute-toggle"/g)).toHaveLength(1);
+    expect(out).not.toContain('data-testid="mute-toggle"');
+  });
+
+  it("carries the mute button over the board once a run is on it", () => {
+    const source = readFileSync(path.join(import.meta.dirname, "run-screen.tsx"), "utf8");
+    expect(source).toMatch(/\{run \? <MuteToggle muted=\{muted\} onToggle=\{toggleMute\}/);
   });
 
   it("hands its run to the sound hook, which a static render cannot show", () => {

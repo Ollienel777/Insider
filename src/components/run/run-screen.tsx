@@ -457,7 +457,8 @@ export function RunScreen({
                 lens={lens}
               />
             ) : null}
-            <MuteToggle muted={muted} onToggle={toggleMute} className="absolute top-2 right-8" />
+            {/* Only over a board with a run on it: not over the loading or error state. */}
+            {run ? <MuteToggle muted={muted} onToggle={toggleMute} className="absolute top-2 right-8" /> : null}
           </div>
 
           {lens && run && placed ? <LensLegend placed={placed} locked={run.locked} /> : null}
