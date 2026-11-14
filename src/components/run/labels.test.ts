@@ -9,8 +9,13 @@ import { CrewPlan, LevelManifest } from "@/domain";
 import { ghostOf } from "@/components/plan/crew-reply";
 import { validatePlan } from "@/level/validate-plan";
 import crewF1 from "../../../fixtures/llm/crew-F1.json";
+import crewF2 from "../../../fixtures/llm/crew-F2.json";
+import crewF3 from "../../../fixtures/llm/crew-F3.json";
+import f2Cached from "../../../data/levels/F2.sunset-1986.json";
+import f3Cached from "../../../data/levels/F3.night-desk.json";
 import { act, createRun, type Action, type RunState } from "@/engine";
-import { placeLevel } from "@/level/placer";
+import { placeLevel, type PlacedLevel } from "@/level/placer";
+import { quietRoute } from "@/level/quiet-route";
 import cached from "../../../data/levels/F1.romaine-1974.json";
 import { actionForKey, cameraMount, choices as choicesOf } from "./board";
 import { DISC, fixedLabels, movingLabels, standingOf, type GhostPlan } from "./board-view";
@@ -34,14 +39,14 @@ function play(run: RunState, actions: readonly Action[]): RunState {
 }
 
 /** Every label the board draws on this frame, by its text, as its glyph box (no padding). */
-function drawn(run: RunState, ghost: GhostPlan | null = null): { name: string; quad: Quad }[] {
+function drawn(run: RunState, ghost: GhostPlan | null = null, level: PlacedLevel = placed): { name: string; quad: Quad }[] {
   const atNode = at(run);
-  const fixed = fixedLabels(placed, run.board.cameras);
+  const fixed = fixedLabels(level, run.board.cameras);
   const choices = choicesOf(run);
   const standing = standingOf(run, atNode);
   const moving = movingLabels(fixed, atNode, choices, standing, ghost);
-  const { floor, objective, exits } = placed.level;
-  const entryLabel = new Map(placed.entries.map((e) => [e.nodeId, e.label]));
+  const { floor, objective, exits } = level.level;
+  const entryLabel = new Map(level.entries.map((e) => [e.nodeId, e.label]));
   const labels: { name: string; quad: Quad }[] = [
     ...fixed.rooms.map((r) => ({ name: r.text, quad: r.quad })),
     ...[objective, ...exits].map((id) => {
@@ -126,5 +131,33 @@ describe("the board's labels (#68)", () => {
       expect(collisions(drawn(run)), `turn ${run.turn}`).toEqual([]);
     }
     expect(run.carrying).toBe(true);
+  });
+});
+
+// F2 and F3, the other LA pins (#39): the same frames on their own floors.
+describe.each([
+  { id: "F2", cached: f2Cached, crew: crewF2 },
+  { id: "F3", cached: f3Cached, crew: crewF3 },
+])("the board's labels on $id (#39)", ({ id, cached: level, crew }) => {
+  const here = placeLevel(LevelManifest.parse(structuredClone(level)), structuredClone(FIXTURE_FLOORS[id]), RUN_SEED);
+
+  it("keeps every label clear of every other at the start of the run", () => {
+    expect(collisions(drawn(createRun(here.level), null, here))).toEqual([]);
+  });
+
+  it("keeps the plan's marks clear of every label, for each recorded crew reply", () => {
+    for (const reply of crew.replies) {
+      const ghost = ghostOf(validatePlan(here, CrewPlan.parse(reply.plan)));
+      expect(collisions(drawn(createRun(here.level), ghost, here)), reply.id).toEqual([]);
+    }
+  });
+
+  it("keeps every label clear of every other on every turn of the quiet route", () => {
+    let run = createRun(here.level);
+    for (const action of quietRoute(here)!) {
+      run = play(run, [action]);
+      expect(collisions(drawn(run, null, here)), `turn ${run.turn}`).toEqual([]);
+    }
+    expect(run.status).toBe("won");
   });
 });

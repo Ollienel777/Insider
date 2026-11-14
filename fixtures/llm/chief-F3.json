@@ -1,0 +1,42 @@
+{
+  "buildingId": "F3",
+  "note": "Recorded Security Chief turns for Meridian on Wilshire, matched by src/agents/chief/recorded.ts on the alarm transition. The first turn whose `when` matches answers; a transition with none gets the deterministic template (template.ts). Zone ids are the ones the Run screen sends for the F3 fixture floor: the cached manifest's zones and entries (data/levels/F3.night-desk.json; these replies are kept per building, so any mission on F3 reuses them), and the floor's other rooms by id. Written for the straight walk in: C1's analytics see the player in the north hall on turn 1, which goes straight to lockdown.",
+  "turns": [
+    {
+      "id": "c1-north-hall",
+      "when": {
+        "from": "calm",
+        "to": "lockdown",
+        "lastKnownZone": "north-hall"
+      },
+      "orders": {
+        "orders": [
+          {
+            "guardId": "G4",
+            "intent": "converge",
+            "zoneId": "north-hall"
+          },
+          {
+            "guardId": "G3",
+            "intent": "converge",
+            "zoneId": "north-hall"
+          },
+          {
+            "guardId": "G2",
+            "intent": "hold",
+            "zoneId": "objective"
+          },
+          {
+            "guardId": "G1",
+            "intent": "block",
+            "zoneId": "dock-N"
+          }
+        ],
+        "lockZones": [
+          "objective"
+        ],
+        "rationale": "C1's analytics flagged someone in the north hall: lockdown. G4, out of suite 2410, and G3, from the south hall, converge on it. G2 holds the prototype lab. G1 blocks the loading dock. Lock the lab."
+      }
+    }
+  ]
+}
