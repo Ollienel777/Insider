@@ -3,7 +3,8 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 // The objective line (issue 100): where the player is going. A mono caps
-// label, the goal in the mission's own words, and the hops left to it. Once
+// label, the goal in the mission's own words, and the hops left to it (in
+// first person, the seconds). Once
 // the run is over, the same line says how it ended. It takes plain words and
 // numbers and knows nothing about the board, so the first-person scan view
 // shows the same line.
@@ -15,6 +16,11 @@ export interface ObjectiveLineProps {
   goal: string;
   /** Hops left to the goal. Null leaves the count out (no route, or nowhere left to go). */
   hops: number | null;
+  /**
+   * First person only: about how many seconds away the goal is, said in place of the hops (it is
+   * played in real time, not by hops). Undefined on the board; null leaves the count out.
+   */
+  seconds?: number | null;
   /** Locked doors on the way, said beside the count. */
   locks?: number;
   /** A word beside the label once the objective is in hand: "Files taken". */
@@ -34,6 +40,7 @@ export function ObjectiveLine({
   label,
   goal,
   hops,
+  seconds,
   locks = 0,
   taken = null,
   tone = "plain",
@@ -85,15 +92,30 @@ export function ObjectiveLine({
             </kbd>
           ) : null}
         </button>
-      ) : hops !== null ? (
+      ) : (seconds === undefined ? hops : seconds) !== null ? (
         <p
-          data-testid="hops-left"
-          data-hops={hops}
+          data-testid={seconds === undefined ? "hops-left" : "time-left"}
+          data-hops={seconds === undefined ? hops : undefined}
+          data-seconds={seconds ?? undefined}
           data-locks={locks}
           className="flex shrink-0 items-baseline gap-2 border-l border-border pl-4"
         >
-          <span className="font-mono text-lg font-medium text-text-1">{hops}</span>
-          <span className="label-caps text-text-2">{hops === 1 ? "hop" : "hops"}</span>
+          {seconds === undefined ? (
+            <>
+              <span className="font-mono text-lg font-medium text-text-1">{hops}</span>
+              <span className="label-caps text-text-2">{hops === 1 ? "hop" : "hops"}</span>
+            </>
+          ) : (
+            <>
+              {/* An estimate at a run: "about", so a player who stops to look is not told wrong. */}
+              <span className="font-mono text-lg font-medium text-text-1">
+                <span className="sr-only">about </span>
+                <span aria-hidden>~</span>
+                {seconds}
+              </span>
+              <span className="label-caps text-text-2">{seconds === 1 ? "second" : "seconds"}</span>
+            </>
+          )}
           {locks > 0 ? (
             <span data-testid="hops-locked" className="flex items-center gap-1 self-center label-caps text-text-2">
               <LockKeyhole aria-hidden className="size-4 stroke-[1.5]" />

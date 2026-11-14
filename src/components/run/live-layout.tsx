@@ -32,6 +32,7 @@ import type { PlayHud } from "./play-hud";
 import type { PlayMode } from "./play-mode";
 import type { RadioKind, RadioMessage } from "./radio";
 import { RadioLine, type RadioLineProps, type RadioTone } from "./radio-line";
+import { stageVisualClass } from "./run-stage";
 
 /** Whether the panels show: always in Tactical, and in Live once Details has opened them. */
 export function panelsOpen(mode: PlayMode, details: boolean): boolean {
@@ -56,13 +57,13 @@ function releaseFocus(event: MouseEvent<HTMLButtonElement>) {
  * alone. It starts closed, and stays as the player left it while they are on
  * the screen.
  */
-export function useDetails(live: boolean): [boolean, () => void] {
+export function useDetails(live: boolean, key: string = "d"): [boolean, () => void] {
   const [open, setOpen] = useState(false);
   const toggle = useCallback(() => setOpen((was) => !was), []);
   useEffect(() => {
     if (!live) return;
     function onKey(event: KeyboardEvent) {
-      if (event.key !== "d" && event.key !== "D") return;
+      if (event.key.toLowerCase() !== key) return;
       if (event.altKey || event.ctrlKey || event.metaKey || event.repeat || event.defaultPrevented) return;
       const target = event.target as Element | null;
       if (target?.closest?.(TYPING)) return;
@@ -71,7 +72,7 @@ export function useDetails(live: boolean): [boolean, () => void] {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [live, toggle]);
+  }, [live, toggle, key]);
   return [open, toggle];
 }
 
@@ -107,6 +108,8 @@ export interface RunLayoutProps {
   mode: PlayMode;
   /** Whether Details is open. Only Live reads it. */
   details: boolean;
+  /** The key that toggles Details, as its button names it: `D`, or `I` in first person, where D strafes. */
+  detailsKey?: string;
   onDetails: () => void;
   /** What the HUD shows; null while there is no run on the board. */
   hud: PlayHud | null;
@@ -135,6 +138,12 @@ export interface RunLayoutProps {
   panel: ReactNode;
   /** The screen's primary action, once the run is over. */
   action?: ReactNode;
+  /**
+   * The board's area holds the stage of a live scan (issue 117, run-stage.tsx).
+   * Below `lg` its halves stack, so the visual grows to hold them; on fixtures
+   * there is no stage, and the visual is the screen's own.
+   */
+  staged?: boolean;
 }
 
 /**
@@ -150,6 +159,7 @@ export interface RunLayoutProps {
 export function RunLayout({
   mode,
   details,
+  detailsKey = "D",
   onDetails,
   hud,
   loading,
@@ -163,6 +173,7 @@ export function RunLayout({
   footer,
   panel,
   action,
+  staged = false,
 }: RunLayoutProps) {
   // Live's layout is for a run: with no board coming (no floor, an error), the screen is Tactical's own.
   const live = mode === "live" && (hud !== null || loading);
@@ -183,7 +194,7 @@ export function RunLayout({
       panelClosed={!open}
       visualTall={live}
       visual={
-        <div className="absolute inset-0 flex flex-col">
+        <div className={stageVisualClass(staged)}>
           {live ? (
             <div
               key="hud"
@@ -200,6 +211,7 @@ export function RunLayout({
                   label={objective.label}
                   goal={objective.goal}
                   hops={objective.hops}
+                  seconds={objective.seconds}
                   locks={objective.locks}
                   taken={objective.taken}
                   tone={objective.outcome ? OUTCOME_TONE[objective.outcome] : "plain"}
@@ -236,7 +248,7 @@ export function RunLayout({
                       <span className="max-md:sr-only">Restart</span>
                     </Button>
                   )}
-                  <DetailsToggle open={details} onToggle={onDetails} />
+                  <DetailsToggle open={details} onToggle={onDetails} keyName={detailsKey} />
                 </div>
               </div>
             </div>
@@ -268,13 +280,13 @@ export function RunLayout({
  * board's bar with the Layer lens, and the legends. Its pressed state is
  * exposed, and it names its key.
  */
-export function DetailsToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+export function DetailsToggle({ open, onToggle, keyName = "D" }: { open: boolean; onToggle: () => void; keyName?: string }) {
   return (
     <button
       type="button"
       data-testid="details-toggle"
       aria-pressed={open}
-      aria-keyshortcuts="D"
+      aria-keyshortcuts={keyName}
       onClick={(event) => {
         releaseFocus(event);
         onToggle();
@@ -294,7 +306,7 @@ export function DetailsToggle({ open, onToggle }: { open: boolean; onToggle: () 
         aria-hidden
         className="inline-flex h-5 min-w-5 items-center justify-center rounded-sm border border-border bg-surface-2 px-1 font-mono text-xs text-text-2 max-md:hidden"
       >
-        D
+        {keyName}
       </kbd>
     </button>
   );

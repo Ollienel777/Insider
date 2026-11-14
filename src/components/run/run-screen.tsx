@@ -41,12 +41,12 @@ import { useTurnClock } from "./turn-clock";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
 import { loadCrewPlan, type StoredCrewPlan } from "./crew-plan-store";
-import { InsideViewPanel } from "./inside-view";
 import { clearRunLog, keepRunLogInMemory, runLogOf, saveRunLog } from "./run-log-store";
 import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postureOf, runRecordOf, type RunRecord } from "./run-history";
 import { MuteToggle, useRunSound } from "./run-sound";
+import { RunStage } from "./run-stage";
 import { placeOrFixture } from "./scan-fallback";
-import { firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, ViewSwitch } from "./fp/run-view";
+import { FIRST_PERSON_PACE, FIRST_PERSON_TURN_MS, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, ViewSwitch, type HeldAction } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -210,7 +210,7 @@ export function RunScreen({
   const history = load.status === "ready" ? load.history : null;
   const floor = load.status === "ready" ? load.floor : null;
   const zones = useMemo(() => (placed ? chiefZones(placed) : null), [placed]);
-  // The Inside view: only on a floor that came from a live scan (never on fixtures, so the demo path is unchanged).
+  // The Inside view, on the stage beside the board: only on a floor that came from a live scan (never on fixtures, so the demo path is unchanged).
   const liveScan = load.status === "ready" && load.live;
   // Runs that stay out of storage: on a live scan, and for a kit building on any floor (`boardOn`).
   const inMemory = load.status === "ready" && load.inMemory;
@@ -317,8 +317,19 @@ export function RunScreen({
   // Live mode (issue 99): the clock plays its turns through `play`, like a key. A clock turn is
   // not the player's own action, so it leaves them sprinting if they were.
   const [playMode, setPlayMode] = usePlayMode();
+  // First person (issue 115) always runs on the clock, at its own pace, and its turn is the view's
+  // to choose: the next pick while E is held at a door, otherwise a wait.
+  const fpOn = placed !== null && firstPersonOn(runView, placed.level.floor);
+  const fpHeld = useRef<HeldAction | null>(null);
+  const holdFp = useCallback((held: HeldAction | null) => {
+    fpHeld.current = held;
+  }, []);
+  const fpTurn = useCallback((current: RunState): Action => fpHeld.current?.(current) ?? { kind: "wait" }, []);
+  const layoutMode = fpOn ? "live" : playMode;
   const clock = useTurnClock({
-    live: playMode === "live",
+    live: layoutMode === "live",
+    turnMs: fpOn ? FIRST_PERSON_TURN_MS : undefined,
+    action: fpOn ? fpTurn : undefined,
     run,
     play: (action) => {
       play(action);
@@ -364,12 +375,12 @@ export function RunScreen({
   const hidden = useMemo(() => hiddenRoutes(chief, revealed), [chief, revealed]);
 
   // Live's layout (issue 100): the HUD around the board, and everything else behind Details.
-  const [details, toggleDetails] = useDetails(playMode === "live");
-  const open = panelsOpen(playMode, details);
+  const [details, toggleDetails] = useDetails(layoutMode === "live", fpOn ? "i" : "d");
+  const open = panelsOpen(layoutMode, details);
   // The lens is put away with the bar: its key does nothing until Details opens it again.
   const [lens, toggleLens] = useLayerLens(open);
   const hud = usePlayHud({
-    live: playMode === "live",
+    live: layoutMode === "live",
     placed,
     run,
     mission: manifest?.mission ?? null,
@@ -377,6 +388,8 @@ export function RunScreen({
     chief,
     revealed,
     status,
+    // First person is played in real time: the HUD says seconds and plain words, not hops and turns.
+    pace: fpOn ? FIRST_PERSON_PACE : null,
   });
 
   useEffect(() => {
@@ -443,14 +456,17 @@ export function RunScreen({
 
   return (
     <RunLayout
-      mode={playMode}
+      mode={layoutMode}
       details={details}
+      detailsKey={fpOn ? "I" : "D"}
       onDetails={toggleDetails}
       hud={hud}
       loading={settingUp}
       onTake={() => play({ kind: "take" })}
       onRestart={restart}
       canRestart={run !== null && run.turn > 0}
+      // On a live scan the board shares its area with the scan (issue 117), and the visual grows with them where they stack.
+      staged={Boolean(openInside && run && placed)}
       record={record}
       bar={
           <div className="flex h-14 shrink-0 items-center gap-3 px-6">
@@ -522,32 +538,37 @@ export function RunScreen({
                   </Button>
                 }
               />
-            ) : run && placed && manifest && firstPersonOn(runView, placed.level.floor) ? (
+            ) : run && placed && manifest && fpOn ? (
               <FirstPersonView
                 placed={placed}
                 run={run}
                 objective={manifest.mission.objective}
                 onAct={play}
+                onHeld={holdFp}
+                paused={clock.state === "paused"}
                 onUnavailable={() => {
                   runView.fail();
                   setStatus(FP_UNAVAILABLE);
                 }}
               />
             ) : run && placed ? (
-              <BoardView
-                placed={placed}
-                run={run}
-                choices={options}
-                onChoose={(c: Choice) => play(c.action)}
-                hiddenRoutes={hidden}
-                lens={lens && open}
-                source={source}
-              />
+              // On a live scan the board shares the stage with the scan (issue 117); on fixtures it is the board alone.
+              <RunStage open={openInside} sweepId={run.playerNode} room={roomName(placed.level.floor, run.playerNode)}>
+                <BoardView
+                  placed={placed}
+                  run={run}
+                  choices={options}
+                  onChoose={(c: Choice) => play(c.action)}
+                  hiddenRoutes={hidden}
+                  lens={lens && open}
+                  source={source}
+                />
+              </RunStage>
             ) : null}
             {/* Only over a board with a run on it: not over the loading or error state. Below md the
                 Live mode switch takes the top-right corner, so the mute button sits under it there. */}
             {run ? <MuteToggle muted={muted} onToggle={toggleMute} className="absolute top-2 right-8 max-md:top-16 max-md:right-6" /> : null}
-            {run ? <LiveControls mode={playMode} onChange={setPlayMode} clock={clock} /> : null}
+            {run && !fpOn ? <LiveControls mode={playMode} onChange={setPlayMode} clock={clock} /> : null}
           </div>
       }
       legend={lens && run && placed ? <LensLegend placed={placed} locked={run.locked} /> : null}
@@ -556,7 +577,7 @@ export function RunScreen({
             <p data-testid="run-status" aria-live="polite" className="min-w-0 text-sm text-text-1 md:truncate">
               {status}
             </p>
-            <div className={cn("flex shrink-0 items-center gap-4 text-sm text-text-2 max-md:hidden", placed && firstPersonOn(runView, placed.level.floor) ? "hidden" : null)}>
+            <div className={cn("flex shrink-0 items-center gap-4 text-sm text-text-2 max-md:hidden", fpOn ? "hidden" : null)}>
               <span className="flex items-center gap-2">
                 <Kbd>1–9</Kbd> {mode === "sprint" ? "sprint" : "move"}
               </span>
@@ -584,7 +605,6 @@ export function RunScreen({
           crewPlan={crewPlan}
           loading={settingUp}
           awaiting={hidden}
-          inside={openInside && run ? <InsideViewPanel open={openInside} sweepId={run.playerNode} /> : null}
           chief={<ChiefPanel state={chief} revealed={revealed} zoneName={(id) => (placed ? zoneName(placed, id) : id)} onRetry={retryChief} />}
         />
       }
@@ -609,7 +629,6 @@ function RunPanel({
   crewPlan,
   loading,
   awaiting,
-  inside,
   chief,
 }: {
   manifest: LevelManifest | null;
@@ -621,8 +640,6 @@ function RunPanel({
   loading: boolean;
   /** Guards whose Chief order is still streaming in: their row waits for it. */
   awaiting: ReadonlySet<string>;
-  /** The Inside view, on a live scan only. */
-  inside: ReactNode;
   chief: ReactNode;
 }) {
   if (!manifest || !placed || !run) {
@@ -661,8 +678,6 @@ function RunPanel({
       {run.status !== "playing" ? <Outcome placed={placed} run={run} /> : null}
 
       {chief}
-
-      {inside}
 
       <section aria-labelledby="objective-label" className="flex flex-col gap-2">
         <h2 id="objective-label" className="label-caps text-text-3">

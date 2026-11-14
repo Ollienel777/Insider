@@ -13,6 +13,7 @@ import {
   FLY,
   LOOK_SPEED,
   MatterportNotConfiguredError,
+  PLAYING,
   SWEEPS_QUIET_MS,
   type InsideConnect,
   type InsidePlayer,
@@ -305,7 +306,7 @@ describe("the live Matterport adapter (stubbed SDK, no key)", () => {
 
   it("never sends, stores or caches scan data: no network or storage API in live.ts, mapping.ts or the Inside view", () => {
     const FORBIDDEN = /\b(fetch|XMLHttpRequest|sendBeacon|WebSocket|EventSource|localStorage|sessionStorage|indexedDB|caches)\b/;
-    for (const file of ["live.ts", "mapping.ts", "../../components/run/inside-view.tsx"]) {
+    for (const file of ["live.ts", "mapping.ts", "../../components/run/inside-view.tsx", "../../components/run/scan-pane.tsx"]) {
       const code = readFileSync(path.join(here, file), "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, "")
         .replace(/\/\/.*$/gm, "");
@@ -314,16 +315,33 @@ describe("the live Matterport adapter (stubbed SDK, no key)", () => {
   });
 });
 
+/** `App.state` of a player that is already playing, so a stubbed Inside view opens at once (issue 117). */
+const playing = (): InsideSdk["App"] => ({
+  state: {
+    subscribe(observer) {
+      observer({ phase: PLAYING });
+      return { cancel() {} };
+    },
+  },
+});
+
 /**
  * A stubbed player for a test that only moves the view. Whatever the view
  * could read of the scan fails the test if it is touched: a view that is only
- * moved subscribes to nothing and measures nothing.
+ * moved subscribes to nothing of the scan and measures nothing. Its phase is
+ * the one thing every view watches, while it opens: `app` is a player already
+ * playing unless a test drives it.
  */
-function movedOnly(moveTo: InsideSdk["Sweep"]["moveTo"], disconnect: () => void = () => {}): InsidePlayer {
+function movedOnly(
+  moveTo: InsideSdk["Sweep"]["moveTo"],
+  disconnect: () => void = () => {},
+  app: InsideSdk["App"] = playing(),
+): InsidePlayer {
   const untouched = (what: string) => () => {
     throw new Error(`${what} was used by a view that was only moved`);
   };
   return {
+    App: app,
     Sweep: { moveTo, data: { subscribe: untouched("Sweep.data") } },
     Camera: { pose: { subscribe: untouched("Camera.pose") }, rotate: untouched("Camera.rotate") },
     Conversion: { worldToScreen: untouched("Conversion.worldToScreen") },
@@ -782,6 +800,7 @@ function stubPlayer(poseOnSubscribe?: unknown) {
   const cancelPose = vi.fn();
   const cancelSweeps = vi.fn();
   const player = {
+    App: playing(),
     Sweep: {
       moveTo: vi.fn<InsideSdk["Sweep"]["moveTo"]>(async () => undefined),
       data: {
@@ -1456,5 +1475,123 @@ describe("review fixes: no move or turn is left waiting", () => {
     expect(stub.player.Camera.pose.subscribe).toHaveBeenCalledTimes(2);
     expect(heard).toStrictEqual([pose(1, 2, 90)]);
     expect(ghost).not.toHaveBeenCalled();
+  });
+});
+
+/** An `App.state` the test drives: each phase goes to whoever is subscribed, the current one on subscribing, as the SDK sends them. */
+function drivenApp(first = "appphase.loading") {
+  const observers = new Set<(state: { phase?: string }) => void>();
+  const cancel = vi.fn();
+  let phase = first;
+  const app: InsideSdk["App"] = {
+    state: {
+      subscribe(observer) {
+        observers.add(observer);
+        observer({ phase });
+        return {
+          cancel() {
+            cancel();
+            observers.delete(observer);
+          },
+        };
+      },
+    },
+  };
+  const send = (next: string) => {
+    phase = next;
+    observers.forEach((observer) => observer({ phase }));
+  };
+  return { app, cancel, send, subscribers: () => observers.size };
+}
+
+// Issue 117: the SDK connects while the player still loads. A move made then is taken, the
+// player's own opening move is refused after it, and the player never leaves its poster.
+describe("the Inside view opens only once its player is playing (issue 117)", () => {
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("does not open while the player loads or starts, opens when playing arrives, and stops listening", async () => {
+    const player = drivenApp();
+    let opened: InsideView | null = null;
+    const opening = connectInsideView({} as HTMLElement, "m", "k", async () =>
+      movedOnly(vi.fn(async () => undefined), () => {}, player.app),
+    ).then((view) => (opened = view));
+    await flush();
+    expect(opened).toBeNull();
+    expect(player.subscribers()).toBe(1);
+    player.send("appphase.starting");
+    await flush();
+    expect(opened).toBeNull();
+    player.send(PLAYING);
+    await opening;
+    expect(opened).not.toBeNull();
+    await flush();
+    expect(player.cancel).toHaveBeenCalledTimes(1);
+    expect(player.subscribers()).toBe(0);
+  });
+
+  it("fails a player that never plays at the connect deadline, the one bound for both, and disconnects it", async () => {
+    vi.useFakeTimers();
+    try {
+      const player = drivenApp();
+      const disconnect = vi.fn();
+      // The connection itself takes 60 of the 100 ms: the wait for playing gets what is left, not a deadline of its own.
+      const connect: InsideConnect = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        return movedOnly(vi.fn(), disconnect, player.app);
+      };
+      const view = connectInsideView({} as HTMLElement, "m", "k", connect, 100);
+      const settled = expect(view).rejects.toMatchObject({ name: "TimeoutError", message: expect.stringContaining("within 100 ms") });
+      await vi.advanceTimersByTimeAsync(99);
+      expect(player.subscribers()).toBe(1);
+      expect(disconnect).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await settled;
+      expect(disconnect).toHaveBeenCalledTimes(1);
+      expect(player.cancel).toHaveBeenCalledTimes(1);
+      expect(player.subscribers()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets go of a player still loading when the caller stops waiting, and stops listening", async () => {
+    const player = drivenApp();
+    const disconnect = vi.fn();
+    const stop = new AbortController();
+    const view = connectInsideView(
+      {} as HTMLElement,
+      "m",
+      "k",
+      async () => movedOnly(vi.fn(), disconnect, player.app),
+      20_000,
+      stop.signal,
+    );
+    const settled = expect(view).rejects.toThrow("given up on");
+    await flush();
+    expect(player.subscribers()).toBe(1);
+    stop.abort();
+    await settled;
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    await flush();
+    expect(player.cancel).toHaveBeenCalledTimes(1);
+    expect(player.subscribers()).toBe(0);
+  });
+
+  it("gives the pose, the positions and the projection a playing player too: none is read while it loads", async () => {
+    const player = drivenApp();
+    const stub = stubPlayer(rawPose(0, 0, 0));
+    stub.player.App = player.app;
+    let view: InsideView | null = null;
+    const opening = connectInsideView({} as HTMLElement, "m", "k", async () => stub.player).then((opened) => (view = opened));
+    await flush();
+    expect(view).toBeNull();
+    expect(stub.player.Camera.pose.subscribe).not.toHaveBeenCalled();
+    expect(stub.player.Sweep.data.subscribe).not.toHaveBeenCalled();
+    player.send(PLAYING);
+    await opening;
+    const heard: InsidePose[] = [];
+    view!.onPose((p) => heard.push(p));
+    await told();
+    expect(heard).toStrictEqual([pose(0, 0, 0)]);
   });
 });
