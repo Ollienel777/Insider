@@ -34,6 +34,8 @@ interface Case {
   trip: { by: string; zone: string; to: string };
   /** Each way in or out the mission's exit text or briefing names, and the aerial entry it is. */
   exitNames: [string, string][];
+  /** Every name the recorded texts give each aerial entry, placed or not, as a crew step would say it (#85). */
+  entryNames: Record<string, string[]>;
   /**
    * Every guard or camera a recorded text names: the crew reply or Chief turn
    * (`text`, its id), the phrase, and either the room the guard or camera is
@@ -60,13 +62,21 @@ const CASES: Case[] = [
       ["exit-S", "ws-landing"],
     ],
     exitNames: [
-      ["the garage", "garage-N"],
-      ["the service entry", "exit-S"],
-      ["freight lift from the loading dock", "dock-W"],
-      ["garage shuttle lift", "garage-N"],
+      ["garage", "garage-N"],
       ["plaza stair", "exit-S"],
       ["helipad", "roof"],
+      ["Figueroa lobby", "lobby-E"],
+      ["loading dock", "dock-W"],
+      ["freight lift from the loading dock", "dock-W"],
+      ["garage shuttle lift", "garage-N"],
     ],
+    entryNames: {
+      "dock-W": ["loading dock", "freight lift"],
+      roof: ["helipad", "east stair"],
+      "lobby-E": ["figueroa lobby", "passenger lift"],
+      "garage-N": ["garage"],
+      "exit-S": ["plaza stair", "service entry"],
+    },
     claims: [
       { text: "c2-west-corridor", phrase: "C2 has them in the west corridor", who: "C2", room: "west-corridor" },
       { text: "c2-west-corridor", phrase: "G2, from the mail room", who: "G2", room: "mail-room" },
@@ -102,6 +112,13 @@ const CASES: Case[] = [
       ["the east stair", "roof"],
       ["the loading dock", "dock-N"],
     ],
+    entryNames: {
+      "dock-N": ["loading dock", "service lift"],
+      roof: ["roof deck", "east stair"],
+      "lobby-S": ["wilshire lobby"],
+      "garage-W": ["garage"],
+      "bike-E": ["bike room"],
+    },
     claims: [
       { text: "c1-north-hall", phrase: "C1's analytics flagged someone in the north hall", who: "C1", room: "north-hall" },
       { text: "c1-north-hall", phrase: "G4, from its post in the pantry", who: "G4", room: "pantry" },
@@ -110,6 +127,8 @@ const CASES: Case[] = [
       { text: "c1-north-hall", phrase: "G1 blocks the loading dock", who: "G1", order: "dock-N" },
       { text: "quiet", phrase: "the south hall's glass wall looks into the middle of the suite, and G3 walks that hall", who: "G3", room: "south-hall" },
       { text: "quiet", phrase: "see which way G3 is facing", who: "G3", room: "south-hall" },
+      { text: "roof", phrase: "the north hall's C1 and C2", who: "C1", room: "north-hall" },
+      { text: "roof", phrase: "the north hall's C1 and C2", who: "C2", room: "north-hall" },
       { text: "lobby", phrase: "the north hall's C1 and C2", who: "C1", room: "north-hall" },
       { text: "lobby", phrase: "the north hall's C1 and C2", who: "C2", room: "north-hall" },
       { text: "garage", phrase: "the north hall's C1 and C2", who: "C1", room: "north-hall" },
@@ -261,6 +280,47 @@ describe.each(CASES)("$id on its fixture floor", (c) => {
         if (entryIds.has(step.zoneId)) expect(placedIds.has(step.zoneId), `${r.id}: ${step.zoneId}`).toBe(true);
       }
       expect(validatePlan(placed, reply(r.id)).dropped, r.id).toEqual([]);
+    }
+  });
+
+  it("opens every crew reply where the run starts, and names in the exit line the level's exits and no other way (#85)", () => {
+    // The aerial entries a text names, by the names the recorded texts use for them.
+    const named = (text: string) =>
+      Object.entries(c.entryNames)
+        .filter(([, names]) => names.some((n) => text.toLowerCase().includes(n)))
+        .map(([id]) => id)
+        .sort();
+    const start = placed.entries[0];
+    const entryIds = new Set(manifest().entries.map((e) => e.id));
+    for (const r of c.crew.replies) {
+      const [first, ...rest] = CrewPlan.parse(r.plan).steps;
+      // The board walks every plan from the start, so a plan that opens anywhere else is not the one played.
+      expect(first.zoneId, r.id).toBe(start.entryId);
+      expect(named(first.action), `${r.id}: ${first.action}`).toEqual([start.entryId]);
+      // A later step to an entry says which one it walks to, and no other.
+      for (const step of rest.filter((s) => entryIds.has(s.zoneId))) {
+        expect(named(step.action), `${r.id}: ${step.action}`).toEqual([step.zoneId]);
+      }
+      // A reply the board catches warns about the camera or guard that does it, not another.
+      const plan = CrewPlan.parse(r.plan);
+      const caughtBy = validatePlan(placed, plan).warnings[0]?.text.match(/\b[CG]\d+\b/)?.[0];
+      if (caughtBy) {
+        const said = [plan.pushback, ...plan.steps.map((s) => s.action)].join(" ");
+        expect(said, `${r.id} is caught by ${caughtBy}`).toMatch(new RegExp(`\\b${caughtBy}\\b`));
+      }
+    }
+    // The exit line names each exit the Run screen's plan lists ("Out by the …"), and nothing else.
+    const exits = placed.entries.filter((e) => placed.level.exits.includes(e.nodeId)).map((e) => e.entryId);
+    const exitLine = manifest().mission.exitCondition;
+    expect(named(exitLine)).toEqual([...exits].sort());
+    // A line that counts the exits ("any of the five ways out") counts them right.
+    const WORDS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+    const counted = WORDS.findIndex((w) => new RegExp(`\\b${w}\\b`, "i").test(exitLine));
+    if (counted >= 0) expect(counted + 1, exitLine).toBe(exits.length);
+    // Nor any entry that is not an exit, by its label or its kind ("the service lift" is the dock's).
+    for (const entry of manifest().entries.filter((e) => !exits.includes(e.id))) {
+      expect(exitLine.toLowerCase(), entry.id).not.toContain(entry.label.toLowerCase());
+      expect(exitLine.toLowerCase(), entry.id).not.toMatch(new RegExp(`\\b${entry.kind}\\b(?! lift)`));
     }
   });
 

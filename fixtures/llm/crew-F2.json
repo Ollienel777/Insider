@@ -83,8 +83,12 @@
       "plan": {
         "steps": [
           {
-            "zoneId": "roof",
-            "action": "Down the east stair from the helipad"
+            "zoneId": "dock-W",
+            "action": "Up from the loading dock on the freight lift"
+          },
+          {
+            "zoneId": "dock-W",
+            "action": "Wait one turn at the freight lift"
           },
           {
             "zoneId": "objective",
@@ -92,10 +96,10 @@
           },
           {
             "zoneId": "roof",
-            "action": "Back up to the helipad"
+            "action": "Out by the east stair to the helipad"
           }
         ],
-        "pushback": "The helipad stair is the short way to the vault, but the run starts at the dock, so the stair is your way out, not in.",
+        "pushback": "The helipad stair is the short way to the vault, but the run starts at the dock, so the stair is your way out, not in. Wait one turn at the freight lift on the way up.",
         "confidence": 0.4
       }
     },
@@ -109,8 +113,12 @@
       "plan": {
         "steps": [
           {
-            "zoneId": "lobby-E",
-            "action": "Up the passenger lifts from the Figueroa lobby"
+            "zoneId": "dock-W",
+            "action": "Up from the loading dock on the freight lift"
+          },
+          {
+            "zoneId": "dock-W",
+            "action": "Wait one turn at the freight lift"
           },
           {
             "zoneId": "objective",
@@ -118,10 +126,10 @@
           },
           {
             "zoneId": "lobby-E",
-            "action": "Back down the passenger lifts"
+            "action": "Out down the passenger lifts to the Figueroa lobby"
           }
         ],
-        "pushback": "The passenger lifts come up from the Figueroa lobby, past two guards at the desk, and up here they open two steps from the service hall, where C1 turns. If you go that way, you pass the desk twice.",
+        "pushback": "The run starts at the dock, so the passenger lifts are your way out, not in, and they come down in the Figueroa lobby past the desk guard. Up here they open two steps from the service hall, where C1 turns.",
         "confidence": 0.3
       }
     },
@@ -135,8 +143,12 @@
       "plan": {
         "steps": [
           {
-            "zoneId": "garage-N",
-            "action": "Up the garage shuttle lift"
+            "zoneId": "dock-W",
+            "action": "Up from the loading dock on the freight lift"
+          },
+          {
+            "zoneId": "dock-W",
+            "action": "Wait one turn at the freight lift"
           },
           {
             "zoneId": "objective",
@@ -144,10 +156,10 @@
           },
           {
             "zoneId": "garage-N",
-            "action": "Back down the garage shuttle lift"
+            "action": "Out down the garage shuttle lift"
           }
         ],
-        "pushback": "The garage shuttle opens at the east end of the service hall, and C1 turns along that hall the whole way. Wait at the freight lift first, or go up the dock instead.",
+        "pushback": "The run starts at the dock, so the garage shuttle is your way out, not in. It opens at the east end of the service hall, and C1 turns along that hall the whole way.",
         "confidence": 0.35
       }
     },
