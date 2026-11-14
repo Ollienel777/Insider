@@ -18,7 +18,7 @@ import { getVexcel } from "@/adapters/vexcel";
 import { MISSIONS } from "@/agents/builder/missions";
 import { CastingResult, type CastingTrace, type InventoryProperty, type Mission } from "@/domain";
 import { DIRECTOR_PROMPT, SCOUT_PROMPT, SUBAGENT_DESCRIPTIONS } from "./prompts";
-import { type CastRun, directorTools, scoutTools } from "./tools";
+import { type CastRun, directorTools, missionTool, scoutTools } from "./tools";
 import { CastingTraceRecorder, type TraceRecorderOptions } from "./trace";
 
 /** The subagents the director can dispatch, in the order deepagents lists them. */
@@ -113,11 +113,12 @@ export async function castMission(missionId: string, options: CastOptions = {}):
     middleware: [todoListMiddleware(), recorder.middleware("casting-director")],
     subagents: [
       // deepagents adds a general-purpose subagent unless one by that name is
-      // given. Giving it here keeps it on the director's tools and in the
-      // trace, so the trace is honest about every subagent there is.
+      // given. Giving it here keeps it in the trace, so the trace is honest
+      // about every subagent there is, and leaves it read-only: it reads the
+      // mission, and only the director writes the shortlist.
       {
         ...GENERAL_PURPOSE_SUBAGENT,
-        tools: directorTools(run),
+        tools: [missionTool(run)],
         middleware: [recorder.middleware("general-purpose")],
       },
       {
