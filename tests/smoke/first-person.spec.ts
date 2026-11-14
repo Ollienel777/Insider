@@ -79,6 +79,8 @@ test("first person runs in real time, and walking into the next node's area play
 });
 
 test("first person: holding E at a locked door picks it until the engine opens it", async ({ page }) => {
+  // The walk up to the door goes a tap at a time, which on a slow machine takes longer than the default.
+  test.setTimeout(60_000);
   await open(page, "F3");
   // On the board, to the suite's south-west corner beside the server room's locked door.
   for (const nodeId of ["sl-door", "s1-nw", "s1-sw"]) {
@@ -91,25 +93,41 @@ test("first person: holding E at a locked door picks it until the engine opens i
   await expect(view(page)).toHaveAttribute("data-node", "s1-sw");
   await expect(view(page)).toHaveAttribute("data-locked", /d-server/);
 
-  // Paused, turn until the door is in the middle of the view, then step up to it.
+  // Paused the whole way to the door, so no turn passes and nothing on the floor moves meanwhile: turn
+  // until the view's line is on the door, then step up to it in short taps of W, reading the
+  // prompt after each. The view moves the body however few frames a slow machine draws, so a key held
+  // down could carry it past the door's reach, or slide it along the wall off the door; a tap at a time
+  // stops it where the prompt first says to pick. Walking along the line of view keeps that line on the
+  // same point of the door, and the door's side of the room is all one node's area.
   await page.keyboard.press("p");
   await expect(page.getByTestId("fp-paused")).toBeVisible();
   const prompt = page.getByTestId("fp-prompt");
-  for (let i = 0; i < 80 && !(await prompt.isVisible()); i++) {
-    await page.keyboard.down("ArrowRight");
-    await page.waitForTimeout(50);
-    await page.keyboard.up("ArrowRight");
-  }
-  await page.keyboard.press("p");
+  // The view reads the keys once a frame: a tap is held for at least one drawn frame, however slow they come.
+  const frames = (n: number) =>
+    page.evaluate((count) => new Promise<void>((done) => {
+      const next = (left: number) => (left === 0 ? done() : requestAnimationFrame(() => next(left - 1)));
+      next(count);
+    }), n);
+  const tap = async (key: string) => {
+    await page.keyboard.down(key);
+    await Promise.all([frames(1), page.waitForTimeout(50)]);
+    await page.keyboard.up(key);
+    // Then long enough for the body to stop (a frame or two even on a slow machine) and the HUD to catch up.
+    await Promise.all([frames(3), page.waitForTimeout(100)]);
+  };
+  for (let i = 0; i < 200 && !(await prompt.isVisible()); i++) await tap("ArrowRight");
   await expect(prompt).toHaveAttribute("data-kind", /far|pick/);
-  if ((await prompt.getAttribute("data-kind")) !== "pick") {
-    await page.keyboard.down("w");
-    await expect(prompt).toHaveAttribute("data-kind", "pick", { timeout: 5_000 });
-    await page.keyboard.up("w");
+  for (let i = 0; i < 40 && (await prompt.getAttribute("data-kind")) === "far"; i++) {
+    await tap("w");
+    await expect(view(page), "the step stays on the door's node").toHaveAttribute("data-node", "s1-sw");
   }
+  await expect(prompt).toHaveAttribute("data-kind", "pick");
   await expect(prompt).toContainText("Hold E to pick the lock");
+  await expect(page.getByTestId("fp-paused")).toBeVisible();
 
-  // Hold E: a pick a turn, then the door is open.
+  // Only now the clock runs again. Hold E: a pick a turn, then the door is open.
+  await page.keyboard.press("p");
+  await expect(page.getByTestId("fp-paused")).toHaveCount(0);
   await page.keyboard.down("e");
   await expect(prompt).toContainText("Picking");
   await expect(view(page)).not.toHaveAttribute("data-locked", /d-server/, { timeout: 15_000 });
