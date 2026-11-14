@@ -17,14 +17,14 @@ import type { Action, RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
 import { objectiveLabel, objectiveNoun } from "@/lib/objective-noun";
 import { cn } from "@/lib/utils";
-import { ALARM_STYLE } from "../alarm-banner";
 import { cameraMount, choices, roomName } from "../board";
+import type { HeldAction } from "./run-view";
 import { Actors, type Marks } from "./actors";
 import { Controller } from "./controller";
 import { readPalette } from "./palette";
 import { buildFloorGroup, disposeGroup, type RoomTone } from "./scene";
 import { FP } from "./tuning";
-import { createWalker, nodeUnderfoot, promptFor, stepWalker, type Prompt } from "./walker";
+import { createWalker, heldAction, promptFor, stepWalker, type Prompt } from "./walker";
 import { buildWorld, groundOf } from "./world";
 
 export interface FirstPersonViewProps {
@@ -36,6 +36,10 @@ export interface FirstPersonViewProps {
   onAct: (action: Action) => void;
   /** WebGL is not there, or its context was lost: the Run screen goes back to the board. */
   onUnavailable: () => void;
+  /** Hands the turn clock what to play when a turn runs out: the next pick while E is held, or a wait. */
+  onHeld: (held: HeldAction | null) => void;
+  /** The player paused the clock with P. */
+  paused: boolean;
 }
 
 interface Hud {
@@ -44,7 +48,8 @@ interface Hud {
   refused: boolean;
   prompt: Prompt;
   /** The room the engine has the player in, when the body has walked on to a node it cannot move to. */
-  astray: string | null;
+  /** E is held. */
+  using: boolean;
 }
 
 const LABEL_TONE: Record<string, string> = {
@@ -68,21 +73,21 @@ function hasWebGL(): boolean {
   }
 }
 
-export default function FirstPersonView({ placed, run, objective, onAct, onUnavailable }: FirstPersonViewProps) {
+export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused }: FirstPersonViewProps) {
   const surface = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const labelLayer = useRef<HTMLDivElement>(null);
-  const [hud, setHud] = useState<Hud>({ locked: false, refused: false, prompt: null, astray: null });
+  const [hud, setHud] = useState<Hud>({ locked: false, refused: false, prompt: null, using: false });
   const [ready, setReady] = useState(false);
 
   const world = useMemo(() => buildWorld(placed.level.floor), [placed]);
   const ground = useMemo(() => groundOf(world), [world]);
 
   // The loop reads the latest run and the latest `play` without being rebuilt for each turn.
-  const latest = useRef({ run, onAct, onUnavailable });
+  const latest = useRef({ run, onAct, onUnavailable, onHeld });
   useEffect(() => {
-    latest.current = { run, onAct, onUnavailable };
-  }, [run, onAct, onUnavailable]);
+    latest.current = { run, onAct, onUnavailable, onHeld };
+  }, [run, onAct, onUnavailable, onHeld]);
 
   useEffect(() => {
     const host = surface.current;
@@ -147,7 +152,8 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
         return { id: c.id, mount: metres(cameraMount(level.floor, cover)), looksAt: metres(middle) };
       }),
     };
-    const actors = new Actors(ground, palette, marks, still);
+    const tempo = (id: string) => level.guardTempo?.[id] ?? level.patrolTempo;
+    const actors = new Actors(ground, palette, marks, still, FP.turnMs, tempo);
     scene.add(actors.group);
 
     // Facing the first way on from where the engine has the player.
@@ -184,6 +190,9 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
     let use = false;
     let bob = 0;
     let hudKey = "";
+    let areas = false;
+    // The turn clock asks the view what a turn the player lets run out should be.
+    latest.current.onHeld((state) => heldAction(walker, ground, state, { use: controller.using, yaw: controller.yaw }));
     let raf = 0;
     let drawn = false;
 
@@ -200,12 +209,12 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
       // The movement runs at a fixed step, however fast the screen draws.
       controller.frame(dt);
       const controls = controller.controls();
-      use ||= controls.interact;
+      use ||= controls.usePressed;
       owed += dt;
       const stood = walker.pos;
       while (owed >= FP.stepS) {
         owed -= FP.stepS;
-        const out = stepWalker(walker, ground, current, { ...controls, interact: use });
+        const out = stepWalker(walker, ground, current, { ...controls, usePressed: use });
         use = false;
         walker = out.walker;
         if (out.action) act(out.action);
@@ -217,9 +226,9 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
         controller.yaw = current.turn === 0 ? (wayOn(current, walker.pos) ?? hop) : hop;
         controller.pitch = 0;
       }
-      if (controller.takeWait() && current.status === "playing" && !walker.pending) {
-        walker = { ...walker, pending: { to: null, age: 0 } };
-        act({ kind: "wait" });
+      if (controller.areas !== areas) {
+        areas = controller.areas;
+        actors.showAreas(areas, current.playerNode);
       }
 
       // The view: at eye height, with a small bob tied to the ground covered.
@@ -273,15 +282,15 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
         labelEls.delete(key);
       }
 
-      // The HUD's words change rarely: React hears of it only when they do.
+      // The HUD's words change rarely: React hears of it only when they do. The door being picked
+      // carries the engine's own count on a ring on its face.
       const prompt = promptFor(walker, ground, current, controller.yaw);
-      const under = current.status === "playing" ? nodeUnderfoot(ground, current, walker.pos) : null;
-      const lost = under !== null && under !== current.playerNode && !walker.pending && !choices(current).some((c) => c.nodeId === under);
-      const astray = lost ? roomName(level.floor, current.playerNode) : null;
-      const key = JSON.stringify([prompt, astray]);
+      const using = controller.using;
+      actors.showPick(prompt?.kind === "pick" && (using || prompt.done > 0) ? prompt : null);
+      const key = JSON.stringify([prompt, using]);
       if (key !== hudKey) {
         hudKey = key;
-        setHud((was) => ({ ...was, prompt, astray }));
+        setHud((was) => ({ ...was, prompt, using }));
       }
       if (!drawn) {
         drawn = true;
@@ -294,6 +303,7 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
       cancelAnimationFrame(raf);
       observer?.disconnect();
       target.removeEventListener("webglcontextlost", onLost);
+      latest.current.onHeld(null);
       controller.dispose();
       for (const el of labelEls.values()) el.remove();
       actors.dispose();
@@ -302,7 +312,6 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
     };
   }, [world, ground, placed]);
 
-  const alarm = ALARM_STYLE[run.alarm];
   const noun = objectiveNoun(placed.level.missionId);
   const over = run.status !== "playing";
   const tint = run.alarm === "calm" ? null : run.alarm === "suspicious" ? "var(--warning)" : "var(--danger)";
@@ -317,7 +326,7 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
       data-alarm={run.alarm}
       data-pointer={hud.locked ? "locked" : "free"}
       role="application"
-      aria-label="First-person view of the floor. W, A, S and D move, the arrow keys turn, E uses, F waits."
+      aria-label="First-person view of the floor. W, A, S and D move, the arrow keys turn, hold E to use, P pauses."
       tabIndex={0}
       className={cn("absolute inset-0 overflow-hidden bg-surface-0 select-none", hud.locked ? "cursor-none" : "cursor-pointer")}
     >
@@ -336,93 +345,84 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
         />
       ) : null}
 
-      <div className="pointer-events-none absolute inset-0 flex flex-col justify-between px-6 py-3">
-        <div className="flex flex-col items-start gap-2">
-          <div data-testid="fp-alarm" data-state={run.alarm} className={cn("rounded-sm border-l-2 bg-surface-1 px-3 py-2 shadow-e-1", alarm.bar)}>
-            <p className="label-caps text-text-3">
-              Alarm · turn <span className="font-mono text-text-1">{run.turn}</span>
-            </p>
-            <p className={cn("text-lg font-semibold", alarm.text)}>{alarm.label}</p>
-          </div>
-          <div className="max-w-md min-w-0 rounded-sm bg-surface-1 px-3 py-2 shadow-e-1">
-            <p className="label-caps text-text-3">Objective</p>
-            <p data-testid="fp-objective" className="truncate text-sm text-text-1">
-              {run.carrying ? `You have the ${noun}. Get to an exit.` : objective}
-            </p>
-          </div>
-        </div>
-
+      <div className="pointer-events-none absolute inset-0 flex flex-col justify-end px-6 py-3">
         <div className="flex flex-col items-center gap-2">
           {over ? (
             <p data-testid="fp-over" className={cn("rounded-sm bg-surface-1 px-3 py-2 text-base shadow-e-1", run.status === "won" ? "text-success" : "text-danger")}>
               {run.status === "won" ? `Out with the ${noun}.` : `Caught in the ${roomName(placed.level.floor, run.playerNode)}.`}
             </p>
+          ) : paused ? (
+            <p data-testid="fp-paused" className="flex items-center gap-2 rounded-sm bg-surface-1 px-3 py-2 text-sm text-text-1 shadow-e-1">
+              Paused. <Key>P</Key> to go on
+            </p>
           ) : hud.prompt ? (
-            <p data-testid="fp-prompt" data-kind={hud.prompt.kind} className="flex items-center gap-2 rounded-sm bg-surface-1 px-3 py-2 text-sm text-text-1 shadow-e-1">
+            <p
+              data-testid="fp-prompt"
+              data-kind={hud.prompt.kind}
+              data-using={hud.using ? "true" : undefined}
+              className="flex items-center gap-2 rounded-sm bg-surface-1 px-3 py-2 text-sm text-text-1 shadow-e-1"
+            >
               {hud.prompt.kind === "locked" ? (
-                "Locked. Pick it from the ring beside this door."
+                "Locked. Step up to the door to pick it."
+              ) : hud.prompt.kind === "take" ? (
+                <>
+                  Hold <Key>E</Key> to take the {noun}
+                </>
+              ) : hud.using ? (
+                <>
+                  Picking… hold <Key>E</Key>
+                  <span className="font-mono text-text-2">
+                    {hud.prompt.done} of {hud.prompt.of}
+                  </span>
+                </>
+              ) : hud.prompt.done > 0 ? (
+                <>
+                  Hold <Key>E</Key> to go on picking. Let go and the lock starts over.
+                </>
               ) : (
                 <>
-                  <Key>E</Key>
-                  {hud.prompt.kind === "take" ? `Take the ${noun}` : `Pick the lock, ${hud.prompt.done} of ${hud.prompt.of}. Leaning on the door picks it too.`}
+                  Hold <Key>E</Key> to pick the lock
                 </>
               )}
             </p>
-          ) : hud.astray ? (
-            <p data-testid="fp-astray" className="rounded-sm bg-surface-1 px-3 py-2 text-sm text-text-2 shadow-e-1">
-              The run still has you in the {hud.astray}. Walk to a lit ring to move on.
-            </p>
           ) : null}
           <p data-testid="fp-hint" className="flex items-center gap-3 rounded-sm bg-surface-1 px-3 py-1.5 text-sm text-text-2 shadow-e-1">
-            {hud.locked ? (
-              <>
-                <span className="flex items-center gap-1.5">
-                  <Key>W</Key>
-                  <Key>A</Key>
-                  <Key>S</Key>
-                  <Key>D</Key> move
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Key>Shift</Key> walk
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Key>E</Key> use
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Key>F</Key> wait
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Key>Esc</Key> free the mouse
-                </span>
-              </>
-            ) : (
-              <>
-                <span data-testid="fp-look-hint" className="text-text-1">
-                  {hud.refused ? "Hold the mouse button and drag to look" : "Click to look, or hold and drag"}
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Key>W</Key>
-                  <Key>A</Key>
-                  <Key>S</Key>
-                  <Key>D</Key> move
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Key>←</Key>
-                  <Key>→</Key> turn
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Key>E</Key> use
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Key>F</Key> wait
-                </span>
-              </>
+            {hud.locked ? null : (
+              <span data-testid="fp-look-hint" className="text-text-1">
+                {hud.refused ? "Hold the mouse button and drag to look" : "Click to look, or hold and drag"}
+              </span>
             )}
+            <span className="flex items-center gap-1.5">
+              <Key>W</Key>
+              <Key>A</Key>
+              <Key>S</Key>
+              <Key>D</Key> move
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Key>Shift</Key> walk
+            </span>
+            {hud.locked ? null : (
+              <span className="flex items-center gap-1.5">
+                <Key>←</Key>
+                <Key>→</Key> turn
+              </span>
+            )}
+            <span className="flex items-center gap-1.5">
+              hold <Key>E</Key> use
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Key>P</Key> pause
+            </span>
+            {hud.locked ? (
+              <span className="flex items-center gap-1.5">
+                <Key>Esc</Key> free the mouse
+              </span>
+            ) : null}
           </p>
         </div>
       </div>
 
-      {/* The middle of the view: what E and a lean act on. */}
+      {/* The middle of the view: what E acts on. */}
       <div aria-hidden className="pointer-events-none absolute top-1/2 left-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-text-2" />
     </div>
   );

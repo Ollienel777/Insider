@@ -20,6 +20,12 @@ export const FirstPersonView = dynamic(() => import("./first-person-view"), {
 });
 
 /** The status line when first person cannot be drawn and the board comes back. */
+/** First person's turn: short enough that the guards never seem to wait on the player (issue 115). */
+export { FP_TURN_MS as FIRST_PERSON_TURN_MS } from "./tuning";
+
+/** The turn the clock plays for first person, which the view supplies: the next pick while E is held, or a wait. */
+export type HeldAction = (run: import("@/engine").RunState) => import("@/engine").Action;
+
 export const FP_UNAVAILABLE = "First person needs WebGL, which this browser isn't giving it. You're on the board.";
 
 /**
