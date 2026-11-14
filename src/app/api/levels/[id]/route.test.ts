@@ -46,7 +46,7 @@ describe("GET /api/levels/[id]?m=", () => {
   it("never tells a kit building to run build:levels", async () => {
     const response = await get("900001", "?m=romaine-1974");
     expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ error: 'no level for building "900001": only fixture buildings have levels' });
+    expect(await response.json()).toEqual({ error: 'no level for building "900001" and mission "romaine-1974" yet: build it from its Dossier' });
     expect(await (await get("F1", "?m=sunset-1986")).json()).toEqual({
       error: 'no cached level for building "F1" and mission "sunset-1986"; run npm run build:levels',
     });
