@@ -5,6 +5,7 @@ import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type Keybo
 import { getMatterport } from "@/adapters/matterport";
 import { BoardView } from "@/components/run/board-view";
 import { saveCrewPlan } from "@/components/run/crew-plan-store";
+import { LensLegend, LensToggle, useLayerLens } from "@/components/run/layer-lens";
 import { RUN_SEED, type RunBuilding } from "@/components/run/run-screen";
 import { BuildingScreen } from "@/components/shell/building-screen";
 import { LayerDot } from "@/components/shell/layer-dot";
@@ -49,6 +50,7 @@ export function PlanScreen({
   const [loaded, setLoad] = useState<Load>({ status: "loading" });
   const [order, setOrder] = useState("");
   const [ask, setAsk] = useState<Ask>({ status: "idle" });
+  const [lens, toggleLens] = useLayerLens();
   const pending = useRef<AbortController | null>(null);
   const orderId = useId();
 
@@ -132,6 +134,9 @@ export function PlanScreen({
             </span>
             <span aria-hidden className="h-4 w-px bg-border" />
             <span className="truncate text-sm text-text-1">{manifest?.mission.title}</span>
+            <div className="ml-auto">
+              <LensToggle on={lens} onToggle={toggleLens} disabled={!ready} />
+            </div>
           </div>
           <div className="relative min-h-0 flex-1">
             {load.status === "loading" ? (
@@ -163,11 +168,14 @@ export function PlanScreen({
                 run={run}
                 choices={[]}
                 onChoose={() => {}}
-                reduced
+                // The lens is a look at the board itself, so it lifts the reduced emphasis while it is on.
+                reduced={!lens}
+                lens={lens}
                 ghost={checked ? ghostOf(checked) : null}
               />
             ) : null}
           </div>
+          {lens && ready ? <LensLegend placed={placed} locked={run.locked} /> : null}
           <div className="flex h-16 shrink-0 items-center gap-6 px-6 text-sm text-text-2">
             {checked ? (
               <>

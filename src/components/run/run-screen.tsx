@@ -26,6 +26,7 @@ import {
   type Choice,
 } from "./board";
 import { BoardView } from "./board-view";
+import { LensLegend, LensToggle, useLayerLens } from "./layer-lens";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
 import { loadCrewPlan, type StoredCrewPlan } from "./crew-plan-store";
@@ -66,6 +67,7 @@ export function RunScreen({
   const [attempt, setAttempt] = useState(0);
   const [run, setRun] = useState<RunState | null>(null);
   const [status, setStatus] = useState<string>("");
+  const [lens, toggleLens] = useLayerLens();
 
   // The Security Chief: one call per alarm event, answered between turns.
   // Nothing waits on it: the engine already has the guards converging.
@@ -255,10 +257,13 @@ export function RunScreen({
             </span>
             <span aria-hidden className="h-4 w-px bg-border" />
             <span className="truncate text-sm text-text-1">{manifest?.mission.title}</span>
-            <Button variant="ghost" className="ml-auto" onClick={restart} disabled={!run || run.turn === 0}>
-              <RotateCcw aria-hidden />
-              Restart
-            </Button>
+            <div className="ml-auto flex items-center gap-2">
+              <LensToggle on={lens} onToggle={toggleLens} disabled={!run} />
+              <Button variant="ghost" onClick={restart} disabled={!run || run.turn === 0}>
+                <RotateCcw aria-hidden />
+                Restart
+              </Button>
+            </div>
           </div>
 
           <div className="relative min-h-0 flex-1">
@@ -300,9 +305,12 @@ export function RunScreen({
                 choices={options}
                 onChoose={(c: Choice) => play(c.action)}
                 hiddenRoutes={hidden}
+                lens={lens}
               />
             ) : null}
           </div>
+
+          {lens && run && placed ? <LensLegend placed={placed} locked={run.locked} /> : null}
 
           <div className="flex h-16 shrink-0 items-center justify-between gap-6 px-6">
             <p data-testid="run-status" aria-live="polite" className="min-w-0 text-sm text-text-1 md:truncate">

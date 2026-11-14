@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 import type { RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
 import { cones, coverage, guardOrders, roomName, type Choice, type Cone } from "./board";
 import { frameOf, hull, LABEL_FONT, pointsAttr, project, projectRect, roomLabelTransform, round, TILE_DEPTH, type Point } from "./iso";
+import { LayerMarks, LayerRings, LENS_COLOUR, marksWidth, MARK, RoomPattern, roomStyle } from "./layer-lens";
+import { lensElements, lensKey, LENS_LAYERS, type LensLayer } from "./lens";
 import { ProvenanceThread } from "./provenance-thread";
 import { CARD_WIDTH, liveSubtitle, placeCard, threadColour, toScreen, whyKey, whyTargets } from "./why";
 import { WhyCard } from "./why-card";
@@ -37,6 +39,13 @@ interface BoardViewProps {
   testId?: string;
   /** The element whose Why card is open at first (a `data-why-target` key); the board keeps it after. */
   initialWhy?: string | null;
+  /** The Layer lens (#33): every element tinted by the layers its provenance records (the screen draws the legend). */
+  lens?: boolean;
+}
+
+/** The props that mark an element the lens tints, for the legend's counts to be checked against. */
+function lensAttrs(key: string, layers: readonly LensLayer[] | undefined) {
+  return layers ? { "data-lens": key, "data-lens-layers": layers.join(" ") } : {};
 }
 
 /**
@@ -66,8 +75,16 @@ export function BoardView({
   hiddenRoutes,
   testId = "run-board",
   initialWhy = null,
+  lens = false,
 }: BoardViewProps) {
   const { floor } = placed.level;
+  const patternId = useId().replace(/:/g, "");
+  const lensed = useMemo(
+    () => (lens ? lensElements(placed, run.locked) : null),
+    [lens, placed, run.locked],
+  );
+  const layersOf = (key: string): readonly LensLayer[] | undefined =>
+    lensed ? (lensed.find((e) => e.key === key)?.layers ?? []) : undefined;
   const frame = useMemo(() => frameOf(floor), [floor]);
   const targets = useMemo(() => whyTargets(placed), [placed]);
   const [why, setWhy] = useState<string | null>(initialWhy);
@@ -168,6 +185,7 @@ export function BoardView({
   );
   const exitNodes = new Set(placed.level.exits);
   const entryLabel = new Map(placed.entries.map((e) => [e.nodeId, e.label]));
+  const entryAt = new Map(placed.entries.map((e) => [e.nodeId, e.entryId]));
   const lockedEdges = floor.edges.filter((e) => e.door && run.locked.includes(e.door.id));
 
   // Pieces are drawn back to front, so a nearer pawn overlaps a farther one.
@@ -232,6 +250,13 @@ export function BoardView({
         role="group"
         aria-label={`Floor plan, turn ${run.turn}`}
       >
+        {lensed ? (
+          <defs>
+            {LENS_LAYERS.map((layer) => (
+              <RoomPattern key={layer} id={`${patternId}-${layer}`} layer={layer} />
+            ))}
+          </defs>
+        ) : null}
         <g data-testid="board-base" opacity={reduced ? 0.55 : undefined}>
         {/* Rooms: a low tile each, its two front faces darker. A room that holds a zone opens its Why card. */}
         <g>
@@ -241,10 +266,12 @@ export function BoardView({
             const key = whyKey.room(room.id);
             const zone = known.has(key);
             const selected = why === key;
+            const layers = layersOf(key);
             return (
               <g
                 key={room.id}
                 data-room={room.id}
+                {...lensAttrs(key, layers)}
                 {...(zone ? inspectable(key, `Why is the ${room.label} a zone?`, inspect) : { "aria-hidden": true })}
                 className={zone ? "cursor-pointer" : undefined}
               >
@@ -256,13 +283,37 @@ export function BoardView({
                   strokeWidth={selected ? 2 : 1}
                   strokeLinejoin="round"
                 />
+                {/* The lens: a hatch per zone layer, then the Matterport outline, inset so the selection ring stays clear. */}
+                {layers
+                  ? layers.map((layer) => (
+                      <polygon
+                        key={layer}
+                        data-testid="lens-room"
+                        data-layer={layer}
+                        points={pointsAttr(inset([back, right, front, left], layer === "matterport" ? 3 : 0))}
+                        style={roomStyle(layer, `${patternId}-${layer}`)}
+                        strokeLinejoin="round"
+                        pointerEvents="none"
+                      />
+                    ))
+                  : null}
               </g>
             );
           })}
         </g>
 
         {/* Room labels, painted flat on each tile along its back edge. */}
-        <g aria-hidden className="font-mono" style={{ fill: "var(--text-3)" }} fontSize={LABEL_FONT} letterSpacing="0.06em">
+        {/* Under the lens each label gets a dark halo, so it stays legible over a hatched tile. */}
+        <g
+          aria-hidden
+          className="font-mono"
+          style={{ fill: "var(--text-3)", stroke: lensed ? "var(--n-850)" : undefined }}
+          strokeWidth={lensed ? 3 : undefined}
+          paintOrder="stroke"
+          strokeLinejoin="round"
+          fontSize={LABEL_FONT}
+          letterSpacing="0.06em"
+        >
           {floor.rooms.map((room) => {
             const text = shortLabel(room.label).toUpperCase();
             return (
@@ -347,12 +398,15 @@ export function BoardView({
             const p = project(node.x, node.y);
             const seenBy = watchedBy.get(node.id) ?? [];
             const isObjective = node.id === placed.level.objective && !run.carrying;
+            const entryId = entryAt.get(node.id);
+            const layers = entryId ? layersOf(lensKey.entry(entryId)) : undefined;
             return (
               <g
                 key={node.id}
                 data-testid="board-node"
                 data-node={node.id}
                 data-watched-by={seenBy.join(" ")}
+                {...(entryId ? lensAttrs(lensKey.entry(entryId), layers) : {})}
                 aria-hidden
               >
                 <ellipse
@@ -391,6 +445,15 @@ export function BoardView({
                     {isObjective ? "FILES" : (entryLabel.get(node.id) ?? "EXIT").toUpperCase()}
                   </text>
                 ) : null}
+                {layers ? (
+                  <g transform={`translate(${round(p.x)}, ${round(p.y)})`}>
+                    <LayerRings layers={layers} rx={DISC.rx + 5} ry={DISC.ry + 3} />
+                    <LayerMarks
+                      layers={layers}
+                      at={{ x: -DISC.rx - 10 - marksWidth(layers.length), y: -MARK.h / 2 }}
+                    />
+                  </g>
+                ) : null}
               </g>
             );
           })}
@@ -404,8 +467,21 @@ export function BoardView({
           const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
           const n = { x: (-(b.y - a.y) / len) * 9, y: ((b.x - a.x) / len) * 9 };
           const selected = why === whyKey.lock(edge.door!.id);
+          const layers = layersOf(whyKey.lock(edge.door!.id));
           return (
-            <g key={edge.door!.id} data-testid="locked-door" data-door={edge.door!.id} aria-hidden>
+            <g
+              key={edge.door!.id}
+              data-testid="locked-door"
+              data-door={edge.door!.id}
+              {...lensAttrs(whyKey.lock(edge.door!.id), layers)}
+              aria-hidden
+            >
+              {layers ? (
+                <g transform={`translate(${round(m.x)}, ${round(m.y)})`}>
+                  <LayerRings layers={layers} rx={13} ry={13} />
+                  <LayerMarks layers={layers} at={{ x: -marksWidth(layers.length) / 2, y: 18 }} />
+                </g>
+              ) : null}
               <line
                 x1={round(m.x - n.x)}
                 y1={round(m.y - n.y)}
@@ -427,6 +503,7 @@ export function BoardView({
             at={cameraAt(camera.id)}
             live={camera.id === tripped}
             selected={why === whyKey.camera(camera.id)}
+            layers={layersOf(whyKey.camera(camera.id))}
           />
         ))}
 
@@ -453,6 +530,7 @@ export function BoardView({
                 nodeId={piece.nodeId}
                 tone={piece.kind}
                 selected={piece.kind === "guard" && why === whyKey.guard(piece.id)}
+                layers={piece.kind === "guard" ? layersOf(whyKey.guard(piece.id)) : undefined}
               />
             ),
           )}
@@ -644,6 +722,17 @@ function trippedBy(run: RunState): string | null {
   return last.cause.kind === "camera" || last.cause.kind === "guard" ? (last.cause.id ?? null) : null;
 }
 
+/** A polygon pulled `by` board units toward its centre, so an outline sits just inside the tile's edge. */
+function inset(points: readonly Point[], by: number): Point[] {
+  if (by === 0) return [...points];
+  const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
+  const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
+  return points.map((p) => {
+    const d = Math.hypot(p.x - cx, p.y - cy) || 1;
+    return { x: p.x + ((cx - p.x) / d) * by, y: p.y + ((cy - p.y) / d) * by };
+  });
+}
+
 /** "West Stair (Stair B)" → "West Stair"; "Suites 2202–2205" stays. */
 export function shortLabel(label: string): string {
   return label.replace(/\s*\(.*\)$/, "");
@@ -741,6 +830,7 @@ export function Pawn({
   carrying = false,
   caught = false,
   selected = false,
+  layers,
 }: {
   testId: string;
   label: string;
@@ -751,6 +841,8 @@ export function Pawn({
   caught?: boolean;
   /** Its Why card is open (guards only; the hit area that opens it is in the board's top layer). */
   selected?: boolean;
+  /** With the Layer lens on (guards only): its layers, as rings round its base and letter marks beside it. */
+  layers?: readonly LensLayer[];
 }) {
   const body = tone === "player" ? "var(--accent)" : tone === "guard" ? "var(--n-200)" : "var(--n-400)";
   const shade = tone === "player" ? "var(--accent-active)" : tone === "guard" ? "var(--n-400)" : "var(--n-500)";
@@ -760,9 +852,11 @@ export function Pawn({
       data-testid={testId}
       data-node={nodeId}
       data-id={label}
+      {...lensAttrs(whyKey.guard(label), layers)}
       className={cn("ease-out motion-reduce:delay-0", tone === "player" ? "duration-base" : "delay-200 duration-slow")}
       style={{ transform: `translate(${round(at.x)}px, ${round(at.y)}px)`, transitionProperty: "transform" }}
     >
+      {layers ? <LayerRings layers={layers} rx={selected ? 25 : 19} ry={selected ? 12.5 : 9.5} /> : null}
       {selected ? (
         <ellipse cx="0" cy="0" rx="20" ry="10" fill="none" style={{ stroke: "var(--accent)" }} strokeWidth="2" />
       ) : null}
@@ -798,6 +892,9 @@ export function Pawn({
           {label}
         </text>
       ) : null}
+      {layers && layers.length > 0 ? (
+        <LayerMarks layers={layers} at={{ x: 14, y: -28 }} />
+      ) : null}
     </g>
   );
 }
@@ -811,18 +908,38 @@ export function CameraPiece({
   at,
   live,
   selected = false,
+  layers,
 }: {
   id: string;
   at: Point;
   live: boolean;
   selected?: boolean;
+  /** With the Layer lens on: its layers, as an outline round the housing and letter marks beside it. */
+  layers?: readonly LensLayer[];
 }) {
   return (
     <g
       data-testid="camera-piece"
       data-id={id}
+      {...lensAttrs(whyKey.camera(id), layers)}
       transform={`translate(${round(at.x)}, ${round(at.y)})`}
     >
+      {layers?.map((layer, i) => (
+        <rect
+          key={layer}
+          data-testid="lens-ring"
+          data-layer={layer}
+          x={-20 - i * 4}
+          y={-34 - i * 4}
+          width={40 + i * 8}
+          height={24 + i * 8}
+          rx="5"
+          fill="none"
+          style={{ stroke: LENS_COLOUR[layer] }}
+          strokeWidth="2"
+          strokeDasharray={i === 0 ? undefined : "4 3"}
+        />
+      ))}
       <rect x="-2" y="-30" width="4" height="12" style={{ fill: "var(--n-500)" }} />
       <rect
         x="-16"
@@ -844,6 +961,7 @@ export function CameraPiece({
       <text x="20" y="-34" className="font-mono" fontSize="12" fontWeight="500" style={{ fill: "var(--text-1)" }}>
         {id}
       </text>
+      {layers && layers.length > 0 ? <LayerMarks layers={layers} at={{ x: 24 + (layers.length - 1) * 4, y: -28 }} /> : null}
     </g>
   );
 }
