@@ -608,10 +608,12 @@ sees that layer. In first person the scan is the screen.
   Nothing on it changes except that sound plays (below).
 - **Live** adds, in the order it is built:
   1. **The turn clock.** A turn ends when the player acts, or after
-     `LIVE_TURN_MS` if they don't: the clock then plays a `wait`.
+     `LIVE_TURN_MS` if they don't: the clock then plays a `wait`, or, while a
+     pick is in progress (`run.picking`), a `pick` on that door.
      - A pick in progress continues on the clock, so a lock opens after its
-       turns without a key press for each. Any other action ends the pick, as
-       on the board.
+       turns without a key press for each. The clock cannot play a `wait`
+       there: the engine's `wait` ends a pick (`src/engine/actions.ts`). Any
+       other action the player takes ends the pick, as on the board.
      - Arming a sprint (`S`) is not an action. The clock keeps running, and a
        clock turn leaves the sprint armed.
      - Space takes the objective as it does today. It is an action, so it
@@ -658,7 +660,15 @@ sees that layer. In first person the scan is the screen.
 is made with Web Audio, so there are no audio files. It starts unmuted, makes
 no sound before the first click or key press (browser autoplay rules), and
 has a mute control whose choice is remembered. The smoke asserts nothing
-about it.
+about it. Whether it is on in Tactical for the demo is part of T7's 02:00
+decision, since Tactical carries beat 6 on a no-go; the mute control is the
+fallback either way.
+
+**What the demo reset clears.** The mode and the mute choice are stored under
+`heist:` keys in the browser's storage, which `npm run demo:reset` clears
+(`src/lib/demo-epoch.ts`). So a reset puts the Run screen back to Tactical,
+with sound unmuted, before the pitch. T1 and T3 keep them under `heist:` keys
+so the reset reaches them.
 
 **Numbers (D12 owns them).** `LIVE_TURN_MS` is 1100. A camera hop asks for a
 500 ms travel time.
@@ -702,12 +712,12 @@ and reviewed by the loop; T5, T6 and W are open to the team.
 
 | id | issue | title | area | size | acceptance |
 |---|---|---|---|---|---|
-| T1 | #99 | feat: Live mode and the turn clock | `area:run` | M | Tactical unchanged; in Live a `wait` every `LIVE_TURN_MS` with no input; pause; clock turns in the log; tests under fake timers |
+| T1 | #99 | feat: Live mode and the turn clock | `area:run` | M | Tactical unchanged; in Live a `wait` every `LIVE_TURN_MS` with no input, or a `pick` while a pick is in progress; pause; clock turns in the log; tests under fake timers |
 | T2 | #100 | feat: the play HUD and the radio line | `area:run` | M | three elements in Live, the panels behind Details; `ui-craft` rubric at 1440×900 and 390×844. Depends on T1 |
 | T3 | #101 | feat: sound cues for the run | `area:run` | S | `cuesFor` pure, with a test per cue; no audio files; mute |
 | T4 | #106 | feat: the Inside view reports its pose and takes a look | `area:adapter-matterport` | M | pose, floor points, projection, rotate and a per-move travel time on the adapter; the Inside view as it is unchanged; nothing stored |
-| T5 | #107 | feat: the scan as the first-person Run view | `area:run` | L | the page owns look and step; the engine stays in step with the camera; board fallback. Depends on T1, T4 and Q10 |
+| T5 | #107 | feat: the scan as the first-person Run view | `area:run` | L | the page owns look and step; the engine stays in step with the camera; board fallback. Depends on T1, T4, T8 and Q10 |
 | T6 | #108 | feat: guards and sight drawn over the scan | `area:run` | M | the overlay tracks the pose; the visibility rule above; the Why card opens. Depends on T4 and Q10 |
-| T7 | to file | docs: the Live demo beat and the default mode | `area:docs` | S | the 02:00 decision recorded; the script and the smoke follow it. Depends on Q10 |
-| T8 | to file | feat: a scan's board drops long hops | `area:adapter-matterport` | S | no position cut off; the entry, the objective and an exit stay reachable, or the fixture floor is used |
+| T7 | to file | docs: the Live demo beat and the default mode | `area:docs` | S | the 02:00 decision recorded; the script and the smoke follow it. Depends on Q10 for a go only: a no-go needs no answer to Q10 |
+| T8 | #110 | feat: a scan's board drops long hops | `area:adapter-matterport` | S | no position cut off; the entry, the objective and an exit stay reachable, or the fixture floor is used |
 | W | #109 | chore: make walking the scan feel smooth | `area:run` | S | by hand, in the sandbox on `chore/98-scan-walk-spike`: holding W walks without a stop between hops; `controls.ts` keeps its `target` and `step` contract |
