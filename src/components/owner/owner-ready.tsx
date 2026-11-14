@@ -150,7 +150,7 @@ export function OwnerReady({
     return boardOf(manifest, floor, fix.rerun.fixed, OWNER_SEED) ?? batchBefore;
   }, [batchBefore, fix, side, manifest, floor]);
 
-  // Coverage and unwatched routes (issue 120): measured on each setup's board, so they follow every edit with no batch.
+  // Coverage and open windows (issue 120): measured on each setup's board, so they follow every edit with no batch.
   const editMeasure = useMemo(() => measureSetup(editBoard), [editBoard]);
   const batchMeasures = useMemo<BatchMeasures | null>(() => {
     if (!batchBefore) return null;

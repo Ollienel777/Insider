@@ -1,24 +1,19 @@
 // A setup measured from the floor plan alone (issue 120): how much of the
-// floor the cameras and guards watch over a night, and how many ways in still
-// reach the objective unseen. No crew, no batch and no model: the guards walk
+// floor the cameras and guards watch over a night, and how many moments in
+// that night still let a crew in and out unseen (`openWindows`). No crew, no batch and no model: the guards walk
 // their rounds and the cameras sweep with no player present, and what each
 // sees is the engine's own answer (`visibleFrom`, `watched`, `moveGuards`), the
 // same the run board's cones draw and the same that catches the player.
 // Pure and deterministic, so it can run on every edit.
 import { createRun, moveGuards } from "@/engine";
-import { roundOf } from "@/engine/autoplay";
 import { visibleFrom, watched } from "@/engine/vision";
-import type { Board, Level } from "@/engine";
+import type { Level } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
 import { objectiveNoun } from "@/lib/objective-noun";
+import { cycleLength } from "./night";
+import { openWindows, type OpenWindows } from "./open-windows";
 
-/**
- * The longest night the measure steps through. A night is the least common
- * multiple of every guard's round (its hops times its tempo) and every
- * camera's sweep (2 or 3 turns); with odd round lengths that can grow large,
- * so it stops at 240 turns, which is longer than any attempt (120 turns).
- */
-export const CYCLE_CAP = 240;
+export { CYCLE_CAP, cycleLength } from "./night";
 
 export interface SetupMeasure {
   /** Positions on the floor (nodes). */
@@ -29,31 +24,14 @@ export interface SetupMeasure {
   coverage: number;
   /** Ways in (entries) on this floor. */
   entries: number;
-  /** Ways in with a route to the objective that touches no watched position. */
-  unwatched: number;
   /** What the objective is, for the lines: "files". */
   noun: string;
   /** The turns stepped through: the night's length, capped at `CYCLE_CAP`. */
   cycle: number;
-}
-
-const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
-const lcm = (a: number, b: number) => (a / gcd(a, b)) * b;
-
-/** The night's length on this board: the least common multiple of the rounds and sweeps, capped. */
-export function cycleLength(board: Board): number {
-  const { level } = board;
-  const tempo = (id: string) => level.guardTempo?.[id] ?? level.patrolTempo;
-  const lengths = [
-    ...level.guards.map((g) => roundOf(board, g.patrol).length * tempo(g.id)),
-    ...board.cameras.map((c) => c.parts.length),
-  ];
-  let cycle = 1;
-  for (const n of lengths) {
-    cycle = lcm(cycle, Math.max(1, n));
-    if (cycle >= CYCLE_CAP) return CYCLE_CAP;
-  }
-  return cycle;
+  /** The moments a crew could get in and out unseen and unheard (`openWindows`): the timing coverage cannot see. */
+  windows: OpenWindows;
+  /** The first open window's route as the rooms it passes, for the line on screen; null when none is open. */
+  firstRooms: string[] | null;
 }
 
 /**
@@ -76,40 +54,28 @@ export function watchedPositions(level: Level): { nodes: Set<string>; cycle: num
   return { nodes, cycle };
 }
 
-/** Whether a route runs from `from` to `to` on unwatched positions only. Every door counts as passable: the crew picks locks. */
-function reachesUnseen(board: Board, from: string, to: string, seen: ReadonlySet<string>): boolean {
-  if (seen.has(from) || seen.has(to)) return false;
-  const visited = new Set([from]);
-  const queue = [from];
-  while (queue.length > 0) {
-    const at = queue.shift()!;
-    if (at === to) return true;
-    for (const exit of board.adjacency.get(at) ?? []) {
-      if (visited.has(exit.to) || seen.has(exit.to)) continue;
-      visited.add(exit.to);
-      queue.push(exit.to);
-    }
-  }
-  return false;
-}
-
-/** Coverage and unwatched routes for a placed level (the generated security, or an owner's setup applied). */
+/** Coverage and open windows for a placed level (the generated security, or an owner's setup applied). */
 export function measureSetup(placed: { level: Level; entries: PlacedLevel["entries"] | readonly { nodeId: string }[] }): SetupMeasure {
   const { level } = placed;
   const { nodes: seen, cycle } = watchedPositions(level);
-  const run = createRun(level);
   const positions = level.floor.nodes.length;
   const watchedCount = level.floor.nodes.filter((n) => seen.has(n.id)).length;
   const ways = [...new Set(placed.entries.map((e) => e.nodeId))];
-  const unwatched = ways.filter((id) => reachesUnseen(run.board, id, level.objective, seen)).length;
+  const windows = openWindows(level, ways);
+  const roomOf = (id: string) => {
+    const node = level.floor.nodes.find((n) => n.id === id);
+    return level.floor.rooms.find((r) => r.id === node?.roomId)?.label ?? id;
+  };
+  const firstRooms = windows.first ? windows.first.route.map(roomOf).filter((l, i, all) => i === 0 || l !== all[i - 1]) : null;
   return {
     positions,
     watched: watchedCount,
     coverage: positions === 0 ? 0 : Math.round((100 * watchedCount) / positions),
     entries: ways.length,
-    unwatched,
     noun: objectiveNoun(level.missionId),
     cycle,
+    windows,
+    firstRooms,
   };
 }
 
@@ -118,13 +84,19 @@ export function coverageLine(m: SetupMeasure): string {
   return `Coverage: ${m.coverage}% of the floor is watched at some point in a night.`;
 }
 
-/** "Unwatched routes: 2 of 3 ways in reach the files unseen." */
-export function routesLine(m: SetupMeasure): string {
-  const verb = m.unwatched === 1 ? "reaches" : "reach";
-  return `Unwatched routes: ${m.unwatched} of ${m.entries} ${m.entries === 1 ? "way" : "ways"} in ${verb} the ${m.noun} unseen.`;
+/** "Open windows: 9 of 120 moments in the night let a crew in and out unseen." */
+export function windowsLine(m: SetupMeasure): string {
+  const { open, moments } = m.windows;
+  return `Open windows: ${open} of ${moments} moments in the night ${open === 1 ? "lets" : "let"} a crew in and out unseen.`;
 }
 
-/** "62% → 81%, unwatched routes 2 → 0". */
+/** Which way and when: "The first opens on turn 0: Freight lift → Lobby → Records room → Lobby → Freight lift." Null when none is open. */
+export function firstWindowLine(m: SetupMeasure): string | null {
+  if (!m.windows.first || !m.firstRooms) return null;
+  return `The first opens on turn ${m.windows.first.turn}: ${m.firstRooms.join(" → ")}.`;
+}
+
+/** "Coverage 62% → 81%, open windows 9 → 1". */
 export function measureChange(a: SetupMeasure, b: SetupMeasure): string {
-  return `Coverage ${a.coverage}% → ${b.coverage}%, unwatched routes ${a.unwatched} → ${b.unwatched}`;
+  return `Coverage ${a.coverage}% → ${b.coverage}%, open windows ${a.windows.open} → ${b.windows.open}`;
 }

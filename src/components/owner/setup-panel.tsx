@@ -100,7 +100,7 @@ export function SetupPanel({
   onReset: () => void;
   /** Shown after the saved setups: the prepared demo setups and the compare picker. */
   extra?: ReactNode;
-  /** The setup's coverage and unwatched routes as it stands (issue 120): they follow every edit, no batch needed. */
+  /** The setup's coverage and open windows as it stands (issue 120): they follow every edit, no batch needed. */
   measure?: SetupMeasure | null;
 }) {
   const { setup } = draft;

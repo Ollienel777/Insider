@@ -14,7 +14,7 @@ import { MeasureChange, MeasureChips, MeasureLines } from "./measure-lines";
 import { describeFix } from "./owner-edit";
 import type { SetupMeasure } from "./setup-measure";
 
-/** Coverage and unwatched routes for the batch's setup, and for the setup after the Chief's fix once there is one. */
+/** Coverage and open windows for the batch's setup, and for the setup after the Chief's fix once there is one. */
 export interface BatchMeasures {
   before: SetupMeasure;
   after: SetupMeasure | null;

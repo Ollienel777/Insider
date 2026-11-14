@@ -50,6 +50,8 @@ test("Debrief to Owner Mode: 50 attempts, the Chief's fix, before and after", as
   expect(escapedBy).toEqual({ "dock-patient": 9, "dock-fast": 6, "dock-in-roof-out": 2, "suite-detour": 0, "roof-quiet": 0 });
   await expect(page.getByTestId("owner-route")).toHaveAttribute("data-count", "14");
   await expect(page.getByTestId("owner-measure")).toHaveAttribute("data-coverage", "53");
+  await expect(page.getByTestId("owner-measure")).toHaveAttribute("data-windows", "4");
+  await expect(page.getByTestId("owner-measure")).toHaveAttribute("data-moments", "8");
   await expect(page.getByTestId("owner-detector")).toBeVisible();
   await expect(page.getByTestId("owner-detector-ring")).toBeVisible();
   await shot(page, "batch");
@@ -65,7 +67,7 @@ test("Debrief to Owner Mode: 50 attempts, the Chief's fix, before and after", as
   await expect(page.getByTestId("owner-after-count")).toHaveAttribute("data-escaped", "0");
   await expect(page.getByTestId("owner-after-count")).toHaveAttribute("data-total", "50");
   await expect(page.getByTestId("owner-changed")).toContainText("17 fewer got out");
-  await expect(page.getByTestId("owner-measure-change")).toHaveText("Coverage 53% → 57%, unwatched routes 0 → 0.");
+  await expect(page.getByTestId("owner-measure-change")).toHaveText("Coverage 53% → 57%, open windows 4 → 0.");
   // The route and detector cards describe the side the board shows: After by default, then Before.
   await expect(page.getByTestId("owner-route")).toHaveAttribute("data-side", "after");
   await expect(page.getByTestId("owner-route")).toHaveAttribute("data-count", "0");
@@ -130,14 +132,17 @@ test("the prepared pair: 7 of 50, C2 moved, 1 of 50, then the two side by side",
   await expect(page.getByTestId("owner-made-up")).toBeVisible();
   await expect(page.getByTestId("owner-board-caption")).toHaveText("Demo: night shift");
   await expect(page.getByTestId("owner-setup-counts")).toHaveText("4 guards · 0 cleaners · 2 cameras · 2 locked doors · 1 desk");
-  // From the floor plan alone, before any attempt: half the floor watched, no way in unseen.
+  // From the floor plan alone, before any attempt: half the floor watched, 4 of 8 moments open.
   await expect(page.getByTestId("owner-setup-measure-coverage")).toHaveText("Coverage: 50% of the floor is watched at some point in a night.");
-  await expect(page.getByTestId("owner-setup-measure-routes")).toHaveText("Unwatched routes: 0 of 2 ways in reach the files unseen.");
+  await expect(page.getByTestId("owner-setup-measure-windows")).toHaveText("Open windows: 4 of 8 moments in the night let a crew in and out unseen.");
+  await expect(page.getByTestId("owner-setup-measure-first")).toHaveText(
+    "The first opens on turn 0: Freight Lift Lobby → Dock Corridor → Records Room → Dock Corridor → Freight Lift Lobby.",
+  );
   await page.getByTestId("owner-run").click();
   await expect(page.getByTestId("owner-count")).toHaveAttribute("data-escaped", "7");
   await expect(page.getByTestId("owner-count")).toHaveAttribute("data-total", "50");
   await expect(page.getByTestId("owner-measure")).toHaveAttribute("data-coverage", "50");
-  await expect(page.getByTestId("owner-measure")).toHaveAttribute("data-unwatched", "0");
+  await expect(page.getByTestId("owner-measure")).toHaveAttribute("data-windows", "4");
   await expect(page.getByTestId("owner-strip").locator('[data-outcome="escaped"]')).toHaveCount(7);
   await expect(page.getByTestId("owner-route")).toHaveAttribute("data-count", "7");
 
@@ -146,7 +151,7 @@ test("the prepared pair: 7 of 50, C2 moved, 1 of 50, then the two side by side",
   await page.locator('[data-testid="owner-demo-load"][data-name="Demo: night shift, C2 moved"]').click();
   await expect(page.getByTestId("owner-board-caption")).toHaveText("Demo: night shift, C2 moved");
   await expect(page.getByTestId("owner-setup-measure")).toHaveAttribute("data-coverage", "57");
-  await expect(page.getByTestId("owner-setup-measure")).toHaveAttribute("data-unwatched", "0");
+  await expect(page.getByTestId("owner-setup-measure")).toHaveAttribute("data-windows", "2");
   await page.getByTestId("owner-run").click();
   await expect(page.getByTestId("owner-count")).toHaveAttribute("data-escaped", "1");
   await expect(page.getByTestId("owner-strip").locator('[data-outcome="escaped"]')).toHaveCount(1);
@@ -167,10 +172,10 @@ test("the prepared pair: 7 of 50, C2 moved, 1 of 50, then the two side by side",
   await expect(page.getByTestId("owner-pair-b-route")).toHaveAttribute("data-count", "1");
   await expect(page.getByTestId("owner-pair-change")).toHaveText(["C2 moved from the Freight Lift Lobby to the Dock Corridor"]);
   await expect(page.getByTestId("owner-pair-delta")).toHaveText("7 → 1 of 50: 6 fewer got out.");
-  // The floor plan's view of the same move: C2 watches two more positions, and closes no route (there was none open).
-  await expect(page.getByTestId("owner-pair-a-measure")).toHaveText("50% watched · 0/2 unwatched");
-  await expect(page.getByTestId("owner-pair-b-measure")).toHaveText("57% watched · 0/2 unwatched");
-  await expect(page.getByTestId("owner-pair-measure-change")).toHaveText("Coverage 50% → 57%, unwatched routes 0 → 0.");
+  // The floor plan's view of the same move: C2 watches two more positions, and halves the moments a crew gets in and out unseen.
+  await expect(page.getByTestId("owner-pair-a-measure")).toHaveText("50% watched · 4/8 open");
+  await expect(page.getByTestId("owner-pair-b-measure")).toHaveText("57% watched · 2/8 open");
+  await expect(page.getByTestId("owner-pair-measure-change")).toHaveText("Coverage 50% → 57%, open windows 4 → 2.");
   await expect(page.getByTestId("owner-made-up-chip")).toHaveCount(2);
   await expect(page.getByTestId("owner-pair-recorded")).toBeVisible();
 

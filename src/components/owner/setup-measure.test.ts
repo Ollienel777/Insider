@@ -1,4 +1,4 @@
-// Coverage and unwatched routes (issue 120): the night's length, small
+// Coverage and open windows (issue 120): the night's length, small
 // hand-made floors, F1's generated security and the prepared demo pair. The
 // demo pair's numbers are pinned as they come out, not as the story wants.
 import { describe, expect, it } from "vitest";
@@ -12,7 +12,7 @@ import fixRecording from "../../../fixtures/llm/fix-F1.json";
 import { toEngineFix } from "./chief-fix";
 import { ownerZones } from "./owner-batch";
 import { boardOf, setupFromPlaced, setupWithFix, updateCamera } from "./owner-edit";
-import { coverageLine, CYCLE_CAP, cycleLength, measureChange, measureSetup, routesLine } from "./setup-measure";
+import { coverageLine, CYCLE_CAP, cycleLength, measureChange, measureSetup, windowsLine } from "./setup-measure";
 
 /** Nodes n0…n(k-1) in a line along x, one room, every node in sight of every other. */
 function lineFloor(k: number): FloorGraph {
@@ -98,12 +98,12 @@ describe("the night's length", () => {
   });
 });
 
-describe("coverage and unwatched routes on a small floor", () => {
-  it("with no cameras and no guards, nothing is watched and every way in reaches the objective", () => {
+describe("coverage and open windows on a small floor", () => {
+  it("with no cameras and no guards, nothing is watched and every moment is open", () => {
     const m = measureSetup({ level: diamondLevel(), entries: ways });
-    expect(m).toMatchObject({ positions: 5, watched: 0, coverage: 0, entries: 2, unwatched: 2 });
+    expect(m).toMatchObject({ positions: 5, watched: 0, coverage: 0, entries: 2 });
     expect(coverageLine(m)).toBe("Coverage: 0% of the floor is watched at some point in a night.");
-    expect(routesLine(m)).toBe("Unwatched routes: 2 of 2 ways in reach the files unseen.");
+    expect(windowsLine(m)).toBe("Open windows: 2 of 2 moments in the night let a crew in and out unseen.");
   });
 
   it("counts a locked door as passable: the crew picks it", () => {
@@ -112,10 +112,11 @@ describe("coverage and unwatched routes on a small floor", () => {
       entries: ways,
     });
     // a still reaches d through the locked door to b; e has only the watched c.
-    expect(m).toMatchObject({ watched: 1, coverage: 20, unwatched: 1 });
+    expect(m).toMatchObject({ watched: 1, coverage: 20, windows: { open: 1, moments: 2 } });
+    expect(m.windows.first?.actions.filter((a) => a.kind === "pick")).toHaveLength(2);
   });
 
-  it("with every route watched, no way in reaches the objective unseen", () => {
+  it("with every route watched, no moment is open", () => {
     const m = measureSetup({
       level: diamondLevel({
         cameras: [{ id: "C1", kind: "fixed-ip", cover: ["c"] }],
@@ -123,8 +124,8 @@ describe("coverage and unwatched routes on a small floor", () => {
       }),
       entries: ways,
     });
-    expect(m).toMatchObject({ watched: 2, coverage: 40, unwatched: 0 });
-    expect(routesLine(m)).toBe("Unwatched routes: 0 of 2 ways in reach the files unseen.");
+    expect(m).toMatchObject({ watched: 2, coverage: 40 });
+    expect(windowsLine(m)).toBe("Open windows: 0 of 2 moments in the night let a crew in and out unseen.");
   });
 
   it("counts a sweeping camera's whole cover, and every node a guard's round passes", () => {
@@ -136,7 +137,7 @@ describe("coverage and unwatched routes on a small floor", () => {
       }),
       entries: [{ nodeId: "n0" }],
     });
-    expect(m).toMatchObject({ watched: 5, coverage: 83, unwatched: 0, cycle: 4 });
+    expect(m).toMatchObject({ watched: 5, coverage: 83, cycle: 4 });
   });
 
   it("gives the same answer every time", () => {
@@ -153,21 +154,21 @@ describe("on F1", () => {
 
   it("measures the generated security, and its setup measures the same", () => {
     const m = measureSetup(generated);
-    expect(m).toMatchObject({ positions: 30, watched: 16, coverage: 53, entries: 2, unwatched: 0 });
+    expect(m).toMatchObject({ positions: 30, watched: 16, coverage: 53, entries: 2 });
     expect(measureSetup(boardOf(manifest, floor, setupFromPlaced(generated), 1)!)).toEqual(m);
   });
 
-  it("measures the prepared pair: moving C2 adds two watched positions and closes no route", () => {
+  it("measures the prepared pair: moving C2 adds two watched positions and halves the open windows", () => {
     const [night, moved] = demoSetups("F1").map((d) => measureSetup(boardOf(manifest, floor, d.setup, 1)!));
-    expect(night).toMatchObject({ watched: 15, coverage: 50, entries: 2, unwatched: 0 });
-    expect(moved).toMatchObject({ watched: 17, coverage: 57, entries: 2, unwatched: 0 });
-    expect(measureChange(night, moved)).toBe("Coverage 50% → 57%, unwatched routes 0 → 0");
+    expect(night).toMatchObject({ watched: 15, coverage: 50, entries: 2 });
+    expect(moved).toMatchObject({ watched: 17, coverage: 57, entries: 2 });
+    expect(measureChange(night, moved)).toBe("Coverage 50% → 57%, open windows 4 → 2");
   });
 
   it("measures the Chief's recorded fix on the generated setup", () => {
     const fixed = setupWithFix(setupFromPlaced(generated), toEngineFix(recordedFix, ownerZones(manifest, floor)), generated.level, "After the fix");
     const after = measureSetup(boardOf(manifest, floor, fixed, 1)!);
-    expect(measureChange(measureSetup(generated), after)).toBe("Coverage 53% → 57%, unwatched routes 0 → 0");
+    expect(measureChange(measureSetup(generated), after)).toBe("Coverage 53% → 57%, open windows 4 → 0");
   });
 
   it("changes when a camera moves, with no batch played", () => {
