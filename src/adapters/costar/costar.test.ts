@@ -5,7 +5,7 @@ import { Building } from "@/domain";
 import raw from "../../../fixtures/costar/buildings.json";
 import { FIXTURE_BUILDINGS, createFakeCoStar } from "./fake";
 import { getCoStar, resetCoStar, selectCoStar } from "./index";
-import { smallFictionalKit } from "./test-kit";
+import { SMOKE_KIT_BUILDING, smallFictionalKit } from "./test-kit";
 
 // SPEC §7's table of fixture buildings.
 const TABLE = [
@@ -154,6 +154,30 @@ describe("selectCoStar (the mode switch)", () => {
   it("is live with COSTAR_MODE=live and a kit, or HEIST_MODE=live alone", () => {
     expect(selectCoStar({ ...KIT, COSTAR_MODE: "live" })).toMatchObject({ mode: "live", reason: "CoStar: live (data kit)" });
     expect(selectCoStar({ ...KIT, HEIST_MODE: "live" }).mode).toBe("live");
+  });
+});
+
+describe("the fictional test kit in fake mode (HEIST_TEST_KIT=1, the recorded kit path, #95)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("opens the fictional kit building by id, read through the kit mapping, and stays fake", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const s = selectCoStar({ HEIST_MODE: "fake", HEIST_TEST_KIT: "1" });
+    expect(s.mode).toBe("fake");
+    expect(s.reason).toBe("CoStar: fixtures (fake mode), and the fictional test kit by id");
+    const kit = await s.adapter.getBuilding(SMOKE_KIT_BUILDING);
+    expect(kit).toMatchObject({ id: SMOKE_KIT_BUILDING, name: "Testwood Exchange", source: "costar", yearBuilt: 1968, buildingClass: "B" });
+    expect(kit?.matterportModelId).toBe("mpTestEEEE001");
+    expect(await s.adapter.getAvailableSpace(SMOKE_KIT_BUILDING)).toHaveLength(3);
+    // The fixtures answer as before: the map lists them alone, and F1 is F1.
+    expect((await s.adapter.listBuildings("LA")).map((b) => b.id)).toEqual(["F1", "F2", "F3"]);
+    expect((await s.adapter.getBuilding("F1"))?.source).toBe("fixture");
+    expect(await s.adapter.getBuilding("F9")).toBeNull();
+  });
+
+  it("is off unless asked for, and never on in live mode", async () => {
+    expect(await selectCoStar({ HEIST_MODE: "fake" }).adapter.getBuilding(SMOKE_KIT_BUILDING)).toBeNull();
+    expect(selectCoStar({ COSTAR_MODE: "live", HEIST_TEST_KIT: "1" }).reason).toBe("CoStar: fixtures (live mode, but COSTAR_KIT_DIR not set)");
   });
 });
 
