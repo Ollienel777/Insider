@@ -1,24 +1,22 @@
 "use client";
 
 // The Inside view (SPEC §4.5): on a board built from a live scan, a Showcase
-// player in the side panel that moves to the player's sweep on every hop. The
-// board's node ids are the scan's sweep ids, so the player's node is where
-// the view goes. It only moves the camera: nothing is read from it, and
-// nothing leaves the page.
+// player that moves to the player's sweep on every hop. The board's node ids
+// are the scan's sweep ids, so the player's node is where the view goes. It
+// only moves the camera: nothing is read from it, and nothing leaves the page.
 //
-// The Run screen renders this only on a live scan; on fixtures (the demo path
-// and the smoke) there is no panel at all.
-import { useEffect, useRef, useState } from "react";
+// This file opens, steers and closes the player. The Run stage draws it
+// (scan-pane.tsx, issue 117), only on a live scan; on fixtures (the demo path
+// and the smoke) there is no Inside view at all.
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type { InsideView } from "@/adapters/matterport";
-import { LayerDot } from "@/components/shell/layer-dot";
-import { Skeleton } from "@/components/ui/skeleton";
 
 /**
  * Hands focus back to the board when it sits in the panel (a click in the
  * player focuses its frame, and keys typed there never reach the page), so
  * the number keys keep moving the player.
  */
-function returnFocus(panel: HTMLElement | null) {
+export function returnFocus(panel: HTMLElement | null) {
   const active = document.activeElement;
   if (!panel || !(active instanceof HTMLElement) || !panel.contains(active)) return;
   active.blur();
@@ -80,16 +78,17 @@ export function openInsideSession(
   };
 }
 
-export function InsideViewPanel({
-  open,
-  sweepId,
-}: {
+/**
+ * The Inside view's player for the component that draws it: opened in the
+ * element `host` is put on, sent to `sweepId` on every hop, and let go when
+ * the component goes.
+ */
+export function useInsideView(
   /** Opens the player in the element given; from `insideViewFor`. */
-  open: (parent: HTMLElement, signal?: AbortSignal) => Promise<InsideView>;
+  open: (parent: HTMLElement, signal?: AbortSignal) => Promise<InsideView>,
   /** The player's node on the board: a sweep id of the scan. */
-  sweepId: string;
-}) {
-  const panel = useRef<HTMLElement>(null);
+  sweepId: string,
+): { host: RefObject<HTMLDivElement | null>; status: InsideStatus } {
   const host = useRef<HTMLDivElement>(null);
   const session = useRef<InsideSession | null>(null);
   const [status, setStatus] = useState<InsideStatus>("connecting");
@@ -110,29 +109,5 @@ export function InsideViewPanel({
     session.current?.moveTo(sweepId);
   }, [sweepId, open]);
 
-  return (
-    <section
-      ref={panel}
-      aria-labelledby="inside-view-label"
-      data-testid="inside-view"
-      data-status={status}
-      className="flex flex-col gap-2"
-      onPointerLeave={() => returnFocus(panel.current)}
-    >
-      <h2 id="inside-view-label" className="flex items-center gap-2 label-caps text-text-3">
-        <LayerDot layer="matterport" decorative />
-        Inside view
-      </h2>
-      <div className="relative aspect-video overflow-hidden rounded-md border border-border bg-surface-1">
-        <div ref={host} className="absolute inset-0" />
-        {status === "connecting" ? <Skeleton className="absolute inset-0 rounded-none bg-surface-1" /> : null}
-        {status === "failed" ? (
-          <p className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-text-2">
-            The scan&apos;s player didn&apos;t open. The board still plays on the scan.
-          </p>
-        ) : null}
-      </div>
-      <p className="text-sm text-text-2">The scan at your spot. It follows each hop.</p>
-    </section>
-  );
+  return { host, status };
 }
