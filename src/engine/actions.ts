@@ -1,12 +1,16 @@
-// Player actions and the turn they start (SPEC §4.2, D9). A turn is: the
-// player acts; the guards move; the turn is logged. An illegal action is
+// Player actions and the turn they start (SPEC §4.2, D9, D10). A turn is: the
+// player acts and is seen or heard; the guards move and look; the alarm
+// settles; the turn is logged. An illegal action is
 // refused with a reason and changes nothing, which is how anything a model
 // proposes is clamped to the board.
 import type { PlayerActionKind } from "@/domain";
+import { detect, settle, type Detection, type TurnMarks } from "./alarm";
 import { moveGuards } from "./guards";
 import { turnEntry } from "./log";
+import { hearers } from "./noise";
 import { neighbours } from "./path";
 import { guardOn, isAlert, type Exit, type RunState } from "./state";
+import { sightingsAt, type Sighting } from "./vision";
 
 export type Action =
   | { kind: "move"; to: string }
@@ -30,41 +34,68 @@ interface PlayerPhase {
   locked: readonly string[];
 }
 
-/** Plays one turn: the player's action, then the guards. */
+/**
+ * Plays one turn:
+ * 1. The player acts. Each node they pass through, in order (or the node they
+ *    stay on), is checked against this turn's cameras and the guards' and
+ *    cleaners' sight; then the guards hear any noise. If the alarm is at Alert
+ *    or Lockdown on a node a guard stands on, the player is caught there, and
+ *    a sprint stops on that node.
+ * 2. Unless the turn ended the run, the guards and cleaners move, and look
+ *    again at the player's node; a guard ending on it at Alert catches them.
+ * 3. The alarm decays if nothing held it, and the turn is logged.
+ */
 export function act(run: RunState, action: Action): ActResult {
   if (run.status !== "playing") return refuse(`the run is over: ${run.status}`);
   const phase = playerPhase(run, action);
   if (typeof phase === "string") return refuse(phase);
 
-  const playerNode = phase.entered.at(-1) ?? run.playerNode;
-  const alert = isAlert(run.alarm);
-  let guards = run.guards;
-  let status: RunState["status"] = "playing";
+  const { board } = run;
+  const turn = run.turn;
+  // Owned by this call: what the alarm has already done this turn.
+  const marks: TurnMarks = { sighted: false, held: false };
+  let state: RunState = { ...run, carrying: phase.carrying, picking: phase.picking, locked: phase.locked };
+  const look = (s: RunState, nodeId: string, cameras: boolean): RunState =>
+    sightingsAt(board, s, nodeId, cameras ? turn : null).reduce(
+      (acc, sighting) => detect(acc, toDetection(sighting, nodeId), turn, marks),
+      s,
+    );
+  const caughtOn = (s: RunState, nodeId: string) => isAlert(s.alarm) && guardOn(s.guards, [nodeId]);
 
-  if (alert && guardOn(guards, phase.entered)) {
-    status = "caught";
-  } else if (phase.carrying && run.board.level.exits.includes(playerNode)) {
-    status = "won";
-  } else {
-    guards = moveGuards(run.board, guards);
-    if (alert && guardOn(guards, [playerNode])) status = "caught";
+  // A guard already at Alert grabs the player before anything else notices them.
+  for (const nodeId of phase.entered.length > 0 ? phase.entered : [run.playerNode]) {
+    state = { ...state, playerNode: nodeId };
+    if (!caughtOn(state, nodeId)) state = look(state, nodeId, true);
+    if (caughtOn(state, nodeId)) {
+      state = { ...state, status: "caught" };
+      break;
+    }
   }
 
-  const entry = turnEntry(run.turn, phase.kind, playerNode, guards, run.alarm);
-  return {
-    ok: true,
-    run: {
-      ...run,
-      turn: run.turn + 1,
-      playerNode,
-      carrying: phase.carrying,
-      picking: phase.picking,
-      locked: phase.locked,
-      guards,
-      status,
-      turns: [...run.turns, entry],
-    },
-  };
+  if (state.status === "playing") {
+    if (phase.kind === "sprint" || phase.kind === "pick") {
+      for (const guard of hearers(board, state.guards, state.playerNode)) {
+        const cause = { kind: "noise", id: guard.id } as const;
+        state = detect(state, { strength: "suspicion", nodeId: state.playerNode, cause }, turn, marks);
+      }
+    }
+    if (state.carrying && board.level.exits.includes(state.playerNode)) {
+      state = { ...state, status: "won" };
+    } else {
+      state = { ...state, guards: moveGuards(board, state.guards), cleaners: moveGuards(board, state.cleaners) };
+      if (!caughtOn(state, state.playerNode)) state = look(state, state.playerNode, false);
+      if (caughtOn(state, state.playerNode)) state = { ...state, status: "caught" };
+    }
+  }
+
+  if (state.status === "playing") state = settle(state, turn, marks);
+  const entry = turnEntry(turn, phase.kind, state.playerNode, state.guards, state.alarm);
+  return { ok: true, run: { ...state, turn: turn + 1, turns: [...state.turns, entry] } };
+}
+
+function toDetection(sighting: Sighting, nodeId: string): Detection {
+  const strength = sighting.kind === "cleaner" ? "suspicion" : "sighting";
+  return { strength, extraStep: sighting.extraStep, nodeId, cause: { kind: sighting.kind, id: sighting.id } };
 }
 
 /** The player's half of the turn, or the reason the action is illegal. */

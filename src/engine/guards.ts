@@ -1,9 +1,9 @@
 // Guard movement, after each player action. A guard hops once every
 // `patrolTempo` turns: along its patrol loop, or, once ordered to a zone,
 // toward the nearest node of that zone by A*, where it then holds. Guards
-// carry keys, so locked doors do not stop them.
+// carry keys, so locked doors do not stop them. Cleaners walk the same way.
 import { shortestPath } from "./path";
-import { guardOn, isAlert, type Board, type GuardState, type RunState } from "./state";
+import type { Board, Facing, GuardState, RunState } from "./state";
 
 /** Every guard after one turn's movement, in roster order. */
 export function moveGuards(board: Board, guards: readonly GuardState[]): GuardState[] {
@@ -15,17 +15,31 @@ export function moveGuards(board: Board, guards: readonly GuardState[]): GuardSt
   });
 }
 
-function hop(board: Board, guard: GuardState): GuardState {
-  if (guard.target) {
-    return { ...guard, nodeId: nextHop(board, guard.nodeId, guard.target.nodes) };
-  }
+/** The guard after one hop. It faces the way it went, or keeps its facing if it stayed. */
+export function hop(board: Board, guard: GuardState): GuardState {
   let { waypoint } = guard;
-  const { patrol } = guard;
-  // Skip past every waypoint the guard is standing on (a loop may repeat one).
-  for (let i = 0; i < patrol.length && patrol[waypoint] === guard.nodeId; i++) {
-    waypoint = (waypoint + 1) % patrol.length;
+  let goals: readonly string[];
+  if (guard.target) {
+    goals = guard.target.nodes;
+  } else {
+    const { patrol } = guard;
+    // Skip past every waypoint the guard is standing on (a loop may repeat one).
+    for (let i = 0; i < patrol.length && patrol[waypoint] === guard.nodeId; i++) {
+      waypoint = (waypoint + 1) % patrol.length;
+    }
+    goals = [patrol[waypoint]];
   }
-  return { ...guard, waypoint, nodeId: nextHop(board, guard.nodeId, [patrol[waypoint]]) };
+  const nodeId = nextHop(board, guard.nodeId, goals);
+  return { ...guard, waypoint, nodeId, facing: facingOf(board, guard.nodeId, nodeId) ?? guard.facing };
+}
+
+/** The direction from one node to another, or null when they are the same node or the same point. */
+function facingOf(board: Board, from: string, to: string): Facing | null {
+  const a = board.nodes.get(from)!;
+  const b = board.nodes.get(to)!;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return dx === 0 && dy === 0 ? null : { dx, dy };
 }
 
 /** The first hop of a shortest path to the goals, or `from` when there or cut off. */
@@ -52,16 +66,4 @@ export function orderGuard(run: RunState, guardId: string, zoneId: string | null
   }
   const guards = run.guards.map((g, i) => (i === index ? { ...g, target } : g));
   return { ok: true, run: { ...run, guards } };
-}
-
-/**
- * Sets the alarm. Raising it to Alert while the player shares a node with a
- * guard ends the run as caught.
- */
-export function setAlarm(run: RunState, alarm: RunState["alarm"]): RunState {
-  const next = { ...run, alarm };
-  if (run.status === "playing" && isAlert(alarm) && guardOn(run.guards, [run.playerNode])) {
-    return { ...next, status: "caught" };
-  }
-  return next;
 }

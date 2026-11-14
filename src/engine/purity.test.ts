@@ -27,7 +27,18 @@ describe("src/engine is pure", () => {
   const files = readdirSync(dir).filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f));
 
   it("scans the engine's modules", () => {
-    expect(files).toEqual(expect.arrayContaining(["actions.ts", "guards.ts", "log.ts", "path.ts", "state.ts"]));
+    expect(files).toEqual(
+      expect.arrayContaining([
+        "actions.ts",
+        "alarm.ts",
+        "guards.ts",
+        "log.ts",
+        "noise.ts",
+        "path.ts",
+        "state.ts",
+        "vision.ts",
+      ]),
+    );
   });
 
   it("holds for every module", () => {

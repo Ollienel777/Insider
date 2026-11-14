@@ -79,10 +79,19 @@ function bfs(floor: FloorGraph, from: string): Map<string, number> {
   return dist;
 }
 
-/** The demo heist on F1: in by the dock, pick the records door, take the files, out by the dock. */
+/**
+ * The demo heist on F1: in by the dock, pick the records door, take the
+ * files, out by the dock, unseen and unheard. G2 sees dc-east from o-west
+ * after the hop from o-south (turns 4, 9, 14), so the player waits on dc-mid
+ * until it has passed.
+ */
 const HEIST: readonly Action[] = [
   { kind: "move", to: "fl-lobby" },
   { kind: "sprint", to: "dc-mid", via: "dc-west" },
+  { kind: "wait" },
+  { kind: "wait" },
+  { kind: "wait" },
+  { kind: "wait" },
   { kind: "move", to: "dc-east" },
   { kind: "pick", doorId: F1_DEMO.recordsDoor },
   { kind: "pick", doorId: F1_DEMO.recordsDoor },
@@ -92,10 +101,13 @@ const HEIST: readonly Action[] = [
   { kind: "move", to: "rr-door" },
   { kind: "move", to: "dc-east" },
   { kind: "sprint", to: "dc-west" },
-  { kind: "wait" },
   { kind: "move", to: "fl-lobby" },
   { kind: "move", to: F1_DEMO.dockEntry },
 ];
+/** HEIST up to standing on dc-east before the records door, still locked. */
+const AT_RECORDS_DOOR = HEIST.slice(0, 7);
+/** HEIST up to and including taking the objective. */
+const TAKEN = HEIST.slice(0, 12);
 
 describe("determinism", () => {
   it("gives identical logs for the same seed and actions", () => {
@@ -112,7 +124,7 @@ describe("determinism", () => {
     expect(log.turns.map((t) => t.player)).toEqual([
       { kind: "move", nodeId: "fl-lobby" },
       { kind: "sprint", nodeId: "dc-mid" },
-      { kind: "move", nodeId: "dc-east" },
+      { kind: "wait", nodeId: "dc-mid" },
     ]);
     expect(log.turns[0].guards).toEqual([
       { guardId: "G1", nodeId: "mc-1" },
@@ -127,11 +139,63 @@ describe("determinism", () => {
     play(start, HEIST);
     expect(start).toEqual(snapshot);
   });
+
+  // A diamond: from "a", "b" and "c" are exactly as good a way to "d" (same
+  // hops, same straight-line distance), so only the per-seed rank picks one.
+  const diamond: FloorGraph = {
+    nodes: [
+      { id: "a", x: 0, y: 0, roomId: "hall", tags: [] },
+      { id: "b", x: 1, y: 1, roomId: "hall", tags: [] },
+      { id: "c", x: 1, y: -1, roomId: "hall", tags: [] },
+      { id: "d", x: 2, y: 0, roomId: "hall", tags: [] },
+      { id: "e", x: -1, y: 0, roomId: "hall", tags: [] }, // the player's, off the route
+    ],
+    edges: [
+      { a: "e", b: "a" },
+      { a: "a", b: "b" },
+      { a: "a", b: "c" },
+      { a: "b", b: "d" },
+      { a: "c", b: "d" },
+    ],
+    rooms: [{ id: "hall", label: "Hall", rect: { x: 0, y: -1, w: 2, h: 2 } }],
+    sightlines: {},
+    source: "fixture",
+  };
+  const diamondLevel = (seed: number): Level => ({
+    buildingId: "T",
+    missionId: "t",
+    seed,
+    floor: diamond,
+    start: "e",
+    objective: "d",
+    exits: ["e"],
+    lockedDoors: [],
+    pickTurns: 2,
+    patrolTempo: 1,
+    guards: [{ id: "G1", patrol: ["a", "d"] }],
+  });
+  /** The node the guard walks through on its way from "a" to "d", for a seed. */
+  const tieChoice = (seed: number) => where(play(createRun(diamondLevel(seed)), [{ kind: "wait" }]), "G1");
+
+  it("breaks an exact tie on a guard's route by the seed, the same way every time", () => {
+    const seeds = Array.from({ length: 16 }, (_, seed) => seed);
+    const choices = seeds.map(tieChoice);
+    // Each seed always gives the same route...
+    expect(seeds.map(tieChoice)).toEqual(choices);
+    expect(choices.every((c) => c === "b" || c === "c")).toBe(true);
+    // ...and the seed does decide it: some seeds go by "b", others by "c".
+    expect(new Set(choices)).toEqual(new Set(["b", "c"]));
+    const viaB = seeds.find((s) => tieChoice(s) === "b")!;
+    const viaC = seeds.find((s) => tieChoice(s) === "c")!;
+    const log = (seed: number) => toRunLog(play(createRun(diamondLevel(seed)), [{ kind: "wait" }, { kind: "wait" }]));
+    expect(log(viaB).turns.map((t) => t.guards[0].nodeId)).toEqual(["b", "d"]);
+    expect(log(viaC).turns.map((t) => t.guards[0].nodeId)).toEqual(["c", "d"]);
+  });
 });
 
 describe("illegal actions are refused with a reason", () => {
   const start = createRun(f1Level());
-  const atRecordsDoor = play(start, HEIST.slice(0, 3)); // on dc-east, records door locked
+  const atRecordsDoor = play(start, AT_RECORDS_DOOR); // on dc-east, records door locked
 
   it("refuses a move to a node that is not a neighbour", () => {
     expect(refusal(start, { kind: "move", to: "dc-mid" })).toBe('"dc-mid" is not a neighbour of "fl-car"');
@@ -177,7 +241,7 @@ describe("illegal actions are refused with a reason", () => {
 
   it("refuses to take the objective from the wrong node, or twice", () => {
     expect(refusal(start, { kind: "take" })).toBe('the objective is not at "fl-car"');
-    const taken = play(start, HEIST.slice(0, 8));
+    const taken = play(start, TAKEN);
     expect(refusal(taken, { kind: "take" })).toBe("the objective is already taken");
   });
 
@@ -327,15 +391,40 @@ describe("win and lose", () => {
     expect(run.status).toBe("caught");
   });
 
-  it("is not caught on a guard's node while the alarm is below Alert", () => {
-    const suspicious = setAlarm(createRun(lineLevel()), "suspicious");
-    expect(play(suspicious, [{ kind: "sprint", to: "n2" }]).status).toBe("playing");
+  it("ends as caught when the player steps onto a guard during Lockdown", () => {
+    const run = play(setAlarm(createRun(lineLevel()), "lockdown"), [{ kind: "sprint", to: "n2" }]);
+    expect(run.status).toBe("caught");
+    expect(run.playerNode).toBe("n2");
   });
 
-  it("ends as caught when the alarm reaches Alert with the player on a guard's node", () => {
-    const together = play(createRun(lineLevel()), [{ kind: "sprint", to: "n2" }, { kind: "wait" }]);
+  // A guard posted on n1, the middle of a sprint from n0 to n2.
+  const postedLevel = (): Level => ({ ...lineLevel(), guards: [{ id: "G1", patrol: ["n1"] }] });
+
+  it("stops a sprint on its middle node when a guard there catches the player, in the state and the log", () => {
+    for (const alarm of ["alert", "lockdown"] as const) {
+      const run = play(setAlarm(createRun(postedLevel()), alarm), [{ kind: "sprint", to: "n2" }]);
+      expect(run.status).toBe("caught");
+      expect(run.playerNode).toBe("n1");
+      expect(run.turns.at(-1)!.player).toEqual({ kind: "sprint", nodeId: "n1" });
+      expect(where(run, "G1")).toBe("n1");
+    }
+  });
+
+  it("is seen, not caught, by a guard on its node below Alert: the sighting raises Alert, which catches", () => {
+    // Capture needs Alert, and the guard's own sighting is what raises it.
+    const run = play(setAlarm(createRun(lineLevel()), "suspicious"), [{ kind: "sprint", to: "n2" }]);
+    expect(run.status).toBe("caught");
+    expect(run.alarmEvents.at(-1)).toMatchObject({ from: "suspicious", to: "alert", cause: { kind: "guard", id: "G1" } });
+  });
+
+  it("does not catch below Alert, and catches when the alarm reaches Alert with the player on a guard's node", () => {
+    // Play cannot leave the player on a guard's node below Alert (the guard
+    // sees them), so this state is built by hand to test setAlarm's rule.
+    const together: RunState = { ...setAlarm(createRun(lineLevel()), "suspicious"), playerNode: "n2" };
     expect(where(together, "G1")).toBe("n2");
+    expect(setAlarm(together, "suspicious").status).toBe("playing");
     expect(setAlarm(together, "alert").status).toBe("caught");
+    expect(setAlarm(together, "lockdown").status).toBe("caught");
   });
 });
 
