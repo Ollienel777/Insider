@@ -40,12 +40,14 @@ export interface InsideSession {
 /**
  * Opens the player in `parent` and reports its status. The panel's React
  * effects only create, steer and close this, so its lifecycle is tested
- * without a DOM.
+ * without a DOM. `onOpen` hands the opened view to a caller that drives it
+ * itself (the scan view, issue 107).
  */
 export function openInsideSession(
   open: (parent: HTMLElement, signal?: AbortSignal) => Promise<InsideView>,
   parent: HTMLElement,
   onStatus: (status: InsideStatus) => void,
+  onOpen?: (view: InsideView) => void,
 ): InsideSession {
   let view: InsideView | null = null;
   let closed = false;
@@ -58,6 +60,7 @@ export function openInsideSession(
       if (closed) return opened.disconnect();
       view = opened;
       onStatus("ready");
+      onOpen?.(opened);
       if (target !== null) void opened.moveTo(target);
     },
     (error: unknown) => {

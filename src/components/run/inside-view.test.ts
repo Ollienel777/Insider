@@ -65,6 +65,16 @@ describe("the Inside view panel's session", () => {
     expect(o.view.project).not.toHaveBeenCalled();
   });
 
+  it("hands the opened view to a caller that drives it itself (the scan view), once it is open", async () => {
+    const o = opener();
+    const handed: InsideView[] = [];
+    openInsideSession(o.open, parent, () => {}, (view) => handed.push(view));
+    expect(handed).toEqual([]);
+    o.opened();
+    await tick();
+    expect(handed).toEqual([o.view]);
+  });
+
   it("disconnects when the panel closes", async () => {
     const o = opener();
     const session = openInsideSession(o.open, parent, () => {});

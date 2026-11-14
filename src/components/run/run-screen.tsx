@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { RotateCcw } from "lucide-react";
+import { Maximize2, Minimize2, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getMatterport, insideViewFor } from "@/adapters/matterport";
 import { BuildingScreen } from "@/components/shell/building-screen";
 import { buildingHref } from "@/lib/building-href";
 import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
+import { ScanStage, ScanViewChip } from "@/components/scan/scan-stage";
+import { scanIsStage, type ScanPhase, type ScanWalkState } from "@/components/scan/scan-walk";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Building, FloorGraph, LateChief, LevelManifest } from "@/domain";
@@ -46,6 +48,9 @@ import { placeOrFixture } from "./scan-fallback";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
+/** The scan view before its player has opened (issue 107). */
+const SCAN_OPENING: ScanWalkState = { phase: "opening", at: null };
+
 /** The seed every run of the demo uses, so a rehearsed run plays the same way in front of judges. */
 export const RUN_SEED = 7;
 
@@ -83,6 +88,8 @@ type Load =
  * it, and the engine plays it. Keys: 1–9 a neighbour, W wait, Space take,
  * S sprint (the numbers then mark nodes two open hops away; S or Esc walks).
  * In Live (issue 99) a turn the player lets run out is played by the clock; P pauses it.
+ * In Live on a live scan (issue 107) the scan is the stage: drag looks, W steps to the
+ * hop in view, M opens the board, which otherwise sits in a corner.
  */
 export function RunScreen({
   building,
@@ -263,13 +270,14 @@ export function RunScreen({
     [placed, zones, history, building.id, missionId],
   );
 
+  /** Plays `action` on the run. True when the engine took it. */
   const play = useCallback(
-    (action: Action) => {
-      if (!placed || !run) return;
+    (action: Action): boolean => {
+      if (!placed || !run) return false;
       const result = act(run, action);
       if (!result.ok) {
         setStatus(`Not possible: ${result.reason}.`);
-        return;
+        return false;
       }
       setMode("walk");
       latestRun.current = result.run;
@@ -289,6 +297,7 @@ export function RunScreen({
         // A board the record can't be read from: the history misses this run, the log below is still saved.
       }
       saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current, watchEntry.current), undefined, missionId);
+      return true;
     },
     [placed, run, callChief, building.id, missionId, liveScan],
   );
@@ -296,6 +305,41 @@ export function RunScreen({
   // Live mode (issue 99): the clock plays its turns through `play`, like a key. A clock turn is
   // not the player's own action, so it leaves them sprinting if they were.
   const [playMode, setPlayMode] = usePlayMode();
+
+  // The scan as the stage (issue 107): in Live, on a live scan whose player can open. Tactical
+  // and fixtures never mount it. Once it fails the board takes the stage, until Live is left.
+  const scanWanted = playMode === "live" && openInside !== null;
+  const [scan, setScan] = useState<ScanWalkState>(SCAN_OPENING);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [scanWasWanted, setScanWasWanted] = useState(scanWanted);
+  if (scanWasWanted !== scanWanted) {
+    setScanWasWanted(scanWanted);
+    setScan(SCAN_OPENING);
+    setMapOpen(false);
+  }
+  const scanStage = scanIsStage({ live: playMode === "live", scan: openInside !== null, phase: scan.phase });
+  /** A hop in flight: the engine has moved the player and the camera is not there yet. Input waits. */
+  const hopping = scanStage && scan.phase === "ready" && run !== null && run.playerNode !== scan.at;
+  const lastScanPhase = useRef<ScanPhase>("opening");
+  const onScanState = useCallback((next: ScanWalkState) => {
+    const was = lastScanPhase.current;
+    lastScanPhase.current = next.phase;
+    setScan(next);
+    if (was === next.phase) return;
+    if (next.phase === "ready") setStatus("You're in the scan. Drag to look; W steps toward the way you face.");
+    if (next.phase === "failed") setStatus("The scan stopped, so the board is the view. The run goes on.");
+  }, []);
+  /** The legal hops for W: the engine's move choices from the player's node. */
+  const hops = useMemo(
+    () => (run ? choicesOf(run, "walk").flatMap((c) => (c.kind === "move" ? [c.nodeId] : [])) : []),
+    [run],
+  );
+  const stepTo = (sweepId: string): boolean =>
+    run !== null && run.status === "playing" && !hopping && hops.includes(sweepId) && play({ kind: "move", to: sweepId });
+  const noAim = () => {
+    if (run?.status === "playing") setStatus("No way through ahead. Drag to turn, then W.");
+  };
+
   const clock = useTurnClock({
     live: playMode === "live",
     run,
@@ -303,6 +347,8 @@ export function RunScreen({
       play(action);
       setMode(mode);
     },
+    // The turn waits while the scan opens, and while the camera travels: it restarts when the camera arrives.
+    hold: scanStage && (scan.phase === "opening" || hopping),
   });
 
   const retryChief = useCallback(() => {
@@ -357,6 +403,20 @@ export function RunScreen({
       const owner = target?.closest("button, a, [role=button]");
       const ownsKey = owner && (!owner.hasAttribute("data-why-target") || owner.hasAttribute("data-tabbed"));
       if ((event.key === " " || event.key === "Enter") && ownsKey) return;
+      if (scanStage) {
+        if (event.key === "m" || event.key === "M") {
+          event.preventDefault();
+          setMapOpen((open) => !open);
+          return;
+        }
+        // The scan's controls own W and the up arrow: a step to the hop in view, never a wait.
+        if (event.key === "w" || event.key === "W" || event.key === "ArrowUp") return;
+        // One input in flight: what comes during a hop is dropped.
+        if (hopping) {
+          if (event.key === " ") event.preventDefault();
+          return;
+        }
+      }
       if (event.key === "s" || event.key === "S") {
         const next = toggleSprint(run!, mode);
         if (next) {
@@ -382,7 +442,7 @@ export function RunScreen({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [run, play, mode]);
+  }, [run, play, mode, scanStage, hopping]);
 
   const options = useMemo(() => (run ? choicesOf(run, mode) : []), [run, mode]);
   const over = run !== null && run.status !== "playing";
@@ -454,6 +514,66 @@ export function RunScreen({
                   </Button>
                 }
               />
+            ) : run && placed && openInside && scanWanted ? (
+              <>
+                {scanStage ? (
+                  <ScanStage
+                    open={openInside}
+                    sweepId={run.playerNode}
+                    hops={hops}
+                    onState={onScanState}
+                    onStep={stepTo}
+                    onNoAim={noAim}
+                  />
+                ) : null}
+                {/* The board: a map in the corner over the scan, full size on M, and the stage itself once the scan has failed. */}
+                <div
+                  data-testid="scan-map"
+                  data-open={scanStage ? String(mapOpen) : undefined}
+                  className={cn(
+                    "absolute",
+                    !scanStage || mapOpen
+                      ? "inset-0 bg-surface-0"
+                      : "right-6 bottom-3 h-28 w-40 overflow-hidden rounded-md border border-border bg-surface-0 shadow-e-1 md:top-3 md:bottom-auto md:h-48 md:w-72",
+                  )}
+                >
+                  <BoardView
+                    placed={placed}
+                    run={run}
+                    choices={options}
+                    onChoose={(c: Choice) => {
+                      if (!hopping) play(c.action);
+                    }}
+                    hiddenRoutes={hidden}
+                    lens={lens}
+                  />
+                  {scanStage ? (
+                    <button
+                      type="button"
+                      data-testid="scan-map-toggle"
+                      aria-keyshortcuts="M"
+                      aria-label={mapOpen ? "Back to the scan" : "Open the map"}
+                      onClick={(event) => {
+                        // The keys go back to the run, as the Live switch's buttons do.
+                        if (event.detail > 0) event.currentTarget.blur();
+                        setMapOpen((open) => !open);
+                      }}
+                      className={cn(
+                        "absolute inline-flex h-8 items-center gap-1.5 rounded-sm border border-border bg-surface-1 px-2 text-xs text-text-2 shadow-e-1",
+                        "transition-colors duration-fast ease-out hover:bg-surface-3 hover:text-text-1 [&_svg]:size-4 [&_svg]:stroke-[1.5]",
+                        mapOpen ? "top-3 right-6 max-md:top-16" : "bottom-1.5 left-1.5",
+                      )}
+                    >
+                      {mapOpen ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
+                      <span className={mapOpen ? undefined : "max-md:sr-only"}>{mapOpen ? "Scan" : "Map"}</span>
+                      <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded-sm border border-border bg-surface-2 px-1 font-mono text-xs max-md:hidden">
+                        M
+                      </kbd>
+                    </button>
+                  ) : null}
+                </div>
+                <ScanViewChip phase={scan.phase} failure={scan.failure} />
+              </>
             ) : run && placed ? (
               <BoardView
                 placed={placed}
@@ -473,24 +593,44 @@ export function RunScreen({
             <p data-testid="run-status" aria-live="polite" className="min-w-0 text-sm text-text-1 md:truncate">
               {status}
             </p>
-            <div className="flex shrink-0 items-center gap-4 text-sm text-text-2 max-md:hidden">
-              <span className="flex items-center gap-2">
-                <Kbd>1–9</Kbd> {mode === "sprint" ? "sprint" : "move"}
-              </span>
-              <span className="flex items-center gap-2">
-                <Kbd>W</Kbd> wait
-              </span>
-              <span
-                data-testid="sprint-hint"
-                data-on={mode === "sprint" ? "true" : undefined}
-                className={cn("flex items-center gap-2", mode === "sprint" ? "text-accent" : null)}
-              >
-                <Kbd>S</Kbd> {mode === "sprint" ? "sprinting" : "sprint"}
-              </span>
-              <span className={cn("flex items-center gap-2", run && canTake(run) ? "text-text-1" : null)}>
-                <Kbd>Space</Kbd> take
-              </span>
-            </div>
+            {scanStage ? (
+              <div data-testid="scan-keys" className="flex shrink-0 items-center gap-4 text-sm text-text-2 max-md:hidden">
+                <span className="flex items-center gap-2">
+                  <Kbd>Drag</Kbd> look
+                </span>
+                <span className="flex items-center gap-2">
+                  <Kbd>W</Kbd> step
+                </span>
+                <span className="flex items-center gap-2">
+                  <Kbd>M</Kbd> map
+                </span>
+                <span className={cn("flex items-center gap-2", mode === "sprint" ? "text-accent" : null)}>
+                  <Kbd>S</Kbd> {mode === "sprint" ? "sprinting, on the map" : "sprint on the map"}
+                </span>
+                <span className={cn("flex items-center gap-2", run && canTake(run) ? "text-text-1" : null)}>
+                  <Kbd>Space</Kbd> take
+                </span>
+              </div>
+            ) : (
+              <div className="flex shrink-0 items-center gap-4 text-sm text-text-2 max-md:hidden">
+                <span className="flex items-center gap-2">
+                  <Kbd>1–9</Kbd> {mode === "sprint" ? "sprint" : "move"}
+                </span>
+                <span className="flex items-center gap-2">
+                  <Kbd>W</Kbd> wait
+                </span>
+                <span
+                  data-testid="sprint-hint"
+                  data-on={mode === "sprint" ? "true" : undefined}
+                  className={cn("flex items-center gap-2", mode === "sprint" ? "text-accent" : null)}
+                >
+                  <Kbd>S</Kbd> {mode === "sprint" ? "sprinting" : "sprint"}
+                </span>
+                <span className={cn("flex items-center gap-2", run && canTake(run) ? "text-text-1" : null)}>
+                  <Kbd>Space</Kbd> take
+                </span>
+              </div>
+            )}
           </div>
         </div>
       }
@@ -502,7 +642,8 @@ export function RunScreen({
           crewPlan={crewPlan}
           loading={load.status === "loading" || (load.status === "ready" && !run)}
           awaiting={hidden}
-          inside={openInside && run ? <InsideViewPanel open={openInside} sweepId={run.playerNode} /> : null}
+          // In Live on a scan the player is the stage (issue 107), so the panel has no Inside view.
+          inside={openInside && run && !scanWanted ? <InsideViewPanel open={openInside} sweepId={run.playerNode} /> : null}
           chief={<ChiefPanel state={chief} revealed={revealed} zoneName={(id) => (placed ? zoneName(placed, id) : id)} onRetry={retryChief} />}
         />
       }
