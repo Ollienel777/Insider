@@ -12,7 +12,13 @@
 // Terms (SPEC §4.5): every call connects afresh and builds the graph again;
 // nothing is cached, stored or sent anywhere. The graph exists only in the
 // caller's memory.
-import { SHOWCASE, toFloorGraph, type ObservableCollection, type ShowcaseSdk } from "./mapping";
+//
+// The Inside view (the last part of this file) is a visible player. It can
+// report the camera's pose and the scan's floor points to its caller, under
+// the same terms: read only when asked for, held in the page's memory, never
+// stored or sent.
+import { z } from "zod";
+import { SHOWCASE, toFloorGraph, type ObservableCollection, type ShowcaseSdk, type Subscription } from "./mapping";
 import type { MatterportAdapter } from "./types";
 
 /** A connected SDK, and how to let it go. */
@@ -298,29 +304,125 @@ export const connectShowcase: ShowcaseConnect = async (modelId, sdkKey, signal) 
 };
 
 // ---- the Inside view: a visible player that follows the player's sweep -------
+//
+// What this part assumes about the SDK was measured on a real model on
+// localhost (SDK 26.11) and is written where it is used. Its unit tests run
+// on a stubbed player.
+
+/** A point in the scan's space, as the SDK gives it: metres, with `y` up. */
+export interface ScanPoint {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}
+
+/** The camera of the Inside view's player. */
+export interface InsidePose {
+  /** Where the camera is. Standing on a scan position, it is about 1.5 m above that position's floor point. */
+  readonly position: ScanPoint;
+  /**
+   * Which way it looks, in degrees: `x` is pitch and `y` is yaw. At yaw θ the
+   * camera looks along (-sin θ, 0, -cos θ).
+   */
+  readonly rotation: { readonly x: number; readonly y: number };
+}
+
+/** A point in the player's frame: CSS pixels from its top left corner. */
+export interface FramePoint {
+  readonly x: number;
+  readonly y: number;
+}
 
 /** The part of the SDK the Inside view drives. */
 export interface InsideSdk {
   /** `App.state` in the SDK: the player's phase, sent on subscribing and on every change. */
-  App: { state: { subscribe(observer: (state: { phase?: string }) => void): { cancel(): void } } };
-  Sweep: { moveTo(sweepId: string, options?: { transition?: string; transitionTime?: number }): Promise<unknown> };
+  App: { state: { subscribe(observer: (state: { phase?: string }) => void): Subscription } };
+  Sweep: {
+    moveTo(sweepId: string, options?: { transition?: string; transitionTime?: number }): Promise<unknown>;
+    data: ObservableCollection<unknown>;
+  };
+  Camera: {
+    pose: { subscribe(observer: (pose: unknown) => void): Subscription };
+    rotate(horizontal: number, vertical: number, options?: { speed?: number }): Promise<unknown>;
+  };
+  Conversion: {
+    worldToScreen(point: ScanPoint, pose: unknown, size: { w: number; h: number }): { x: number; y: number; z: number };
+  };
   disconnect?: () => void;
 }
 
-/** A connected Inside view: move it to a sweep, and let it go. */
+/** A connected player: the SDK, and the frame the player shows in. */
+export interface InsidePlayer extends InsideSdk {
+  /** The size of the player's frame as it is laid out now, in CSS pixels. */
+  frameSize(): { w: number; h: number };
+}
+
+/**
+ * A connected Inside view: steer its camera, read where the camera is, and
+ * let it go. Nothing is read from the scan until `onPose`, `floorPoints` or
+ * `project` asks: a view that is only moved subscribes to nothing once it is
+ * open (while it opens, the player's phase is watched; see `oncePlaying`).
+ * What is read goes to the caller and nowhere else (SPEC §4.5).
+ */
 export interface InsideView {
   /**
-   * Sends the view to `sweepId`. Moves never overlap: one made while another
-   * is in flight is held, and only the latest held target is flown to once
-   * the flight settles. A move the player refuses is ignored: the board, not
-   * the view, is the game.
+   * Sends the view to `sweepId`, in a flight of `ms` milliseconds: 600 when
+   * `ms` is left out or is not a finite number of at least 0, and at most
+   * 10 s when it asks for longer. Moves never
+   * overlap: one made while another is in flight is held, and only the latest
+   * held target is flown to once the flight settles, in its own `ms`. A move
+   * the player refuses is ignored: the board, not the view, is the game.
    */
-  moveTo(sweepId: string): Promise<void>;
+  moveTo(sweepId: string, ms?: number): Promise<void>;
+  /**
+   * Turns the camera by `dx` degrees across and `dy` degrees up or down:
+   * `Camera.rotate`'s horizontal and vertical, with the signs the SDK gives
+   * them: a positive `dx` lowers the yaw (on a real scan, `rotate(30, 0)`
+   * turned it by -30 degrees). The turn lands at once (under 20 ms on SDK
+   * 26.11) and the promise resolves when it has, after `TURN_MS` (1 s) at
+   * most, or at `disconnect`. A turn the player refuses is dropped without a
+   * word, since turns come at pointer rate; the promise never rejects.
+   */
+  rotate(dx: number, dy: number): Promise<void>;
+  /**
+   * Calls `listener` with the camera's pose each time it changes: about 55
+   * times a second while the camera moves. A still camera may send nothing,
+   * so a listener added once a pose has arrived hears that pose first. It is
+   * never called before `onPose` returns, and hears each pose once. Returns
+   * the unsubscribe: after it, and after `disconnect`, the listener hears
+   * nothing more.
+   */
+  onPose(listener: (pose: InsidePose) => void): () => void;
+  /**
+   * Each scan position's floor point, keyed by the board's node id: every
+   * position the scan sends, whether or not the board uses it. A position
+   * the scan gives no floor point is left out.
+   *
+   * Every call reads the scan afresh and keeps nothing: the map is the
+   * caller's own, so ask once and hold on to it. It resolves once the
+   * positions have stopped arriving (they can come over a few callbacks), or
+   * after `FLOOR_POINTS_MS` (15 s) with what has arrived by then, which is
+   * an empty map if the scan sent nothing. Once the view is disconnected it
+   * resolves empty.
+   */
+  floorPoints(): Promise<ReadonlyMap<string, ScanPoint>>;
+  /**
+   * Where `point` shows in the player's frame, by the latest pose and the
+   * frame's size as it is laid out now. Null when the point is not in front
+   * of the camera, before any pose has arrived (the first call, like the
+   * first `onPose`, starts the view reading the pose), and while the frame
+   * has no size. A point in front of the camera but outside the frame comes
+   * back with coordinates outside it: the caller clips.
+   *
+   * The frame is measured on every call, so project all of a drawing's
+   * points before writing any styles.
+   */
+  project(point: ScanPoint): FramePoint | null;
   disconnect(): void;
 }
 
 /** Opens the Inside view's player in `parent`; injected in tests. */
-export type InsideConnect = (parent: HTMLElement, modelId: string, sdkKey: string, signal?: AbortSignal) => Promise<InsideSdk>;
+export type InsideConnect = (parent: HTMLElement, modelId: string, sdkKey: string, signal?: AbortSignal) => Promise<InsidePlayer>;
 
 /** `Sweep.Transition.FLY` in the SDK (checked on SDK 26.11, where `Camera.TransitionType.FLY` has the same value). */
 export const FLY = "transition.fly";
@@ -330,17 +432,96 @@ const TRANSITION_ACTIVE = /transition.*(active|in progress)/i;
 const BUSY_RETRIES = 5;
 const BUSY_WAIT_MS = 400;
 
+/** A flight's travel time when the move names none. `Sweep.moveTo` keeps to it within about 50 ms (SDK 26.11). */
 const FLY_MS = 600;
-/** A move that has not settled by now counts as refused, so a lost flight cannot freeze the view. */
-const MOVE_MS = FLY_MS + 5_000;
+/** The longest travel time a move may ask for. A longer one is flown in this, which also keeps the move's deadline within `setTimeout`'s range. */
+const MAX_FLY_MS = 10_000;
+/** A move that has not settled this long after its travel time counts as refused, so a lost flight cannot freeze the view. */
+const MOVE_GRACE_MS = 5_000;
 
-/** `promise`, or a rejection once `ms` pass without it settling. */
-function settleWithin<T>(promise: Promise<T>, ms: number): Promise<T> {
+/** `Camera.rotate`'s speed, in degrees a second: at 3000 a turn lands in under 20 ms (SDK 26.11). */
+export const LOOK_SPEED = 3_000;
+/** How long a turn may take before its promise resolves anyway, so a lost turn cannot leave it pending. */
+const TURN_MS = 1_000;
+
+/** How long the scan's positions may go quiet before `floorPoints` takes them as all there. */
+export const SWEEPS_QUIET_MS = 300;
+/** How long `floorPoints` waits for the scan's positions before it answers with what has arrived. */
+export const FLOOR_POINTS_MS = 15_000;
+
+const RawPoint = z.object({ x: z.number(), y: z.number(), z: z.number() });
+/**
+ * `Camera.pose`, as far as the Inside view reads it: `rotation` is in
+ * degrees. The SDK's pose also carries `projection`, `sweep` and `mode`;
+ * `Conversion.worldToScreen` takes it whole.
+ */
+const RawPose = z.object({ position: RawPoint, rotation: z.object({ x: z.number(), y: z.number() }) });
+/**
+ * A scan position in `Sweep.data`, as far as the Inside view reads it. `sid`
+ * is the board's node id (mapping.ts), and `puckPosition` is its floor point;
+ * `position` is the camera, about 1.5 m higher.
+ */
+const RawPuck = z.object({ sid: z.string().min(1), puckPosition: RawPoint });
+
+/** `promise`, or a rejection once `ms` pass without it settling. `what` names it in that rejection. */
+function settleWithin<T>(promise: Promise<T>, ms: number, what = "the move"): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`the move did not settle within ${ms} ms`)), ms);
+    timer = setTimeout(() => reject(new Error(`${what} did not settle within ${ms} ms`)), ms);
   });
   return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * The scan's positions once they have stopped arriving: the latest non-empty
+ * collection, `quietMs` after the last one came. At `timeoutMs` it answers
+ * with what has arrived, which may be nothing; when `stop` aborts, with
+ * nothing. It cancels its subscription as it answers.
+ */
+function settledSweeps(
+  data: ObservableCollection<unknown>,
+  quietMs: number,
+  timeoutMs: number,
+  stop: AbortSignal,
+): Promise<Record<string, unknown>> {
+  return new Promise((resolve) => {
+    let sweeps: Record<string, unknown> = {};
+    let done = false;
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    const finish = (answer: Record<string, unknown>) => {
+      if (done) return;
+      done = true;
+      clearTimeout(deadline);
+      clearTimeout(quiet);
+      stop.removeEventListener("abort", onStop);
+      subscription.cancel();
+      resolve(answer);
+    };
+    const onStop = () => finish({});
+    // The SDK may call back before `subscribe` returns, but only a timer or
+    // `stop` ends the wait, so the subscription is there to cancel by then.
+    const subscription = data.subscribe({
+      onCollectionUpdated(items) {
+        // The player can call back with an empty collection before it is playing: not an answer.
+        if (done || Object.keys(items).length === 0) return;
+        sweeps = items;
+        clearTimeout(quiet);
+        quiet = setTimeout(() => finish(sweeps), quietMs);
+      },
+    });
+    const deadline = setTimeout(() => finish(sweeps), timeoutMs);
+    stop.addEventListener("abort", onStop, { once: true });
+  });
+}
+
+/** Each position's floor point, keyed by the board's node id; a position without one is left out. */
+function toFloorPoints(sweeps: Record<string, unknown>): Map<string, ScanPoint> {
+  const points = new Map<string, ScanPoint>();
+  for (const sweep of Object.values(sweeps)) {
+    const puck = RawPuck.safeParse(sweep);
+    if (puck.success) points.set(puck.data.sid, puck.data.puckPosition);
+  }
+  return points;
 }
 
 /** How long the Inside view's player may take to connect and start playing before the pane says it failed. */
@@ -357,6 +538,9 @@ const connectVisiblePlayer: InsideConnect = async (parent, modelId, sdkKey, sign
     return {
       App: sdk.App,
       Sweep: sdk.Sweep,
+      Camera: sdk.Camera,
+      Conversion: sdk.Conversion,
+      frameSize: () => ({ w: iframe.clientWidth, h: iframe.clientHeight }),
       disconnect() {
         sdk.disconnect?.();
         iframe.remove();
@@ -372,17 +556,19 @@ const connectVisiblePlayer: InsideConnect = async (parent, modelId, sdkKey, sign
 export const PLAYING = "appphase.playing";
 
 /**
- * `sdk`, once its player is playing. The SDK connects while the player is
- * still loading, and a move made then is taken: the player's own opening move
- * is refused after it, and the player stays on its loading poster for good
- * (issue 117, seen on SDK 26.11). When `signal` aborts first (the connect
- * deadline, or the caller letting go) the player is disconnected, as a late
- * one is, and the wait rejects.
+ * `player`, once it is playing. The SDK connects while the player is still
+ * loading, and a move made then is taken: the player's own opening move is
+ * refused after it, and the player stays on its loading poster for good
+ * (issue 117, seen on SDK 26.11). The pose, the positions and the projection
+ * need a playing player too, so this one wait covers every member of the
+ * view. When `signal` aborts first (the connect deadline, or the caller
+ * letting go) the player is disconnected, as a late one is, and the wait
+ * rejects.
  */
-function oncePlaying(sdk: InsideSdk, signal: AbortSignal): Promise<InsideSdk> {
+function oncePlaying<P extends InsideSdk>(player: P, signal: AbortSignal): Promise<P> {
   return new Promise((resolve, reject) => {
     let done = false;
-    const subscriptions: { cancel(): void }[] = [];
+    const subscriptions: Subscription[] = [];
     const finish = () => {
       done = true;
       signal.removeEventListener("abort", onAbort);
@@ -392,16 +578,16 @@ function oncePlaying(sdk: InsideSdk, signal: AbortSignal): Promise<InsideSdk> {
     const onAbort = () => {
       if (done) return;
       finish();
-      sdk.disconnect?.();
+      player.disconnect?.();
       reject(new Error("Matterport: the Inside view's player did not start playing"));
     };
     if (signal.aborted) return onAbort();
     signal.addEventListener("abort", onAbort, { once: true });
     subscriptions.push(
-      sdk.App.state.subscribe((state) => {
+      player.App.state.subscribe((state) => {
         if (done || state.phase !== PLAYING) return;
         finish();
-        resolve(sdk);
+        resolve(player);
       }),
     );
   });
@@ -410,7 +596,9 @@ function oncePlaying(sdk: InsideSdk, signal: AbortSignal): Promise<InsideSdk> {
 /**
  * The Inside view: a visible Showcase player in `parent`, connected to the
  * SDK and playing within `connectMs` (a player that gets there later is let
- * go). It only moves the camera; it reads nothing of the scan, and nothing
+ * go). It moves and turns the camera, and reads two things for its caller:
+ * the camera's pose, and each scan position's floor point. Neither is read
+ * until it is asked for, both go to the caller and nowhere else, and nothing
  * leaves the page (SPEC §4.5). Sweep ids are the board's node ids: in the SDK
  * a sweep's `id` and `sid` are the same string.
  */
@@ -431,6 +619,8 @@ export async function connectInsideView(
   );
   let flying: Promise<void> | null = null;
   let target: string | null = null;
+  /** The travel time of the move to `target`. */
+  let travel = FLY_MS;
   let at: string | null = null;
   let gone = false;
   let busy = 0;
@@ -441,8 +631,9 @@ export async function connectInsideView(
     try {
       while (!gone && target !== null && target !== at) {
         const sweepId = target;
+        const ms = travel;
         try {
-          await settleWithin(sdk.Sweep.moveTo(sweepId, { transition: FLY, transitionTime: FLY_MS }), MOVE_MS);
+          await settleWithin(sdk.Sweep.moveTo(sweepId, { transition: FLY, transitionTime: ms }), ms + MOVE_GRACE_MS);
           at = sweepId;
           busy = 0;
         } catch (error) {
@@ -465,14 +656,117 @@ export async function connectInsideView(
     }
   }
 
+  // ---- reading the scan: opened on first ask, closed at disconnect ----------
+
+  /** Aborts at disconnect: the pose subscription is cancelled, and a pending `floorPoints` answers. */
+  const closed = new AbortController();
+
+  interface PoseEntry {
+    listener: (pose: InsidePose) => void;
+    /** The last pose this listener was given, so it hears each pose once. */
+    heard: InsidePose | null;
+  }
+  const poseListeners = new Set<PoseEntry>();
+  /** The latest pose: as the SDK sent it, which is what `worldToScreen` takes, and as listeners get it. */
+  let latest: { raw: unknown; pose: InsidePose } | null = null;
+  let watchingPose = false;
+
+  function tell(entry: PoseEntry) {
+    if (!latest || entry.heard === latest.pose || !poseListeners.has(entry)) return;
+    entry.heard = latest.pose;
+    try {
+      entry.listener(latest.pose);
+    } catch (error) {
+      // One listener's failure is its own: the others still hear this pose.
+      console.error("Matterport: a listener to the Inside view's pose threw", error);
+    }
+  }
+
+  /** Opens the one `Camera.pose` subscription, which the view keeps until it is disconnected. */
+  function watchPose() {
+    if (watchingPose || gone) return;
+    let opening = true;
+    const subscription = sdk.Camera.pose.subscribe((raw) => {
+      if (gone) return;
+      const pose = RawPose.safeParse(raw);
+      if (!pose.success) return;
+      latest = { raw, pose: pose.data };
+      // The SDK may call back before `subscribe` returns. That pose waits for
+      // `onPose` to return, which then tells its listener.
+      if (!opening) for (const entry of [...poseListeners]) tell(entry);
+    });
+    opening = false;
+    // Only now: a `subscribe` that threw is tried again on the next ask.
+    watchingPose = true;
+    closed.signal.addEventListener(
+      "abort",
+      () => {
+        latest = null;
+        poseListeners.clear();
+        subscription.cancel();
+      },
+      { once: true },
+    );
+  }
+
   return {
-    moveTo(sweepId) {
+    moveTo(sweepId, ms) {
       target = sweepId;
+      travel = typeof ms === "number" && Number.isFinite(ms) && ms >= 0 ? Math.min(ms, MAX_FLY_MS) : FLY_MS;
       flying ??= fly();
       return flying;
     },
+    async rotate(dx, dy) {
+      if (gone || closed.signal.aborted) return;
+      // Ends the wait at disconnect. Each turn has its own, removed as it settles, so nothing outlives it.
+      let onClose = () => {};
+      const shut = new Promise<void>((resolve) => (onClose = resolve));
+      closed.signal.addEventListener("abort", onClose, { once: true });
+      try {
+        // Not queued behind moves. Bounded, and ended by disconnect, so a lost turn never leaves the caller waiting.
+        await Promise.race([settleWithin(sdk.Camera.rotate(dx, dy, { speed: LOOK_SPEED }), TURN_MS, "the turn"), shut]);
+      } catch {
+        // Dropped: the next turn is already on its way.
+      } finally {
+        closed.signal.removeEventListener("abort", onClose);
+      }
+    },
+    onPose(listener) {
+      if (gone) return () => {};
+      const entry: PoseEntry = { listener, heard: null };
+      poseListeners.add(entry);
+      try {
+        watchPose();
+      } catch (error) {
+        // No unsubscribe reaches the caller, so the entry must not stay to hear a later subscription.
+        poseListeners.delete(entry);
+        throw error;
+      }
+      queueMicrotask(() => tell(entry));
+      return () => {
+        poseListeners.delete(entry);
+      };
+    },
+    async floorPoints() {
+      if (gone) return new Map();
+      return toFloorPoints(await settledSweeps(sdk.Sweep.data, SWEEPS_QUIET_MS, FLOOR_POINTS_MS, closed.signal));
+    },
+    project(point) {
+      watchPose();
+      if (!latest) return null;
+      const size = sdk.frameSize();
+      if (!(size.w > 0 && size.h > 0)) return null;
+      const { x, y, z } = sdk.Conversion.worldToScreen(point, latest.raw, { w: size.w, h: size.h });
+      // In front of the camera `z` is just under 1. Behind it `z` is just over
+      // 1, with `x` and `y` mirrored; exactly to the side the numbers are
+      // enormous (SDK 26.11).
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) || z >= 1) return null;
+      return { x, y };
+    },
     disconnect() {
       gone = true;
+      // The reads close before the SDK is let go, while it can still take a cancel.
+      closed.abort();
       sdk.disconnect?.();
     },
   };

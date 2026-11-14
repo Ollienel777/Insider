@@ -4,11 +4,18 @@
 // the panel has gone.
 import { describe, expect, it, vi } from "vitest";
 import type { InsideView } from "@/adapters/matterport";
-import { connectInsideView, FLY, PLAYING, type InsideSdk } from "@/adapters/matterport/live";
+import { connectInsideView, FLY, PLAYING, type InsidePlayer, type InsideSdk } from "@/adapters/matterport/live";
 import { openInsideSession, type InsideStatus } from "./inside-view";
 
 function opener() {
-  const view = { moveTo: vi.fn<InsideView["moveTo"]>(async () => undefined), disconnect: vi.fn() } satisfies InsideView;
+  const view = {
+    moveTo: vi.fn<InsideView["moveTo"]>(async () => undefined),
+    rotate: vi.fn<InsideView["rotate"]>(async () => undefined),
+    onPose: vi.fn<InsideView["onPose"]>(() => () => {}),
+    floorPoints: vi.fn<InsideView["floorPoints"]>(async () => new Map()),
+    project: vi.fn<InsideView["project"]>(() => null),
+    disconnect: vi.fn(),
+  } satisfies InsideView;
   let resolve: (v: InsideView) => void = () => {};
   let reject: (e: unknown) => void = () => {};
   const open = vi.fn(() => new Promise<InsideView>((res, rej) => ((resolve = res), (reject = rej))));
@@ -41,6 +48,22 @@ describe("the Inside view panel's session", () => {
     o.opened();
     await tick();
     expect(o.view.moveTo.mock.calls.map(([id]) => id)).toEqual(["s2"]);
+  });
+
+  it("only moves the view: it turns nothing and reads nothing from the scan", async () => {
+    const o = opener();
+    const session = openInsideSession(o.open, parent, () => {});
+    session.moveTo("s1");
+    o.opened();
+    await tick();
+    session.moveTo("s2");
+    session.close();
+    // The panel moves without a travel time, so the view flies as it always has.
+    expect(o.view.moveTo.mock.calls).toEqual([["s1"], ["s2"]]);
+    expect(o.view.rotate).not.toHaveBeenCalled();
+    expect(o.view.onPose).not.toHaveBeenCalled();
+    expect(o.view.floorPoints).not.toHaveBeenCalled();
+    expect(o.view.project).not.toHaveBeenCalled();
   });
 
   it("disconnects when the panel closes", async () => {
@@ -89,8 +112,19 @@ describe("the Inside view panel's session", () => {
       },
     };
     const moveTo = vi.fn<InsideSdk["Sweep"]["moveTo"]>(async () => undefined);
-    const open = (into: HTMLElement, signal?: AbortSignal) =>
-      connectInsideView(into, "m", "k", async () => ({ App: app, Sweep: { moveTo }, disconnect() {} }), 20_000, signal);
+    // A player that is only moved: anything the view could read of the scan fails the test if it is touched.
+    const untouched = (what: string) => () => {
+      throw new Error(`${what} was used by a view that was only moved`);
+    };
+    const player: InsidePlayer = {
+      App: app,
+      Sweep: { moveTo, data: { subscribe: untouched("Sweep.data") } },
+      Camera: { pose: { subscribe: untouched("Camera.pose") }, rotate: untouched("Camera.rotate") },
+      Conversion: { worldToScreen: untouched("Conversion.worldToScreen") },
+      frameSize: untouched("the frame's size"),
+      disconnect() {},
+    };
+    const open = (into: HTMLElement, signal?: AbortSignal) => connectInsideView(into, "m", "k", async () => player, 20_000, signal);
     const statuses: InsideStatus[] = [];
     const session = openInsideSession(open, parent, (s) => statuses.push(s));
     session.moveTo("s1");

@@ -236,6 +236,20 @@ body {
   filter: grayscale(0.7) brightness(0.44) contrast(1.3) sepia(0.4) hue-rotate(170deg) saturate(1.5);
 }
 
+/* The danger meter in Live flashes once when the alarm changes level: a wash
+   of the level's own colour (the layer's text colour, set by the meter in
+   src/components/run/danger-meter.tsx) that fades to nothing. No fill-mode:
+   once played it leaves no animation behind. */
+.alarm-change {
+  animation: alarm-change var(--t-slow) var(--ease);
+}
+
+@keyframes alarm-change {
+  from {
+    background-color: color-mix(in srgb, currentColor 30%, transparent);
+  }
+}
+
 /* The Live turn timer's bar drains from full to empty over one turn. Linear,
    because it measures time. Its duration (LIVE_TURN_MS) and its play state
    are set inline by the timer (src/components/run/live-controls.tsx). */

@@ -33,7 +33,7 @@ import type { MatterportAdapter } from "./types";
 import type { Building } from "@/domain";
 
 export type { MatterportAdapter } from "./types";
-export type { InsideView } from "./live";
+export type { FramePoint, InsidePose, InsideView, ScanPoint } from "./live";
 export { F1_DEMO } from "./fake";
 
 type Env = Record<string, string | undefined>;
@@ -207,10 +207,10 @@ export function getMatterport(heistMode?: string): MatterportSelection {
 
 /**
  * The Inside view for `building`, when this page plays on a live scan of it:
- * opens a visible Showcase player in `parent` (SPEC §4.5: it only moves the
- * camera). Null when Matterport is not live or the building has no scan, so
- * the caller shows no panel; the Run screen also shows it only on a floor
- * that came from the scan.
+ * opens a visible Showcase player in `parent` (SPEC §4.5: what it reads of the
+ * scan goes to its caller and nowhere else). Null when Matterport is not live
+ * or the building has no scan, so the caller shows no panel; the Run screen
+ * also shows it only on a floor that came from the scan.
  */
 export function insideViewFor(
   building: Pick<Building, "id" | "matterportModelId">,
