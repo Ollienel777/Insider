@@ -44,6 +44,7 @@ import { loadCrewPlan, type StoredCrewPlan } from "./crew-plan-store";
 import { InsideViewPanel } from "./inside-view";
 import { clearRunLog, keepRunLogInMemory, runLogOf, saveRunLog } from "./run-log-store";
 import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postureOf, runRecordOf, type RunRecord } from "./run-history";
+import { MuteToggle, useRunSound } from "./run-sound";
 import { placeOrFixture } from "./scan-fallback";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
@@ -89,7 +90,7 @@ type Load =
  * S sprint (the numbers then mark nodes two open hops away; S or Esc walks).
  * In Live (issue 99) a turn the player lets run out is played by the clock; P pauses it.
  * In Live on a live scan (issue 107) the scan is the stage: drag looks, W steps to the
- * hop in view, M opens the board, which otherwise sits in a corner.
+ * hop in view, B opens the board, which otherwise sits in a corner (M stays the mute key).
  */
 export function RunScreen({
   building,
@@ -108,6 +109,7 @@ export function RunScreen({
   const [run, setRun] = useState<RunState | null>(null);
   const [status, setStatus] = useState<string>("");
   const [lens, toggleLens] = useLayerLens();
+  const [muted, toggleMute] = useRunSound(run);
   const missionId = useMissionId();
   /** Walking or sprinting (issue 121): `S` switches; any action, and Restart, go back to walking. */
   const [mode, setMode] = useState<Mode>("walk");
@@ -350,6 +352,9 @@ export function RunScreen({
     // The turn waits while the scan opens, and while the camera travels: it restarts when the camera arrives.
     hold: scanStage && (scan.phase === "opening" || hopping),
   });
+  const muteAt = scanStage
+    ? "absolute right-6 max-md:top-28 md:top-[13.5rem]"
+    : "absolute top-2 right-8 max-md:top-16 max-md:right-6";
 
   const retryChief = useCallback(() => {
     const current = latestRun.current;
@@ -404,7 +409,8 @@ export function RunScreen({
       const ownsKey = owner && (!owner.hasAttribute("data-why-target") || owner.hasAttribute("data-tabbed"));
       if ((event.key === " " || event.key === "Enter") && ownsKey) return;
       if (scanStage) {
-        if (event.key === "m" || event.key === "M") {
+        // B, for the board: M is the mute key (DESIGN.md), handled by the sound hook.
+        if (event.key === "b" || event.key === "B") {
           event.preventDefault();
           setMapOpen((open) => !open);
           return;
@@ -526,7 +532,7 @@ export function RunScreen({
                     onNoAim={noAim}
                   />
                 ) : null}
-                {/* The board: a map in the corner over the scan, full size on M, and the stage itself once the scan has failed. */}
+                {/* The board: a map in the corner over the scan, full size on B, and the stage itself once the scan has failed. */}
                 <div
                   data-testid="scan-map"
                   data-open={scanStage ? String(mapOpen) : undefined}
@@ -551,8 +557,8 @@ export function RunScreen({
                     <button
                       type="button"
                       data-testid="scan-map-toggle"
-                      aria-keyshortcuts="M"
-                      aria-label={mapOpen ? "Back to the scan" : "Open the map"}
+                      aria-keyshortcuts="B"
+                      aria-label={mapOpen ? "Back to the scan" : "Open the board"}
                       onClick={(event) => {
                         // The keys go back to the run, as the Live switch's buttons do.
                         if (event.detail > 0) event.currentTarget.blur();
@@ -565,9 +571,9 @@ export function RunScreen({
                       )}
                     >
                       {mapOpen ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
-                      <span className={mapOpen ? undefined : "max-md:sr-only"}>{mapOpen ? "Scan" : "Map"}</span>
+                      <span className={mapOpen ? undefined : "max-md:sr-only"}>{mapOpen ? "Scan" : "Board"}</span>
                       <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded-sm border border-border bg-surface-2 px-1 font-mono text-xs max-md:hidden">
-                        M
+                        B
                       </kbd>
                     </button>
                   ) : null}
@@ -584,6 +590,11 @@ export function RunScreen({
                 lens={lens}
               />
             ) : null}
+            {/* Only over a board with a run on it: not over the loading or error state. Below md the
+                Live mode switch takes the top-right corner, so the mute button sits under it there.
+                Over the scan the corner map, or the map's toggle when it is open, holds the top
+                right, so the button sits under the map instead. */}
+            {run ? <MuteToggle muted={muted} onToggle={toggleMute} className={muteAt} /> : null}
             {run ? <LiveControls mode={playMode} onChange={setPlayMode} clock={clock} /> : null}
           </div>
 
@@ -602,10 +613,10 @@ export function RunScreen({
                   <Kbd>W</Kbd> step
                 </span>
                 <span className="flex items-center gap-2">
-                  <Kbd>M</Kbd> map
+                  <Kbd>B</Kbd> board
                 </span>
                 <span className={cn("flex items-center gap-2", mode === "sprint" ? "text-accent" : null)}>
-                  <Kbd>S</Kbd> {mode === "sprint" ? "sprinting, on the map" : "sprint on the map"}
+                  <Kbd>S</Kbd> {mode === "sprint" ? "sprinting, on the board" : "sprint on the board"}
                 </span>
                 <span className={cn("flex items-center gap-2", run && canTake(run) ? "text-text-1" : null)}>
                   <Kbd>Space</Kbd> take

@@ -12,6 +12,7 @@ import type { PlacedLevel } from "@/level/placer";
 /** What the editor has picked on the board. */
 export type Selection =
   | { kind: "guard"; id: string }
+  | { kind: "cleaner"; id: string }
   | { kind: "camera"; id: string }
   | { kind: "door"; id: string }
   | { kind: "desk"; id: string }
@@ -42,7 +43,7 @@ const HIT = { rx: 18, ry: 11 };
 /**
  * The Owner screen's board: the run board itself (BoardView) showing the
  * setup as a fresh run would start, with a layer over it for editing (every
- * node, camera and door takes a click; the selected guard's round is drawn)
+ * node, camera and door takes a click; the selected guard's or cleaner's round is drawn)
  * or for the batch's results (the commonest way out as the ghost path, the
  * element that noticed the crew most often ringed in `--danger`). The layer
  * takes every pointer event, so the board's own Why cards stay shut: an
@@ -91,6 +92,16 @@ export function OwnerBoard({
 
   const setup = edit?.setup;
   const selectedGuard = edit?.selection?.kind === "guard" ? setup?.guards.find((g) => g.id === edit.selection!.id) : undefined;
+  const selectedCleaner = edit?.selection?.kind === "cleaner" ? setup?.cleaners?.find((c) => c.id === edit.selection!.id) : undefined;
+  /** The selected walker's round, guard's or cleaner's, drawn the same way. */
+  const selectedRound = selectedGuard?.round ?? selectedCleaner?.round ?? [];
+  /** Where each walker stands, for its selected or problem ring: a guard on its post, a cleaner on its round's first node. */
+  const walkers = setup
+    ? [
+        ...setup.guards.map((g) => ({ role: `guard:${g.id}`, kind: "guard" as const, id: g.id, node: g.post })),
+        ...(setup.cleaners ?? []).map((c) => ({ role: `cleaner:${c.id}`, kind: "cleaner" as const, id: c.id, node: c.round[0] })),
+      ]
+    : [];
   const selectedCamera = edit?.selection?.kind === "camera" ? placed.level.cameras?.find((c) => c.id === edit.selection!.id) : undefined;
   const lockable = floor.edges.filter((e) => e.door?.lockable).map((e) => e.door!.id);
 
@@ -123,10 +134,11 @@ export function OwnerBoard({
           </g>
         ) : null}
 
-        {edit && selectedGuard && selectedGuard.round.length > 0 ? (
-          <g pointerEvents="none" data-testid="owner-round" data-nodes={selectedGuard.round.join(" ")}>
+        {edit && selectedRound.length > 0 ? (
+          <g pointerEvents="none" data-testid="owner-round" data-nodes={selectedRound.join(" ")}>
             <polyline
-              points={[...selectedGuard.round, ...(selectedGuard.round.length > 2 ? [selectedGuard.round[0]] : [])]
+              points={[...selectedRound, ...(selectedRound.length > 2 ? [selectedRound[0]] : [])]
+                .filter((id) => floor.nodes.some((n) => n.id === id))
                 .map((id) => {
                   const p = at(id);
                   return `${round(p.x)},${round(p.y)}`;
@@ -187,22 +199,24 @@ export function OwnerBoard({
               );
             })}
 
-            {/* The guards on their posts, and each problem ringed. */}
-            {edit.setup.guards.map((g) => {
-              const selected = edit.selection?.kind === "guard" && edit.selection.id === g.id;
-              const bad = edit.problems.has(`guard:${g.id}`);
+            {/* The guards on their posts and the cleaners where they start, and each problem ringed. */}
+            {walkers.map((w) => {
+              const selected = edit.selection?.kind === w.kind && edit.selection.id === w.id;
+              const bad = edit.problems.has(w.role);
               if (!selected && !bad) return null;
-              const node = floor.nodes.find((n) => n.id === g.post);
+              const node = floor.nodes.find((n) => n.id === w.node);
               if (!node) return null;
               const p = project(node.x, node.y);
               return (
                 <ellipse
-                  key={`ring-${g.id}`}
+                  key={`ring-${w.role}`}
                   data-testid={selected ? "owner-selected-ring" : "owner-problem-ring"}
+                  data-role={w.role}
+                  data-node={w.node}
                   cx={p.x}
                   cy={p.y - 8}
-                  rx={22}
-                  ry={16}
+                  rx={w.kind === "cleaner" ? 18 : 22}
+                  ry={w.kind === "cleaner" ? 13 : 16}
                   fill="none"
                   pointerEvents="none"
                   style={{ stroke: bad ? "var(--danger)" : "var(--accent)" }}
