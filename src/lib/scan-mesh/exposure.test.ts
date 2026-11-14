@@ -1,6 +1,6 @@
 // Made-up colours: a few panoramas of the same grey wall at different exposures.
 import { describe, expect, it } from "vitest";
-import { MIN_POINTS, pairRatio, solveGains, type PairRatio, type Rgb } from "./exposure";
+import { MIN_POINTS, pairMismatch, pairRatio, solveGains, type PairRatio, type Rgb } from "./exposure";
 
 /** `n` made-up wall colours, the same points as seen by a panorama `scale`d per channel. */
 function seen(scale: Rgb, n = 60): Rgb[] {
@@ -47,6 +47,8 @@ describe("solveGains", () => {
     ];
     const ratios = [ratio(0, 1, exposures[0], exposures[1]), ratio(1, 2, exposures[1], exposures[2]), ratio(2, 3, exposures[2], exposures[3])];
     const gains = solveGains(4, ratios, { pull: 0.001, iterations: 2000 });
+    expect(pairMismatch(ratios, [])).toBeGreaterThan(0.1);
+    expect(pairMismatch(ratios, gains)).toBeLessThan(0.01);
     // Corrected colours agree across panoramas.
     for (let c = 0; c < 3; c++) {
       const corrected = exposures.map((e, i) => e[c] * gains[i][c]);

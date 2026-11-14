@@ -150,7 +150,7 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, detail, debug }: P
               <Row label="Worst">{`${hud.building.worstFrame.toFixed(0)} ms frame in 5 s`}</Row>
               <Row label="Exposure">
                 {hud.exposure
-                  ? `${hud.exposure.on ? "on" : "off"} · ${hud.exposure.pairs} pairs · ${hud.exposure.low.toFixed(2)}–${hud.exposure.high.toFixed(2)}`
+                  ? `${hud.exposure.on ? "on" : "off"} · ${hud.exposure.pairs} pairs · ${Math.round(hud.exposure.before * 100)}% → ${Math.round(hud.exposure.after * 100)}% apart`
                   : "matching…"}
               </Row>
               <Row label="Times">{`sharp ${seconds(hud.building.firstSharp)} · all ${seconds(hud.building.allHeld)}`}</Row>
