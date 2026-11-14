@@ -137,7 +137,9 @@ function playerPhase(run: RunState, action: Action): PlayerPhase | string {
       if (!exit) return `door "${action.doorId}" is not on an edge out of "${here}"`;
       if (!run.locked.includes(action.doorId)) return `door "${action.doorId}" is not locked`;
       const progress = (run.picking?.doorId === action.doorId ? run.picking.progress : 0) + 1;
-      if (progress < run.board.level.pickTurns) {
+      const { pickTurns, doorPickTurns } = run.board.level;
+      const own = doorPickTurns && Object.hasOwn(doorPickTurns, action.doorId) ? doorPickTurns[action.doorId] : undefined;
+      if (progress < (own ?? pickTurns)) {
         return { ...same, kind: "pick", entered: [], picking: { doorId: action.doorId, progress } };
       }
       return { ...same, kind: "pick", entered: [], locked: run.locked.filter((d) => d !== action.doorId) };

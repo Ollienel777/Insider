@@ -8,8 +8,10 @@ import { convergeOn, zoneTarget, type Board, type Facing, type GuardState, type 
 
 /** Every guard after one turn's movement, in roster order. */
 export function moveGuards(board: Board, guards: readonly GuardState[]): GuardState[] {
-  const tempo = board.level.patrolTempo;
+  const { patrolTempo, guardTempo } = board.level;
   return guards.map((guard) => {
+    const own = guardTempo && Object.hasOwn(guardTempo, guard.id) ? guardTempo[guard.id] : undefined;
+    const tempo = own ?? patrolTempo;
     const idle = guard.idle + 1;
     if (idle < tempo) return { ...guard, idle };
     return { ...hop(board, guard), idle: 0 };
