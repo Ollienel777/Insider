@@ -32,6 +32,7 @@ import type { PlayHud } from "./play-hud";
 import type { PlayMode } from "./play-mode";
 import type { RadioKind, RadioMessage } from "./radio";
 import { RadioLine, type RadioLineProps, type RadioTone } from "./radio-line";
+import { stageVisualClass } from "./run-stage";
 
 /** Whether the panels show: always in Tactical, and in Live once Details has opened them. */
 export function panelsOpen(mode: PlayMode, details: boolean): boolean {
@@ -135,6 +136,12 @@ export interface RunLayoutProps {
   panel: ReactNode;
   /** The screen's primary action, once the run is over. */
   action?: ReactNode;
+  /**
+   * The board's area holds the stage of a live scan (issue 117, run-stage.tsx).
+   * Below `lg` its halves stack, so the visual grows to hold them; on fixtures
+   * there is no stage, and the visual is the screen's own.
+   */
+  staged?: boolean;
 }
 
 /**
@@ -163,6 +170,7 @@ export function RunLayout({
   footer,
   panel,
   action,
+  staged = false,
 }: RunLayoutProps) {
   // Live's layout is for a run: with no board coming (no floor, an error), the screen is Tactical's own.
   const live = mode === "live" && (hud !== null || loading);
@@ -183,7 +191,7 @@ export function RunLayout({
       panelClosed={!open}
       visualTall={live}
       visual={
-        <div className="absolute inset-0 flex flex-col">
+        <div className={stageVisualClass(staged)}>
           {live ? (
             <div
               key="hud"

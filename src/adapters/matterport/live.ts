@@ -335,6 +335,8 @@ export interface FramePoint {
 
 /** The part of the SDK the Inside view drives. */
 export interface InsideSdk {
+  /** `App.state` in the SDK: the player's phase, sent on subscribing and on every change. */
+  App: { state: { subscribe(observer: (state: { phase?: string }) => void): Subscription } };
   Sweep: {
     moveTo(sweepId: string, options?: { transition?: string; transitionTime?: number }): Promise<unknown>;
     data: ObservableCollection<unknown>;
@@ -358,8 +360,9 @@ export interface InsidePlayer extends InsideSdk {
 /**
  * A connected Inside view: steer its camera, read where the camera is, and
  * let it go. Nothing is read from the scan until `onPose`, `floorPoints` or
- * `project` asks: a view that is only moved subscribes to nothing. What is
- * read goes to the caller and nowhere else (SPEC §4.5).
+ * `project` asks: a view that is only moved subscribes to nothing once it is
+ * open (while it opens, the player's phase is watched; see `oncePlaying`).
+ * What is read goes to the caller and nowhere else (SPEC §4.5).
  */
 export interface InsideView {
   /**
@@ -521,7 +524,7 @@ function toFloorPoints(sweeps: Record<string, unknown>): Map<string, ScanPoint> 
   return points;
 }
 
-/** How long the Inside view's player may take to connect before the panel says it failed. */
+/** How long the Inside view's player may take to connect and start playing before the pane says it failed. */
 export const INSIDE_CONNECT_MS = 20_000;
 
 const connectVisiblePlayer: InsideConnect = async (parent, modelId, sdkKey, signal) => {
@@ -533,6 +536,7 @@ const connectVisiblePlayer: InsideConnect = async (parent, modelId, sdkKey, sign
   try {
     const sdk = await mountPlayer(parent, iframe, modelId, sdkKey, signal);
     return {
+      App: sdk.App,
       Sweep: sdk.Sweep,
       Camera: sdk.Camera,
       Conversion: sdk.Conversion,
@@ -548,14 +552,55 @@ const connectVisiblePlayer: InsideConnect = async (parent, modelId, sdkKey, sign
   }
 };
 
+/** `App.Phase.PLAYING` in the SDK (checked on SDK 26.11): the player has left its loading screen and shows the scan. */
+export const PLAYING = "appphase.playing";
+
+/**
+ * `player`, once it is playing. The SDK connects while the player is still
+ * loading, and a move made then is taken: the player's own opening move is
+ * refused after it, and the player stays on its loading poster for good
+ * (issue 117, seen on SDK 26.11). The pose, the positions and the projection
+ * need a playing player too, so this one wait covers every member of the
+ * view. When `signal` aborts first (the connect deadline, or the caller
+ * letting go) the player is disconnected, as a late one is, and the wait
+ * rejects.
+ */
+function oncePlaying<P extends InsideSdk>(player: P, signal: AbortSignal): Promise<P> {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const subscriptions: Subscription[] = [];
+    const finish = () => {
+      done = true;
+      signal.removeEventListener("abort", onAbort);
+      // The SDK may call back before `subscribe` returns.
+      queueMicrotask(() => subscriptions.forEach((s) => s.cancel()));
+    };
+    const onAbort = () => {
+      if (done) return;
+      finish();
+      player.disconnect?.();
+      reject(new Error("Matterport: the Inside view's player did not start playing"));
+    };
+    if (signal.aborted) return onAbort();
+    signal.addEventListener("abort", onAbort, { once: true });
+    subscriptions.push(
+      player.App.state.subscribe((state) => {
+        if (done || state.phase !== PLAYING) return;
+        finish();
+        resolve(player);
+      }),
+    );
+  });
+}
+
 /**
  * The Inside view: a visible Showcase player in `parent`, connected to the
- * SDK within `connectMs` (a player that connects later is let go). It moves
- * and turns the camera, and reads two things for its caller: the camera's
- * pose, and each scan position's floor point. Neither is read until it is
- * asked for, both go to the caller and nowhere else, and nothing leaves the
- * page (SPEC §4.5). Sweep ids are the board's node ids: in the SDK a sweep's
- * `id` and `sid` are the same string.
+ * SDK and playing within `connectMs` (a player that gets there later is let
+ * go). It moves and turns the camera, and reads two things for its caller:
+ * the camera's pose, and each scan position's floor point. Neither is read
+ * until it is asked for, both go to the caller and nowhere else, and nothing
+ * leaves the page (SPEC §4.5). Sweep ids are the board's node ids: in the SDK
+ * a sweep's `id` and `sid` are the same string.
  */
 export async function connectInsideView(
   parent: HTMLElement,
@@ -566,7 +611,7 @@ export async function connectInsideView(
   signal?: AbortSignal,
 ): Promise<InsideView> {
   const sdk = await within(
-    (inner) => connect(parent, modelId, sdkKey, inner),
+    async (inner) => oncePlaying(await connect(parent, modelId, sdkKey, inner), inner),
     "the Inside view's player",
     connectMs,
     (late) => late.disconnect?.(),
