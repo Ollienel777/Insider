@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 // The demo path (SPEC §2, §6 step 6, issues #25 and #113): one walk from the
@@ -22,6 +24,13 @@ interface Log {
   lateChief?: { turn: number };
 }
 
+// The Casting Director's own reason for F1, from its cached shortlist (#24).
+const F1_REASON = (
+  JSON.parse(readFileSync(path.join(process.cwd(), "data", "casting", "romaine-1974.json"), "utf8")) as {
+    finalists: { id: string; reason: string }[];
+  }
+).finalists.find((c) => c.id === "F1")!.reason;
+
 const DEMO_ORDER = "Go in through the dock, wait for the 2 am round to pass, take the records room.";
 
 test.use({ viewport: { width: 1440, height: 900 } });
@@ -44,12 +53,15 @@ test("the demo path: map to Debrief and Try again on F1, in fake mode", async ({
   // The walk takes about 25-30 s in the gate, and Playwright's default test
   // timeout is 30 s: with another gate on the 2-vCPU VM it ran out at 31-33 s
   // (#82). Its budget is #25's "under 90 seconds on CI". A broken beat still
-  // fails on that beat's own outcome wait, not on this.
+  // fails on its own line, not on this: on an outcome wait, or on the config's
+  // action or navigation timeout for a click or a goto that hangs (#85).
   test.setTimeout(90_000);
   // Beat 1: the map. Five prepared buildings, three in LA and two in Houston.
+  // The mission picker took `/` (#118); #120 walks the new beats 1-2 from it.
+  // Until then this walk starts on the map at its new address.
   // The rows stream in a hidden copy before React swaps out the skeleton, and a
   // count also matches that copy: count once the skeleton has gone (#75).
-  await page.goto("/");
+  await page.goto("/map");
   await expect(page.getByTestId("map-skeleton")).toHaveCount(0);
   const rows = page.getByTestId("building-row");
   await expect(rows).toHaveCount(3);
@@ -86,9 +98,7 @@ test("the demo path: map to Debrief and Try again on F1, in fake mode", async ({
   const table = page.getByTestId("data-to-level");
   // The table opens with why F1 was cast for the mission (beat 4, #119).
   await expect(table.getByTestId("provenance-row").first()).toHaveAttribute("data-rule", "cast");
-  await expect(table.locator('[data-rule="cast"]')).toContainText(
-    "Cast because: built 1974, Class A, floor 22 on the market, dock on the aerial",
-  );
+  await expect(table.locator('[data-rule="cast"]')).toContainText(`Cast because: ${F1_REASON}`);
   const era = table.locator('[data-rule="era"]');
   await expect(era).toHaveAttribute("data-shown", "true");
   await expect(era).toContainText("1974");

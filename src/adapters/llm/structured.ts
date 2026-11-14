@@ -9,14 +9,17 @@ import type { BaseLanguageModelInput } from "@langchain/core/language_models/bas
 import type { z } from "zod";
 import { safeErrorMessage } from "./redact";
 import { getChatModelSelection, llmTimeoutMs } from "./select";
-import type { ChatModelSelection, LlmRole } from "./types";
+import { LlmConfigurationError, type ChatModelSelection, type LlmRole } from "./types";
 
 export interface StructuredAnswer<T> {
   value: T;
   /** True when the fake answered: fake mode, a timeout, or a failed call. */
   recorded: boolean;
-  /** Why the fake answered; absent for a live answer. */
-  reason?: "fake mode" | "timeout" | "error";
+  /**
+   * Why the fake answered; absent for a live answer. "configuration": a setting refuses every live
+   * call, so no model was built or called (the chip reads fixtures for the same setting).
+   */
+  reason?: "fake mode" | "configuration" | "timeout" | "error";
 }
 
 export interface StructuredCallOptions<T> {
@@ -44,13 +47,22 @@ export async function structuredCall<T>(
   prompt: BaseLanguageModelInput,
   options: StructuredCallOptions<T>,
 ): Promise<StructuredAnswer<T>> {
-  const selection = options.selection ?? getChatModelSelection(options.role ?? "fast");
+  const name = options.name ?? "answer";
+  let selection: ChatModelSelection;
+  let timeoutMs: number;
+  try {
+    selection = options.selection ?? getChatModelSelection(options.role ?? "fast");
+    timeoutMs = selection.mode === "fake" ? 0 : (options.timeoutMs ?? llmTimeoutMs(process.env));
+  } catch (error) {
+    // A setting that refuses every live call: no model is called, and the recording answers.
+    if (!(error instanceof LlmConfigurationError)) throw error;
+    console.warn(`structuredCall(${name}): no model was called; the recorded answer stands in (configuration: ${error.message})`);
+    return { value: await recorded(schema, options.fake), recorded: true, reason: "configuration" };
+  }
   if (selection.mode === "fake") {
     return { value: await recorded(schema, options.fake), recorded: true, reason: "fake mode" };
   }
 
-  const timeoutMs = options.timeoutMs ?? llmTimeoutMs(process.env);
-  const name = options.name ?? "answer";
   // Anthropic's native structured output works on every current model; the
   // tool-forcing default does not (forced tool_choice is refused on some).
   const method = selection.model instanceof ChatAnthropic ? "jsonSchema" : undefined;

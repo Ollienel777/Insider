@@ -53,6 +53,6 @@ test("Enter sends the order, and a lobby plan's off-floor zones are dropped and 
 });
 
 test("a building with no level yet says so", async ({ page }) => {
-  await page.goto("/b/F2/plan");
+  await page.goto("/b/F4/plan");
   await expect(page.getByTestId("board-empty")).toContainText("This building's level isn't ready yet.");
 });

@@ -84,7 +84,7 @@ describe.each(missions.map((m) => m.id))("searchInventory for %s", (id) => {
   });
 });
 
-describe("searchInventory live (the kit is not mapped yet, #27)", () => {
+describe("searchInventory live (the kit is not mapped yet, #2)", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
