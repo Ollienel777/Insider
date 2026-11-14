@@ -55,10 +55,15 @@ prep".
 6. **Debrief.** A grade, three stats, a scrubbable replay of the run, and the
    Chief's decisions as a timeline.
 7. **Drill.** The same engine on the same floor as an evacuation drill:
-   occupants from CoStar's occupied area, the stair most of them would use
-   blocked as the scenario, the time to clear, the bottleneck and a warden
-   post per door. On floor 22 that is 6 occupants, Stair B blocked, 54 s to clear. The screen
-   says it is a planning aid, not a life-safety calculation.
+   occupants from CoStar's occupied area, one stair blocked as the scenario,
+   the time to clear, the bottleneck, and warden posts at the ways out people
+   leave their rooms by. The scenario blocks the stair the most occupants
+   would use; a tie goes to the stair whose loss cuts off the most people,
+   then costs the most time. On floor 22, 6 occupants split 3 and 3 between
+   Stair A and Stair B, so the tie is broken on time: Stair B is blocked and
+   the floor clears in 54 s, against 47 s without Stair A. The Drill panel
+   prints that rule, and says it is a planning aid, not a life-safety
+   calculation.
 
 Every model answer on screen is labelled Recorded or Rule-based, and the top
 bar's `FIXTURES` chip says the data is fixtures.
@@ -175,10 +180,14 @@ have not been called. OpenStreetMap is the data for the static basemap.
   on fixtures; no real CoStar, Vexcel or Matterport data has been read yet.
 - **LangChain "Best use of deepagents":** the Level Builder is a
   `createDeepAgent` agent with a todo list, two subagents and six tools, whose
-  trace replays in the product.
+  trace replays in the product. The agent graph, todos, subagent dispatch and
+  tools run for real, but the model's turns are replayed from a recording; it
+  has not yet run on Claude.
 - **Amazon "Best Practical AI Innovation":** the Security Chief re-plans the
   guards on every alarm change and says why, and Drill Mode turns a building
-  record into a drill scenario for a fire safety director.
+  record into a drill scenario for a fire safety director. The Chief answers
+  from recordings or rules, with no live model yet; Amazon Bedrock is wired in
+  as an alternative provider but has never been called.
 
 Each prize's requirement, evidence and status:
 [`prizes.md`](https://github.com/Ollienel777/heist-anywhere/blob/main/hackathon/submission/prizes.md).
@@ -187,9 +196,9 @@ Each prize's requirement, evidence and status:
 
 This project was built by an autonomous Claude Code build loop. A person on
 the team chose the idea, made the decisions the loop raised, and merged the
-changes the loop may not merge itself, such as its CI workflow. The loop's Claude agents wrote the
-product's code, tests and docs, as pull requests that separate Claude reviewer
-agents reviewed before they merged.
+changes the loop may not merge itself, such as its CI workflow. The loop's
+Claude agents wrote the product's code, tests and docs, as pull requests that
+separate Claude reviewer agents reviewed before they merged.
 
 In the product, Anthropic Claude is the model for every agent (the Level
 Builder, the crew, the Security Chief and the drill narrator). In this repo
