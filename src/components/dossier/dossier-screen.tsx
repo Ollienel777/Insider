@@ -75,14 +75,17 @@ export function DossierScreen(props: DossierScreenProps) {
     frame.current = null;
     setElapsed(Number.POSITIVE_INFINITY);
   }, []);
+  // Replay starts the reading column again from its top, so the header and
+  // the CoStar record replay in view rather than under the scrolled briefing.
+  const column = useRef<HTMLDivElement>(null);
   const replay = useCallback(() => {
+    column.current?.scrollTo?.({ top: 0, behavior: "auto" });
     setElapsed(0);
     setRunId((n) => n + 1);
   }, []);
 
   // As the briefing fills, bring it into view: at 1440×900 the column runs
   // past the fold, and the table stays on screen above it.
-  const column = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = column.current;
     if (!briefingShown || !el || (startComplete && runId === 0)) return;
