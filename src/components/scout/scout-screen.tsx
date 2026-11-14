@@ -542,7 +542,7 @@ function NoAerial() {
     >
       <p className="label-caps text-text-3">No aerial</p>
       <p className="text-lg font-semibold text-text-1">Vexcel has no imagery for this building yet.</p>
-      <p className="max-w-md text-sm text-text-2">Its CoStar facts are on the right, and its inside comes from the Matterport scan at Plan and Run.</p>
+      <p className="max-w-md text-sm text-text-2">Its CoStar facts are on the right, and its inside comes from its floor plan at Plan and Run.</p>
     </div>
   );
 }

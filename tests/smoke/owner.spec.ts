@@ -109,6 +109,123 @@ test("the editor names a broken round, and blocks the run until it is fixed", as
   await expect(page.getByTestId("owner-run")).toBeEnabled();
 });
 
+// Issue 31: the prepared pair and the compare. The made-up night shift gets 7
+// of 50 out; with C2 moved from the freight lift lobby into the dock corridor,
+// 1 of 50. Played on the recorded strategies, the same on every run.
+const outcomes = (page: Page, testId: string) =>
+  page.getByTestId(testId).locator("[data-outcome]").evaluateAll((cells) => cells.map((c) => c.getAttribute("data-outcome")));
+
+test("the prepared pair: 7 of 50, C2 moved, 1 of 50, then the two side by side", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/b/F1/owner?m=romaine-1974");
+  await expect(page.getByTestId("owner-board")).toBeVisible();
+  await expect(page.getByTestId("owner-demos")).toBeVisible();
+
+  // The night shift, loaded in plain sight and labelled made up: 7 of 50 out.
+  await page.locator('[data-testid="owner-demo-load"][data-name="Demo: night shift"]').click();
+  await expect(page.getByTestId("owner-setup")).toHaveAttribute("data-state", "preset");
+  await expect(page.getByTestId("owner-setup-state")).toHaveText("Made up");
+  await expect(page.getByTestId("owner-made-up")).toBeVisible();
+  await expect(page.getByTestId("owner-board-caption")).toHaveText("Demo: night shift");
+  await expect(page.getByTestId("owner-setup-counts")).toHaveText("4 guards · 0 cleaners · 2 cameras · 2 locked doors · 1 desk");
+  await page.getByTestId("owner-run").click();
+  await expect(page.getByTestId("owner-count")).toHaveAttribute("data-escaped", "7");
+  await expect(page.getByTestId("owner-count")).toHaveAttribute("data-total", "50");
+  await expect(page.getByTestId("owner-strip").locator('[data-outcome="escaped"]')).toHaveCount(7);
+  await expect(page.getByTestId("owner-route")).toHaveAttribute("data-count", "7");
+
+  // One change: C2 moved into the dock corridor. 1 of 50 out.
+  await page.getByTestId("owner-edit").click();
+  await page.locator('[data-testid="owner-demo-load"][data-name="Demo: night shift, C2 moved"]').click();
+  await expect(page.getByTestId("owner-board-caption")).toHaveText("Demo: night shift, C2 moved");
+  await page.getByTestId("owner-run").click();
+  await expect(page.getByTestId("owner-count")).toHaveAttribute("data-escaped", "1");
+  await expect(page.getByTestId("owner-strip").locator('[data-outcome="escaped"]')).toHaveCount(1);
+
+  // Side by side: the picker starts on the prepared pair.
+  await page.getByTestId("owner-edit").click();
+  await expect(page.getByTestId("owner-pair-pick-a")).toHaveValue("demo:Demo: night shift");
+  await expect(page.getByTestId("owner-pair-pick-b")).toHaveValue("demo:Demo: night shift, C2 moved");
+  await page.getByTestId("owner-pair-picker").scrollIntoViewIfNeeded();
+  await shot(page, "compare-picker");
+  await page.getByTestId("owner-pair-run").click();
+  await expect(page.getByTestId("owner-pair")).toHaveAttribute("data-state", "done");
+  await expect(page.getByTestId("owner-pair-a-count")).toHaveAttribute("data-escaped", "7");
+  await expect(page.getByTestId("owner-pair-b-count")).toHaveAttribute("data-escaped", "1");
+  await expect(page.getByTestId("owner-pair-a-strip").locator('[data-outcome="escaped"]')).toHaveCount(7);
+  await expect(page.getByTestId("owner-pair-b-strip").locator('[data-outcome="escaped"]')).toHaveCount(1);
+  await expect(page.getByTestId("owner-pair-a-route")).toHaveAttribute("data-count", "7");
+  await expect(page.getByTestId("owner-pair-b-route")).toHaveAttribute("data-count", "1");
+  await expect(page.getByTestId("owner-pair-change")).toHaveText(["C2 moved from the Freight Lift Lobby to the Dock Corridor"]);
+  await expect(page.getByTestId("owner-pair-delta")).toHaveText("7 → 1 of 50: 6 fewer got out.");
+  await expect(page.getByTestId("owner-made-up-chip")).toHaveCount(2);
+  await expect(page.getByTestId("owner-pair-recorded")).toBeVisible();
+
+  // A on the board: its way out drawn, the desk that noticed the crew most often ringed.
+  await expect(page.getByTestId("owner-board-caption")).toHaveText(
+    "A, Demo: night shift: 7 of 50 got out. The way most got out is drawn.",
+  );
+  await expect(page.getByTestId("owner-pair-side-a")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("ghost-path")).toBeVisible();
+  await expect(page.getByTestId("owner-detector-ring")).toHaveAttribute("data-detector", "cleaner:D1");
+  await shot(page, "compare-a");
+
+  // B on the board: C2 rings now.
+  await page.getByTestId("owner-pair-side-b").click();
+  await expect(page.getByTestId("owner-board-caption")).toHaveText(
+    "B, Demo: night shift, C2 moved: 1 of 50 got out. The way most got out is drawn.",
+  );
+  await expect(page.getByTestId("owner-pair-b")).toHaveAttribute("data-selected", "true");
+  await expect(page.getByTestId("owner-detector-ring")).toHaveAttribute("data-detector", "camera:C2");
+  await shot(page, "compare-b");
+
+  // The same result on every run: compare again, cell for cell.
+  const first = [await outcomes(page, "owner-pair-a-strip"), await outcomes(page, "owner-pair-b-strip")];
+  await page.getByTestId("owner-pair-back").click();
+  await page.getByTestId("owner-pair-run").click();
+  await expect(page.getByTestId("owner-pair")).toHaveAttribute("data-state", "done");
+  expect([await outcomes(page, "owner-pair-a-strip"), await outcomes(page, "owner-pair-b-strip")]).toEqual(first);
+
+  // Any saved setup can be picked: save B, then compare the saved copy with the night shift.
+  await page.getByTestId("owner-pair-side-b").click();
+  await page.getByTestId("owner-pair-open").click();
+  await expect(page.getByTestId("owner-setup")).toHaveAttribute("data-state", "preset");
+  await page.getByTestId("owner-save").click();
+  await expect(page.getByTestId("owner-setup")).toHaveAttribute("data-state", "saved");
+  await page.getByTestId("owner-pair-pick-a").selectOption("saved:Demo: night shift, C2 moved");
+  await page.getByTestId("owner-pair-pick-b").selectOption("demo:Demo: night shift");
+  await page.getByTestId("owner-pair-run").click();
+  await expect(page.getByTestId("owner-pair-a-count")).toHaveAttribute("data-escaped", "1");
+  await expect(page.getByTestId("owner-pair-b-count")).toHaveAttribute("data-escaped", "7");
+  await expect(page.getByTestId("owner-pair-change")).toHaveText(["C2 moved from the Dock Corridor to the Freight Lift Lobby"]);
+  await expect(page.getByTestId("owner-pair-delta")).toContainText("6 more got out");
+});
+
+test("after the Chief's fix, the route and the detector card follow the side the board shows", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/b/F1/owner?m=romaine-1974");
+  await expect(page.getByTestId("owner-board")).toBeVisible();
+  await page.getByTestId("owner-run").click();
+  await expect(page.getByTestId("owner-count")).toHaveAttribute("data-escaped", "17");
+  await page.getByTestId("owner-ask-fix").click();
+  await page.getByTestId("owner-apply").click();
+  await expect(page.getByTestId("owner-after-count")).toHaveAttribute("data-escaped", "0");
+
+  // After (the default): no way out, under a heading that names the side.
+  await expect(page.getByTestId("owner-route")).toHaveAttribute("data-side", "after");
+  await expect(page.getByTestId("owner-route")).toHaveAttribute("data-count", "0");
+  await expect(page.getByTestId("owner-route")).toContainText("No crew got out");
+  await expect(page.locator("#owner-route-label")).toHaveText("After the fix: The way most got out");
+
+  // Before: the 14 crews' way out, and the card names the detector the board rings.
+  await page.getByTestId("owner-side-before").click();
+  await expect(page.getByTestId("owner-route")).toHaveAttribute("data-side", "before");
+  await expect(page.getByTestId("owner-route")).toHaveAttribute("data-count", "14");
+  await expect(page.getByTestId("owner-detector")).toHaveAttribute("data-side", "before");
+  const ringed = await page.getByTestId("owner-detector-ring").getAttribute("data-detector");
+  await expect(page.getByTestId("owner-detector")).toHaveAttribute("data-detector", ringed!);
+});
+
 test("the editor adds a night cleaner and moves it", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/b/F1/owner");

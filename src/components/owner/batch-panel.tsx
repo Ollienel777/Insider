@@ -1,6 +1,6 @@
 "use client";
 
-import type { BatchSummary, DetectorFinding, OutcomeCell } from "@/domain";
+import type { BatchResult, BatchSummary, DetectorFinding, OutcomeCell } from "@/domain";
 import type { OwnerSetup } from "@/domain/owner-setup";
 import type { FixAnswer } from "@/agents/chief/fix";
 import type { ChiefZones } from "@/components/run/chief-request";
@@ -38,6 +38,11 @@ export function routeRooms(nodes: readonly string[], placed: PlacedLevel): strin
     return floor.rooms.find((r) => r.id === node?.roomId)?.label ?? id;
   };
   return nodes.map(label).filter((l, i, all) => i === 0 || l !== all[i - 1]);
+}
+
+/** "Left out: roof-quiet (no roof entry on this floor)." The strategies a batch could not play, and why. */
+export function leftOut(dropped: BatchResult["dropped"]): string {
+  return `Left out: ${dropped.map((d) => `${d.strategyId} (${d.reason})`).join("; ")}.`;
 }
 
 /**
@@ -207,7 +212,7 @@ export function BatchPanel({
         </ul>
         {result.dropped.length > 0 ? (
           <p data-testid="owner-dropped" className="text-sm text-text-2">
-            Left out: {result.dropped.map((d) => `${d.strategyId} (${d.reason})`).join("; ")}.
+            {leftOut(result.dropped)}
           </p>
         ) : null}
       </section>
@@ -231,7 +236,11 @@ export function BatchPanel({
       </section>
 
       {top ? (
-        <DetectorCard finding={top} total={shown.total} generated={shownLevel} placedBy={placedBy(top)} lead={lead} />
+        <DetectorCard finding={top} total={shown.total} generated={shownLevel} placedBy={placedBy(top)} lead={lead} side={shownSide} />
+      ) : shownSide === "after" ? (
+        <p data-testid="owner-detector-none" className="text-sm text-text-2">
+          After the fix, nothing noticed the crew.
+        </p>
       ) : null}
 
       <ChiefSection
@@ -258,14 +267,14 @@ function Count({ summary, testId, big = false }: { summary: BatchSummary; testId
   );
 }
 
-function Strip({ summary, testId, small = false }: { summary: BatchSummary; testId: string; small?: boolean }) {
+export function Strip({ summary, testId, small = false }: { summary: BatchSummary; testId: string; small?: boolean }) {
   return (
     <div
       data-testid={testId}
       data-escaped={summary.strip.filter((c) => c.outcome === "escaped").length}
       role="img"
       aria-label={`${summary.escaped} of ${summary.total} attempts got out`}
-      className={cn("grid gap-0.5", "grid-cols-[repeat(25,minmax(0,1fr))]")}
+      className="grid grid-cols-[repeat(25,minmax(0,1fr))] gap-0.5"
     >
       {summary.strip.map((cell) => (
         <span
@@ -285,6 +294,7 @@ function DetectorCard({
   generated,
   placedBy,
   lead,
+  side = null,
 }: {
   finding: DetectorFinding;
   total: number;
@@ -292,6 +302,8 @@ function DetectorCard({
   /** The line shown when the element has no data rows: who placed it. */
   placedBy: string;
   lead: string;
+  /** The side of the Chief's rerun the board shows, null before any fix. */
+  side?: Side | null;
 }) {
   const target = generated && finding.id ? whyTargets(generated).find((t) => t.key === `${finding.kind}:${finding.id}`) : undefined;
   const rows = target ? whyRows(target) : [];
@@ -300,6 +312,7 @@ function DetectorCard({
       data-testid="owner-detector"
       data-detector={`${finding.kind}:${finding.id ?? ""}`}
       data-count={finding.count}
+      data-side={side ?? ""}
       aria-labelledby="owner-detector-label"
       className="flex flex-col gap-3 rounded-md border border-border bg-surface-2 p-4 shadow-e1"
     >

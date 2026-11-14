@@ -120,6 +120,17 @@ describe("a finished run's record", () => {
     expect(loadRunHistory("F1", storage, "romaine-1974")).toEqual([]);
   });
 
+  it("reads none stored before #95 for a kit building, and removes it; a fixture building's still loads", () => {
+    const storage = memoryStorage();
+    const record: RunRecord = { outcome: "caught", entryZone: "dock-N", detectedZones: [], noise: 1 };
+    appendRunHistory("900101", record, storage, "romaine-1974");
+    appendRunHistory("F1", record, storage, "romaine-1974");
+    expect(loadRunHistory("900101", storage, "romaine-1974", true)).toEqual([]);
+    expect(storage.getItem(runHistoryKey("900101", "romaine-1974"))).toBeNull();
+    expect(loadRunHistory("F1", storage, "romaine-1974")).toEqual([record]);
+    expect(storage.getItem(runHistoryKey("F1", "romaine-1974"))).not.toBeNull();
+  });
+
   it("keeps the good records when one is corrupt or carries an unknown key, still capped at the limit", () => {
     const storage = memoryStorage();
     const good = (noise: number): RunRecord => ({ outcome: "caught", entryZone: "dock-N", detectedZones: [], noise });

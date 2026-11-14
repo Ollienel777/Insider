@@ -8,10 +8,13 @@
 // A build is a live model run. It is refused (409) while the model is on
 // fixtures, configured or forced in the demo settings, and refused (429, with
 // Retry-After) when too many are running or this level failed moments ago.
+// The one exception is the smoke server's fictional test kit, which replays a
+// recorded build.
 import { BuildRefused, buildKitLevel, publicBuildError } from "@/agents/builder/build-on-demand";
 import { buildsOnDemand, canBuildFor } from "@/agents/builder/live-levels";
 import { getCoStar } from "@/adapters/costar";
-import { configuredModes, forcedFromRequest } from "@/lib/mode";
+import { SMOKE_KIT_BUILDING } from "@/adapters/costar/test-kit";
+import { configuredModes, forcedFromRequest, serviceModes } from "@/lib/mode";
 
 export const dynamic = "force-dynamic";
 // A live build is about 2.5 minutes of model calls; the build stops itself at 4.
@@ -33,7 +36,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (forced.has("llm")) {
     return Response.json({ error: "the model is forced to fixtures in the demo settings, so the Level Builder can't run" }, { status: 409 });
   }
-  if (configuredModes(process.env).llm !== "live") {
+  // The smoke's fictional test kit (#95) builds from its recorded script, so the refusal below has
+  // nothing to guard for it. All three must hold, so a stray flag can never start a paid live build:
+  // - the flag is on (`HEIST_TEST_KIT=1`, set by playwright.config.ts alone);
+  // - the building is the fictional test building, never a real kit building;
+  // - the builder will pick the scripted model: the check selectChatModel makes. configuredModes can
+  //   say fixtures while selectChatModel goes live (an invalid LLM_TIMEOUT_MS), so it can't stand in.
+  const recordedTestKit =
+    process.env.HEIST_TEST_KIT === "1" && building.id === SMOKE_KIT_BUILDING && serviceModes(process.env).llm === "fake";
+  if (configuredModes(process.env).llm !== "live" && !recordedTestKit) {
     return Response.json({ error: "the model is on fixtures on this server, so the Level Builder can't run" }, { status: 409 });
   }
   try {
