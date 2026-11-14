@@ -8,6 +8,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getCoStar, resetCoStar } from "@/adapters/costar";
 import { SMOKE_KIT_BUILDING } from "@/adapters/costar/test-kit";
 import { createFakeMatterport } from "@/adapters/matterport/fake";
+import { crewContext } from "@/agents/crew/prompt";
+import { loadCrewRecording } from "@/agents/crew/recorded";
 import { placeLevel } from "@/level/placer";
 import { placedFloor, recordLabel } from "@/lib/record-label";
 import { buildKitLevel } from "./build-on-demand";
@@ -63,5 +65,15 @@ describe("the fictional kit building, end to end in fake mode", () => {
     expect(placed.guards).toHaveLength(3);
     expect(placed.entries.length).toBeGreaterThan(0);
     expect(recordLabel(building.source, placedFloor(floor.source))).toBe("Real CoStar record · stand-in floor plan");
+  });
+
+  it("has a recorded crew reply naming only its level's zones, so the smoke can brief the crew", async () => {
+    const building = (await getCoStar().adapter.getBuilding(SMOKE_KIT_BUILDING))!;
+    const level = (await levelFor(building, MISSION))!;
+    const ids = new Set(crewContext(level.manifest).zones.map((z) => z.id));
+    const recording = (await loadCrewRecording(SMOKE_KIT_BUILDING))!;
+    for (const reply of recording.replies) {
+      for (const step of reply.plan.steps) expect(ids.has(step.zoneId), `${reply.id}: ${step.zoneId}`).toBe(true);
+    }
   });
 });

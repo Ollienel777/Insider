@@ -14,7 +14,7 @@ import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { LevelManifest } from "@/domain";
+import type { Building, LevelManifest } from "@/domain";
 import { createRun } from "@/engine";
 import { placeOrFixture } from "@/components/run/scan-fallback";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
@@ -48,10 +48,13 @@ export function PlanScreen({
   manifest,
   heistMode,
   warmModel: warm = false,
+  source,
 }: {
   building: RunBuilding;
   manifest: LevelManifest | null;
   heistMode?: string;
+  /** The building's source: a CoStar kit building's plan stays in memory, never in storage (#95). */
+  source: Building["source"];
   /** The model is live: warm it once on this page load, so the crew's first call is not cold (#90). */
   warmModel?: boolean;
 }) {
@@ -76,7 +79,8 @@ export function PlanScreen({
         if (!live) return;
         if (!floor) return setLoad({ status: "no-floor" });
         // The same posture the Run screen places with (#35), so the board the crew plans on is the one they run.
-        const posture = postureOf(loadRunHistory(building.id, undefined, missionId));
+        // A kit building has no stored runs: one stored before #95 is removed, not read.
+        const posture = postureOf(loadRunHistory(building.id, undefined, missionId, source === "costar"));
         // A scan the level can't be placed on falls back to the fixture floor, as on the Run screen.
         const ready = await placeOrFixture(building, floor, (on) => ({
           placed: placeLevel(manifest, on, RUN_SEED, undefined, posture),
@@ -89,7 +93,7 @@ export function PlanScreen({
     return () => {
       live = false;
     };
-  }, [building, manifest, heistMode, missionId]);
+  }, [building, manifest, heistMode, missionId, source]);
 
   useEffect(() => warmModel(warm), [warm]);
 
@@ -121,8 +125,9 @@ export function PlanScreen({
       const reply = await askCrew(crewRequest(building.id, text, missionId), { signal: controller.signal });
       if (!controller.signal.aborted) {
         setAsk({ status: "answered", answer: reply });
-        // The run follows the briefed plan (beat 4 into beat 5).
-        saveCrewPlan(building.id, { plan: reply.plan, recorded: reply.recorded }, undefined, missionId);
+        // The run follows the briefed plan (beat 4 into beat 5). A kit building's is derived from its
+        // real record, so it is held in memory, not stored (#95).
+        saveCrewPlan(building.id, { plan: reply.plan, recorded: reply.recorded }, undefined, missionId, source === "costar");
       }
     } catch (error) {
       if (!controller.signal.aborted) setAsk({ status: "error", message: error instanceof Error ? error.message : String(error) });

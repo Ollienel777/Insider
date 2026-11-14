@@ -501,19 +501,19 @@ describe("the alarm banner", () => {
 
 describe("RunScreen", () => {
   it("renders its loading skeleton before the floor arrives", () => {
-    const out = renderToStaticMarkup(<RunScreen building={{ id: "F1", name: "Halvorsen Tower" }} manifest={manifest} />);
+    const out = renderToStaticMarkup(<RunScreen building={{ id: "F1", name: "Halvorsen Tower" }} manifest={manifest} source="fixture" />);
     expect(out).toContain('data-testid="board-skeleton"');
     expect(out).toContain('data-testid="panel-skeleton"');
   });
 
   it("says when a building has no level yet", () => {
-    const out = renderToStaticMarkup(<RunScreen building={{ id: "F2", name: "Figueroa Exchange" }} manifest={null} />);
+    const out = renderToStaticMarkup(<RunScreen building={{ id: "F2", name: "Figueroa Exchange" }} manifest={null} source="fixture" />);
     expect(out).toContain('data-testid="board-empty"');
     expect(out).toContain("Back to the map");
   });
 
   it("pulses nothing when no board is coming: the panel says what would be there (#68)", () => {
-    const out = renderToStaticMarkup(<RunScreen building={{ id: "F2", name: "Figueroa Exchange" }} manifest={null} />);
+    const out = renderToStaticMarkup(<RunScreen building={{ id: "F2", name: "Figueroa Exchange" }} manifest={null} source="fixture" />);
     expect(out).not.toContain("animate-pulse");
     expect(out).not.toContain('data-testid="panel-skeleton"');
     expect(out).toContain('data-testid="panel-empty"');

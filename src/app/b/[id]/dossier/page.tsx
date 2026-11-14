@@ -7,9 +7,8 @@ import { DossierScreen } from "@/components/dossier/dossier-screen";
 import { DossierUnavailable } from "@/components/dossier/dossier-unavailable";
 import { dossierFacts } from "@/components/dossier/facts";
 import { findBuilding } from "@/lib/building";
-import { forcedServices } from "@/lib/forced-server";
 import { configuredModes } from "@/lib/mode";
-import { expectedFloor, recordLabel } from "@/lib/record-label";
+import { dossierLabel } from "@/lib/record-label";
 import { castFinalist } from "@/lib/cast-because";
 import { optionalMissionParam, type SearchParams } from "@/lib/mission-param";
 import { cityName } from "@/lib/cities";
@@ -70,8 +69,6 @@ export default async function DossierPage({
       })
     : null;
   const cast = mission && finalist ? { candidate: finalist.candidate, mission, derived: finalist.source === "derived" } : null;
-  // A kit building's label promises its scan only when Matterport will serve it live (#95); the Run says what it placed on.
-  const matterportLive = configuredModes(process.env).matterport === "live" && !(await forcedServices()).has("matterport");
 
   return (
     <DossierScreen
@@ -82,7 +79,8 @@ export default async function DossierPage({
       rows={dataToLevelRows(level.manifest, cast)}
       mission={level.manifest.mission}
       trace={level.trace}
-      recordLabel={recordLabel(building.source, expectedFloor(building, matterportLive))}
+      // A kit building's real record (#95); only the Run, which places the level, names its floor.
+      recordLabel={dossierLabel(building.source)}
     />
   );
 }

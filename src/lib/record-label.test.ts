@@ -2,7 +2,7 @@
 // CoStar record, and either its real Matterport scan or a stand-in floor plan.
 // Fixture buildings get no label, so they render as before.
 import { describe, expect, it } from "vitest";
-import { expectedFloor, placedFloor, recordLabel, recordNote, REAL_SCAN_LABEL, STAND_IN_LABEL } from "./record-label";
+import { dossierLabel, placedFloor, recordLabel, recordNote, REAL_SCAN_LABEL, STAND_IN_LABEL } from "./record-label";
 
 describe("recordLabel", () => {
   it("names the real record and the real scan for a kit building played on its scan", () => {
@@ -22,15 +22,15 @@ describe("recordLabel", () => {
   });
 });
 
-describe("expectedFloor (the Dossier, before any floor loads)", () => {
-  it("expects the scan only when the building has one and Matterport serves live", () => {
-    expect(expectedFloor({ matterportModelId: "mpTestEEEE001" }, true)).toBe("scan");
+describe("dossierLabel (the Dossier, before any floor loads)", () => {
+  it("names the real record only, never a floor: a live scan can still fail or not hold the level", () => {
+    expect(dossierLabel("costar")).toBe("Real CoStar record");
+    expect(dossierLabel("costar")).not.toMatch(/scan|floor/i);
   });
 
-  it("expects the stand-in when Matterport is on fixtures or the building has no scan", () => {
-    expect(expectedFloor({ matterportModelId: "mpTestEEEE001" }, false)).toBe("stand-in");
-    expect(expectedFloor({}, true)).toBe("stand-in");
-    expect(expectedFloor({ matterportModelId: "" }, true)).toBe("stand-in");
+  it("gives a fixture building no label", () => {
+    expect(dossierLabel("fixture")).toBeNull();
+    expect(dossierLabel(undefined)).toBeNull();
   });
 });
 

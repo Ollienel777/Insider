@@ -8,7 +8,8 @@ import { expect, test, type Page } from "@playwright/test";
 // fixtures/llm/scripts/builder-900101-romaine-1974.json, built through the
 // same on-demand route a player's "Build this level" uses and kept in server
 // memory. In fake mode Matterport has no scan to load, so the board is the
-// stand-in floor, and every label says so instead of claiming a real scan.
+// stand-in floor: the Dossier names the record alone, and the Run says stand-in
+// instead of claiming a real scan.
 
 const KIT = "900101";
 const MISSION = "romaine-1974";
@@ -38,13 +39,27 @@ test("a kit building, Scout to Debrief, on its recorded build and the stand-in f
   // Scout: the kit building, no aerial (the kit has none), and the job to plan now its level exists.
   await page.goto(`/b/${KIT}/scout?m=${MISSION}`);
   await expect(page.getByTestId("building-slot")).toHaveText("Testwood Exchange · Los Angeles");
+  // Kit data stored before #95 (a crew plan, run history and run log): no screen reads it, and the walk
+  // removes it, which the storage scan at the end checks.
+  await page.evaluate(
+    ({ kit, mission }) => {
+      const plan = { steps: [{ zoneId: "dock", action: "Wait at the dock" }], pushback: "", confidence: 0.8 };
+      localStorage.setItem(`heist:crew-plan:${kit}:${mission}`, JSON.stringify({ plan, recorded: true }));
+      localStorage.setItem(`heist:run-history:${kit}:${mission}`, JSON.stringify([{ outcome: "caught", entryZone: "dock-N", detectedZones: [], noise: 1 }]));
+      localStorage.setItem(`heist:run-log:${kit}:${mission}`, "{}");
+    },
+    { kit: KIT, mission: MISSION },
+  );
   await expect(page.getByTestId("facts-only")).toHaveCount(0);
+  // No aerial; and no promise of a scan, which Scout can't know will load.
+  await expect(page.getByTestId("aerial-missing")).toBeVisible();
+  await expect(page.getByTestId("aerial-missing")).not.toContainText(/scan/i);
   await shot(page, "scout");
   await page.getByRole("link", { name: "Plan the job" }).click();
 
-  // Dossier: the label, and a Data → Level table read from the kit record's own fields.
+  // Dossier: the record label, which names no floor (only the Run knows it), and a Data → Level table read from the kit record's own fields.
   await expect(page).toHaveURL(new RegExp(`/b/${KIT}/dossier\\?m=${MISSION}$`));
-  await expect(page.getByTestId("record-label")).toHaveText(STAND_IN);
+  await expect(page.getByTestId("record-label")).toHaveText("Real CoStar record");
   await expect(page.getByTestId("record-label")).toBeInViewport();
   await shot(page, "dossier-top");
   await expect(page.getByTestId("dossier")).toHaveAttribute("data-done", "true", { timeout: 10_000 });
@@ -56,9 +71,12 @@ test("a kit building, Scout to Debrief, on its recorded build and the stand-in f
   await shot(page, "dossier");
   await page.getByRole("link", { name: "Brief the crew" }).click();
 
-  // Plan: the board on the stand-in floor.
+  // Plan: the board on the stand-in floor, and the crew briefed from its recorded reply (fixtures/llm/crew-900101.json).
   await expect(page).toHaveURL(new RegExp(`/b/${KIT}/plan\\?m=${MISSION}$`));
   await expect(page.getByTestId("plan-board")).toBeVisible();
+  await page.getByTestId("crew-order").fill("Down through the roof");
+  await page.getByRole("button", { name: "Brief the crew" }).click();
+  await expect(page.getByTestId("crew-step").first()).toBeVisible({ timeout: 5_000 });
   await page.getByRole("link", { name: "Start the run" }).click();
 
   // Run: the label names the stand-in floor, never a scan; three guards from Class B.
@@ -68,8 +86,10 @@ test("a kit building, Scout to Debrief, on its recorded build and the stand-in f
   await expect(label).toHaveText(STAND_IN);
   await expect(label).not.toContainText(/scan/i);
   // Whole at the demo's width, not cut to "stand-in flo…".
-  expect(await label.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  expect(await label.evaluate((el) => [el, ...el.querySelectorAll("span")].every((e) => e.scrollWidth <= e.clientWidth))).toBe(true);
   await expect(page.getByTestId("guard-piece")).toHaveCount(3);
+  // The crew's plan reached the Run from memory (#95), not from storage.
+  await expect(page.getByTestId("plan")).toHaveAttribute("data-source", "crew");
 
   // The Why card cites the real record's field the guard came from.
   await page.locator('[data-why-target="guard:G3"]').click();
@@ -99,4 +119,20 @@ test("a kit building, Scout to Debrief, on its recorded build and the stand-in f
   await expect(page.getByTestId("debrief-outcome")).toHaveAttribute("data-status", "caught");
   await expect(page.getByTestId("debrief-grade")).toBeVisible();
   await shot(page, "debrief");
+
+  // Nothing derived from the kit record was stored on the way (#93, #95), and what was stored before is
+  // gone: no run log, run history or crew plan, so no browser storage key or value names the building.
+  // sessionStorage's `heist:seen-fallbacks` holds the toast ids already shown this session, and a toast id
+  // may carry the bare building id (no record data; cleared with the session): each entry must be one.
+  const stored = await page.evaluate(() =>
+    (["localStorage", "sessionStorage"] as const).flatMap((area) => {
+      const s = window[area];
+      return Array.from({ length: s.length }, (_, i) => s.key(i)!).map((key) => ({ area, key, value: s.getItem(key) ?? "" }));
+    }),
+  );
+  const seen = stored.find((e) => e.area === "sessionStorage" && e.key === "heist:seen-fallbacks");
+  // The shapes `src/adapters/{matterport,vexcel}/index.ts` and `newFallback` (src/lib/fallback.ts) give.
+  const toastId = /^(?:(?:matterport|vexcel)-no-scan|matterport-unplaceable)-[A-Za-z0-9]+$|^(?:llm|costar|vexcel|matterport)-[0-9a-z]+-\d+$/;
+  for (const id of seen ? (JSON.parse(seen.value) as unknown[]) : []) expect(String(id)).toMatch(toastId);
+  expect(stored.filter((e) => e !== seen).map((e) => `${e.area} ${e.key}=${e.value}`).filter((entry) => entry.includes(KIT))).toEqual([]);
 });

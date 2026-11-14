@@ -312,11 +312,11 @@ describe("DossierScreen", () => {
         rows={rows}
         mission={manifest.mission}
         trace={trace}
-        recordLabel="Real CoStar record · stand-in floor plan"
+        recordLabel="Real CoStar record"
         startComplete
       />,
     );
-    expect(kit).toMatch(/data-testid="record-label"[^>]*>Real CoStar record · stand-in floor plan</);
+    expect(kit).toMatch(/data-testid="record-label"[^>]*>Real CoStar record</);
   });
 
   it("starts with every block under a skeleton, so nothing is read before it plays", () => {
