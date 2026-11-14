@@ -43,6 +43,7 @@ import { blankCube, PanoStore, type PanoCounts, type PanoUse } from "./panos";
 import { createScanMaterial } from "./projection";
 
 export type { ScanPose } from "@/lib/scan-mesh/pose";
+export { eyePose, yawFromHeading } from "@/lib/scan-mesh/pose";
 
 export type ScanPhase = "manifest" | "mesh" | "building" | "ready" | "no-mesh" | "error";
 

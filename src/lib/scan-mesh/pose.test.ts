@@ -1,6 +1,6 @@
 // Made-up poses and pixels.
 import { describe, expect, it } from "vitest";
-import { CAMERA_HEIGHT, eyePose, feetUnder, linksFresh, poseVelocity, sharpLayer, viewStats, type ScanPose } from "./pose";
+import { CAMERA_HEIGHT, eyePose, feetUnder, linksFresh, poseVelocity, sharpLayer, viewStats, yawFromHeading, type ScanPose } from "./pose";
 
 const at = (x: number, z: number): ScanPose => ({ x, y: 1.6, z, yaw: 0, pitch: 0 });
 
@@ -21,6 +21,18 @@ describe("poseVelocity", () => {
 describe("eyePose", () => {
   it("lifts the feet to the eye", () => {
     expect(eyePose([2, 0.1, -3], 0.5, -0.2, 1.6)).toEqual({ x: 2, y: 1.7000000000000002, z: -3, yaw: 0.5, pitch: -0.2 });
+  });
+});
+
+describe("yawFromHeading", () => {
+  /** Where a yaw looks on the ground, x and z: three.js's camera, rotation order YXZ. */
+  const looks = (yaw: number) => [-Math.sin(yaw), -Math.cos(yaw)];
+  it("looks the same way as the heading, all the way round", () => {
+    for (const heading of [0, 0.3, Math.PI / 2, 2, Math.PI, -1.2]) {
+      const [x, z] = looks(yawFromHeading(heading));
+      expect(x).toBeCloseTo(Math.cos(heading), 9);
+      expect(z).toBeCloseTo(Math.sin(heading), 9);
+    }
   });
 });
 

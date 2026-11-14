@@ -30,6 +30,15 @@ export function eyePose(feet: readonly [number, number, number], yaw: number, pi
   return { x: feet[0], y: feet[1] + eyeHeight, z: feet[2], yaw, pitch };
 }
 
+/**
+ * The pose's yaw for a heading measured from +x toward +z, the way the
+ * first-person view's controller turns (it looks along (cos h, sin h) on the
+ * ground): the same direction in this file's convention.
+ */
+export function yawFromHeading(heading: number): number {
+  return -heading - Math.PI / 2;
+}
+
 /** How far under a scan camera its feet are assumed to be when neither the mesh nor the scan says, metres. */
 export const CAMERA_HEIGHT = 1.4;
 
