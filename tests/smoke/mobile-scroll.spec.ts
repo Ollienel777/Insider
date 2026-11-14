@@ -8,6 +8,8 @@ test.use({ viewport: { width: 390, height: 844 } });
 
 for (const step of ["plan", "run", "debrief"] as const) {
   test(`/b/F1/${step} does not scroll sideways at 390×844`, async ({ page }) => {
+    // One page load and one measurement; 30 s covers a cold server on a loaded VM.
+    test.setTimeout(30_000);
     await page.goto(`/b/F1/${step}`);
     await expect(page.getByRole("navigation", { name: "Steps" })).toBeVisible();
     if (step !== "debrief") await expect(page.getByTestId(`${step}-board`)).toBeVisible();

@@ -213,9 +213,9 @@ body {
   }
 }
 
-/* The cone that saw the player flashes --danger on the trip, then holds at its
-   resting tint (the polygon's own fill-opacity). No fill-mode: once played it
-   leaves no animation behind. */
+/* The cone that saw the player flashes on the trip: from 70% down to the
+   polygon's own fill-opacity (30% --danger, kept until the next turn). No
+   fill-mode: once played it leaves no animation behind. */
 .cone-flash {
   animation: cone-flash var(--t-slow) var(--ease);
 }

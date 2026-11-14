@@ -92,6 +92,9 @@ test("beat 5: no label on the Run board covers another, at the start and at the 
 });
 
 test("with the Layer lens on, no label or lens mark covers another on Plan and Run (PR #83 R1-M1)", async ({ page }) => {
+  // Two page loads, two hops and the Chief's stream (about 2 s); 60 s leaves room for a loaded
+  // 2-vCPU VM running two gates (see demo-path.spec.ts).
+  test.setTimeout(60_000);
   // The lens marks are <text> on the board (a layer's letter), so the same check covers them.
   await page.goto("/b/F1/plan");
   await expect(page.getByTestId("plan-board")).toBeVisible();
@@ -113,7 +116,9 @@ test("with the Layer lens on, no label or lens mark covers another on Plan and R
     await page.keyboard.press(key!);
     await expect(board).toHaveAttribute("data-turn", String(turn));
   }
-  await expect(page.getByTestId("chief-order")).toHaveCount(4, { timeout: 4_000 });
+  // The stream's own done mark (rationale and every order row), not a fixed wait on the rows (#85).
+  await expect(page.getByTestId("chief-rationale")).toHaveAttribute("data-done", "true", { timeout: 30_000 });
+  await expect(page.getByTestId("chief-order")).toHaveCount(4);
   await settled(page, "run-board");
   expect(await collisions(page, "run-board")).toEqual([]);
 });
