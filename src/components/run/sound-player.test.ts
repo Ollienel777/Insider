@@ -103,22 +103,32 @@ describe("when audio starts", () => {
     expect(ctx.resumes).toBe(1);
   });
 
-  it("keeps only the newest turn queued on a context that is not running, so nothing comes back as a burst", () => {
-    const ctx = new FakeAudioContext("suspended");
-    // A browser that will not let it run: resuming changes nothing, and its clock stands still.
-    ctx.resume = () => Promise.resolve();
-    const player = createSoundPlayer(() => ctx.asContext());
-    let run = createRun(level());
-    player.follow(run);
-    player.wake();
+  it("keeps only the newest turn queued while the audio clock stands still, so nothing comes back as a burst", () => {
+    // A context still starting up, or held by the browser: it takes what is scheduled, and its clock does not move.
+    const { ctx, player, run } = playing();
+    let state = run;
     const perTurn: number[] = [];
-    for (let i = 0; i < 4; i++) {
+    for (const to of ["n1", "n0", "n1", "n0"]) {
       const before = ctx.started.length;
-      run = turns(player, run, [wait]);
+      state = turns(player, state, [move(to)]);
       perTurn.push(ctx.started.length - before);
     }
     expect(perTurn.every((count) => count > 0)).toBe(true);
     expect(ctx.soundingAfter().length).toBe(perTurn[3]);
+  });
+
+  it("once the clock runs, a turn leaves the last turn's footstep to finish", () => {
+    const { ctx, player, run } = playing();
+    const one = turns(player, run, [move("n1")]);
+    const first = [...ctx.started];
+    const ends = first.map((source) => source.stopAt);
+    ctx.advance(0.01);
+    turns(player, one, [move("n0")]);
+    // Only the first turn's pulse was cut short; its step plays out.
+    const cut = first.filter((source, i) => source.stopAt !== ends[i]);
+    expect(cut.length).toBeGreaterThan(0);
+    expect(cut.length).toBeLessThan(first.length);
+    for (const source of cut) expect(source.stopAt).toBe(ctx.currentTime);
   });
 });
 

@@ -79,10 +79,13 @@ export function useRunSound(run: RunState | null): [muted: boolean, toggleMute: 
 }
 
 /**
- * The mute button in the board's top bar, beside the Layer lens and styled as
- * it is. Pressed means muted, and the icon says the same; it names its key.
+ * The mute button: a small control the Run screen sets in the board's top
+ * right corner, which the isometric floor leaves empty. The board's top bar
+ * has no room for it: at 1280 wide, 40px more there wraps the source label.
+ * Pressed means muted, and the icon says the same; from a tablet up it shows
+ * its key. `className` places it.
  */
-export function MuteToggle({ muted, onToggle }: { muted: boolean; onToggle: () => void }) {
+export function MuteToggle({ muted, onToggle, className }: { muted: boolean; onToggle: () => void; className?: string }) {
   const Icon = muted ? VolumeX : Volume2;
   return (
     <button
@@ -90,19 +93,20 @@ export function MuteToggle({ muted, onToggle }: { muted: boolean; onToggle: () =
       data-testid="mute-toggle"
       aria-pressed={muted}
       aria-keyshortcuts="M"
+      title={muted ? "Sound is off" : "Sound is on"}
       onClick={onToggle}
       className={cn(
-        "inline-flex h-10 shrink-0 items-center gap-2 rounded-sm border px-3 text-sm font-medium select-none",
+        "inline-flex h-10 min-w-10 items-center justify-center gap-2 rounded-sm border px-3 select-none max-md:px-0",
         "transition-colors duration-fast ease-out",
         "[&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:stroke-[1.5]",
         muted
           ? "border-border-strong bg-surface-3 text-text-1"
-          : "border-transparent text-text-2 hover:bg-surface-3 hover:text-text-1",
+          : "border-border bg-surface-1 text-text-2 hover:border-border-strong hover:bg-surface-3 hover:text-text-1",
+        className,
       )}
     >
       <Icon aria-hidden />
-      {/* On a phone the top bar is narrow: the icon stays, the name stays for screen readers. */}
-      <span className="max-md:sr-only">Mute</span>
+      <span className="sr-only">Mute</span>
       <kbd
         aria-hidden
         className="max-md:hidden inline-flex h-5 min-w-5 items-center justify-center rounded-sm border border-border bg-surface-2 px-1 font-mono text-xs text-text-2"

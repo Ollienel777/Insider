@@ -408,7 +408,6 @@ export function RunScreen({
                 </Button>
               ) : null}
               <LensToggle on={lens} onToggle={toggleLens} disabled={!run} />
-              <MuteToggle muted={muted} onToggle={toggleMute} />
               <Button variant="ghost" onClick={restart} disabled={!run || run.turn === 0}>
                 <RotateCcw aria-hidden />
                 Restart
@@ -458,6 +457,7 @@ export function RunScreen({
                 lens={lens}
               />
             ) : null}
+            <MuteToggle muted={muted} onToggle={toggleMute} className="absolute top-2 right-8" />
           </div>
 
           {lens && run && placed ? <LensLegend placed={placed} locked={run.locked} /> : null}

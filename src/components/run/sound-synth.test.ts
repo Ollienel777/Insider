@@ -183,10 +183,12 @@ describe("the guard pulse", () => {
     }
   });
 
-  it("is low: no beat's tone starts above 200 Hz", () => {
+  it("is low: every beat is a tone that starts under middle C and sinks", () => {
     for (const source of scheduled(pulse(1)).sources) {
       expect(source.kind).toBe("oscillator");
-      expect(source.frequency.events[0].value).toBeLessThanOrEqual(200);
+      const [from, end] = source.frequency.events;
+      expect(from.value).toBeLessThan(262);
+      expect(end.value).toBeLessThan(from.value);
     }
   });
 });

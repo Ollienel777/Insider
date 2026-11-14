@@ -37,6 +37,8 @@ export function createSoundPlayer(open: () => AudioContext | null = openAudio): 
   let woken = false;
   let muted = false;
   let last: RunState | null = null;
+  /** The audio clock when cues were last queued. */
+  let queuedAt = -1;
 
   const quietly = (work: () => void) => {
     try {
@@ -86,9 +88,12 @@ export function createSoundPlayer(open: () => AudioContext | null = openAudio): 
       if (run.turn > previous.turn) voices.stop("pulse");
       if (muted) return;
       const cues = cuesFor(previous, run);
-      // A context not running yet (just opened, or held by the browser) has sounded none of what is
-      // queued on it. Only the newest turn's cues stay queued, so they never come back as a burst.
-      if (cues.length > 0 && ctx.state !== "running") voices.stop();
+      if (cues.length === 0) return;
+      // An audio clock that has not moved since the last cues were queued has sounded none of them:
+      // the context is still starting (that can take seconds), or the browser holds it. Only the
+      // newest turn stays queued, so the turns played meanwhile never come back as one burst.
+      if (ctx.currentTime === queuedAt) voices.stop();
+      queuedAt = ctx.currentTime;
       for (const cue of cues) voices.play(cue);
     });
   }

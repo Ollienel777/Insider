@@ -1,7 +1,9 @@
 // The mute button and its key (issue 101), and that the Run screen carries
 // them. Effects do not run in a static render and Web Audio does not exist
-// here, so the hook's audio side is covered through sound-player.test.ts, and
-// in a real browser by tests/smoke/sound.spec.ts.
+// here, so what the hook does with audio is covered through
+// sound-player.test.ts; this file holds the parts a render and a key can show.
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { LevelManifest } from "@/domain";
@@ -59,38 +61,43 @@ describe("the mute key", () => {
 });
 
 describe("the mute button", () => {
-  const render = (muted: boolean) => renderToStaticMarkup(<MuteToggle muted={muted} onToggle={() => {}} />);
+  const render = (muted: boolean) => renderToStaticMarkup(<MuteToggle muted={muted} onToggle={() => {}} className="absolute top-2" />);
 
-  it("exposes its state as pressed, names itself and its key", () => {
+  it("exposes its state as pressed, and names itself and its key", () => {
     expect(render(false)).toContain('aria-pressed="false"');
     expect(render(true)).toContain('aria-pressed="true"');
     for (const out of [render(false), render(true)]) {
       expect(out).toContain('data-testid="mute-toggle"');
       expect(out).toContain('aria-keyshortcuts="M"');
-      expect(out).toMatch(/<span[^>]*>Mute<\/span>/);
+      expect(out).toMatch(/<span class="sr-only">Mute<\/span>/);
+      expect(out).toMatch(/<kbd[^>]*aria-hidden="true"[^>]*>M<\/kbd>/);
     }
   });
 
-  it("shows a different icon muted, so the state is not carried by its tint alone", () => {
+  it("shows a different icon muted, so its state is not carried by its tint alone", () => {
     const icon = (out: string) => /<svg[^>]*class="([^"]*)"/.exec(out)?.[1];
     expect(icon(render(false))).toContain("lucide-volume-2");
     expect(icon(render(true))).toContain("lucide-volume-x");
+  });
+
+  it("is at least 40px each way, and goes where it is put", () => {
+    const classes = /<button[^>]*class="([^"]*)"/.exec(render(false))![1].split(" ");
+    expect(classes).toEqual(expect.arrayContaining(["h-10", "min-w-10", "absolute", "top-2"]));
   });
 });
 
 describe("the Run screen", () => {
   const manifest = LevelManifest.parse(structuredClone(cached));
 
-  it("carries the mute button in its top bar, with sound on until the stored choice is read", () => {
+  it("carries the mute button, with sound on until the stored choice is read", () => {
     const out = renderToStaticMarkup(<RunScreen building={{ id: "F1", name: "Halvorsen Tower" }} manifest={manifest} />);
-    expect(out).toMatch(/data-testid="mute-toggle"[^>]*aria-pressed="false"/);
-    // Beside the Layer lens, before Restart.
-    expect(out.indexOf('data-testid="lens-toggle"')).toBeLessThan(out.indexOf('data-testid="mute-toggle"'));
-    expect(out.indexOf('data-testid="mute-toggle"')).toBeLessThan(out.indexOf("Restart"));
+    expect(out).toMatch(/<button[^>]*data-testid="mute-toggle"[^>]*aria-pressed="false"/);
+    expect(out.match(/data-testid="mute-toggle"/g)).toHaveLength(1);
   });
 
-  it("keeps it where there is no board to play: the choice is the player's either way", () => {
-    const out = renderToStaticMarkup(<RunScreen building={{ id: "F2", name: "Figueroa Exchange" }} manifest={null} />);
-    expect(out).toContain('data-testid="mute-toggle"');
+  it("hands its run to the sound hook, which a static render cannot show", () => {
+    const source = readFileSync(path.join(import.meta.dirname, "run-screen.tsx"), "utf8");
+    expect(source).toMatch(/const \[muted, toggleMute\] = useRunSound\(run\);/);
+    expect(source).toMatch(/<MuteToggle muted=\{muted\} onToggle=\{toggleMute\}/);
   });
 });

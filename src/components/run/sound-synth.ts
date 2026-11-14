@@ -135,69 +135,69 @@ export function createVoices(ctx: BaseAudioContext): Voices {
     switch (cue.kind) {
       // A muffled footfall: low noise with a small thud under it. A sprint lands harder, once per hop.
       case "step": {
-        const weight = cue.sprint ? 1.6 : 1;
+        const weight = cue.sprint ? 1.4 : 1;
         for (let hop = 0; hop < cue.hops; hop++) {
           const t = at + hop * 0.13;
-          noise(t, { filter: "lowpass", freq: cue.sprint ? 800 : 600, peak: 0.2 * weight, decay: 0.07 });
-          tone(t, { freq: 110, glideTo: 70, peak: 0.2 * weight, decay: 0.08 });
+          noise(t, { filter: "lowpass", freq: cue.sprint ? 800 : 600, peak: 0.32 * weight, decay: 0.07 });
+          tone(t, { freq: 110, glideTo: 70, peak: 0.3 * weight, decay: 0.08 });
         }
         break;
       }
       // Picks working a lock: three dry ticks, the last one late.
       case "pick":
         for (const after of [0, 0.06, 0.14]) {
-          noise(at + after, { filter: "bandpass", freq: 3200, q: 3, peak: 0.12, attack: 0.001, decay: 0.015 });
+          noise(at + after, { filter: "bandpass", freq: 3200, q: 3, peak: 0.22, attack: 0.001, decay: 0.015 });
         }
         break;
       // The door gives: one tick, then the latch falling back.
       case "unlock":
-        noise(at, { filter: "bandpass", freq: 2400, q: 2, peak: 0.16, attack: 0.001, decay: 0.02 });
-        noise(at + 0.05, { filter: "lowpass", freq: 900, peak: 0.22, decay: 0.07 });
-        tone(at + 0.05, { freq: 170, glideTo: 110, peak: 0.26, decay: 0.09 });
+        noise(at, { filter: "bandpass", freq: 2400, q: 2, peak: 0.2, attack: 0.001, decay: 0.02 });
+        noise(at + 0.05, { filter: "lowpass", freq: 900, peak: 0.26, decay: 0.07 });
+        tone(at + 0.05, { freq: 170, glideTo: 110, peak: 0.3, decay: 0.09 });
         break;
       // The objective in hand: one soft low tone and its fifth. Not a tune.
       case "take":
-        tone(at, { freq: 220, peak: 0.26, attack: 0.015, decay: 0.3 });
-        tone(at, { freq: 330, peak: 0.14, attack: 0.015, decay: 0.26 });
+        tone(at, { freq: 220, peak: 0.32, attack: 0.015, decay: 0.3 });
+        tone(at, { freq: 330, peak: 0.18, attack: 0.015, decay: 0.26 });
         break;
       // Seen: a dry snap, nothing like the soft step before it.
       case "spotted":
-        noise(at, { filter: "bandpass", freq: 1700, q: 1.2, peak: 0.24, attack: 0.001, decay: 0.04 });
-        tone(at, { type: "triangle", freq: 310, peak: 0.3, attack: 0.001, decay: 0.06 });
+        noise(at, { filter: "bandpass", freq: 1700, q: 1.2, peak: 0.3, attack: 0.001, decay: 0.04 });
+        tone(at, { type: "triangle", freq: 310, peak: 0.36, attack: 0.001, decay: 0.06 });
         break;
       // The alarm rises: two low tones a semitone apart, leaning upward. Higher and louder with each level.
       case "alarm-rise": {
         const level = LEVELS.indexOf(cue.to); // 1 Suspicious, 2 Alert, 3 Lockdown
-        const freq = 123.5 * 2 ** (level / 4);
-        const peak = 0.14 + 0.06 * level;
+        const freq = 165 * 2 ** (level / 4);
+        const peak = 0.17 + 0.07 * level;
         tone(at, { type: "triangle", freq, glideTo: freq * 1.04, peak, attack: 0.008, decay: 0.3 });
         tone(at, { type: "triangle", freq: freq * 1.06, glideTo: freq * 1.1, peak, attack: 0.008, decay: 0.3 });
         break;
       }
       // The alarm falls: one quiet tone settling downward. Softer than the rise.
       case "alarm-fall": {
-        const freq = cue.to === "calm" ? 147 : 175;
-        tone(at, { freq, glideTo: freq * 0.75, peak: 0.16, attack: 0.03, decay: 0.3 });
+        const freq = cue.to === "calm" ? 220 : 262;
+        tone(at, { type: "triangle", freq, glideTo: freq * 0.75, peak: 0.24, attack: 0.03, decay: 0.3 });
         break;
       }
       // Out: the door shuts behind, and a low open fifth rings on a moment.
       case "escape":
-        noise(at, { filter: "lowpass", freq: 500, peak: 0.2, decay: 0.08 });
-        tone(at + 0.02, { freq: 147, peak: 0.26, attack: 0.03, decay: 0.4 });
-        tone(at + 0.02, { freq: 220.5, peak: 0.16, attack: 0.03, decay: 0.36 });
+        noise(at, { filter: "lowpass", freq: 500, peak: 0.24, decay: 0.08 });
+        tone(at + 0.02, { freq: 196, peak: 0.3, attack: 0.03, decay: 0.4 });
+        tone(at + 0.02, { freq: 294, peak: 0.18, attack: 0.03, decay: 0.36 });
         break;
       // Caught: a dull blow, and a tone dropping away under it.
       case "caught":
-        noise(at, { filter: "lowpass", freq: 400, peak: 0.24, decay: 0.12 });
-        tone(at, { type: "triangle", freq: 150, glideTo: 52, peak: 0.4, attack: 0.006, decay: 0.4 });
+        noise(at, { filter: "lowpass", freq: 500, peak: 0.3, decay: 0.12 });
+        tone(at, { type: "triangle", freq: 220, glideTo: 62, peak: 0.5, attack: 0.006, decay: 0.4 });
         break;
-      // The guard pulse: low beats, with an octave over each so small speakers carry it.
+      // The guard pulse: low beats. The upper tone is what a laptop's speakers carry; the lower one is felt on headphones.
       case "pulse": {
         const { beats, gap, peak } = pulseBeats(cue.hops);
         for (let beat = 0; beat < beats; beat++) {
           const t = at + beat * gap;
-          tone(t, { freq: 98, glideTo: 70, peak, attack: 0.008, decay: 0.15 }, true);
-          tone(t, { freq: 196, glideTo: 140, peak: peak * 0.4, attack: 0.008, decay: 0.12 }, true);
+          tone(t, { freq: 110, glideTo: 80, peak: peak * 0.7, attack: 0.008, decay: 0.15 }, true);
+          tone(t, { type: "triangle", freq: 220, glideTo: 160, peak, attack: 0.008, decay: 0.13 }, true);
         }
         break;
       }
