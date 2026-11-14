@@ -4,7 +4,10 @@
 // else (SPEC §4.5): a body with any other field, such as a node or a
 // coordinate, is refused. The server reads the mission and the security
 // profile from its own cached manifest. Answers `ChiefAnswer`.
+import { forcedChatModelSelection } from "@/adapters/llm";
 import { ChiefRequest, replanChief } from "@/agents/chief";
+import { withLlmFallback } from "@/lib/fallback";
+import { forcedFromRequest } from "@/lib/mode";
 
 export async function POST(request: Request): Promise<Response> {
   let body: unknown;
@@ -19,9 +22,10 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: `bad request at ${issue.path.join(".") || "body"}: ${issue.message}` }, { status: 400 });
   }
   try {
-    const answer = await replanChief(parsed.data);
+    const forced = forcedFromRequest(request).has("llm");
+    const answer = await replanChief(parsed.data, forced ? { selection: forcedChatModelSelection() } : {});
     if (!answer) return Response.json({ error: `no cached level for building "${parsed.data.buildingId}"` }, { status: 404 });
-    return Response.json(answer);
+    return Response.json(withLlmFallback(answer));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return Response.json({ error: `the Chief could not answer: ${message}` }, { status: 500 });

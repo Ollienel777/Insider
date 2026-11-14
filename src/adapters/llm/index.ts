@@ -3,6 +3,7 @@
 // `structuredCall`. See select.ts for how the mode and provider are chosen.
 export {
   DEFAULT_TIMEOUT_MS,
+  forcedChatModelSelection,
   getChatModel,
   getChatModelSelection,
   llmProvider,

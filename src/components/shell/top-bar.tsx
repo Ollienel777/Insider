@@ -1,17 +1,18 @@
 import Link from "next/link";
-import type { ModeChip as ModeChipState } from "@/lib/mode";
 import type { Building } from "@/domain";
 import { cityName } from "@/lib/cities";
-import { ModeChip } from "./mode-chip";
+import type { ServerStatus } from "@/lib/demo-status";
+import { StatusChip } from "./demo-safety";
 
 interface TopBarProps {
-  chip: ModeChipState;
+  /** What the server rendered with; the chip keeps it current in the browser. */
+  status: ServerStatus;
   /** The building being played, shown centre; absent on the map. */
   building?: Pick<Building, "name" | "city">;
 }
 
 /** The 56px top bar: wordmark left, building centre, mode chip right (DESIGN.md, Layout). */
-export function TopBar({ chip, building }: TopBarProps) {
+export function TopBar({ status, building }: TopBarProps) {
   return (
     <header
       data-testid="top-bar"
@@ -33,7 +34,7 @@ export function TopBar({ chip, building }: TopBarProps) {
         ) : null}
       </div>
       <div className="justify-self-end">
-        <ModeChip chip={chip} />
+        <StatusChip status={status} />
       </div>
     </header>
   );

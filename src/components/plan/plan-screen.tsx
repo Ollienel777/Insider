@@ -64,7 +64,7 @@ export function PlanScreen({
       .then((floor) => {
         if (!live) return;
         if (!floor) return setLoad({ status: "no-floor" });
-        setLoad({ status: "ready", placed: placeLevel(manifest, floor, RUN_SEED), live: matterport.mode === "live" });
+        setLoad({ status: "ready", placed: placeLevel(manifest, floor, RUN_SEED), live: floor.source === "matterport" });
       }, fail)
       .catch(fail);
     return () => {

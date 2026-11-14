@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { DrillReport as DrillNarrative } from "@/domain";
 import type { DrillFacts } from "@/drill";
+import { noteResponse } from "@/lib/demo-status";
 import { cn } from "@/lib/utils";
 import { useReducedMotion } from "./use-reduced-motion";
 
@@ -32,7 +33,10 @@ export async function askNarrator(facts: DrillFacts, fetcher: typeof fetch = fet
   try {
     const response = await fetcher("/api/drill/narrative", narrativeRequest(facts));
     const body = (await response.json().catch(() => ({}))) as Partial<NarrativeAnswer> & { error?: string };
-    if (response.ok && body.narrative) return { status: "ready", answer: body as NarrativeAnswer };
+    if (response.ok && body.narrative) {
+      noteResponse(body);
+      return { status: "ready", answer: body as NarrativeAnswer };
+    }
     if (response.status === 404) return { status: "none", message: body.error ?? "no recorded narrative" };
     return { status: "error", message: body.error ?? `the narrator answered ${response.status}` };
   } catch (error) {

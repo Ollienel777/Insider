@@ -81,6 +81,16 @@ export function getChatModelSelection(role: LlmRole, options: SelectOptions = {}
   return selection;
 }
 
+/** The fake, chosen because the demo settings forced the model to fixtures (recorded turns). */
+export function forcedChatModelSelection(options: SelectOptions = {}): ChatModelSelection {
+  return {
+    model: new ScriptedChatModel({ script: options.script }),
+    mode: "fake",
+    provider: "scripted",
+    reason: "Model: recorded turns (forced in demo settings)",
+  };
+}
+
 export function getChatModel(role: LlmRole, options: SelectOptions = {}) {
   return getChatModelSelection(role, options).model;
 }

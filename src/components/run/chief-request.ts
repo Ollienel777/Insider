@@ -9,6 +9,7 @@ import { ChiefRequest, type ChiefAnswer } from "@/agents/chief/request";
 import { ChiefOrders } from "@/domain";
 import { compileBoard, zoneOf, type AlarmEvent, type RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
+import { noteResponse } from "@/lib/demo-status";
 import { zoneName } from "./board";
 
 export type { ChiefAnswer };
@@ -93,6 +94,7 @@ export async function askChief(
   });
   const body = (await response.json().catch(() => null)) as (Partial<ChiefAnswer> & { error?: string }) | null;
   if (!response.ok || !body) throw new Error(body?.error ?? `the Chief didn't answer (HTTP ${response.status})`);
+  noteResponse(body);
   return {
     orders: ChiefOrders.parse(body.orders),
     recorded: body.recorded === true,

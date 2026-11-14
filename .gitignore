@@ -16,6 +16,9 @@ hackathon/DECISION.md
 hackathon/draft/
 hackathon/rehearsals/
 
+# The demo epoch `npm run demo:reset` writes (src/lib/demo-epoch.ts)
+.heist/
+
 # Secrets
 .env
 .env.*

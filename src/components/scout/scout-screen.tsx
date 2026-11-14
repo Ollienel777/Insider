@@ -8,6 +8,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Aerial, type AerialEntry, type Building, type ViewDir } from "@/domain";
 import { cityName } from "@/lib/cities";
+import { noteResponse } from "@/lib/demo-status";
 import { cn } from "@/lib/utils";
 import { buildMassing, entryFace, FRAME, stepView, VIEW_LABEL, VIEW_ORDER, type Marker, type MassingView } from "./massing";
 import { MassingSvg } from "./massing-view";
@@ -155,9 +156,11 @@ export function ScoutScreen({ building }: { building: ScoutBuilding }) {
   );
 }
 
-async function fetchAerial(id: string, signal: AbortSignal): Promise<Load> {
+/** Fetches the aerial, and tells the mode chip of any `fallback` the answer carries. */
+export async function fetchAerial(id: string, signal: AbortSignal): Promise<Load> {
   const response = await fetch(`/api/buildings/${encodeURIComponent(id)}/aerial`, { signal });
   const body = (await response.json().catch(() => null)) as { mode?: string; aerial?: unknown; error?: string } | null;
+  if (body) noteResponse(body);
   if (!response.ok || !body) {
     return { status: "error", message: body?.error ?? `The aerial service answered ${response.status}.` };
   }

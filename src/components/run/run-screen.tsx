@@ -77,7 +77,7 @@ export function RunScreen({
           if (!live) return;
           if (!floor) return setLoad({ status: "no-floor" });
           const placed = placeLevel(manifest, floor, RUN_SEED);
-          setLoad({ status: "ready", placed, live: matterport.mode === "live" });
+          setLoad({ status: "ready", placed, live: floor.source === "matterport" });
           setRun(createRun(placed.level));
           setStatus(`You're in at the ${placed.entries[0].label.toLowerCase()}. Pick a number to move.`);
         },

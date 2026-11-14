@@ -64,7 +64,7 @@ export function DrillScreen({ building, heistMode }: { building: Building; heist
       .loadFloor(building)
       .then((floor) => {
         if (!live) return;
-        setLoad(floor ? { status: "ready", floor, live: matterport.mode === "live" } : { status: "no-floor" });
+        setLoad(floor ? { status: "ready", floor, live: floor.source === "matterport" } : { status: "no-floor" });
       }, fail)
       .catch(fail);
     return () => {

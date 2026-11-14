@@ -3,7 +3,10 @@
 // against a strict schema, so no node, coordinate or edge can arrive here.
 // Answers `NarrativeAnswer`.
 import { narrateDrill, NarratorUnavailableError, NoNarrativeError } from "@/agents/drill";
+import { forcedChatModelSelection } from "@/adapters/llm";
 import { DrillFacts } from "@/drill";
+import { withLlmFallback } from "@/lib/fallback";
+import { forcedFromRequest } from "@/lib/mode";
 
 export async function POST(request: Request): Promise<Response> {
   let body: unknown;
@@ -17,7 +20,9 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: `the facts do not fit the schema: ${parsed.error.issues[0]?.message ?? "invalid"}` }, { status: 400 });
   }
   try {
-    return Response.json(await narrateDrill(parsed.data));
+    const forced = forcedFromRequest(request).has("llm");
+    const answer = await narrateDrill(parsed.data, forced ? { selection: forcedChatModelSelection() } : {});
+    return Response.json(withLlmFallback(answer));
   } catch (error) {
     if (error instanceof NoNarrativeError) return Response.json({ error: error.message }, { status: 404 });
     // A failed live call is worth a retry (503); anything else is a bug, logged here and not echoed to the browser.

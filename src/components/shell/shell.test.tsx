@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { modeChip, serviceModes } from "@/lib/mode";
+import { configuredModes, modeChip, serviceModes } from "@/lib/mode";
 import { FIXTURE_BUILDINGS } from "@/adapters/costar/fake";
 import { LayerDot } from "./layer-dot";
 import { ModeChip, modeTooltip } from "./mode-chip";
@@ -58,11 +58,11 @@ describe("StepRailView", () => {
 });
 
 describe("TopBar", () => {
-  const chip = modeChip(serviceModes({}));
+  const status = { configured: configuredModes({}), forced: [], fallbacks: [] };
 
   it("shows the wordmark, the building and city, and the mode chip", () => {
     const building = FIXTURE_BUILDINGS.find((b) => b.id === "F1")!;
-    const html = renderToStaticMarkup(<TopBar chip={chip} building={building} />);
+    const html = renderToStaticMarkup(<TopBar status={status} building={building} />);
     expect(html).toContain("h-14");
     expect(text(html)).toContain("Heist Anywhere");
     const slot = html.match(/data-testid="building-slot"[^>]*>([\s\S]*?)<\/div>/)![1];
@@ -70,7 +70,7 @@ describe("TopBar", () => {
   });
 
   it("leaves the building slot empty on the map", () => {
-    const html = renderToStaticMarkup(<TopBar chip={chip} />);
+    const html = renderToStaticMarkup(<TopBar status={status} />);
     expect(html).toMatch(/data-testid="building-slot"[^>]*><\/div>/);
   });
 });

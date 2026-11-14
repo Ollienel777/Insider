@@ -3,6 +3,7 @@
 // reads the zones and the guard roster from its own cached manifest.
 import type { CrewAnswer } from "@/agents/crew/crew";
 import { CrewPlan } from "@/domain";
+import { noteResponse } from "@/lib/demo-status";
 
 export interface CrewRequest {
   buildingId: string;
@@ -33,6 +34,7 @@ export async function askCrew(
   });
   const body = (await response.json().catch(() => null)) as (Partial<CrewAnswer> & { error?: string }) | null;
   if (!response.ok || !body) throw new Error(body?.error ?? `the crew didn't answer (HTTP ${response.status})`);
+  noteResponse(body);
   return {
     plan: CrewPlan.parse(body.plan),
     recorded: body.recorded === true,
