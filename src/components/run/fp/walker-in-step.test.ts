@@ -5,8 +5,9 @@
 // node in that room: the area `Ground.regionOf` gives it (world.ts), worked
 // out again locally so these tests do not grade the walker by its own code.
 // Leaving the region must hand back the move into the neighbour's area, or
-// the body is held back. The tests read only `stepWalker`'s output and the
-// rooms (`roomAt`), so a design that lets the body drift fails them.
+// the body is held back. The tests read only `stepWalker`'s output, the rooms
+// (`roomAt`) and that local region, so a walker that lets the body drift out
+// of the start node's region with no move played fails them, on each floor.
 import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { LevelManifest } from "@/domain";
@@ -75,17 +76,18 @@ describe("the body and the engine's node stay in step (issue 136)", () => {
       const at = `(${walker.pos.x.toFixed(2)}, ${walker.pos.y.toFixed(2)})`;
       expect(inRegion(world, "fl-car", walker.pos), `with no move played, the body left the lift's region at ${at}`).toBe(true);
     }
-    // Either the body was held in the lift's region the whole way (checked above), or the move came back, and
-    // that move is the one to the lobby.
-    if (handed !== null) expect(handed).toEqual({ kind: "move", to: "fl-lobby" });
+    // The line leaves the lift's region (the doorway is not in it), so the move to the lobby must come back.
+    expect(handed).toEqual({ kind: "move", to: "fl-lobby" });
   });
 
-  it.each(CASES)("$id: a flood fill of where the body can go from the start with no move played finds no room but the engine node's own and its legal neighbours'", ({ id, cached }) => {
+  it.each(CASES)("$id: a flood fill of where the body can go from the start with no move played finds no room but the engine node's own and its legal neighbours', and never leaves its region", ({ id, cached }) => {
     const { world, ground, run } = floor(id, cached);
     const allowed = allowedRooms(world, run, run.playerNode);
     const start = createWalker(ground, run);
     // Flood over the places the body can stand: from each, a short run in each of 16 directions through the
-    // walker itself. A place counts as reached only if no step on the way there handed back an action.
+    // walker itself. A place counts as reached only if no step on the way there handed back an action. On all
+    // three floors the start's one neighbour shares its room, so rooms alone cannot see the body drift into that
+    // neighbour's area: any place reached outside the start's region is also counted, as "off-region".
     const cell = (p: Vec) => `${Math.round(p.x / 0.25)},${Math.round(p.y / 0.25)}`;
     const seen = new Set([cell(start.pos)]);
     const todo: Vec[] = [start.pos];
@@ -96,12 +98,14 @@ describe("the body and the engine's node stay in step (issue 136)", () => {
         const yaw = (k / 16) * 2 * Math.PI;
         let walker = { ...start, pos: from, vel: { x: Math.cos(yaw) * FP.runMps, y: Math.sin(yaw) * FP.runMps } };
         let played = false;
-        for (let i = 0; i < 7 && !played; i++) {
+        for (let i = 0; i < 7; i++) {
           const out = stepWalker(walker, ground, run, { ...IDLE, forward: 1, yaw });
           walker = out.walker;
           played = out.action !== null;
-          const room = played ? undefined : roomAt(world, walker.pos)?.id;
+          if (played) break;
+          const room = roomAt(world, walker.pos)?.id;
           if (room) reached.add(room);
+          if (!inRegion(world, run.playerNode, walker.pos)) reached.add(`off-region:${room ?? "doorway"}`);
         }
         if (played || seen.has(cell(walker.pos))) continue;
         seen.add(cell(walker.pos));
