@@ -4,7 +4,7 @@ import { FIXTURE_BUILDINGS } from "@/adapters/costar/fake";
 import type { Building } from "@/domain";
 import { buildKitLevel, type Build } from "./build-on-demand";
 import { LEVELS_DIR, readCachedLevel } from "./cache";
-import { buildState, builtMissions, buildsOnDemand, clearKitLevels, levelFor } from "./live-levels";
+import { buildState, builtMissions, buildsOnDemand, clearKitLevels, levelFor, readLevel } from "./live-levels";
 
 const f1 = FIXTURE_BUILDINGS.find((b) => b.id === "F1")!;
 // A fictional kit building: F1's fields under a kit-style id.
@@ -73,6 +73,13 @@ describe("on-demand levels for kit buildings (#93)", () => {
 
     await buildKitLevel(kit, "romaine-1974", fakeBuild as Build);
     expect(buildState(kit.id, "romaine-1974")).toEqual({ status: "built" });
+  });
+
+  it("serves a built level by id, for the Crew and the Chief, and a fixture's from disk", async () => {
+    expect(await readLevel(kit.id, "romaine-1974")).toBeNull();
+    await buildKitLevel(kit, "romaine-1974", fakeBuild as Build);
+    expect((await readLevel(kit.id, "romaine-1974"))?.manifest.buildingId).toBe(kit.id);
+    expect((await readLevel("F1", "romaine-1974"))?.manifest.buildingId).toBe("F1");
   });
 
   it("still reads a fixture building's committed level", async () => {

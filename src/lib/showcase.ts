@@ -34,9 +34,17 @@ export function parseShowcase(value: string | undefined): ShowcaseEntry[] {
   return entries;
 }
 
-/** This server's showcase. */
+const parsed = new Map<string, ShowcaseEntry[]>();
+
+/** This server's showcase, parsed once per value, so a malformed pair warns once. */
 export function showcase(env: Env = process.env): ShowcaseEntry[] {
-  return parseShowcase(env.SHOWCASE_LEVELS);
+  const value = env.SHOWCASE_LEVELS ?? "";
+  let entries = parsed.get(value);
+  if (!entries) {
+    entries = parseShowcase(value);
+    parsed.set(value, entries);
+  }
+  return entries;
 }
 
 /** The ids of the showcase's buildings, or null when there is no list (every kit building shows). */

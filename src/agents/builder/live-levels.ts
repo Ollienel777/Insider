@@ -51,6 +51,17 @@ export async function levelFor(building: Pick<Building, "id" | "source">, missio
   return entry?.status === "built" ? entry.level : null;
 }
 
+/**
+ * The level for a building and mission by id alone, for the agents behind the
+ * screens (Crew, Chief, strategies): an on-demand level from memory, else the
+ * committed one under `dir`. Fixture ids and kit ids never collide.
+ */
+export async function readLevel(buildingId: string, missionId: string, dir?: string): Promise<CachedLevel | null> {
+  const entry = store.get(levelKey(buildingId, missionId));
+  if (entry?.status === "built") return entry.level;
+  return dir === undefined ? readCachedLevel(buildingId, missionId) : readCachedLevel(buildingId, missionId, dir);
+}
+
 /** The missions a kit building has a level for in memory, for the step rail. */
 export function builtMissions(buildingId: string): string[] {
   const prefix = `${buildingId}.`;

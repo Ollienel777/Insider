@@ -318,10 +318,12 @@ export function deriveSecurityProfile(building: Building, aerial: Aerial | null)
       });
       return { id: tag.id, kind: tag.kind, label: tag.label };
     });
-  // No aerial tags (Vexcel holds a massing only for the prepared buildings, so
-  // a CoStar kit building has none, #93): a level needs a way in, so the rules
+  // No aerial (Vexcel holds a massing only for the prepared buildings, so a
+  // CoStar kit building has none, #93): a level needs a way in, so the rules
   // offer the two every office building has, the roof and the street lobby.
-  if (entries.length === 0) {
+  // Only for a kit building with no aerial at all: a fixture always has its
+  // massing, and a degraded live aerial for one must still fail the build.
+  if (entries.length === 0 && aerial === null && building.source === "costar") {
     for (const entry of NO_AERIAL_ENTRIES) {
       provenance.push({
         elementRole: `entry:${entry.id}`,

@@ -214,9 +214,10 @@ export function ScoutScreen({ building, initialLoad }: { building: ScoutBuilding
             <p data-testid="facts-only" className="text-sm text-text-2">
               {FACTS_ONLY_NOTE}
             </p>
-            <Link href={buildingHref(building.id, "dossier", missionId)} className={buttonVariants({ variant: "primary" })}>
-              Build a level
-            </Link>
+            {/* A full load, not a client link: the layout's step rail reads which levels are built (#93). */}
+            <a href={buildingHref(building.id, "dossier", missionId)} className={buttonVariants({ variant: "primary" })}>
+              Open the level
+            </a>
           </div>
         ) : (
           <Link href={buildingHref(building.id, "dossier", missionId)} className={buttonVariants({ variant: "primary" })}>

@@ -2,7 +2,8 @@
 // (SPEC §4): the manifest and the trace the Level Builder recorded for this
 // building and mission (issue 119). With no `m`, the building's own mission. It
 // never runs the builder, so beat 4 never waits on a model.
-import { isFixtureBuilding, readCachedLevel } from "@/agents/builder/cache";
+import { isFixtureBuilding } from "@/agents/builder/cache";
+import { readLevel } from "@/agents/builder/live-levels";
 import { defaultMissionId } from "@/agents/builder/missions";
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
@@ -12,7 +13,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     return Response.json({ error: `no mission given for building "${id}"; add ?m=<missionId>` }, { status: 404 });
   }
   try {
-    const level = await readCachedLevel(id, missionId);
+    const level = await readLevel(id, missionId);
     if (!level) {
       return Response.json(
         {

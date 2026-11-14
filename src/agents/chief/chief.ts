@@ -5,7 +5,7 @@
 // The browser clamps the orders on the board (engine/orders.ts); the server
 // never sees the floor. Guards never wait for this: the engine has already
 // sent them converging when the call starts.
-import { readCachedLevel } from "@/agents/builder/cache";
+import { readLevel } from "@/agents/builder/live-levels";
 import { defaultMissionId } from "@/agents/builder/missions";
 import { structuredCall, type StructuredCallOptions } from "@/adapters/llm";
 import { ChiefOrders } from "@/domain";
@@ -25,7 +25,7 @@ export interface ReplanOptions {
 /** Re-plans on one transition. Null when the building has no cached level for the mission. */
 export async function replanChief(request: ChiefRequest, options: ReplanOptions = {}): Promise<ChiefAnswer | null> {
   const missionId = request.missionId ?? defaultMissionId(request.buildingId);
-  const cached = missionId ? await readCachedLevel(request.buildingId, missionId, options.levelsDir) : null;
+  const cached = missionId ? await readLevel(request.buildingId, missionId, options.levelsDir) : null;
   if (!cached) return null;
   const { manifest } = cached;
 

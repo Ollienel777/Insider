@@ -7,6 +7,7 @@ import { DossierScreen } from "@/components/dossier/dossier-screen";
 import { DossierUnavailable } from "@/components/dossier/dossier-unavailable";
 import { dossierFacts } from "@/components/dossier/facts";
 import { findBuilding } from "@/lib/building";
+import { configuredModes } from "@/lib/mode";
 import { castFinalist } from "@/lib/cast-because";
 import { optionalMissionParam, type SearchParams } from "@/lib/mission-param";
 import { cityName } from "@/lib/cities";
@@ -29,11 +30,20 @@ export default async function DossierPage({
   const missionId = await optionalMissionParam(building.id, "dossier", searchParams);
   // A kit building's level is built on demand (#93): it offers its city's missions, then the build.
   const onDemand = buildsOnDemand(building);
+  const modelLive = configuredModes(process.env).llm === "live";
   const missions = onDemand ? missionsFor(building.city).map(({ id, title }) => ({ id, title })) : undefined;
   const state = onDemand && missionId ? buildState(building.id, missionId) : null;
   const kitProps = {
     missions,
-    buildable: Boolean(onDemand && missionId && canBuildFor(building, missionId)),
+    buildable: Boolean(onDemand && missionId && canBuildFor(building, missionId) && modelLive),
+    unbuildable:
+      onDemand && missionId
+        ? !canBuildFor(building, missionId)
+          ? "That mission is not staged in this building's city. Pick one below."
+          : !modelLive
+            ? "The model is on fixtures, so the Level Builder can't build this level here. It needs the live model."
+            : undefined
+        : undefined,
     buildError: state?.status === "failed" ? state.error : undefined,
   };
   // No mission (a kit building from the map): no level to read, only its facts and its missions.

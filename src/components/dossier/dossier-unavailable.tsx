@@ -32,6 +32,8 @@ interface DossierUnavailableProps {
   buildable?: boolean;
   /** Why the last on-demand build of this level failed, when one did. */
   buildError?: string;
+  /** Why this kit building's level can't be built here, when it can't. */
+  unbuildable?: string;
 }
 
 /** The dossier without a cached level: what happened, and the way to fix it or go on. */
@@ -46,6 +48,7 @@ export function DossierUnavailable({
   missions,
   buildable = false,
   buildError,
+  unbuildable,
 }: DossierUnavailableProps) {
   const kit = source === "costar";
   const command = `npm run build:levels -- ${buildingId}:${missionId}`;
@@ -73,9 +76,7 @@ export function DossierUnavailable({
           {kit && missionId && buildable ? (
             <BuildLevelButton buildingId={buildingId} missionId={missionId} initialError={buildError} />
           ) : null}
-          {kit && missionId && !buildable ? (
-            <p className="text-sm text-text-2">That mission is not staged in this building&apos;s city. Pick one below.</p>
-          ) : null}
+          {kit && missionId && unbuildable ? <p className="text-sm text-text-2">{unbuildable}</p> : null}
           {kit && (!missionId || !buildable) && missions?.length ? (
             <nav aria-label="Missions" className="flex flex-col gap-2">
               <p className="label-caps text-text-3">Pick a mission to build</p>

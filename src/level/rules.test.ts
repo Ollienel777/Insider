@@ -132,8 +132,12 @@ describe("staging floor and zones", () => {
     expect(d.zones.map((z) => z.role)).toEqual(["quiet", "secure"]);
   });
 
-  it("offers the roof and the street lobby without an aerial, each with its rule (#93)", () => {
-    const d = deriveSecurityProfile(building("F1"), null);
+  it("offers a fixture no entries without an aerial, so a degraded build fails", () => {
+    expect(deriveSecurityProfile(building("F1"), null).entries).toEqual([]);
+  });
+
+  it("offers a kit building the roof and the street lobby without an aerial, each with its rule (#93)", () => {
+    const d = deriveSecurityProfile({ ...building("F1"), id: "900001", source: "costar" }, null);
     expect(d.entries.map((e) => e.kind)).toEqual(["roof", "lobby"]);
     for (const entry of d.entries) {
       const why = d.provenance.find((p) => p.elementRole === `entry:${entry.id}`);
