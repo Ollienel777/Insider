@@ -6,6 +6,7 @@
 // at 1280 px, keeps its width. The state they show comes from play-mode.ts and
 // turn-clock.ts.
 import { Pause, Play, StepForward, Timer, type LucideIcon } from "lucide-react";
+import type { MouseEvent } from "react";
 import { cn } from "@/lib/utils";
 import type { PlayMode } from "./play-mode";
 import { LIVE_TURN_MS, type LiveClock, type TurnClockState } from "./turn-clock";
@@ -13,7 +14,9 @@ import { LIVE_TURN_MS, type LiveClock, type TurnClockState } from "./turn-clock"
 /**
  * The switch and, in Live, the timer. Mount it inside the board's area (a
  * positioned box): the switch takes the bottom-right corner (the top-right on
- * a phone, where the board is small), the timer the bottom-left.
+ * a phone, where the board is small), the timer the bottom-left. On a phone
+ * both are icon-sized, so neither reaches a node of the board
+ * (tests/smoke/live.spec.ts holds that).
  */
 export function LiveControls({
   mode,
@@ -30,6 +33,15 @@ export function LiveControls({
       <TurnTimer clock={clock} className="absolute bottom-3 left-6" />
     </>
   );
+}
+
+/**
+ * After a click or a tap the keys go back to the run. A button that kept the
+ * focus would take the next Space, and Space is the key that takes the
+ * objective. A button pressed from the keyboard keeps its focus.
+ */
+function releaseFocus(event: MouseEvent<HTMLButtonElement>) {
+  if (event.detail > 0) event.currentTarget.blur();
 }
 
 const MODES: readonly { mode: PlayMode; label: string; hint: string; icon: LucideIcon }[] = [
@@ -68,7 +80,10 @@ export function PlayModeSwitch({
             data-testid={`play-mode-${option}`}
             aria-pressed={on}
             title={hint}
-            onClick={() => onChange(option)}
+            onClick={(event) => {
+              releaseFocus(event);
+              onChange(option);
+            }}
             className={cn(
               "relative inline-flex h-10 min-w-10 items-center justify-center border text-sm font-medium select-none md:px-3",
               "transition-colors duration-fast ease-out focus-visible:z-10",
@@ -102,6 +117,10 @@ export const CLOCK_LABEL: Readonly<Record<Exclude<TurnClockState, "off" | "over"
  * lap and frozen while the clock is not running, so it stops where the
  * countdown stopped. Nothing shows in Tactical, before a run is on the board,
  * or once it has ended.
+ *
+ * On a phone it is the pause button alone, with the bar along its bottom
+ * edge; the word stays for screen readers, and the button's icon and the
+ * bar's colour say whether the clock runs.
  */
 export function TurnTimer({ clock, className }: { clock: LiveClock; className?: string }) {
   const { state } = clock;
@@ -112,17 +131,17 @@ export function TurnTimer({ clock, className }: { clock: LiveClock; className?: 
     <div
       data-testid="turn-timer"
       data-state={state}
-      className={cn("flex rounded-sm border border-border bg-surface-1 shadow-e-1", className)}
+      className={cn("relative flex rounded-sm border border-border bg-surface-1 shadow-e-1", className)}
     >
-      <div className="flex h-10 flex-col justify-center gap-1.5 px-3">
+      <div className="pointer-events-none flex flex-col justify-center gap-1.5 max-md:absolute max-md:inset-x-0 max-md:bottom-0 md:h-10 md:px-3">
         <p
           role="status"
           data-testid="turn-timer-state"
-          className={cn("label-caps", running ? "text-text-2" : "text-text-1")}
+          className={cn("label-caps max-md:sr-only", running ? "text-text-2" : "text-text-1")}
         >
           {CLOCK_LABEL[state]}
         </p>
-        <span aria-hidden className="block h-1 w-28 overflow-hidden bg-surface-3 max-md:w-20">
+        <span aria-hidden className="block h-1 overflow-hidden bg-surface-3 max-md:rounded-b-sm md:w-28">
           <span
             // A new lap is a new element, so its animation starts from a full bar.
             key={clock.lap}
@@ -137,9 +156,12 @@ export function TurnTimer({ clock, className }: { clock: LiveClock; className?: 
         data-testid="turn-pause"
         aria-label={paused ? "Resume the clock" : "Pause the clock"}
         aria-keyshortcuts="P"
-        onClick={clock.togglePause}
+        onClick={(event) => {
+          releaseFocus(event);
+          clock.togglePause();
+        }}
         className={cn(
-          "inline-flex h-10 min-w-10 items-center justify-center gap-2 rounded-r-sm border-l border-border select-none md:px-3",
+          "inline-flex h-10 min-w-10 items-center justify-center gap-2 rounded-sm border-border select-none md:rounded-l-none md:border-l md:px-3",
           "text-text-2 transition-colors duration-fast ease-out hover:bg-surface-3 hover:text-text-1",
           "[&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:stroke-[1.5]",
         )}
