@@ -466,3 +466,19 @@ test("Restart in sprint mode puts the board back to walking (#160)", async ({ pa
   await expect(page.getByTestId("choice").first()).toHaveAttribute("data-kind", "move");
   await expect(page.getByTestId("choice").first()).toHaveAttribute("data-node", "fl-lobby");
 });
+
+test("a click on the mute or lens button leaves Space to the board, not the button (#101 review)", async ({ page }) => {
+  await open(page);
+  const mute = page.getByTestId("mute-toggle");
+  await mute.click();
+  await expect(mute).toHaveAttribute("aria-pressed", "true");
+  // Space on a focused button presses it; on Run, Space is the board's (take the files).
+  expect(await mute.evaluate((el) => el === document.activeElement)).toBe(false);
+  await page.keyboard.press(" ");
+  await expect(mute).toHaveAttribute("aria-pressed", "true");
+  const lens = page.getByTestId("lens-toggle");
+  await lens.click();
+  expect(await lens.evaluate((el) => el === document.activeElement)).toBe(false);
+  await mute.click();
+  await expect(mute).toHaveAttribute("aria-pressed", "false");
+});

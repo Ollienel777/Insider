@@ -94,6 +94,8 @@ export function MuteToggle({ muted, onToggle, className }: { muted: boolean; onT
       aria-pressed={muted}
       aria-keyshortcuts="M"
       title={muted ? "Sound is off" : "Sound is on"}
+      // A click must not leave focus here: Space on a focused button presses it, and on Run Space takes the files.
+      onMouseDown={(event) => event.preventDefault()}
       onClick={onToggle}
       className={cn(
         "inline-flex h-10 min-w-10 items-center justify-center gap-2 rounded-sm border px-3 select-none max-md:px-0",
