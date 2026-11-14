@@ -458,6 +458,29 @@ describe("the replay board", () => {
   });
 });
 
+describe("the objective's noun (#70)", () => {
+  /** The F1 floor and route, standing in for another mission's level. */
+  const asMission = (missionId: string) => ({ ...placed, level: { ...placed.level, missionId } });
+  const replay = (level: typeof placed, log: RunLog) =>
+    renderToStaticMarkup(<ReplayBoard placed={level} frames={debriefOf(level, log, PAR).frames} frame={0} caught={false} />);
+
+  it("names the mission's objective in the win headline and on the replay board's marker", () => {
+    const vault = asMission("sunset-1986");
+    const log = { ...quietWin(), missionId: "sunset-1986" };
+    expect(debriefOf(vault, log, PAR).headline).toBe("Out with the boxes.");
+    const html = replay(vault, log);
+    expect(html).toContain(">BOXES<");
+    expect(html).not.toContain(">FILES<");
+  });
+
+  it("falls back to the files for a mission without a noun", () => {
+    const unnamed = asMission("not-in-the-library");
+    const log = { ...quietWin(), missionId: "not-in-the-library" };
+    expect(debriefOf(unnamed, log, PAR).headline).toBe("Out with the files.");
+    expect(replay(unnamed, log)).toContain(">FILES<");
+  });
+});
+
 describe("the line above Try again (#113)", () => {
   const stats = (turns: number, par: number | null) => ({ turns, par }) as Debrief["stats"];
 

@@ -8,7 +8,8 @@ import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { BatchSummary, ChiefFix, LevelManifest, type BatchResult, type BatchRun, type Strategy } from "@/domain";
 import { placeLevel } from "@/level/placer";
 import cached from "../../data/levels/F1.romaine-1974.json";
-import { applyFix, createRun, rerunWithFix, runBatch, summariseBatch, varyLevel } from "./index";
+import { roundOf } from "./autoplay";
+import { applyFix, compileBoard, createRun, rerunWithFix, runBatch, summariseBatch, varyLevel } from "./index";
 
 const manifest = LevelManifest.parse(structuredClone(cached));
 const read = (file: string) => JSON.parse(readFileSync(path.join(process.cwd(), "fixtures", "llm", file), "utf8"));
@@ -121,6 +122,22 @@ describe("applyFix", () => {
     expect(g1.patrol[0]).not.toBe(level.guards.find((g) => g.id === "G1")!.patrol[0]);
   });
 
+  it("retimes later for a positive byTurns and earlier for a negative one", () => {
+    const round = roundOf(compileBoard(level), level.guards.find((g) => g.id === "G1")!.patrol);
+    expect(round.length).toBeGreaterThan(2);
+    const patrolOf = (byTurns: number) => {
+      const applied = applyFix(level, { kind: "retime-guard", elementId: "G1", byTurns });
+      expect(applied.ok).toBe(true);
+      return applied.level.guards.find((g) => g.id === "G1")!.patrol;
+    };
+    // The whole patrol, not only its start: an out-and-back round starts on the same node either way.
+    // Later by 1: it starts a node back along its round, so it reaches the round's first node a turn late.
+    expect(patrolOf(1)).toEqual([...round.slice(-1), ...round.slice(0, -1)]);
+    // Earlier by 1: it starts a node ahead.
+    expect(patrolOf(-1)).toEqual([...round.slice(1), round[0]]);
+    expect(patrolOf(1)).not.toEqual(patrolOf(-1));
+  });
+
   it("adds a guard off the entries, and locks the doors into a zone", () => {
     const added = applyFix(level, { kind: "add-guard", elementId: "G9", to: "dock-corridor" });
     expect(added.ok && added.level.guards.at(-1)).toMatchObject({ id: "G9" });
@@ -139,6 +156,9 @@ describe("applyFix", () => {
       [{ kind: "retime-guard", elementId: "G1", byTurns: 0 }, "retime-guard needs a whole, non-zero byTurns"],
       [{ kind: "retime-guard", elementId: "G1", byTurns: 9 }, "a round moves at most 6 turns either way"],
       [{ kind: "retime-guard", elementId: "G3", byTurns: 1 }, 'guard "G3" holds a post and walks no round'],
+      // G1 walks a round of 4 on F1: a whole round (or two back) leaves it where it was.
+      [{ kind: "retime-guard", elementId: "G1", byTurns: 4 }, 'guard "G1" walks a round of 4 turns, so 4 turns changes nothing'],
+      [{ kind: "retime-guard", elementId: "G1", byTurns: -4 }, 'guard "G1" walks a round of 4 turns, so -4 turns changes nothing'],
       [{ kind: "lock-door", elementId: "objective" }, 'zone "objective" has no unlocked door that locks'],
       [{ kind: "add-guard", elementId: "G1", to: "dock-corridor" }, '"G1" is already on the floor'],
     ] as const;

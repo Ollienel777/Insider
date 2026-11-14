@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { ChiefFix, FixSummary, LevelManifest, type Strategy } from "@/domain";
-import { summariseBatch } from "@/engine";
+import { runBatch, summariseBatch } from "@/engine";
 import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.romaine-1974.json";
 import fixRecording from "../../../fixtures/llm/fix-F1.json";
@@ -50,10 +50,11 @@ describe("askFix", () => {
     expect(answer).toEqual({ fix: recordedFix, recorded: true, source: "recorded", reason: "fake mode" });
   });
 
-  it("keeps the server's recorded flag: a model whose change didn't fit was still called", async () => {
+  it("keeps the server's recorded flag when a live answer was clamped to the template", async () => {
     const summary = fixSummaryOf(summariseBatch(batch), placed);
-    const dropped = { change: { kind: "move-camera", elementId: "C7", to: "dock-corridor" }, reason: 'no camera "C7"' };
-    const fetch = (async () => Response.json({ fix: recordedFix, recorded: false, source: "template", dropped })) as unknown as typeof globalThis.fetch;
+    const dropped = { change: { kind: "move-camera", elementId: "C9", to: "dock-corridor" }, reason: 'no camera "C9"' };
+    const fetch = (async () =>
+      Response.json({ fix: recordedFix, recorded: false, source: "template", dropped })) as unknown as typeof globalThis.fetch;
     const answer = await askFix({ buildingId: "F1", summary }, { fetch });
     expect(answer).toEqual({ fix: recordedFix, recorded: false, source: "template", dropped });
   });
@@ -73,6 +74,19 @@ describe("playFix on F1", () => {
     expect(rerun.after.escaped).toBe(0);
     expect(rerun.after.strip).toHaveLength(50);
     expect(JSON.stringify(playFix(manifest, floor, batch, recordedFix))).toBe(JSON.stringify(rerun));
+  });
+
+  it("plays after on the setup it is given, the same as before", () => {
+    // An owner's setup unlike the generated one: C2 is taken off the floor, so the recorded fix cannot move it.
+    const placedFor = (seed: number) => {
+      const at = placeLevel(manifest, floor, seed);
+      return { ...at, level: { ...at.level, cameras: (at.level.cameras ?? []).filter((c) => c.id !== "C2") } };
+    };
+    const own = runBatch({ buildingId: manifest.buildingId, strategies, seeds: batch.seeds, levelFor: (seed) => placedFor(seed).level });
+    const rerun = playFix(manifest, floor, own, recordedFix, placedFor);
+    expect(rerun.dropped).toBe('no camera "C2"');
+    expect(rerun.after.escaped).toBe(rerun.before.escaped);
+    expect(rerun.after.escaped).toBeGreaterThan(0);
   });
 
   it("maps the Chief's zone ids to the engine's", () => {

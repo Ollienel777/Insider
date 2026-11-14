@@ -32,6 +32,7 @@ import type {
   ZoneRole,
 } from "@/domain";
 import { compileBoard, DEFAULT_HEARING, zoneOf, type CameraSpec, type GuardSpec, type Level } from "@/engine";
+import { objectiveNoun } from "@/lib/objective-noun";
 
 // The quiet route is computed from a placement (quiet-route.ts); it is
 // exported here too, since the placer owns it (#15, #19).
@@ -207,9 +208,10 @@ const ROOM_WORDS: Partial<Record<ZoneRole, readonly string[]>> = {
  * where the objective's door is picked (only that lock: the words say no
  * more), off the cameras' covers, the quiet zones and the locked rooms.
  */
-const DOCK_POST_RULE = "Posted on the nearest node to the dock that keeps out of sight of the way in and out of earshot of the door to the files";
-const WATCH_POST_RULE =
-  "Posted near the way in the crew used on earlier runs, nearer it than any guard starts on a first run, on the nearest node to it out of sight of the way in and out of earshot of the door to the files";
+const DOCK_POST_RULE = (noun: string) =>
+  `Posted on the nearest node to the dock that keeps out of sight of the way in and out of earshot of the door to the ${noun}`;
+const WATCH_POST_RULE = (noun: string) =>
+  `Posted near the way in the crew used on earlier runs, nearer it than any guard starts on a first run, on the nearest node to it out of sight of the way in and out of earshot of the door to the ${noun}`;
 
 /**
  * How a night cleaner's room is chosen, in the words the Why card shows. The
@@ -221,9 +223,10 @@ const WATCH_POST_RULE =
  * that see the shortest way from the start to the objective.
  */
 const CLEANER_RULE = {
-  room: "Walks the occupied suites, the suite rooms no available suite takes, out of sight of the way in to the files",
-  corridor: (why: string) =>
-    `${why}, so the occupied space has no room of its own: the cleaner works the corridor farthest from the start, out of sight of the way in to the files`,
+  room: (noun: string) =>
+    `Walks the occupied suites, the suite rooms no available suite takes, out of sight of the way in to the ${noun}`,
+  corridor: (why: string, noun: string) =>
+    `${why}, so the occupied space has no room of its own: the cleaner works the corridor farthest from the start, out of sight of the way in to the ${noun}`,
   allAvailable: "Every suite room on this floor holds an available suite",
   noSuites: "This floor has no suite rooms",
 } as const;
@@ -699,7 +702,7 @@ export function placeLevel(
       id: watch.id,
       roomId: nodeById.get(watch.node)!.roomId,
       patrol: [watch.node],
-      post: { entryId: watch.entry.entryId, rule: WATCH_POST_RULE },
+      post: { entryId: watch.entry.entryId, rule: WATCH_POST_RULE(objectiveNoun(manifest.mission.id)) },
       provenance: [...watch.entry.provenance, ...provenanceOf(`guard:${watch.id}`, "profile:guardCount")],
     });
   }
@@ -709,7 +712,7 @@ export function placeLevel(
       id,
       roomId: nodeById.get(post.node)!.roomId,
       patrol: [post.node],
-      post: { entryId: post.entry.entryId, rule: DOCK_POST_RULE },
+      post: { entryId: post.entry.entryId, rule: DOCK_POST_RULE(objectiveNoun(manifest.mission.id)) },
       provenance: [...post.entry.provenance, ...provenanceOf(`guard:${id}`, "profile:guardCount")],
     });
   }
@@ -729,13 +732,16 @@ export function placeLevel(
     const id = `K${cleaners.length + 1}`;
     const zoneRooms = placedZones.get(zone.id)?.roomIds;
     const rooms = zoneRooms
-      ? zoneRooms.map((roomId) => ({ roomId, rule: CLEANER_RULE.room }))
+      ? zoneRooms.map((roomId) => ({ roomId, rule: CLEANER_RULE.room(objectiveNoun(manifest.mission.id)) }))
       : floor.rooms
           .filter((r) => !claimed.has(r.id) && CORRIDOR.test(r.label))
           .sort((a, b) => nearestToStart(b.id) - nearestToStart(a.id) || a.id.localeCompare(b.id))
           .map((r) => ({
             roomId: r.id,
-            rule: CLEANER_RULE.corridor(suiteRooms.length > 0 ? CLEANER_RULE.allAvailable : CLEANER_RULE.noSuites),
+            rule: CLEANER_RULE.corridor(
+              suiteRooms.length > 0 ? CLEANER_RULE.allAvailable : CLEANER_RULE.noSuites,
+              objectiveNoun(manifest.mission.id),
+            ),
           }));
     const walk = rooms
       .map((room) => ({ ...room, chain: chainOf(adj, (roomNodes.get(room.roomId) ?? []).filter(offWayIn), fromStart) }))
