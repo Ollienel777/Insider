@@ -36,7 +36,7 @@ export function createFakeCoStar(
       return building ? copy(building.availableSpace) : null;
     },
     async searchInventory(filters) {
-      return searchInventory(inventory, z.array(CastingFilter).parse(filters));
+      return searchInventory(inventory, z.array(CastingFilter).parse(filters), "fixture");
     },
   };
 }

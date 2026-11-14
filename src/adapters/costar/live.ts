@@ -4,7 +4,8 @@
 // Not exercised against CoStar: there is no key yet. Its unit tests run it on
 // a stubbed `fetch`.
 import type { Building, City } from "@/domain";
-import { ENDPOINTS, KIT_FILES, propertyQuery, spaceQuery, toAvailableSpace, toBuilding, unwrapItem, unwrapList } from "./mapping";
+import { createFakeCoStar } from "./fake";
+import { ENDPOINTS, propertyQuery, spaceQuery, toAvailableSpace, toBuilding, unwrapItem, unwrapList } from "./mapping";
 import type { CoStarAdapter } from "./types";
 
 export interface LiveCoStarConfig {
@@ -21,18 +22,6 @@ export class CoStarNotConfiguredError extends Error {
   }
 }
 
-/**
- * The live inventory search reads CoStar's data kit, whose field names are
- * not yet known (#27). Thrown under `withFallback`, it trips the breaker and
- * the fixture inventory answers.
- */
-export class CoStarKitNotMappedError extends Error {
-  constructor() {
-    super(`CoStar: the kit inventory search is not mapped yet (${Object.values(KIT_FILES).join(", ")} in COSTAR_KIT_DIR; #27)`);
-    this.name = "CoStarKitNotMappedError";
-  }
-}
-
 export function createLiveCoStar(config: LiveCoStarConfig): CoStarAdapter {
   const { base: rawBase, key } = config;
   if (!rawBase || !key) {
@@ -40,6 +29,11 @@ export function createLiveCoStar(config: LiveCoStarConfig): CoStarAdapter {
     throw new CoStarNotConfiguredError(missing.filter((m): m is string => Boolean(m)));
   }
 
+  // The kit reader (`KIT_FILES` in mapping.ts) waits on #27: until then the
+  // search answers from the fixture inventory itself, marked
+  // `source: "fixture"`, without throwing, so it never trips the breaker
+  // that live buildings share.
+  const fixtures = createFakeCoStar();
   const base = rawBase.replace(/\/+$/, "");
   const doFetch = config.fetch ?? fetch;
   const timeoutMs = config.timeoutMs ?? 8_000;
@@ -80,8 +74,6 @@ export function createLiveCoStar(config: LiveCoStarConfig): CoStarAdapter {
       const rows = await spacesOf(id);
       return rows === null ? null : toAvailableSpace(rows);
     },
-    async searchInventory() {
-      throw new CoStarKitNotMappedError();
-    },
+    searchInventory: (filters) => fixtures.searchInventory(filters),
   };
 }
