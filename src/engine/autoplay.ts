@@ -21,7 +21,7 @@
 import type { BatchResult, BatchRun, Detector, DetectorTally, DroppedStrategy, Strategy, StrategyTally } from "@/domain";
 import { act, type Action } from "./actions";
 import { neighbours, shortestPath } from "./path";
-import { compileBoard, createRun, type Board, type Level, type RunState } from "./state";
+import { compileBoard, createRun, picksToOpen, type Board, type Level, type RunState } from "./state";
 
 /** A run still inside after this many turns ends as a timeout. */
 export const AUTOPLAY_MAX_TURNS = 120;
@@ -37,7 +37,7 @@ const POLICY = {
   high: { peek: 1, patience: 1, sprint: true },
 } as const;
 
-/** What `wait-for-round` adds before the first move: a deeper peek, more patience, and a seeded pause. */
+/** What `wait-for-round` adds before the first move: a deeper peek, more patience, and a seeded pause of 0-2 turns (not a full round). */
 const ROUND = { peek: 1, patience: 4, pause: 3 } as const;
 
 /**
@@ -243,7 +243,7 @@ function actionsAlong(board: Board, run: RunState, path: readonly string[]): Act
     const exit = neighbours(board, path[i - 1]).find((e) => e.to === path[i])!;
     if (exit.doorId !== undefined && run.locked.includes(exit.doorId)) {
       const done = picking?.doorId === exit.doorId ? picking.progress : 0;
-      for (let p = done; p < board.level.pickTurns; p++) out.push({ kind: "pick", doorId: exit.doorId });
+      for (let p = done; p < picksToOpen(board.level, exit.doorId); p++) out.push({ kind: "pick", doorId: exit.doorId });
       picking = null;
     }
     out.push({ kind: "move", to: path[i] });
@@ -270,7 +270,7 @@ function distances(
     done.add(at);
     for (const exit of neighbours(board, at)) {
       // Moving exit.to → at costs entering `at`.
-      const step = cost(at) + (exit.doorId !== undefined && locked.includes(exit.doorId) ? board.level.pickTurns : 0);
+      const step = cost(at) + (exit.doorId !== undefined && locked.includes(exit.doorId) ? picksToOpen(board.level, exit.doorId) : 0);
       const d = dist.get(at)! + step;
       if (d < (dist.get(exit.to) ?? Infinity)) dist.set(exit.to, d);
     }
@@ -294,7 +294,7 @@ function follow(
       .filter((e) => {
         const d = dist.get(e.to);
         if (d === undefined) return false;
-        const step = cost(e.to) + (e.doorId !== undefined && locked.includes(e.doorId) ? board.level.pickTurns : 0);
+        const step = cost(e.to) + (e.doorId !== undefined && locked.includes(e.doorId) ? picksToOpen(board.level, e.doorId) : 0);
         return Math.abs(d + step - here) < 1e-9;
       })
       .map((e) => e.to)

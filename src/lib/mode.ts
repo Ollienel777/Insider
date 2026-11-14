@@ -51,9 +51,17 @@ export function missingForLive(service: Service, env: Env): string[] {
       return unset(["VEXCEL_API_BASE", "VEXCEL_API_KEY"]);
     case "matterport":
       return unset(["NEXT_PUBLIC_MATTERPORT_SDK_KEY"]);
-    case "llm":
-      if (env.LLM_PROVIDER === "bedrock") return env.BEDROCK_ENABLED === "1" ? [] : ["BEDROCK_ENABLED"];
-      return unset(["ANTHROPIC_API_KEY"]);
+    case "llm": {
+      // A setting that would refuse every live call counts as missing, so the chip says fixtures.
+      const invalid: string[] = [];
+      const provider = env.LLM_PROVIDER || "anthropic";
+      if (provider !== "anthropic" && provider !== "bedrock") invalid.push("LLM_PROVIDER");
+      const timeout = env.LLM_TIMEOUT_MS;
+      if (timeout && !(Number.isFinite(Number(timeout)) && Number(timeout) > 0)) invalid.push("LLM_TIMEOUT_MS");
+      if (provider === "bedrock") return [...invalid, ...(env.BEDROCK_ENABLED === "1" ? [] : ["BEDROCK_ENABLED"])];
+      if (provider !== "anthropic") return invalid;
+      return [...invalid, ...unset(["ANTHROPIC_API_KEY"])];
+    }
   }
 }
 

@@ -21,7 +21,7 @@ export interface BuildRun {
   /** The mission this run builds the level for; `get_mission` and `write_manifest` refuse any other id. */
   missionId: string;
   costar: CoStarAdapter;
-  vexcel: VexcelAdapter;
+  vexcel: Pick<VexcelAdapter, "getAerial">;
   missions?: readonly Mission[];
   /** Set by `derive_security_profile`. */
   derivation?: SecurityDerivation;

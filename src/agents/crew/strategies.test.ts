@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { ScriptedChatModel } from "@/adapters/llm";
 import { LevelManifest, type Strategy } from "@/domain";
+import type { Fallback } from "@/lib/fallback";
 import cached from "../../../data/levels/F1.romaine-1974.json";
 import { POST } from "../../app/api/crew/strategies/route";
 import {
@@ -53,7 +54,10 @@ beforeEach(() => {
   vi.stubEnv("HEIST_MODE", "fake");
   vi.stubEnv("LLM_MODE", "fake");
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 describe("clampStrategies", () => {
   it("keeps strategies that name only the manifest's entries and zones", () => {
@@ -105,6 +109,14 @@ describe("proposeStrategies", () => {
     });
   });
 
+  it("live, falls back to the recorded strategies when every strategy is illegal, keeping the drops", async () => {
+    const illegal = strategy({ id: "sewer", entryId: "sewer-grate" });
+    const answer = (await proposeStrategies("F1", { selection: liveSelection([illegal]) }))!;
+    expect(answer).toMatchObject({ recorded: true, reason: "error" });
+    expect(answer.strategies).toEqual((await loadStrategyRecording("F1"))!.strategies);
+    expect(answer.dropped).toEqual([{ strategyId: "sewer", reason: '"sewer-grate" is not an entry of this level' }]);
+  });
+
   it("live, falls back to the recorded strategies when the answer fails the schema", async () => {
     const broken = [{ ...strategy(), risk: "reckless" }] as unknown as Strategy[];
     const answer = (await proposeStrategies("F1", { selection: liveSelection(broken) }))!;
@@ -142,6 +154,26 @@ describe("POST /api/crew/strategies", () => {
     expect(body).toMatchObject({ recorded: true, dropped: [], setupId: "demo-setup" });
     expect(body.strategies).toHaveLength(5);
   });
+
+  it("live with a failing call: the recording answers with a fallback naming the model, for the chip", async () => {
+    vi.stubEnv("HEIST_MODE", "");
+    vi.stubEnv("LLM_MODE", "live");
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+    vi.stubEnv("LLM_TIMEOUT_MS", "300");
+    const fetch = vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    });
+    vi.stubGlobal("fetch", fetch);
+    const response = await post({ buildingId: "F1" });
+    expect(fetch).toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { strategies: unknown[]; recorded: boolean; reason?: string; fallback?: Fallback };
+    expect(body.recorded).toBe(true);
+    expect(["timeout", "error"]).toContain(body.reason);
+    expect(body.strategies).toHaveLength(5);
+    expect(body.fallback?.service).toBe("llm");
+    expect(body.fallback?.message).toMatch(/^The model didn't answer( in time)?, so a recorded reply stands in\.$/);
+  }, 20_000);
 
   it("takes only {buildingId, setupId?}: a floor, a bad id or a bad body is refused", async () => {
     expect((await post("not json")).status).toBe(400);

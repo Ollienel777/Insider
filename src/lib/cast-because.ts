@@ -4,14 +4,14 @@
 // The reason is a finalist's, the `Candidate` the Casting Director writes in
 // its shortlist (SPEC §4.1). `castingResult` is the one seam for that
 // shortlist: it reads the cached result where the Casting Director writes it
-// in fake mode (`data/casting/<missionId>.json`, SPEC §4.4). Until that agent
-// lands (#117) no shortlist exists, and the finalist is derived here instead,
-// deterministically, from the fixture inventory and the mission's casting
-// filters; the row says so. A shortlist that is unreadable, or that does not
-// list this building, falls back to the derived reason too: the dossier never
-// breaks on it. Once the Casting Director's reader is on main (PR 141,
-// `readCachedCasting` in src/agents/casting/cache.ts), `castingResult` becomes
-// a call to it, and nothing else here changes.
+// in fake mode (`data/casting/<missionId>.json`, SPEC §4.4). Every mission in
+// the library has a committed shortlist there, so the row normally carries
+// the agent's own reason (`source: "shortlist"`). When no shortlist is cached
+// for the mission, or it is unreadable, or it does not list this building,
+// the finalist is derived here instead, deterministically, from the fixture
+// inventory and the mission's casting filters, and the row says so: the
+// dossier never breaks on it. `castingResult` reads the file itself; it is
+// not yet a call to `readCachedCasting` in src/agents/casting/cache.ts.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -34,7 +34,7 @@ export interface CastFinalist {
   source: "shortlist" | "derived";
 }
 
-/** The cached shortlist for a mission, or null when none is cached. The seam for #117. */
+/** The cached shortlist for a mission, or null when none is cached. The seam for #24. */
 export async function castingResult(missionId: string, dir: string = SHORTLIST_DIR): Promise<CastingResult | null> {
   if (!/^[\w-]+$/.test(missionId)) return null;
   try {

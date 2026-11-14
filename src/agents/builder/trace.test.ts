@@ -96,19 +96,19 @@ describe("the recorder's middleware on live data", () => {
     await middleware.wrapToolCall(brief("data-analyst"), () => Promise.resolve("Tower B9 is analog"));
     await middleware.wrapToolCall(brief("made-up"), () => Promise.reject(new Error("Tower B9 refused")));
     const trace = recorder.toTrace("B9");
-    expect(trace.events.map((e) => e.label)).toEqual(["Run data-analyst", "Run a subagent"]);
+    expect(trace.events.map((e) => e.label)).toEqual(["Run data-analyst", "Run an unknown subagent"]);
     expect(JSON.stringify(trace)).not.toMatch(/Tower|1961/);
   });
 });
 
 describe("the recorder's middleware on a failed task (R1-M1)", () => {
   /** Runs one `task` call through the middleware, answered by `handler`. */
-  async function task(handler: () => Promise<unknown>) {
+  async function task(handler: () => Promise<unknown>, subagent_type = "game-master") {
     const recorder = new TraceRecorder({ now: () => 0 });
     const middleware = recorder.middleware("level-builder") as unknown as {
       wrapToolCall: (request: unknown, handler: () => Promise<unknown>) => Promise<unknown>;
     };
-    const toolCall = { name: "task", args: { subagent_type: "game-master", description: "Pick it" }, id: "t1" };
+    const toolCall = { name: "task", args: { subagent_type, description: "Pick it" }, id: "t1" };
     const result = await middleware.wrapToolCall({ toolCall }, handler);
     return { event: recorder.toTrace("F1").events[0], result };
   }
@@ -117,6 +117,15 @@ describe("the recorder's middleware on a failed task (R1-M1)", () => {
     const { event, result } = await task(() => Promise.reject(new Error("model gave up")));
     expect(event).toMatchObject({ kind: "subagent", agent: "game-master", status: "failed", failure: "thrown" });
     expect(event.output).toBe("Error: the game-master subagent's run failed: model gave up");
+    expect(ToolMessage.isInstance(result) && result.status).toBe("error");
+  });
+
+  it("records a task naming a subagent the builder lacks as an unknown subagent, not a failed run (#72)", async () => {
+    const { event, result } = await task(() => Promise.reject(new Error("Invalid subagent type: made-up")), "made-up");
+    expect(event).toMatchObject({ kind: "subagent", agent: "level-builder", status: "failed", failure: "unknown" });
+    expect(event.output).toBe(
+      'Error: unknown subagent "made-up"; the builder has data-analyst, game-master, general-purpose: Invalid subagent type: made-up',
+    );
     expect(ToolMessage.isInstance(result) && result.status).toBe("error");
   });
 
