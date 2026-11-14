@@ -1,0 +1,278 @@
+{
+  "buildingId": "F2",
+  "missionId": "sunset-1986",
+  "securityProfile": {
+    "era": "card",
+    "guardCount": 3,
+    "patrolTempo": 1,
+    "cameraKind": "ptz",
+    "cameraCount": 3,
+    "lockKind": "magstripe"
+  },
+  "zones": [
+    {
+      "id": "quiet-4125",
+      "name": "Suite 4125 (vacant)",
+      "role": "quiet",
+      "rule": "Available suite: dark, unpatrolled, sound carries 1 node further",
+      "provenance": [
+        {
+          "elementRole": "zone:quiet-4125",
+          "layer": "costar",
+          "field": "availableSpace",
+          "value": "suite 4125, 11,254 sf",
+          "rule": "Suite 4125 on floor 41 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+        }
+      ]
+    },
+    {
+      "id": "crowded-41",
+      "name": "Occupied floor 41",
+      "role": "crowded",
+      "rule": "Occupied space: night cleaners raise Suspicious if they see you",
+      "provenance": [
+        {
+          "elementRole": "zone:crowded-41",
+          "layer": "costar",
+          "field": "typicalFloorSf",
+          "value": 22940,
+          "rule": "A 22,940 sf floor with 11,254 sf available leaves 11,686 sf occupied → crowded zone: night cleaners raise Suspicious if they see you"
+        }
+      ]
+    },
+    {
+      "id": "secure",
+      "name": "Secure room",
+      "role": "secure",
+      "rule": "Card and coax era: magstripe reader door",
+      "provenance": [
+        {
+          "elementRole": "zone:secure",
+          "layer": "costar",
+          "field": "yearBuilt",
+          "value": 1989,
+          "rule": "Built 1989 (1980–1999) → Card and coax era: the secure room has a magstripe reader door"
+        }
+      ]
+    },
+    {
+      "id": "objective",
+      "name": "Safe-deposit vault",
+      "role": "objective",
+      "rule": "The boxes are here: open the vault door, take them, then reach an exit",
+      "provenance": [
+        {
+          "elementRole": "zone:objective",
+          "layer": "fiction",
+          "field": "mission.objective",
+          "value": "Open the vault room from below and take the safe-deposit boxes",
+          "rule": "Mission \"Hole in the Ground\" (game fiction): open the vault room from below and take the safe-deposit boxes"
+        }
+      ]
+    }
+  ],
+  "entries": [
+    {
+      "id": "dock-W",
+      "kind": "dock",
+      "label": "Loading dock"
+    },
+    {
+      "id": "roof",
+      "kind": "roof",
+      "label": "Helipad"
+    },
+    {
+      "id": "lobby-E",
+      "kind": "lobby",
+      "label": "Figueroa lobby"
+    },
+    {
+      "id": "garage-N",
+      "kind": "garage",
+      "label": "Garage entrance"
+    },
+    {
+      "id": "exit-S",
+      "kind": "service",
+      "label": "Plaza stair exit"
+    }
+  ],
+  "mission": {
+    "id": "sunset-1986",
+    "city": "LA",
+    "type": "heist",
+    "title": "Hole in the Ground",
+    "inspiredBy": {
+      "event": "The First Interstate Bank tunnel burglary, Sunset Blvd",
+      "date": "1986",
+      "sourceUrl": "https://lareviewofbooks.org/short-takes/l-four-locations-bank-robbery-capital-world"
+    },
+    "objective": "Open the vault room from below and take the safe-deposit boxes",
+    "exitCondition": "Leave by any of the five ways out (garage, plaza stair, helipad, Figueroa lobby, loading dock) with the boxes before the alarm reaches Lockdown",
+    "briefing": "Figueroa Exchange, Financial District, a 1989 tower with card-era security: magstripe readers on the locked doors, three PTZ cameras on a three-turn cycle, three guards on tight rounds. Floor 41 is the quiet night: suite 4125 is vacant and dark, and the safe-deposit vault sits at the east end of the floor. Come up from below on the freight lift from the loading dock, work the vault door, take the boxes, and leave down the garage shuttle lift, by the plaza stair or up to the helipad. Nobody gets hurt and nothing leaves but the boxes. The security here is game fiction, drawn from the building's class and era."
+  },
+  "provenance": [
+    {
+      "elementRole": "profile:era",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 1989,
+      "rule": "Built 1989 (1980–1999) → Card and coax era"
+    },
+    {
+      "elementRole": "profile:lockKind",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 1989,
+      "rule": "Built 1989 (1980–1999) → Card and coax era: magstripe readers: needs a cloned card, found in the level"
+    },
+    {
+      "elementRole": "profile:cameraKind",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 1989,
+      "rule": "Built 1989 (1980–1999) → Card and coax era: PTZ cameras on a 3-turn cycle"
+    },
+    {
+      "elementRole": "profile:cameraCount",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 1989,
+      "rule": "Built 1989 (1980–1999) → Card and coax era: 3 cameras on the staged floor"
+    },
+    {
+      "elementRole": "camera:C1",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 1989,
+      "rule": "Built 1989 (1980–1999) → Card and coax era: camera 1 of 3, PTZ cameras on a 3-turn cycle"
+    },
+    {
+      "elementRole": "camera:C2",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 1989,
+      "rule": "Built 1989 (1980–1999) → Card and coax era: camera 2 of 3, PTZ cameras on a 3-turn cycle"
+    },
+    {
+      "elementRole": "camera:C3",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 1989,
+      "rule": "Built 1989 (1980–1999) → Card and coax era: camera 3 of 3, PTZ cameras on a 3-turn cycle"
+    },
+    {
+      "elementRole": "profile:guardCount",
+      "layer": "costar",
+      "field": "buildingClass",
+      "value": "B",
+      "rule": "Class B → 3 guards"
+    },
+    {
+      "elementRole": "profile:patrolTempo",
+      "layer": "costar",
+      "field": "buildingClass",
+      "value": "B",
+      "rule": "Class B → tight rounds, one hop a turn"
+    },
+    {
+      "elementRole": "guard:G1",
+      "layer": "costar",
+      "field": "buildingClass",
+      "value": "B",
+      "rule": "Class B → 3 guards; the 1st guard comes from Class B"
+    },
+    {
+      "elementRole": "guard:G2",
+      "layer": "costar",
+      "field": "buildingClass",
+      "value": "B",
+      "rule": "Class B → 3 guards; the 2nd guard comes from Class B"
+    },
+    {
+      "elementRole": "guard:G3",
+      "layer": "costar",
+      "field": "buildingClass",
+      "value": "B",
+      "rule": "Class B → 3 guards; the 3rd guard comes from Class B"
+    },
+    {
+      "elementRole": "level:stagingFloor",
+      "layer": "costar",
+      "field": "availableSpace",
+      "value": "floor 41: 11,254 sf in 1 suites",
+      "rule": "Floor 41 has the most available area, so it is the quietest night: the level is staged there"
+    },
+    {
+      "elementRole": "zone:quiet-4125",
+      "layer": "costar",
+      "field": "availableSpace",
+      "value": "suite 4125, 11,254 sf",
+      "rule": "Suite 4125 on floor 41 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+    },
+    {
+      "elementRole": "zone:crowded-41",
+      "layer": "costar",
+      "field": "typicalFloorSf",
+      "value": 22940,
+      "rule": "A 22,940 sf floor with 11,254 sf available leaves 11,686 sf occupied → crowded zone: night cleaners raise Suspicious if they see you"
+    },
+    {
+      "elementRole": "zone:secure",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 1989,
+      "rule": "Built 1989 (1980–1999) → Card and coax era: the secure room has a magstripe reader door"
+    },
+    {
+      "elementRole": "entry:dock-W",
+      "layer": "vexcel",
+      "field": "entries.kind",
+      "value": "dock",
+      "rule": "The aerial tags \"Loading dock\" (dock): a loading dock is always offered as a way in and out"
+    },
+    {
+      "elementRole": "entry:roof",
+      "layer": "vexcel",
+      "field": "entries.kind",
+      "value": "roof",
+      "rule": "The aerial tags \"Helipad\" (roof): the roof is always offered as a way in and out"
+    },
+    {
+      "elementRole": "entry:lobby-E",
+      "layer": "vexcel",
+      "field": "entries.kind",
+      "value": "lobby",
+      "rule": "The aerial tags \"Figueroa lobby\" (lobby): the lobby is a way in, and it carries a desk guard from the guard force"
+    },
+    {
+      "elementRole": "entry:garage-N",
+      "layer": "vexcel",
+      "field": "entries.kind",
+      "value": "garage",
+      "rule": "The aerial tags \"Garage entrance\" (garage): a garage is a way in and out"
+    },
+    {
+      "elementRole": "entry:exit-S",
+      "layer": "vexcel",
+      "field": "entries.kind",
+      "value": "service",
+      "rule": "The aerial tags \"Plaza stair exit\" (service): a service door is a way in and out"
+    },
+    {
+      "elementRole": "zone:objective",
+      "layer": "fiction",
+      "field": "mission.objective",
+      "value": "Open the vault room from below and take the safe-deposit boxes",
+      "rule": "Mission \"Hole in the Ground\" (game fiction): open the vault room from below and take the safe-deposit boxes"
+    },
+    {
+      "elementRole": "mission:sunset-1986",
+      "layer": "fiction",
+      "field": "mission.inspiredBy",
+      "value": "The First Interstate Bank tunnel burglary, Sunset Blvd, 1986",
+      "rule": "The mission the player chose; inspired by The First Interstate Bank tunnel burglary, Sunset Blvd (1986), staged in a comparable building"
+    }
+  ]
+}

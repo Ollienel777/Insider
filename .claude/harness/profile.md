@@ -19,7 +19,7 @@ cloud wip limit: 6
 cloud repo cap: 6
 commit author: Nelson Kang <155183974+Ollienel777@users.noreply.github.com>
 cloud model: claude-opus-5-5
-round cap: 7
+round cap: 12                # Nelson, 2026-11-14: raised from 7 so the review ceiling never parks the casting MVP; "Review rounds" below keeps 7 for the rest
 settle rounds: 1
 mediums block: no
 areas: labels
@@ -73,6 +73,10 @@ worktree only for the rehearser and an M2 implementer.
   most it holds; a gate that runs out of memory fails for that reason, not the
   code's.
 
+## Review rounds (Nelson, 2026-11-14)
+
+The ceiling is 12 rounds only for PRs that close a casting ticket (SPEC §12, C1–C6: #23–#27) or an Owner Mode ticket (SPEC §13, O1–O5: #28–#31, #33). Every other PR keeps a ceiling of 7: when `harness pr` routes one with 7 or more rounds this run to another round or a fixer, apply `unsettled` with `ran out of rounds` (the ceiling, 7) instead, as the CLI would have at 7.
+
 ## Skein (insider, Nelson via the Skein brain, 2026-11-14)
 
-At the end of every lap, call the skein MCP server's `report_status` with orchestrator "harness insider (clipfarm-1)", interval_seconds 300, repo "Ollienel777/heist-anywhere", a one-line note, the whole working_on list (every card, PR or job in flight, with a short note) and the whole waiting_on list (each PR waiting on a merge, conflict, decision or setup; who is the owner the record names, else "@ollienel777"). Each report replaces the last, so send the full state every time, and send it when idle too. This feeds the In flight page at insider.skeinai.ca.
+At the end of every lap, call the skein MCP server's `report_status` with orchestrator "harness insider (clipfarm-1)", interval_seconds 300, repo "Ollienel777/Insider", a one-line note, the whole working_on list (every card, PR or job in flight, with a short note) and the whole waiting_on list (each PR waiting on a merge, conflict, decision or setup; who is the owner the record names, else "@ollienel777"). Each report replaces the last, so send the full state every time, and send it when idle too. This feeds the In flight page at insider.skeinai.ca.

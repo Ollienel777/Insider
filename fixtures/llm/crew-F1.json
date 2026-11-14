@@ -1,6 +1,6 @@
 {
   "buildingId": "F1",
-  "note": "Recorded crew replies for Halvorsen Tower, keyword-routed by src/agents/crew/recorded.ts. The first reply whose keyword set all occur in the order answers; the last, with no keywords, is the default. Zone ids are the cached manifest's (data/levels/F1.json).",
+  "note": "Recorded crew replies for Halvorsen Tower, keyword-routed by src/agents/crew/recorded.ts. The first reply whose keyword set all occur in the order answers; the last, with no keywords, is the default. Zone ids are the cached manifest's (data/levels/F1.romaine-1974.json; these replies are kept per building, so any mission on F1 reuses them).",
   "replies": [
     {
       "id": "dock-wait",
@@ -21,11 +21,12 @@
       "when": [["roof"]],
       "plan": {
         "steps": [
-          { "zoneId": "roof", "action": "Down the east stair from the roof hatch" },
-          { "zoneId": "objective", "action": "Along the main corridor and through office 2210, pick the records room door and take the files" },
-          { "zoneId": "roof", "action": "Back up to the roof" }
+          { "zoneId": "dock-N", "action": "Up from the loading dock on the freight lift" },
+          { "zoneId": "dock-N", "action": "Wait one turn at the freight lift" },
+          { "zoneId": "objective", "action": "Down the dock corridor, pick the records room door and take the files" },
+          { "zoneId": "roof", "action": "Out by the east stair to the roof hatch" }
         ],
-        "pushback": "The roof is the long way round. The main corridor between the east stair and the records room is where the rounds walk. The dock is shorter and only a camera watches it.",
+        "pushback": "The run starts at the dock, so the roof hatch is your way out, not in. And it's the long way round with the files: through office 2210 and along the main corridor to the east stair, and G2's round sees you in 2210.",
         "confidence": 0.4
       }
     },
@@ -34,11 +35,11 @@
       "when": [["lobby"]],
       "plan": {
         "steps": [
-          { "zoneId": "lobby-S", "action": "In through the main lobby" },
+          { "zoneId": "dock-N", "action": "Up from the loading dock on the freight lift" },
           { "zoneId": "objective", "action": "Pick the records room door and take the files" },
-          { "zoneId": "lobby-S", "action": "Out through the lobby" }
+          { "zoneId": "lobby-S", "action": "Out through the main lobby" }
         ],
-        "pushback": "The lobby has a desk guard all night. If you go that way, you walk past them twice.",
+        "pushback": "The run starts at the dock, so the lobby isn't a way in from here, and I don't know that its lifts stop on 22 at night. On the way in, camera C2 covers the dock corridor every other turn.",
         "confidence": 0.3
       }
     },
@@ -47,11 +48,11 @@
       "when": [["garage"]],
       "plan": {
         "steps": [
-          { "zoneId": "garage-E", "action": "Up the garage ramp" },
+          { "zoneId": "dock-N", "action": "Up from the loading dock on the freight lift" },
           { "zoneId": "objective", "action": "Pick the records room door and take the files" },
-          { "zoneId": "garage-E", "action": "Back down the ramp" }
+          { "zoneId": "garage-E", "action": "Out down the garage ramp" }
         ],
-        "pushback": "The garage ramp comes up on the east side, and I can't promise it reaches floor 22.",
+        "pushback": "The run starts at the dock, so the garage ramp isn't a way in from here, and I can't promise it reaches floor 22. On the way in, camera C2 covers the dock corridor every other turn.",
         "confidence": 0.35
       }
     },
@@ -65,7 +66,7 @@
           { "zoneId": "objective", "action": "Pick the records room door and take the files" },
           { "zoneId": "dock-N", "action": "Back out the way you came" }
         ],
-        "pushback": "Office 2210 is vacant and dark, but sound carries further in an empty room. Don't pick a lock in there.",
+        "pushback": "Office 2210 is vacant and dark, but sound carries further in an empty room. Don't pick a lock in there. And camera C2 covers the dock corridor on the way to it every other turn: wait one turn at the freight lift first.",
         "confidence": 0.5
       }
     },

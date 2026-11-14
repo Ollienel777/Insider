@@ -22,7 +22,18 @@ export default defineConfig({
   retries: 0,
   forbidOnly: !!process.env.CI,
   reporter: [["list"]],
-  use: { baseURL, trace: "retain-on-failure" },
+  use: {
+    baseURL,
+    trace: "retain-on-failure",
+    // Playwright gives a click, fill or read no limit of its own, and a goto
+    // none either, so a hung one ran until its test's timeout: 90 s on the
+    // demo path (#85). An action on a ready page takes well under a second,
+    // and a few seconds on a loaded VM; a page this server renders loads in
+    // under 2 s there. 10 s and 15 s fail a hung one on its own line, long
+    // before any test's budget. Outcome waits keep their own timeouts.
+    actionTimeout: 10_000,
+    navigationTimeout: 15_000,
+  },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: `npx next start --hostname 127.0.0.1 --port ${port}`,

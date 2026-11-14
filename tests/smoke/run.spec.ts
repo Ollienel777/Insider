@@ -26,6 +26,52 @@ async function pressFor(page: Page, nodeId: string) {
 const guardNodes = (page: Page) =>
   page.getByTestId("guard-piece").evaluateAll((els) => els.map((el) => el.getAttribute("data-node")));
 
+/** A hop as it started: the element's test id, `data-id` and `data-why-target`, and `duration+delay` in ms. */
+interface Hop {
+  testid: string | null;
+  id: string | null;
+  why: string | null;
+  timing: string;
+}
+
+/**
+ * Records every hop as it starts, from before the page loads. A hop is a Web
+ * Animation the board starts in the render that moves a piece
+ * (`src/components/run/hop.ts`), the same render that sets the board's
+ * `data-turn`, so once the turn changes the record holds that turn's hops.
+ * Reading `getAnimations()` after the key instead raced the hops: on a loaded
+ * machine a half-second hop could be over before the read ran (#84).
+ */
+async function recordHops(page: Page) {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __hops: Hop[] };
+    w.__hops = [];
+    const animate = Element.prototype.animate;
+    Element.prototype.animate = function (this: Element, keyframes, options) {
+      if (typeof options === "object") {
+        w.__hops.push({
+          testid: this.getAttribute("data-testid"),
+          id: this.getAttribute("data-id"),
+          why: this.getAttribute("data-why-target"),
+          timing: `${options.duration}+${options.delay ?? 0}`,
+        });
+      }
+      return animate.call(this, keyframes, options);
+    };
+  });
+}
+
+/** The hops started since the last call. */
+const takeHops = (page: Page) =>
+  page.evaluate(() => {
+    const w = window as unknown as { __hops: Hop[] };
+    return w.__hops.splice(0);
+  });
+
+/** Waits for every hop on the board to land. */
+const landed = (page: Page) =>
+  board(page).evaluate((svg) => Promise.all(svg.getAnimations({ subtree: true }).map((a) => a.finished.catch(() => null))).then(() => null));
+
 test("/b/F1/run renders F1's floor with 4 guards and its cameras, filling the board at readable size", async ({
   page,
 }) => {
@@ -53,25 +99,26 @@ test("/b/F1/run renders F1's floor with 4 guards and its cameras, filling the bo
   await expect(page.getByTestId("objective")).toHaveText("Take the files from the records room");
   await expect(page.locator('[data-testid="plan"] li[data-state="next"]')).toHaveText(/Pick the records room door/);
   await expect(page.getByRole("link", { name: "See the debrief" })).toHaveCount(0);
+  // The Inside view is for a live scan only: on fixtures there is no panel and no Showcase player.
+  await expect(page.getByTestId("inside-view")).toHaveCount(0);
+  await expect(page.locator('iframe[src*="matterport.com"]')).toHaveCount(0);
 });
 
 test("pressing a neighbour's number moves the player, and then the guards", async ({ page }) => {
+  await recordHops(page);
   await open(page);
   const before = await guardNodes(page);
   await expect(choice(page, "fl-lobby")).toHaveAttribute("data-key", "1");
 
+  await takeHops(page);
   await page.keyboard.press("1");
-  // The player's hop takes --t-base; each guard's hop takes --t-slow and waits for it. Read at once,
-  // while the hops run.
-  const hops = await board(page).evaluate((svg) => {
-    const timing = (el: Element) =>
-      el.getAnimations().map((a) => {
-        const t = a.effect!.getTiming();
-        return `${t.duration}+${t.delay}`;
-      });
-    const pieces = [...svg.querySelectorAll('[data-testid="player-piece"], [data-testid="guard-piece"]')];
-    return Object.fromEntries(pieces.map((el) => [el.getAttribute("data-id"), timing(el).join(" ")]));
-  });
+  // The player's hop takes --t-base; each guard's hop takes --t-slow and waits for it.
+  await expect(board(page)).toHaveAttribute("data-turn", "1");
+  const started = await takeHops(page);
+  const pawns = started.filter((h) => h.testid === "player-piece" || h.testid === "guard-piece");
+  const hops = Object.fromEntries(
+    ["You", "G1", "G2", "G3", "G4"].map((id) => [id, pawns.filter((h) => h.id === id).map((h) => h.timing).join(" ")]),
+  );
   expect(hops).toEqual({ You: "200+0", G1: "300+200", G2: "300+200", G3: "", G4: "" });
   await expect(player(page)).toHaveAttribute("data-node", "fl-lobby");
   await expect(page.getByTestId("turn")).toHaveText("1");
@@ -93,8 +140,9 @@ test("pressing a neighbour's number moves the player, and then the guards", asyn
 
 test("the cones show the nodes each camera and guard covers this turn", async ({ page }) => {
   await open(page);
-  await expect(page.locator('[data-testid="cone"]')).toHaveCount(6);
-  for (const id of ["C1", "C2", "G1", "G2", "G3", "G4"]) {
+  // The two cameras, the four guards and K1, the night cleaner in the occupied suites (#95).
+  await expect(page.locator('[data-testid="cone"]')).toHaveCount(7);
+  for (const id of ["C1", "C2", "G1", "G2", "G3", "G4", "K1"]) {
     await expect(page.locator(`[data-testid="cone"][data-watcher="${id}"]`)).toHaveCount(1);
   }
   // C2 sweeps the two halves of its cover: dc-mid on turn 0, dc-west on turn 1.
@@ -225,6 +273,11 @@ test("beats 4 to 5: the plan briefed on the Plan screen is the plan on the run",
 });
 
 test("the crew's quiet route plays by keys to a clean exit, then offers the debrief", async ({ page }) => {
+  // It plays the quiet route by keys, then opens the debrief: 1.0 s alone, 4.5 s
+  // with the gate pinned to one CPU, and up to 31 s in a full smoke run on the
+  // loaded 2-vCPU VM, against the 30 s default (#85). 60 s is about twice the
+  // worst seen; a broken step still fails on its own wait, not on this.
+  test.setTimeout(60_000);
   await open(page);
   const pick = async () => {
     const key = await page.locator('[data-testid="choice"][data-kind="pick"]').getAttribute("data-key");
@@ -250,10 +303,10 @@ test("the crew's quiet route plays by keys to a clean exit, then offers the debr
   await expect(page.getByTestId("run-outcome")).toHaveAttribute("data-status", "won");
   await expect(banner(page)).toHaveAttribute("data-state", "calm");
   await expect(page.getByTestId("choice")).toHaveCount(0);
-  const runLog = await page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1") ?? "null"));
+  const runLog = await page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1:romaine-1974") ?? "null"));
   expect(runLog.turns).toHaveLength(17);
   await page.getByRole("link", { name: "See the debrief" }).click();
-  await expect(page).toHaveURL(/\/b\/F1\/debrief$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/b\/F1\/debrief\?m=romaine-1974$/, { timeout: 15_000 });
 });
 
 test("Restart puts the run back at the start", async ({ page }) => {
@@ -273,38 +326,34 @@ test("Restart puts the run back at the start", async ({ page }) => {
 });
 
 test("every guard that moves hops, also when the board redraws its pieces in a new order (#68)", async ({ page }) => {
+  await recordHops(page);
   await open(page);
   // The quiet route: on it the player and the guards pass each other, so the board, which draws
   // its pieces back to front, puts some of them in a new place in the document.
   const route = ["fl-lobby", "w", "dc-west", "dc-mid", "dc-east", "rr-door", "rr-door", "rr-door", "rr-files"];
+  const pieces = () =>
+    board(page).evaluate((svg) =>
+      [...svg.querySelectorAll('[data-testid="guard-piece"], [data-testid="player-piece"]')].map((el) => `${el.getAttribute("data-id")}@${el.getAttribute("data-node")}`),
+    );
   let reordered = 0;
   for (const [i, step] of route.entries()) {
     const key = step === "w" ? "w" : (await choice(page, step).getAttribute("data-key"))!;
-    const before = await board(page).evaluate((svg) =>
-      [...svg.querySelectorAll('[data-testid="guard-piece"], [data-testid="player-piece"]')].map((el) => `${el.getAttribute("data-id")}@${el.getAttribute("data-node")}`),
-    );
+    const before = await pieces();
+    await takeHops(page);
     await page.keyboard.press(key);
-    // Read at once, while the hops run (a guard's hop is over 500 ms after the key).
-    const after = await board(page).evaluate((svg) => {
-      const hit = (id: string) => svg.querySelector(`[data-why-target="guard:${id}"]`)!;
-      return [...svg.querySelectorAll('[data-testid="guard-piece"], [data-testid="player-piece"]')].map((el) => {
-        const id = el.getAttribute("data-id")!;
-        return {
-          id,
-          at: `${id}@${el.getAttribute("data-node")}`,
-          hopping: el.getAnimations().length > 0,
-          hitHopping: id === "You" ? true : hit(id).getAnimations().length > 0,
-        };
-      });
-    });
     await expect(board(page)).toHaveAttribute("data-turn", String(i + 1));
+    const after = await pieces();
+    const started = await takeHops(page);
     const order = (list: string[]) => list.map((s) => s.split("@")[0]).join(" ");
-    if (order(before) !== order(after.map((a) => a.at))) reordered += 1;
-    for (const piece of after.filter((a) => !before.includes(a.at))) {
-      expect(piece.hopping, `${piece.id} hops on ${step}`).toBe(true);
-      expect(piece.hitHopping, `${piece.id}'s hit area hops on ${step}`).toBe(true);
+    if (order(before) !== order(after)) reordered += 1;
+    for (const at of after.filter((a) => !before.includes(a))) {
+      const id = at.split("@")[0];
+      const pawn = id === "You" ? "player-piece" : "guard-piece";
+      expect(started.some((h) => h.testid === pawn && h.id === id), `${id} hops on ${step}`).toBe(true);
+      if (id !== "You") expect(started.some((h) => h.why === `guard:${id}`), `${id}'s hit area hops on ${step}`).toBe(true);
     }
-    await page.waitForTimeout(550);
+    // The next key waits for this turn's hops to land, not for a fixed delay.
+    await landed(page);
   }
   // The route is a real test of the reorder only if the order changed on it.
   expect(reordered).toBeGreaterThan(0);
@@ -340,10 +389,10 @@ test("after Restart, the Chief's answer streams in from its first word, never sh
 });
 
 test("a building with no level yet says so and offers the map", async ({ page }) => {
-  await page.goto("/b/F2/run");
+  await page.goto("/b/F4/run");
   await expect(page.getByTestId("board-empty")).toContainText("This building's level isn't ready yet.");
   await page.getByRole("link", { name: "Back to the map" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/map$/);
 });
 
 test("S sprints: the numbers mark nodes two hops on, a click sprints there in one turn, and the board walks again (#121)", async ({ page }) => {
@@ -384,7 +433,7 @@ test("S sprints: the numbers mark nodes two hops on, a click sprints there in on
   await expect(page.getByTestId("run-status")).toHaveText("You sprint to the Dock Corridor.");
   await expect(hint).not.toHaveAttribute("data-on", /.*/);
   for (const c of await choices.all()) await expect(c).not.toHaveAttribute("data-kind", "sprint");
-  const kind = await page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1") ?? "null")?.turns?.at(-1)?.player?.kind);
+  const kind = await page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1:romaine-1974") ?? "null")?.turns?.at(-1)?.player?.kind);
   expect(kind).toBe("sprint");
 });
 

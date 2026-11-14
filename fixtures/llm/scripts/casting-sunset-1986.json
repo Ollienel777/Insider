@@ -1,0 +1,292 @@
+{
+  "id": "casting-sunset-1986",
+  "agents": [
+    {
+      "agent": "casting-director",
+      "systemIncludes": "You are the Casting Director for Heist Anywhere.",
+      "turns": [
+        {
+          "content": "Reading sunset-1986.",
+          "toolCalls": [
+            {
+              "name": "get_mission",
+              "args": {
+                "missionId": "sunset-1986"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Hole in the Ground: 6 casting filters. Planning.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  {
+                    "content": "Read mission sunset-1986 and its casting needs",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Narrow the inventory with the location scout, one filter at a time",
+                    "status": "in_progress"
+                  },
+                  {
+                    "content": "Pick three finalists and write the shortlist",
+                    "status": "pending"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "The scout runs the search; the city first, the rarest needs last.",
+          "toolCalls": [
+            {
+              "name": "task",
+              "args": {
+                "subagent_type": "location-scout",
+                "description": "Mission sunset-1986: apply its casting filters with search_inventory in this order: city, yearBuilt, propertyTypes, minVacantFloorSf, needsScan, needsEntry. Then check the candidates left with get_candidate and get_aerial_entries, and report the funnel's counts and each candidate's year, class, vacant floor and matching entries."
+              }
+            }
+          ]
+        },
+        {
+          "content": "The funnel ends with 3: F2, L14, L15.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  {
+                    "content": "Read mission sunset-1986 and its casting needs",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Narrow the inventory with the location scout, one filter at a time",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Pick three finalists and write the shortlist",
+                    "status": "in_progress"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "Writing the shortlist, best first.",
+          "toolCalls": [
+            {
+              "name": "write_shortlist",
+              "args": {
+                "missionId": "sunset-1986",
+                "finalists": [
+                  {
+                    "id": "F2",
+                    "reason": "A late-1980s Class B tower with a garage ramp and a service entry: the tunnel crew's era, and the most empty space on one floor."
+                  },
+                  {
+                    "id": "L14",
+                    "reason": "A 1984 office with floor 12 on the market and a garage: the right decade, a smaller target with one way in below ground."
+                  },
+                  {
+                    "id": "L15",
+                    "reason": "A 1982 retail galleria with its ground floor on the market and a service door: closest to the street-level bank the crew tunnelled into."
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "Shortlist written.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  {
+                    "content": "Read mission sunset-1986 and its casting needs",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Narrow the inventory with the location scout, one filter at a time",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Pick three finalists and write the shortlist",
+                    "status": "completed"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "Cast for sunset-1986: Figueroa Exchange (F2), Sepulveda Pacific Tower (L14), Larkspur Galleria (L15), best first."
+        }
+      ]
+    },
+    {
+      "agent": "location-scout",
+      "systemIncludes": "You are the location scout of the Casting Director.",
+      "turns": [
+        {
+          "content": "Reading sunset-1986's casting filters.",
+          "toolCalls": [
+            {
+              "name": "get_mission",
+              "args": {
+                "missionId": "sunset-1986"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: in LA.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "sunset-1986",
+                "filter": "city"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: built in the 1980s.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "sunset-1986",
+                "filter": "yearBuilt"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: office or retail.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "sunset-1986",
+                "filter": "propertyTypes"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: a floor with 10,000 SF or more on the market.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "sunset-1986",
+                "filter": "minVacantFloorSf"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: a Matterport scan.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "sunset-1986",
+                "filter": "needsScan"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: a garage or service entry on the aerial.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "sunset-1986",
+                "filter": "needsEntry"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Figueroa Exchange's record.",
+          "toolCalls": [
+            {
+              "name": "get_candidate",
+              "args": {
+                "id": "F2"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Figueroa Exchange's ways in.",
+          "toolCalls": [
+            {
+              "name": "get_aerial_entries",
+              "args": {
+                "id": "F2"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Sepulveda Pacific Tower's record.",
+          "toolCalls": [
+            {
+              "name": "get_candidate",
+              "args": {
+                "id": "L14"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Sepulveda Pacific Tower's ways in.",
+          "toolCalls": [
+            {
+              "name": "get_aerial_entries",
+              "args": {
+                "id": "L14"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Larkspur Galleria's record.",
+          "toolCalls": [
+            {
+              "name": "get_candidate",
+              "args": {
+                "id": "L15"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Larkspur Galleria's ways in.",
+          "toolCalls": [
+            {
+              "name": "get_aerial_entries",
+              "args": {
+                "id": "L15"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Funnel: 61 in the inventory -> 32 (in LA) -> 7 (built in the 1980s) -> 6 (office or retail) -> 5 (a floor with 10,000 SF or more on the market) -> 4 (a Matterport scan) -> 3 (a garage or service entry on the aerial). Left: F2 Figueroa Exchange: built 1989, Class B office, floor 41 has 11,254 SF on the market, scanned, garage and service entry; L14 Sepulveda Pacific Tower: built 1984, Class B office, floor 12 has 10,640 SF on the market, scanned, garage; L15 Larkspur Galleria: built 1982, Class B retail, floor 1 has 10,180 SF on the market, scanned, service entry."
+        }
+      ]
+    }
+  ]
+}

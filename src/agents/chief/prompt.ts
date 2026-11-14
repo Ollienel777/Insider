@@ -32,12 +32,24 @@ Zones (id: name):
 ${request.zones.map((z) => `- ${z.id}: ${z.name}`).join("\n")}`;
 }
 
+/** The earlier runs, as lines for the user prompt; empty without history. */
+function historyLines(request: ChiefRequest): string {
+  const h = request.history;
+  if (!h) return "";
+  const list = (items: { zoneId: string; count: number }[]) =>
+    items.length ? items.map((i) => `${i.zoneId} x${i.count}`).join(", ") : "none";
+  const posted = h.posted
+    ? `\n${h.posted.guardId} started this run posted ${h.posted.startZone ? `in ${h.posted.startZone}, ` : ""}near ${h.posted.zoneId}, because of it. Open your rationale by saying so, in one short sentence, naming where it stands.`
+    : "";
+  return `\nThe intruder's earlier runs here: ${h.runs}. Came in by: ${list(h.entries)}. Left by: ${list(h.exits)}. Seen in: ${list(h.detectedZones)}. Noisy turns per run: ${h.averageNoise}.${posted}`;
+}
+
 export function chiefUserPrompt(request: ChiefRequest): string {
   const t = request.transition;
   const cause = t.cause.id ? `${t.cause.kind} ${t.cause.id}` : t.cause.kind;
   return `Turn ${t.turn}: alarm ${t.from} -> ${t.to} (${cause}).
 Last known zone: ${request.lastKnownZone ?? "none"}.
-Guards: ${request.guards.map((g) => `${g.id} in ${g.zoneId} (${g.intent})`).join("; ")}.`;
+Guards: ${request.guards.map((g) => `${g.id} in ${g.zoneId} (${g.intent})`).join("; ")}.${historyLines(request)}`;
 }
 
 export function chiefMessages(manifest: LevelManifest, request: ChiefRequest) {

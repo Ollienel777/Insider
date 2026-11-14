@@ -1,0 +1,429 @@
+{
+  "missionId": "sunset-1986",
+  "funnel": [
+    {
+      "label": "61 buildings in the inventory",
+      "count": 61
+    },
+    {
+      "label": "in LA",
+      "count": 32
+    },
+    {
+      "label": "built in the 1980s",
+      "count": 7
+    },
+    {
+      "label": "office or retail",
+      "count": 6
+    },
+    {
+      "label": "a floor with 10,000 SF or more on the market",
+      "count": 5
+    },
+    {
+      "label": "a Matterport scan",
+      "count": 4
+    },
+    {
+      "label": "a garage or service entry on the aerial",
+      "count": 3
+    }
+  ],
+  "finalists": [
+    {
+      "id": "F2",
+      "name": "Figueroa Exchange",
+      "city": "LA",
+      "neighbourhood": "Financial District",
+      "lat": 34.05091,
+      "lng": -118.25864,
+      "yearBuilt": 1989,
+      "buildingClass": "B",
+      "propertyType": "office",
+      "stories": 52,
+      "layers": {
+        "costar": true,
+        "vexcel": true,
+        "matterport": true
+      },
+      "source": "fixture",
+      "vacantFloor": {
+        "floor": 41,
+        "sf": 11254,
+        "suites": [
+          "4125"
+        ]
+      },
+      "fit": [
+        {
+          "criterion": "in LA",
+          "value": "LA"
+        },
+        {
+          "criterion": "built in the 1980s",
+          "value": 1989
+        },
+        {
+          "criterion": "office or retail",
+          "value": "office"
+        },
+        {
+          "criterion": "a floor with 10,000 SF or more on the market",
+          "value": "floor 41, 11,254 SF"
+        },
+        {
+          "criterion": "a Matterport scan",
+          "value": true
+        },
+        {
+          "criterion": "a garage or service entry on the aerial",
+          "value": "garage, service"
+        }
+      ],
+      "reason": "A late-1980s Class B tower with a garage ramp and a service entry: the tunnel crew's era, and the most empty space on one floor."
+    },
+    {
+      "id": "L14",
+      "name": "Sepulveda Pacific Tower",
+      "city": "LA",
+      "neighbourhood": "Sherman Oaks",
+      "lat": 34.15581,
+      "lng": -118.46625,
+      "yearBuilt": 1984,
+      "buildingClass": "B",
+      "propertyType": "office",
+      "stories": 20,
+      "layers": {
+        "costar": true,
+        "vexcel": true,
+        "matterport": true
+      },
+      "source": "fixture",
+      "vacantFloor": {
+        "floor": 12,
+        "sf": 10640,
+        "suites": [
+          "1210",
+          "1220",
+          "1230"
+        ]
+      },
+      "fit": [
+        {
+          "criterion": "in LA",
+          "value": "LA"
+        },
+        {
+          "criterion": "built in the 1980s",
+          "value": 1984
+        },
+        {
+          "criterion": "office or retail",
+          "value": "office"
+        },
+        {
+          "criterion": "a floor with 10,000 SF or more on the market",
+          "value": "floor 12, 10,640 SF"
+        },
+        {
+          "criterion": "a Matterport scan",
+          "value": true
+        },
+        {
+          "criterion": "a garage or service entry on the aerial",
+          "value": "garage (inventory tag; no aerial loaded)"
+        }
+      ],
+      "reason": "A 1984 office with floor 12 on the market and a garage: the right decade, a smaller target with one way in below ground."
+    },
+    {
+      "id": "L15",
+      "name": "Larkspur Galleria",
+      "city": "LA",
+      "neighbourhood": "Hollywood",
+      "lat": 34.09872,
+      "lng": -118.32493,
+      "yearBuilt": 1982,
+      "buildingClass": "B",
+      "propertyType": "retail",
+      "stories": 3,
+      "layers": {
+        "costar": true,
+        "vexcel": true,
+        "matterport": true
+      },
+      "source": "fixture",
+      "vacantFloor": {
+        "floor": 1,
+        "sf": 10180,
+        "suites": [
+          "110",
+          "120"
+        ]
+      },
+      "fit": [
+        {
+          "criterion": "in LA",
+          "value": "LA"
+        },
+        {
+          "criterion": "built in the 1980s",
+          "value": 1982
+        },
+        {
+          "criterion": "office or retail",
+          "value": "retail"
+        },
+        {
+          "criterion": "a floor with 10,000 SF or more on the market",
+          "value": "floor 1, 10,180 SF"
+        },
+        {
+          "criterion": "a Matterport scan",
+          "value": true
+        },
+        {
+          "criterion": "a garage or service entry on the aerial",
+          "value": "service (inventory tag; no aerial loaded)"
+        }
+      ],
+      "reason": "A 1982 retail galleria with its ground floor on the market and a service door: closest to the street-level bank the crew tunnelled into."
+    }
+  ],
+  "trace": {
+    "recordedAt": "2026-11-14T14:45:38.172Z",
+    "model": "ScriptedChatModel (script casting-sunset-1986, no LLM)",
+    "liveData": false,
+    "subagents": [
+      "general-purpose",
+      "location-scout"
+    ],
+    "events": [
+      {
+        "atMs": 36,
+        "kind": "tool",
+        "agent": "casting-director",
+        "label": "get_mission",
+        "status": "completed",
+        "durationMs": 1,
+        "input": "{\"missionId\":\"sunset-1986\"}",
+        "output": "{\n  \"id\": \"sunset-1986\",\n  \"city\": \"LA\",\n  \"type\": \"heist\",\n  \"title\": \"Hole in the Ground\",\n  \"inspiredBy\": {\n    \"event\": \"The First Interstate Bank tunnel burglary, Sunset Blvd\",\n    \"date\": \"1986\",\n    \"sourceUrl\": \"https://lareviewofbooks.org/short-takes/l-four-locations-bank-robbery-capital-world\"\n  },\n  \"objective\": \"Open the vault room from below and take the safe-deposit boxes\",\n  \"exitCondition\": \"Leave by any of the five ways out (garage, plaza stair, helipad, Figueroa lobby, loading dock) with the boxes before the alarm reaches Lockdown\",\n  \"casting\": [\n    {\n      \"kind\": \"city\",\n      \"label\": \"in LA\",\n      \"city\": \"LA\"\n    },\n    {\n      \"kind\": \"yearBuilt\",\n      \"label\": \"built in the 1980s\",\n      \"yearBuilt\": {\n        \"min\": 1980,\n        \"max\": 1989\n      }\n    },\n    {\n      \"kind\": \"propertyTypes\",\n      \"label\": \"office or retail\",\n      \"propertyTypes\": [\n        \"office\",\n        \"retail\"\n      ]\n    },\n    {\n      \"kind\": \"minVacantFloorSf\",\n      \"label\": \"a floor with 10,000 SF or more on the market\",\n      \"minVacantFloorSf\": 10000\n    },\n    {\n      \"kind\": \"needsScan\",\n      \"label\": \"a Matterport scan\"\n    },\n    {\n      \"kind\": \"needsEntry\",\n      \"label\": \"a garage or service entry on the aerial\",\n      \"needsEntry\": [\n        \"garage\",\n        \"service\"\n      ]\n    }\n  ]\n}"
+      },
+      {
+        "atMs": 40,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Read mission sunset-1986 and its casting needs",
+        "status": "completed"
+      },
+      {
+        "atMs": 40,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Narrow the inventory with the location scout, one filter at a time",
+        "status": "in_progress"
+      },
+      {
+        "atMs": 40,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Pick three finalists and write the shortlist",
+        "status": "pending"
+      },
+      {
+        "atMs": 43,
+        "kind": "subagent",
+        "agent": "location-scout",
+        "label": "Mission sunset-1986: apply its casting filters with search_inventory in this order: city, yearBuilt, propertyTypes, minVacantFloorSf, needsScan, needsEntry. Then check the candidates left with get_candidate and get_aerial_entries, and report the funnel's counts and each candidate's year, class, vacant floor and matching entries.",
+        "status": "completed",
+        "durationMs": 32,
+        "input": "Mission sunset-1986: apply its casting filters with search_inventory in this order: city, yearBuilt, propertyTypes, minVacantFloorSf, needsScan, needsEntry. Then check the candidates left with get_candidate and get_aerial_entries, and report the funnel's counts and each candidate's year, class, vacant floor and matching entries.",
+        "output": "Funnel: 61 in the inventory -> 32 (in LA) -> 7 (built in the 1980s) -> 6 (office or retail) -> 5 (a floor with 10,000 SF or more on the market) -> 4 (a Matterport scan) -> 3 (a garage or service entry on the aerial). Left: F2 Figueroa Exchange: built 1989, Class B office, floor 41 has 11,254 SF on the market, scanned, garage and service entry; L14 Sepulveda Pacific Tower: built 1984, Class B office, floor 12 has 10,640 SF on the market, scanned, garage; L15 Larkspur Galleria: built 1982, Class B retail, floor 1 has 10,180 SF on the market, scanned, service entry."
+      },
+      {
+        "atMs": 48,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "get_mission",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"missionId\":\"sunset-1986\"}",
+        "output": "{\n  \"id\": \"sunset-1986\",\n  \"city\": \"LA\",\n  \"type\": \"heist\",\n  \"title\": \"Hole in the Ground\",\n  \"inspiredBy\": {\n    \"event\": \"The First Interstate Bank tunnel burglary, Sunset Blvd\",\n    \"date\": \"1986\",\n    \"sourceUrl\": \"https://lareviewofbooks.org/short-takes/l-four-locations-bank-robbery-capital-world\"\n  },\n  \"objective\": \"Open the vault room from below and take the safe-deposit boxes\",\n  \"exitCondition\": \"Leave by any of the five ways out (garage, plaza stair, helipad, Figueroa lobby, loading dock) with the boxes before the alarm reaches Lockdown\",\n  \"casting\": [\n    {\n      \"kind\": \"city\",\n      \"label\": \"in LA\",\n      \"city\": \"LA\"\n    },\n    {\n      \"kind\": \"yearBuilt\",\n      \"label\": \"built in the 1980s\",\n      \"yearBuilt\": {\n        \"min\": 1980,\n        \"max\": 1989\n      }\n    },\n    {\n      \"kind\": \"propertyTypes\",\n      \"label\": \"office or retail\",\n      \"propertyTypes\": [\n        \"office\",\n        \"retail\"\n      ]\n    },\n    {\n      \"kind\": \"minVacantFloorSf\",\n      \"label\": \"a floor with 10,000 SF or more on the market\",\n      \"minVacantFloorSf\": 10000\n    },\n    {\n      \"kind\": \"needsScan\",\n      \"label\": \"a Matterport scan\"\n    },\n    {\n      \"kind\": \"needsEntry\",\n      \"label\": \"a garage or service entry on the aerial\",\n      \"needsEntry\": [\n        \"garage\",\n        \"service\"\n      ]\n    }\n  ]\n}"
+      },
+      {
+        "atMs": 51,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "search_inventory",
+        "status": "completed",
+        "durationMs": 1,
+        "input": "{\"missionId\":\"sunset-1986\",\"filter\":\"city\"}",
+        "output": "{\n  \"applied\": \"in LA\",\n  \"left\": 32,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"L19\",\n      \"name\": \"Boyle Heights Distribution Center\",\n      \"yearBuilt\": 1983,\n      \"buildingClass\": \"C\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 32000\n      }\n    },\n    {\n      \"id\": \"L13\",\n      \"name\": \"Ninth Street Freight Terminal\",\n      \"yearBuilt\": 1970,\n      \"buildingClass\": \"C\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 24000\n      }\n    },\n    {\n      \"id\": \"F1\",\n      \"name\": \"Halvorsen Tower\",\n      \"yearBuilt\": 1974,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 22,\n        \"sf\": 23341\n      }\n    },\n    {\n      \"id\": \"L22\",\n      \"name\": \"Cole Street Tower\",\n      \"yearBuilt\": 2022,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 11,\n        \"sf\": 20100\n      }\n    },\n    {\n      \"id\": \"F3\",\n      \"name\": \"Meridian on Wilshire\",\n      \"yearBuilt\": 2017,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 24,\n        \"sf\": 18974\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"yearBuilt\",\n    \"propertyTypes\",\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
+      },
+      {
+        "atMs": 53,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "search_inventory",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"missionId\":\"sunset-1986\",\"filter\":\"yearBuilt\"}",
+        "output": "{\n  \"applied\": \"built in the 1980s\",\n  \"left\": 7,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    },\n    {\n      \"label\": \"built in the 1980s\",\n      \"count\": 7\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"L19\",\n      \"name\": \"Boyle Heights Distribution Center\",\n      \"yearBuilt\": 1983,\n      \"buildingClass\": \"C\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 32000\n      }\n    },\n    {\n      \"id\": \"L16\",\n      \"name\": \"Olympic Crest Tower\",\n      \"yearBuilt\": 1985,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 21,\n        \"sf\": 15300\n      }\n    },\n    {\n      \"id\": \"L17\",\n      \"name\": \"Ventura Court\",\n      \"yearBuilt\": 1981,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 8,\n        \"sf\": 12450\n      }\n    },\n    {\n      \"id\": \"F2\",\n      \"name\": \"Figueroa Exchange\",\n      \"yearBuilt\": 1989,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 41,\n        \"sf\": 11254\n      }\n    },\n    {\n      \"id\": \"L14\",\n      \"name\": \"Sepulveda Pacific Tower\",\n      \"yearBuilt\": 1984,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 12,\n        \"sf\": 10640\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"propertyTypes\",\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
+      },
+      {
+        "atMs": 55,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "search_inventory",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"missionId\":\"sunset-1986\",\"filter\":\"propertyTypes\"}",
+        "output": "{\n  \"applied\": \"office or retail\",\n  \"left\": 6,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    },\n    {\n      \"label\": \"built in the 1980s\",\n      \"count\": 7\n    },\n    {\n      \"label\": \"office or retail\",\n      \"count\": 6\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"L16\",\n      \"name\": \"Olympic Crest Tower\",\n      \"yearBuilt\": 1985,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 21,\n        \"sf\": 15300\n      }\n    },\n    {\n      \"id\": \"L17\",\n      \"name\": \"Ventura Court\",\n      \"yearBuilt\": 1981,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 8,\n        \"sf\": 12450\n      }\n    },\n    {\n      \"id\": \"F2\",\n      \"name\": \"Figueroa Exchange\",\n      \"yearBuilt\": 1989,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 41,\n        \"sf\": 11254\n      }\n    },\n    {\n      \"id\": \"L14\",\n      \"name\": \"Sepulveda Pacific Tower\",\n      \"yearBuilt\": 1984,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 12,\n        \"sf\": 10640\n      }\n    },\n    {\n      \"id\": \"L15\",\n      \"name\": \"Larkspur Galleria\",\n      \"yearBuilt\": 1982,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"retail\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 10180\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
+      },
+      {
+        "atMs": 57,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "search_inventory",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"missionId\":\"sunset-1986\",\"filter\":\"minVacantFloorSf\"}",
+        "output": "{\n  \"applied\": \"a floor with 10,000 SF or more on the market\",\n  \"left\": 5,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    },\n    {\n      \"label\": \"built in the 1980s\",\n      \"count\": 7\n    },\n    {\n      \"label\": \"office or retail\",\n      \"count\": 6\n    },\n    {\n      \"label\": \"a floor with 10,000 SF or more on the market\",\n      \"count\": 5\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"L16\",\n      \"name\": \"Olympic Crest Tower\",\n      \"yearBuilt\": 1985,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 21,\n        \"sf\": 15300\n      }\n    },\n    {\n      \"id\": \"L17\",\n      \"name\": \"Ventura Court\",\n      \"yearBuilt\": 1981,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 8,\n        \"sf\": 12450\n      }\n    },\n    {\n      \"id\": \"F2\",\n      \"name\": \"Figueroa Exchange\",\n      \"yearBuilt\": 1989,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 41,\n        \"sf\": 11254\n      }\n    },\n    {\n      \"id\": \"L14\",\n      \"name\": \"Sepulveda Pacific Tower\",\n      \"yearBuilt\": 1984,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 12,\n        \"sf\": 10640\n      }\n    },\n    {\n      \"id\": \"L15\",\n      \"name\": \"Larkspur Galleria\",\n      \"yearBuilt\": 1982,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"retail\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 10180\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
+      },
+      {
+        "atMs": 59,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "search_inventory",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"missionId\":\"sunset-1986\",\"filter\":\"needsScan\"}",
+        "output": "{\n  \"applied\": \"a Matterport scan\",\n  \"left\": 4,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    },\n    {\n      \"label\": \"built in the 1980s\",\n      \"count\": 7\n    },\n    {\n      \"label\": \"office or retail\",\n      \"count\": 6\n    },\n    {\n      \"label\": \"a floor with 10,000 SF or more on the market\",\n      \"count\": 5\n    },\n    {\n      \"label\": \"a Matterport scan\",\n      \"count\": 4\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"L16\",\n      \"name\": \"Olympic Crest Tower\",\n      \"yearBuilt\": 1985,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 21,\n        \"sf\": 15300\n      }\n    },\n    {\n      \"id\": \"F2\",\n      \"name\": \"Figueroa Exchange\",\n      \"yearBuilt\": 1989,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 41,\n        \"sf\": 11254\n      }\n    },\n    {\n      \"id\": \"L14\",\n      \"name\": \"Sepulveda Pacific Tower\",\n      \"yearBuilt\": 1984,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 12,\n        \"sf\": 10640\n      }\n    },\n    {\n      \"id\": \"L15\",\n      \"name\": \"Larkspur Galleria\",\n      \"yearBuilt\": 1982,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"retail\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 10180\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"needsEntry\"\n  ]\n}"
+      },
+      {
+        "atMs": 61,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "search_inventory",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"missionId\":\"sunset-1986\",\"filter\":\"needsEntry\"}",
+        "output": "{\n  \"applied\": \"a garage or service entry on the aerial\",\n  \"left\": 3,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    },\n    {\n      \"label\": \"built in the 1980s\",\n      \"count\": 7\n    },\n    {\n      \"label\": \"office or retail\",\n      \"count\": 6\n    },\n    {\n      \"label\": \"a floor with 10,000 SF or more on the market\",\n      \"count\": 5\n    },\n    {\n      \"label\": \"a Matterport scan\",\n      \"count\": 4\n    },\n    {\n      \"label\": \"a garage or service entry on the aerial\",\n      \"count\": 3\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"F2\",\n      \"name\": \"Figueroa Exchange\",\n      \"yearBuilt\": 1989,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 41,\n        \"sf\": 11254\n      }\n    },\n    {\n      \"id\": \"L14\",\n      \"name\": \"Sepulveda Pacific Tower\",\n      \"yearBuilt\": 1984,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 12,\n        \"sf\": 10640\n      }\n    },\n    {\n      \"id\": \"L15\",\n      \"name\": \"Larkspur Galleria\",\n      \"yearBuilt\": 1982,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"retail\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 10180\n      }\n    }\n  ],\n  \"filtersLeft\": []\n}"
+      },
+      {
+        "atMs": 63,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "get_candidate",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"id\":\"F2\"}",
+        "output": "{\n  \"id\": \"F2\",\n  \"name\": \"Figueroa Exchange\",\n  \"city\": \"LA\",\n  \"neighbourhood\": \"Financial District\",\n  \"yearBuilt\": 1989,\n  \"buildingClass\": \"B\",\n  \"propertyType\": \"office\",\n  \"stories\": 52,\n  \"rbaSf\": 1146512,\n  \"typicalFloorSf\": 22940,\n  \"vacantFloors\": [\n    {\n      \"floor\": 41,\n      \"sf\": 11254,\n      \"suites\": [\n        \"4125\"\n      ]\n    },\n    {\n      \"floor\": 28,\n      \"sf\": 7436,\n      \"suites\": [\n        \"2810\"\n      ]\n    },\n    {\n      \"floor\": 17,\n      \"sf\": 7197,\n      \"suites\": [\n        \"1720\",\n        \"1750\"\n      ]\n    },\n    {\n      \"floor\": 9,\n      \"sf\": 6283,\n      \"suites\": [\n        \"910\"\n      ]\n    },\n    {\n      \"floor\": 46,\n      \"sf\": 3127,\n      \"suites\": [\n        \"4630\"\n      ]\n    }\n  ],\n  \"scanned\": true,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
+      },
+      {
+        "atMs": 65,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "get_aerial_entries",
+        "status": "completed",
+        "durationMs": 1,
+        "input": "{\"id\":\"F2\"}",
+        "output": "{\n  \"source\": \"fixture\",\n  \"entries\": [\n    {\n      \"id\": \"lobby-E\",\n      \"kind\": \"lobby\",\n      \"label\": \"Figueroa lobby\",\n      \"view\": \"E\"\n    },\n    {\n      \"id\": \"dock-W\",\n      \"kind\": \"dock\",\n      \"label\": \"Loading dock\",\n      \"view\": \"W\"\n    },\n    {\n      \"id\": \"garage-N\",\n      \"kind\": \"garage\",\n      \"label\": \"Garage entrance\",\n      \"view\": \"N\"\n    },\n    {\n      \"id\": \"exit-S\",\n      \"kind\": \"service\",\n      \"label\": \"Plaza stair exit\",\n      \"view\": \"S\"\n    },\n    {\n      \"id\": \"roof\",\n      \"kind\": \"roof\",\n      \"label\": \"Helipad\",\n      \"view\": \"ortho\"\n    }\n  ]\n}"
+      },
+      {
+        "atMs": 68,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "get_candidate",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"id\":\"L14\"}",
+        "output": "{\n  \"id\": \"L14\",\n  \"name\": \"Sepulveda Pacific Tower\",\n  \"city\": \"LA\",\n  \"neighbourhood\": \"Sherman Oaks\",\n  \"yearBuilt\": 1984,\n  \"buildingClass\": \"B\",\n  \"propertyType\": \"office\",\n  \"stories\": 20,\n  \"rbaSf\": 351360,\n  \"typicalFloorSf\": 18300,\n  \"vacantFloors\": [\n    {\n      \"floor\": 12,\n      \"sf\": 10640,\n      \"suites\": [\n        \"1210\",\n        \"1220\",\n        \"1230\"\n      ]\n    },\n    {\n      \"floor\": 16,\n      \"sf\": 2600,\n      \"suites\": [\n        \"1610\"\n      ]\n    }\n  ],\n  \"scanned\": true,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
+      },
+      {
+        "atMs": 70,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "get_aerial_entries",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"id\":\"L14\"}",
+        "output": "{\n  \"source\": \"inventory\",\n  \"entryKinds\": [\n    \"garage\",\n    \"lobby\"\n  ],\n  \"note\": \"no aerial yet; the inventory's entry tags\"\n}"
+      },
+      {
+        "atMs": 71,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "get_candidate",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"id\":\"L15\"}",
+        "output": "{\n  \"id\": \"L15\",\n  \"name\": \"Larkspur Galleria\",\n  \"city\": \"LA\",\n  \"neighbourhood\": \"Hollywood\",\n  \"yearBuilt\": 1982,\n  \"buildingClass\": \"B\",\n  \"propertyType\": \"retail\",\n  \"stories\": 3,\n  \"rbaSf\": 65088,\n  \"typicalFloorSf\": 22600,\n  \"vacantFloors\": [\n    {\n      \"floor\": 1,\n      \"sf\": 10180,\n      \"suites\": [\n        \"110\",\n        \"120\"\n      ]\n    },\n    {\n      \"floor\": 2,\n      \"sf\": 4100,\n      \"suites\": [\n        \"210\"\n      ]\n    }\n  ],\n  \"scanned\": true,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
+      },
+      {
+        "atMs": 73,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "get_aerial_entries",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"id\":\"L15\"}",
+        "output": "{\n  \"source\": \"inventory\",\n  \"entryKinds\": [\n    \"service\",\n    \"lobby\"\n  ],\n  \"note\": \"no aerial yet; the inventory's entry tags\"\n}"
+      },
+      {
+        "atMs": 77,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Read mission sunset-1986 and its casting needs",
+        "status": "completed"
+      },
+      {
+        "atMs": 77,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Narrow the inventory with the location scout, one filter at a time",
+        "status": "completed"
+      },
+      {
+        "atMs": 77,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Pick three finalists and write the shortlist",
+        "status": "in_progress"
+      },
+      {
+        "atMs": 79,
+        "kind": "tool",
+        "agent": "casting-director",
+        "label": "write_shortlist",
+        "status": "completed",
+        "durationMs": 10,
+        "input": "{\"missionId\":\"sunset-1986\",\"finalists\":[{\"id\":\"F2\",\"reason\":\"A late-1980s Class B tower with a garage ramp and a service entry: the tunnel crew's era, and the most empty space on one floor.\"},{\"id\":\"L14\",\"reason\":\"A 1984 office with floor 12 on the market and a garage: the right decade, a smaller target with one way in below ground.\"},{\"id\":\"L15\",\"reason\":\"A 1982 retail galleria with its ground floor on the market and a service door: closest to the street-level bank the crew tunnelled into.\"}]}",
+        "output": "Shortlist written for sunset-1986: F2, L14, L15, from a funnel of 7 rows."
+      },
+      {
+        "atMs": 92,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Read mission sunset-1986 and its casting needs",
+        "status": "completed"
+      },
+      {
+        "atMs": 92,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Narrow the inventory with the location scout, one filter at a time",
+        "status": "completed"
+      },
+      {
+        "atMs": 92,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Pick three finalists and write the shortlist",
+        "status": "completed"
+      }
+    ]
+  },
+  "source": "fixture"
+}

@@ -18,6 +18,11 @@ export const RecordedTurn = z.object({
     to: AlarmState.optional(),
     lastKnownZone: z.string().min(1).optional(),
     causeId: z.string().min(1).optional(),
+    /**
+     * A second-run turn (#35): matches only when the request's history says a guard
+     * was posted near this zone. A turn without it matches with or without history.
+     */
+    postedAt: z.string().min(1).optional(),
   }),
   orders: ChiefOrders,
 });
@@ -52,7 +57,8 @@ export function matchTurn(recording: ChiefRecording, request: ChiefRequest): Rec
         (when.from === undefined || when.from === t.from) &&
         (when.to === undefined || when.to === t.to) &&
         (when.lastKnownZone === undefined || when.lastKnownZone === request.lastKnownZone) &&
-        (when.causeId === undefined || when.causeId === t.cause.id),
+        (when.causeId === undefined || when.causeId === t.cause.id) &&
+        (when.postedAt === undefined || when.postedAt === request.history?.posted?.zoneId),
     ) ?? null
   );
 }

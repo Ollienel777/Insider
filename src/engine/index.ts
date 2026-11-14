@@ -4,9 +4,22 @@
 // alarm with `setAlarm`, and read the log with `toRunLog` and the alarm's
 // transitions from `run.alarmEvents`.
 export { act, type Action, type ActResult } from "./actions";
+export {
+  AUTOPLAY_MAX_TURNS,
+  autoplay,
+  BATCH_SEEDS,
+  resolveStrategy,
+  runBatch,
+  varyLevel,
+  type Attempt,
+  type BatchInput,
+  type Resolution,
+  type ResolvedStrategy,
+} from "./autoplay";
+export { applyFix, rerunWithFix, summariseBatch, type AppliedFix, type Rerun } from "./debrief";
 export { HOLD, LEVELS, setAlarm, type AlarmCause, type AlarmEvent } from "./alarm";
 export { moveGuards, orderGuard, plannedPath, type OrderResult } from "./guards";
-export { toRunLog } from "./log";
+export { RUN_RULES, toRunLog } from "./log";
 export { hearingRange, withinHops } from "./noise";
 export { applyChiefOrders, type AppliedOrders, type DroppedOrder } from "./orders";
 export { neighbours, shortestPath } from "./path";
@@ -15,6 +28,7 @@ export {
   createRun,
   DEFAULT_HEARING,
   LevelError,
+  picksToOpen,
   zoneOf,
   zoneTarget,
   type Board,

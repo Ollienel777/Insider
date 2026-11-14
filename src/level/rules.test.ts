@@ -141,7 +141,7 @@ describe("all five fixture buildings", () => {
   // The expected level for each fixture, worked by hand from SPEC §4.3.
   const expected = {
     F1: { era: "analog", guardCount: 4, stagingFloor: 22, quiet: 9 },
-    F2: { era: "card", guardCount: 4, stagingFloor: 41, quiet: 1 },
+    F2: { era: "card", guardCount: 3, stagingFloor: 41, quiet: 1 },
     F3: { era: "smart", guardCount: 4, stagingFloor: 24, quiet: 1 },
     F4: { era: "card", guardCount: 4, stagingFloor: 19, quiet: 2 },
     F5: { era: "networked", guardCount: 3, stagingFloor: 4, quiet: 1 },
@@ -149,6 +149,16 @@ describe("all five fixture buildings", () => {
 
   it("covers exactly the fixture set", () => {
     expect(FIXTURE_BUILDINGS.map((b) => b.id).sort()).toEqual(Object.keys(expected));
+  });
+
+  it("gives no two fixture buildings the same security profile (#39), so each one plays differently", () => {
+    const profiles = FIXTURE_BUILDINGS.map((b) => [b.id, JSON.stringify(deriveSecurityProfile(b, aerial(b.id)).securityProfile)]);
+    const seen = new Map<string, string>();
+    for (const [id, profile] of profiles) {
+      expect(seen.get(profile), `${id} has the same profile as ${seen.get(profile)}`).toBeUndefined();
+      seen.set(profile, id);
+    }
+    expect(seen.size).toBe(5);
   });
 
   describe.each(Object.entries(expected))("%s", (id, want) => {
@@ -174,6 +184,7 @@ describe("all five fixture buildings", () => {
       d.zones.forEach((z) => Zone.parse(z));
       const manifest = {
         buildingId: b.id,
+        missionId: "test-mission",
         securityProfile: d.securityProfile,
         zones: d.zones,
         entries: d.entries,
@@ -186,7 +197,7 @@ describe("all five fixture buildings", () => {
           inspiredBy: null,
           objective: "Take the files",
           exitCondition: "Leave",
-          briefing: "A test briefing.",
+          briefing: "A test briefing. The security is game fiction.",
         },
       };
       expect(LevelManifest.safeParse(manifest).success).toBe(true);
