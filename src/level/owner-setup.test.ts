@@ -107,6 +107,37 @@ describe("validateOwnerSetup", () => {
       ["duplicate-id", "desk:el-south"],
     ]);
   });
+
+  it("names a cleaner on no node", () => {
+    expect(validateOwnerSetup(variant({ cleaners: [{ id: "K1", round: [] }] }), floor())).toEqual([
+      { code: "cleaner-off-floor", elementRole: "cleaner:K1", reason: "Cleaner K1 stands on no node" },
+    ]);
+  });
+
+  it("checks the cleaners, a camera's kept cover and the generated list", () => {
+    expect(codes(variant({ cleaners: [{ id: "K1", round: ["o-west", "o-north", "o-south"] }], generated: { cleaners: ["K1"] } }))).toEqual([]);
+    const setup = variant({
+      cleaners: [
+        { id: "K1", round: ["o-north", "mc-2"] },
+        { id: "K2", round: ["o-west", "ghost"] },
+        { id: "K2", round: ["o-west"] },
+      ],
+      cameras: [{ ...NIGHT.cameras[0], cover: ["dc-west", "attic"] }],
+      generated: { guards: ["G9"], doors: ["d-freight-lobby"] },
+    });
+    expect(validateOwnerSetup(setup, floor())).toEqual([
+      { code: "duplicate-id", elementRole: "cleaner:K2", reason: 'The setup has more than one cleaner "K2"' },
+      { code: "round-broken", elementRole: "cleaner:K1", reason: 'Cleaner K1\'s round is not a connected loop: "o-north" and "mc-2" are not neighbours' },
+      { code: "cleaner-off-floor", elementRole: "cleaner:K2", reason: 'Cleaner K2\'s round passes "ghost", which is not a node of this floor' },
+      { code: "camera-off-floor", elementRole: "camera:C1", reason: 'Camera C1 covers "attic", which is not a node of this floor' },
+      { code: "generated-unknown", elementRole: "generated:G9", reason: 'The setup lists guard "G9" as generated, but has no such guard' },
+      {
+        code: "generated-unknown",
+        elementRole: "generated:d-freight-lobby",
+        reason: 'The setup lists locked door "d-freight-lobby" as generated, but has no such locked door',
+      },
+    ]);
+  });
 });
 
 describe("applyOwnerSetup on F1", () => {

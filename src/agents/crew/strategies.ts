@@ -9,7 +9,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { readCachedLevel } from "@/agents/builder/cache";
+import { readLevel } from "@/agents/builder/live-levels";
 import { defaultMissionId } from "@/agents/builder/missions";
 import { structuredCall, type StructuredAnswer, type StructuredCallOptions } from "@/adapters/llm";
 import { Strategy, StrategySet, type DroppedStrategy, type LevelManifest } from "@/domain";
@@ -148,7 +148,7 @@ export async function proposeStrategies(
   options: StrategiesOptions = {},
 ): Promise<StrategiesAnswer | null> {
   const missionId = options.missionId ?? defaultMissionId(buildingId);
-  const cached = missionId ? await readCachedLevel(buildingId, missionId, options.levelsDir) : null;
+  const cached = missionId ? await readLevel(buildingId, missionId, options.levelsDir) : null;
   if (!cached) return null;
   const { manifest } = cached;
   const fake = async (): Promise<StrategySet> => {
