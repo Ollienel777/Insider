@@ -1,0 +1,42 @@
+name: gate
+
+# The same gate every worktree runs locally: `npm run gate` (SPEC §6).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A superseded PR run is cancelled; a push to main never is (each push has its
+# own sha, so its own group).
+concurrency:
+  group: gate-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # The runner already sets CI=true; it is stated here because the gate
+      # reads it to add `--with-deps` to `npx playwright install chromium`.
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # Installs with `npm ci` and `npx playwright install --with-deps chromium`,
+      # then lint, typecheck, test, build and smoke. The gate forces fake mode
+      # on every step, so no secrets or keys are needed.
+      - run: npm run gate
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
