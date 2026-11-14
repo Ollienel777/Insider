@@ -1,0 +1,185 @@
+{
+  "id": "builder-F3-night-desk",
+  "agents": [
+    {
+      "agent": "level-builder",
+      "systemIncludes": "You are the Level Builder for Heist Anywhere.",
+      "turns": [
+        {
+          "content": "Planning the level for F3.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  {
+                    "content": "Read F3's CoStar record and Vexcel aerial, and derive its security",
+                    "status": "in_progress"
+                  },
+                  {
+                    "content": "Write the briefing for mission night-desk",
+                    "status": "pending"
+                  },
+                  {
+                    "content": "Write the level manifest",
+                    "status": "pending"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "The analyst reads the building first; the mission depends on what it finds.",
+          "toolCalls": [
+            {
+              "name": "task",
+              "args": {
+                "subagent_type": "data-analyst",
+                "description": "Read building F3's CoStar record, available space and aerial entries, then derive its security profile with the rules table."
+              }
+            }
+          ]
+        },
+        {
+          "content": "Smart era, four guards, staged on floor 24. Handing that and the mission to the game master.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  {
+                    "content": "Read F3's CoStar record and Vexcel aerial, and derive its security",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Write the briefing for mission night-desk",
+                    "status": "in_progress"
+                  },
+                  {
+                    "content": "Write the level manifest",
+                    "status": "pending"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "task",
+              "args": {
+                "subagent_type": "game-master",
+                "description": "Building F3, Meridian on Wilshire, LA, built 2017. Smart era: badge plus PIN readers, IP cameras with analytics, 5 cameras. Class A: 4 guards on tight rounds. Staged on floor 24, quiet suite 2401. Entries: loading dock, roof deck, Wilshire lobby, garage ramp, bike room door. Mission night-desk: write its briefing."
+              }
+            }
+          ]
+        },
+        {
+          "content": "Writing the manifest with The Night Desk.",
+          "toolCalls": [
+            {
+              "name": "write_manifest",
+              "args": {
+                "buildingId": "F3",
+                "missionId": "night-desk",
+                "briefing": "Meridian on Wilshire, Westlake, a 2017 tower with smart-era security: badge plus PIN on the locked doors, five IP cameras with analytics in the halls, four guards on tight rounds. Floor 24 is all but empty: suite 2401 is vacant and dark, and the prototype lab opens off the north hall. Another crew is coming for the prototype tonight. Get there first: up the service lift from the loading dock, keep out of the halls, open the lab and carry the prototype out by the service lift or the east stair. Nobody gets hurt. The mission is fictional, and the security here is game fiction, drawn from the building's class and era.",
+                "objective": {
+                  "name": "Prototype lab",
+                  "rule": "The prototype is here: take it, then reach an exit before the other crew gets to it"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "content": "Manifest written.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  {
+                    "content": "Read F3's CoStar record and Vexcel aerial, and derive its security",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Write the briefing for mission night-desk",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Write the level manifest",
+                    "status": "completed"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "Level built for F3: smart era, 4 guards, staged on floor 24, mission night-desk, up from the dock."
+        }
+      ]
+    },
+    {
+      "agent": "data-analyst",
+      "systemIncludes": "You are the data analyst of the Level Builder.",
+      "turns": [
+        {
+          "content": "Reading the record, the vacancies and the aerial together.",
+          "toolCalls": [
+            {
+              "name": "get_building",
+              "args": {
+                "buildingId": "F3"
+              }
+            },
+            {
+              "name": "get_available_space",
+              "args": {
+                "buildingId": "F3"
+              }
+            },
+            {
+              "name": "get_aerial_entries",
+              "args": {
+                "buildingId": "F3"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Built 2017, Class A, 30 stories; floor 24 carries almost all the vacancy. Applying the rules table.",
+          "toolCalls": [
+            {
+              "name": "derive_security_profile",
+              "args": {
+                "buildingId": "F3"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Built 2017 (2015 or later): Smart era, badge plus PIN readers with door-held alarms, IP cameras with analytics, 5 cameras. Class A: 4 guards on tight rounds. Floor 24 has the most available area, suite 2401, so the level is staged there and that suite is a quiet zone; the small occupied rest of the floor is crowded. Entries from the aerial: loading dock and roof deck first, then the Wilshire lobby (with a desk guard), the garage ramp and the bike room door."
+        }
+      ]
+    },
+    {
+      "agent": "game-master",
+      "systemIncludes": "You are the game master of the Level Builder.",
+      "turns": [
+        {
+          "content": "Reading the mission.",
+          "toolCalls": [
+            {
+              "name": "get_mission",
+              "args": {
+                "missionId": "night-desk"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Mission: night-desk, The Night Desk, a fictional mission staged in a 2017 smart-era building. Objective zone: Prototype lab, take the prototype, then reach an exit before the other crew gets to it. Briefing: Meridian on Wilshire, Westlake, a 2017 tower with smart-era security: badge plus PIN on the locked doors, five IP cameras with analytics in the halls, four guards on tight rounds. Floor 24 is all but empty: suite 2401 is vacant and dark, and the prototype lab opens off the north hall. Another crew is coming for the prototype tonight. Get there first: up the service lift from the loading dock, keep out of the halls, open the lab and carry the prototype out by the service lift or the east stair. Nobody gets hurt. The mission is fictional, and the security here is game fiction, drawn from the building's class and era."
+        }
+      ]
+    }
+  ]
+}

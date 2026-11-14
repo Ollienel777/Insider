@@ -264,29 +264,42 @@ describe("the builder takes the chosen mission as input (#119)", () => {
 
   it("with no mission named, builds a building's own mission: the one that casts it first", () => {
     expect(defaultMissionId("F1")).toBe("romaine-1974");
+    expect(defaultMissionId("F2")).toBe("sunset-1986");
+    expect(defaultMissionId("F3")).toBe("night-desk");
     expect(defaultMissionId("F4")).toBe("paper-trail-2001");
     expect(defaultMissionId("L01")).toBeNull();
   });
 });
 
-describe("the cached F1 × romaine-1974 level in data/levels/", () => {
+// F1 is the demo building; F2 and F3 are the other LA pins a judge can pick (#39).
+describe.each([
+  ["F1", "romaine-1974"],
+  ["F2", "sunset-1986"],
+  ["F3", "night-desk"],
+])("the cached %s × %s level in data/levels/", (id, missionId) => {
   const read = (file: string): unknown => JSON.parse(readFileSync(path.join(root, "data", "levels", file), "utf8"));
 
-  it("is what the builder writes today (rerun npm run build:levels -- F1:romaine-1974 when this fails)", async () => {
-    const fresh = await buildLevel("F1", "romaine-1974");
-    expect(read("F1.romaine-1974.json")).toEqual(fresh.manifest);
-    expect(fresh.trace.model).toBe("scripted (builder-F1-romaine-1974), no LLM ran");
+  it(`is what the builder writes today (rerun npm run build:levels -- ${id}:${missionId} when this fails)`, async () => {
+    const fresh = await buildLevel(id, missionId);
+    expect(read(`${id}.${missionId}.json`)).toEqual(fresh.manifest);
+    expect(fresh.trace.model).toBe(`scripted (builder-${id}-${missionId}), no LLM ran`);
   });
 
   it("has a trace with a todo list, both subagents and five tool calls", () => {
-    const trace = BuildTrace.parse(read("F1.romaine-1974.trace.json"));
-    expect(trace.buildingId).toBe("F1");
+    const trace = BuildTrace.parse(read(`${id}.${missionId}.trace.json`));
+    expect(trace.buildingId).toBe(id);
     expect(trace.events.some((e) => e.kind === "todo")).toBe(true);
     expect(trace.events.filter((e) => e.kind === "subagent").map((e) => e.agent)).toEqual([
       "data-analyst",
       "game-master",
     ]);
     expect(trace.events.filter((e) => e.kind === "tool").length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("wrote the manifest on the first try: one write_manifest call, and it succeeded", () => {
+    const trace = BuildTrace.parse(read(`${id}.${missionId}.trace.json`));
+    const writes = trace.events.filter((e) => e.kind === "tool" && e.label === "write_manifest");
+    expect(writes.map((e) => e.status)).toEqual(["completed"]);
   });
 });
 

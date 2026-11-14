@@ -1,0 +1,295 @@
+{
+  "buildingId": "F3",
+  "missionId": "night-desk",
+  "securityProfile": {
+    "era": "smart",
+    "guardCount": 4,
+    "patrolTempo": 1,
+    "cameraKind": "ip-analytics",
+    "cameraCount": 5,
+    "lockKind": "badge-pin"
+  },
+  "zones": [
+    {
+      "id": "quiet-2401",
+      "name": "Suite 2401 (vacant)",
+      "role": "quiet",
+      "rule": "Available suite: dark, unpatrolled, sound carries 1 node further",
+      "provenance": [
+        {
+          "elementRole": "zone:quiet-2401",
+          "layer": "costar",
+          "field": "availableSpace",
+          "value": "suite 2401, 18,974 sf",
+          "rule": "Suite 2401 on floor 24 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+        }
+      ]
+    },
+    {
+      "id": "crowded-24",
+      "name": "Occupied floor 24",
+      "role": "crowded",
+      "rule": "Occupied space: night cleaners raise Suspicious if they see you",
+      "provenance": [
+        {
+          "elementRole": "zone:crowded-24",
+          "layer": "costar",
+          "field": "typicalFloorSf",
+          "value": 19615,
+          "rule": "A 19,615 sf floor with 18,974 sf available leaves 641 sf occupied → crowded zone: night cleaners raise Suspicious if they see you"
+        }
+      ]
+    },
+    {
+      "id": "secure",
+      "name": "Secure room",
+      "role": "secure",
+      "rule": "Smart era: badge plus PIN door with a door-held alarm",
+      "provenance": [
+        {
+          "elementRole": "zone:secure",
+          "layer": "costar",
+          "field": "yearBuilt",
+          "value": 2017,
+          "rule": "Built 2017 (2015 or later) → Smart era: the secure room has a badge plus PIN door with a door-held alarm"
+        }
+      ]
+    },
+    {
+      "id": "objective",
+      "name": "Prototype lab",
+      "role": "objective",
+      "rule": "The prototype is here: take it, then reach an exit before the other crew gets to it",
+      "provenance": [
+        {
+          "elementRole": "zone:objective",
+          "layer": "fiction",
+          "field": "mission.objective",
+          "value": "Keep the prototype in the lab until the morning shift arrives",
+          "rule": "Mission \"The Night Desk\" (game fiction): keep the prototype in the lab until the morning shift arrives"
+        }
+      ]
+    }
+  ],
+  "entries": [
+    {
+      "id": "dock-N",
+      "kind": "dock",
+      "label": "Loading dock"
+    },
+    {
+      "id": "roof",
+      "kind": "roof",
+      "label": "Roof deck"
+    },
+    {
+      "id": "lobby-S",
+      "kind": "lobby",
+      "label": "Wilshire lobby"
+    },
+    {
+      "id": "garage-W",
+      "kind": "garage",
+      "label": "Garage ramp"
+    },
+    {
+      "id": "bike-E",
+      "kind": "service",
+      "label": "Bike room door"
+    }
+  ],
+  "mission": {
+    "id": "night-desk",
+    "city": "LA",
+    "type": "prevent",
+    "title": "The Night Desk",
+    "inspiredBy": null,
+    "objective": "Keep the prototype in the lab until the morning shift arrives",
+    "exitCondition": "Hold the lab until dawn, or catch the crew before they reach an exit",
+    "briefing": "Meridian on Wilshire, Westlake, a 2017 tower with smart-era security: badge plus PIN on the locked doors, five IP cameras with analytics in the halls, four guards on tight rounds. Floor 24 is all but empty: suite 2401 is vacant and dark, and the prototype lab opens off the north hall. Another crew is coming for the prototype tonight. Get there first: up the service lift from the loading dock, keep out of the halls, open the lab and carry the prototype out by the service lift or the east stair. Nobody gets hurt. The mission is fictional, and the security here is game fiction, drawn from the building's class and era."
+  },
+  "provenance": [
+    {
+      "elementRole": "profile:era",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 2017,
+      "rule": "Built 2017 (2015 or later) → Smart era"
+    },
+    {
+      "elementRole": "profile:lockKind",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 2017,
+      "rule": "Built 2017 (2015 or later) → Smart era: badge plus PIN readers; doors held open raise an alarm"
+    },
+    {
+      "elementRole": "profile:cameraKind",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 2017,
+      "rule": "Built 2017 (2015 or later) → Smart era: IP cameras with analytics: a sighting raises the alarm one extra step"
+    },
+    {
+      "elementRole": "profile:cameraCount",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 2017,
+      "rule": "Built 2017 (2015 or later) → Smart era: 5 cameras on the staged floor"
+    },
+    {
+      "elementRole": "camera:C1",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 2017,
+      "rule": "Built 2017 (2015 or later) → Smart era: camera 1 of 5, IP cameras with analytics: a sighting raises the alarm one extra step"
+    },
+    {
+      "elementRole": "camera:C2",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 2017,
+      "rule": "Built 2017 (2015 or later) → Smart era: camera 2 of 5, IP cameras with analytics: a sighting raises the alarm one extra step"
+    },
+    {
+      "elementRole": "camera:C3",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 2017,
+      "rule": "Built 2017 (2015 or later) → Smart era: camera 3 of 5, IP cameras with analytics: a sighting raises the alarm one extra step"
+    },
+    {
+      "elementRole": "camera:C4",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 2017,
+      "rule": "Built 2017 (2015 or later) → Smart era: camera 4 of 5, IP cameras with analytics: a sighting raises the alarm one extra step"
+    },
+    {
+      "elementRole": "camera:C5",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 2017,
+      "rule": "Built 2017 (2015 or later) → Smart era: camera 5 of 5, IP cameras with analytics: a sighting raises the alarm one extra step"
+    },
+    {
+      "elementRole": "profile:guardCount",
+      "layer": "costar",
+      "field": "buildingClass",
+      "value": "A",
+      "rule": "Class A → 4 guards"
+    },
+    {
+      "elementRole": "profile:patrolTempo",
+      "layer": "costar",
+      "field": "buildingClass",
+      "value": "A",
+      "rule": "Class A → tight rounds, one hop a turn"
+    },
+    {
+      "elementRole": "guard:G1",
+      "layer": "costar",
+      "field": "buildingClass",
+      "value": "A",
+      "rule": "Class A → 4 guards; the 1st guard comes from Class A"
+    },
+    {
+      "elementRole": "guard:G2",
+      "layer": "costar",
+      "field": "buildingClass",
+      "value": "A",
+      "rule": "Class A → 4 guards; the 2nd guard comes from Class A"
+    },
+    {
+      "elementRole": "guard:G3",
+      "layer": "costar",
+      "field": "buildingClass",
+      "value": "A",
+      "rule": "Class A → 4 guards; the 3rd guard comes from Class A"
+    },
+    {
+      "elementRole": "guard:G4",
+      "layer": "costar",
+      "field": "buildingClass",
+      "value": "A",
+      "rule": "Class A → 4 guards; the 4th guard comes from Class A"
+    },
+    {
+      "elementRole": "level:stagingFloor",
+      "layer": "costar",
+      "field": "availableSpace",
+      "value": "floor 24: 18,974 sf in 1 suites",
+      "rule": "Floor 24 has the most available area, so it is the quietest night: the level is staged there"
+    },
+    {
+      "elementRole": "zone:quiet-2401",
+      "layer": "costar",
+      "field": "availableSpace",
+      "value": "suite 2401, 18,974 sf",
+      "rule": "Suite 2401 on floor 24 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+    },
+    {
+      "elementRole": "zone:crowded-24",
+      "layer": "costar",
+      "field": "typicalFloorSf",
+      "value": 19615,
+      "rule": "A 19,615 sf floor with 18,974 sf available leaves 641 sf occupied → crowded zone: night cleaners raise Suspicious if they see you"
+    },
+    {
+      "elementRole": "zone:secure",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 2017,
+      "rule": "Built 2017 (2015 or later) → Smart era: the secure room has a badge plus PIN door with a door-held alarm"
+    },
+    {
+      "elementRole": "entry:dock-N",
+      "layer": "vexcel",
+      "field": "entries.kind",
+      "value": "dock",
+      "rule": "The aerial tags \"Loading dock\" (dock): a loading dock is always offered as a way in and out"
+    },
+    {
+      "elementRole": "entry:roof",
+      "layer": "vexcel",
+      "field": "entries.kind",
+      "value": "roof",
+      "rule": "The aerial tags \"Roof deck\" (roof): the roof is always offered as a way in and out"
+    },
+    {
+      "elementRole": "entry:lobby-S",
+      "layer": "vexcel",
+      "field": "entries.kind",
+      "value": "lobby",
+      "rule": "The aerial tags \"Wilshire lobby\" (lobby): the lobby is a way in, and it carries a desk guard from the guard force"
+    },
+    {
+      "elementRole": "entry:garage-W",
+      "layer": "vexcel",
+      "field": "entries.kind",
+      "value": "garage",
+      "rule": "The aerial tags \"Garage ramp\" (garage): a garage is a way in and out"
+    },
+    {
+      "elementRole": "entry:bike-E",
+      "layer": "vexcel",
+      "field": "entries.kind",
+      "value": "service",
+      "rule": "The aerial tags \"Bike room door\" (service): a service door is a way in and out"
+    },
+    {
+      "elementRole": "zone:objective",
+      "layer": "fiction",
+      "field": "mission.objective",
+      "value": "Keep the prototype in the lab until the morning shift arrives",
+      "rule": "Mission \"The Night Desk\" (game fiction): keep the prototype in the lab until the morning shift arrives"
+    },
+    {
+      "elementRole": "mission:night-desk",
+      "layer": "fiction",
+      "field": "mission.inspiredBy",
+      "value": "fictional",
+      "rule": "The mission the player chose; a fictional mission, labelled as such"
+    }
+  ]
+}
