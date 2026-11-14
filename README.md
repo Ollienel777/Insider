@@ -4,7 +4,8 @@
 data: CoStar's record sets the security era, the guard force and the quiet
 zones, Vexcel's aerial sets the ways in, and Matterport's scan is the board.
 Click any guard to see which data put it there. Then the same engine, on the
-same floor, runs the fire drill.**
+same floor, runs the fire drill, and Owner Mode lets a building's security
+lead put in their own security and watch an AI crew try 50 ways in.**
 
 Built at HackPrinceton Fall 2026. Main track: Entertainment. Special tracks:
 CoStar "AI for the Built World", LangChain "Best use of deepagents", Amazon
@@ -49,6 +50,19 @@ Then the same engine runs on the same floor as an **evacuation drill**:
 occupants placed from CoStar's occupied area, one stair blocked as the
 scenario, a time to clear, the queue, and where to post wardens.
 
+**Break into any building for fun. Or put in your real security and watch an
+AI crew try 50 ways in.** From the Debrief, **Owner Mode** opens the same board
+as a setup editor: move guards and draw their rounds, place cameras, set each
+door to key, badge or open, and mark staffed desks. The editor starts from the
+level's own security, so it is never empty, and names any broken round before
+it lets you run. **Run 50 attempts** asks the crew for a handful of strategies
+once, then the engine plays each across many seeds in the browser, with no
+further model calls. On F1 in fake mode, 17 of 50 attempts get out, 14 of them
+the same way, through the dock. The guard or camera that spotted the crew
+first most often is ringed on the board. **Ask the Chief for a fix** suggests
+one change ("C2 now covers the dock corridor"), and **Apply and rerun** puts
+before and after side by side: 17 of 50 to 0 of 50.
+
 **Who it is for.**
 
 - **The player**: someone who wants a story-driven heist set in a real kind of
@@ -57,6 +71,13 @@ scenario, a time to clear, the queue, and where to post wardens.
   high-rise evacuation drills. Drill Mode turns data CoStar already holds
   into a drill scenario with no site visit and no headset. It is a planning aid, not a
   life-safety calculation, and the screen says so.
+- **The building's security lead**: Owner Mode does the first pass of a
+  physical security review, the "how would someone get to the records room?"
+  walk that today takes a consultant and a site visit, on data CoStar already
+  holds. The weak spot the crew keeps using is the one to fix first, and the
+  Chief's suggested change can be checked by rerunning before anyone moves a
+  camera. It is a first pass, not a security assessment, and it doesn't
+  replace one.
 
 **Taste rules we hold to.** No tenant data: the CoStar adapter reads only the
 kit's property and listing files, never its tenant files
@@ -64,7 +85,18 @@ kit's property and listing files, never its tenant files
 Missions are drawn from documented, non-violent corporate history, or are
 fiction and say so ([`fixtures/missions.json`](fixtures/missions.json)). The
 security on the board is game fiction derived from class and era, never a
-claim about a real building.
+claim about a real building. Owner Mode is the one exception, and it is the
+owner's own: the public game only ever shows the generated security, an
+owner's setup stays in that browser's storage
+([`owner-setup-store`](src/components/run/owner-setup-store.ts)), and no
+node, coordinate or route of the floor reaches a model: the crew's strategies
+are asked for by building id, and the Chief's fix gets the building id and a
+summary of counts and element ids
+([`/api/chief/fix`](src/app/api/chief/fix/route.ts)). In this demo the editor opens
+only on fixture buildings, with "Made-up setup on a fixture building. Real
+setups stay on this device." always on screen. A shipped version would unlock
+it only for verified owners of the building, which CoStar's ownership records
+already make possible.
 
 | | |
 |---|---|
@@ -72,6 +104,8 @@ claim about a real building.
 | **Dossier.** The Level Builder's run replays as a checklist of todos, subagent tasks and tool calls, and the Data → Level table fills in. | **Scout.** The aerial's tagged ways in, on a massing drawn from the footprint and height. Scout draws the massing in every mode; it shows no aerial photos yet. |
 | ![Drill Mode: West Stair blocked, 54 s to clear, warden posts and the narrator's recommendations](docs/screenshots/drill.png) | ![The Layer lens on the Run board: guards, cameras, locks and zones tinted CoStar, entries Vexcel, rooms Matterport, with a legend counting each](docs/screenshots/33-run-lens-on-1440.png) |
 | **Drill.** Same floor, Stair B blocked: time to clear, the queue, warden posts. | **Layer lens.** Every element tinted and lettered C, V or M by its source, with a legend counting each layer. |
+| ![Owner Mode's batch: 17 of 50 attempts out, one row per crew strategy, the most common way out drawn on the board](docs/screenshots/128-owner-batch.png) | ![Owner Mode before and after the Chief's fix: 17 of 50 out before, 0 of 50 after, with what changed](docs/screenshots/128-owner-before-after.png) |
+| **Owner Mode.** 50 attempts against the setup: the count, each strategy, and the way out the crew used most. | **Before and after.** The Chief's one change, rerun: 17 of 50 to 0 of 50. |
 
 ## How it works
 
@@ -285,6 +319,9 @@ run logs live in `localStorage`.
   disabled: the printable plan is not built yet.
 - **A Chief that learns.** Let the Security Chief read a summary of the
   player's earlier runs and change its posture between them.
+- **Owner Mode, finished.** Make night cleaners editable in the setup editor
+  (they already play in the 50 attempts), and gate real setups behind
+  verified ownership.
 - **Rebuild from the UI.** Run the Level Builder live from the Dossier instead
   of ahead of time.
 

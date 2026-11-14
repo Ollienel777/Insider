@@ -18,6 +18,7 @@ import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
 import { debriefOf, LATE_NOTE, notStarted, UnreadableLog, type Debrief, type Decision } from "./debrief";
 import { ReplayBoard } from "./replay-board";
+import { OwnerModeLink } from "@/components/owner/owner-mode-link";
 
 export type DebriefBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -239,6 +240,11 @@ function DebriefReady({
 
           <div className="relative min-h-0 flex-1">
             <ReplayBoard placed={placed} frames={debrief.frames} frame={frame} caught={debrief.outcome === "caught"} />
+            {/* Over the board, not in the action block: the panel keeps its height for the Chief's timeline. */}
+            <OwnerModeLink
+              buildingId={placed.level.buildingId}
+              className="absolute top-3 right-6 w-auto bg-surface-1/90 backdrop-blur-sm"
+            />
           </div>
 
           <div className="flex h-16 shrink-0 items-center gap-4 px-6">

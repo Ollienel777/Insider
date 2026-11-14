@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FIXTURE_BUILDINGS } from "@/adapters/costar/fake";
 import type { Building } from "@/domain";
 
-const state = vi.hoisted(() => ({ building: null as Building | null, cached: null as unknown }));
+const state = vi.hoisted(() => ({ building: null as Building | null, cached: null as unknown, forced: new Set<string>() }));
+vi.mock("@/lib/forced-server", () => ({ forcedServices: async () => state.forced }));
 vi.mock("@/lib/building", () => ({ findBuilding: async () => state.building }));
 vi.mock("@/agents/builder/cache", () => ({
   readCachedLevel: async () => {
@@ -43,6 +44,24 @@ describe("the Dossier without a cached level", () => {
     expect(await render("900001")).not.toContain("build:levels");
     state.cached = new Error("bad manifest");
     expect(await render("900001")).not.toContain("build:levels");
+  });
+
+  it("offers no build of a kit building's level while the model is forced to fixtures (#97 M1)", async () => {
+    vi.stubEnv("LLM_MODE", "live");
+    vi.stubEnv("LLM_PROVIDER", "anthropic");
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-placeholder");
+    state.building = kitBuilding;
+    state.cached = null;
+    try {
+      expect(await render(kitBuilding.id)).toContain('data-testid="build-level"');
+      state.forced = new Set(["llm"]);
+      const html = await render(kitBuilding.id);
+      expect(html).not.toContain('data-testid="build-level"');
+      expect(html).toContain("forced to fixtures in the demo settings");
+    } finally {
+      state.forced = new Set();
+      vi.unstubAllEnvs();
+    }
   });
 
   it("opens a kit building from the map (no m) on its facts, with no level and no command", async () => {
