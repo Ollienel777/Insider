@@ -272,6 +272,7 @@ async function expectFreshRun(page: Page, watchEntry?: string) {
     buildingId: "F1",
     missionId: expect.any(String),
     seed: 7,
+    rules: 2,
     turns: [],
     status: "playing",
     alarmEvents: [],
