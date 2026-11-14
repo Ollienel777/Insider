@@ -24,7 +24,7 @@ const F1 = FIXTURE_AERIALS.get("F1")!;
 const massing = async (id: string) => (id === "F1" ? structuredClone(F1) : null);
 
 /** A PNG's signature and IHDR: all `imageSize` reads. */
-function png(width: number, height: number): Uint8Array {
+function png(width: number, height: number): Uint8Array<ArrayBuffer> {
   const b = new Uint8Array(33);
   b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
   const view = new DataView(b.buffer);
@@ -34,7 +34,7 @@ function png(width: number, height: number): Uint8Array {
 }
 
 /** A JPEG's start, an APP0 segment to skip, and a baseline start-of-frame. */
-function jpeg(width: number, height: number): Uint8Array {
+function jpeg(width: number, height: number): Uint8Array<ArrayBuffer> {
   return new Uint8Array([
     0xff, 0xd8,
     0xff, 0xe0, 0x00, 0x04, 0x00, 0x00,
