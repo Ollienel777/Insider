@@ -11,7 +11,7 @@ import { validatePlan } from "@/level/validate-plan";
 import crewF1 from "../../../fixtures/llm/crew-F1.json";
 import { act, createRun, type Action, type RunState } from "@/engine";
 import { placeLevel } from "@/level/placer";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import { actionForKey, cameraMount, choices as choicesOf } from "./board";
 import { DISC, fixedLabels, movingLabels, standingOf, type GhostPlan } from "./board-view";
 import { project } from "./iso";

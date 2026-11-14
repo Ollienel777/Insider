@@ -6,6 +6,8 @@ import { getMatterport } from "@/adapters/matterport";
 import { ALARM_STYLE } from "@/components/run/alarm-banner";
 import { loadRunLog } from "@/components/run/run-log-store";
 import { BuildingScreen } from "@/components/shell/building-screen";
+import { buildingHref } from "@/lib/building-href";
+import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -28,16 +30,26 @@ type Load =
   | { status: "error"; message: string }
   | { status: "ready"; placed: PlacedLevel; debrief: Debrief };
 
-/** The one line that hands over to Drill Mode (SPEC §2 beat 7: "Same engine, same building"). */
-export const DRILL_BRIDGE = "Same building, same engine: now clear this floor in an evacuation drill.";
+/**
+ * The line above Try again on a finished run, by how it ended. The Debrief is
+ * where the heist ends (SPEC §2 beat 7; Drill Mode is on hold, Q8), so its
+ * one primary action sends the player back in. Par is the shortest quiet
+ * route, so a clean exit can make par but never beat it: one already on par
+ * (or on a floor with no par) is sent to find another way out instead.
+ */
+export function tryAgainLine({ outcome, stats }: Pick<Debrief, "outcome" | "stats">): string {
+  if (outcome === "caught") return "Same floor, same rounds. Try another way in.";
+  if (stats.par !== null && stats.turns > stats.par) return "Clean exit. Run it again and make par.";
+  return "Clean exit. Run it again by a different way out.";
+}
 
 /**
- * The Debrief screen (SPEC §2 beat 6, DESIGN.md Debrief). It reads the run's
+ * The Debrief screen (SPEC §2 beat 7, DESIGN.md Debrief). It reads the run's
  * log from storage, places the same level on the same floor with the log's
  * seed, and shows the grade and the outcome, three stats, the replay board
  * with a scrubber, and the Chief's decisions as a timeline. Built to read in
  * five seconds: the outcome, what caught the player or how they got out, and
- * what the Chief did, before the hand-over to the drill.
+ * what the Chief did, before Try again sends the player back in.
  */
 export function DebriefScreen({
   building,
@@ -50,6 +62,7 @@ export function DebriefScreen({
 }) {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
+  const missionId = useMissionId();
 
   useEffect(() => {
     let live = true;
@@ -57,7 +70,7 @@ export function DebriefScreen({
       if (live) setLoad({ status: "error", message: error instanceof Error ? error.message : String(error) });
     };
     // Storage is the browser's: read it after mount.
-    const log: RunLog | null = loadRunLog(building.id);
+    const log: RunLog | null = loadRunLog(building.id, undefined, missionId);
     if (!log || !manifest || notStarted(log)) {
       // No cached manifest is the building with no level, not a missing run.
       const next: Load = !manifest ? { status: "no-floor" } : { status: "empty", reason: log ? "not-started" : "none" };
@@ -85,10 +98,9 @@ export function DebriefScreen({
     return () => {
       live = false;
     };
-  }, [building, manifest, heistMode, attempt]);
+  }, [building, manifest, heistMode, attempt, missionId]);
 
-  const runHref = `/b/${encodeURIComponent(building.id)}/run`;
-  const drillHref = `/b/${encodeURIComponent(building.id)}/drill`;
+  const runHref = buildingHref(building.id, "run", missionId);
 
   if (load.status === "ready") {
     // Keyed on the log it reads, so a reload that brings a shorter log starts its scrubber afresh.
@@ -99,7 +111,6 @@ export function DebriefScreen({
         placed={load.placed}
         debrief={debrief}
         runHref={runHref}
-        drillHref={drillHref}
       />
     );
   }
@@ -181,12 +192,10 @@ function DebriefReady({
   placed,
   debrief,
   runHref,
-  drillHref,
 }: {
   placed: PlacedLevel;
   debrief: Debrief;
   runHref: string;
-  drillHref: string;
 }) {
   const last = debrief.frames.length - 1;
   const [frame, setFrame] = useState(last);
@@ -264,11 +273,26 @@ function DebriefReady({
       panel={<DebriefPanel debrief={debrief} frame={frame} onScrub={setFrame} runHref={runHref} />}
       action={
         <div className="flex flex-col gap-3">
-          <p data-testid="drill-bridge" className="text-sm text-text-2">
-            {DRILL_BRIDGE}
-          </p>
-          <Link href={drillHref} className={cn(buttonVariants({ variant: "primary" }), "w-full")}>
-            Run the drill
+          {debrief.outcome === "playing" ? null : (
+            <>
+              <p data-testid="try-again-line" className="text-sm text-text-2">
+                {tryAgainLine(debrief)}
+              </p>
+              <Link
+                href={runHref}
+                data-testid="debrief-try-again"
+                className={cn(buttonVariants({ variant: "primary" }), "w-full")}
+              >
+                Try again
+              </Link>
+            </>
+          )}
+          <Link
+            href="/"
+            data-testid="debrief-to-map"
+            className={cn(buttonVariants({ variant: "ghost" }), "w-full")}
+          >
+            Pick another building
           </Link>
         </div>
       }

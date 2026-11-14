@@ -120,8 +120,11 @@ export interface Choice {
   key: number;
   nodeId: string;
   action: Action;
-  /** `pick` when the way there is a locked door: the key picks it for one turn. */
-  kind: "move" | "pick";
+  /**
+   * `pick` when the way there is a locked door: the key picks it for one turn.
+   * `sprint` in sprint mode: two open hops in one turn, which guards may hear.
+   */
+  kind: "move" | "pick" | "sprint";
   doorId?: string;
   /** For a pick: picks so far, and the picks it needs. */
   progress?: { done: number; of: number };
@@ -132,17 +135,11 @@ export interface Choice {
  * so the numbers read in the same order as the board. A neighbour behind a
  * locked door is a pick of that door. At most nine; none once the run is over.
  */
-export function choices(run: RunState): Choice[] {
+export function choices(run: RunState, mode: Mode = "walk"): Choice[] {
   if (run.status !== "playing") return [];
+  if (mode === "sprint") return sprintChoices(run);
   const { board } = run;
-  const here = board.nodes.get(run.playerNode)!;
-  const from = project(here.x, here.y);
-  const bearing = (id: string) => {
-    const n = board.nodes.get(id)!;
-    const p = project(n.x, n.y);
-    const a = Math.atan2(p.x - from.x, -(p.y - from.y));
-    return a < 0 ? a + 2 * Math.PI : a;
-  };
+  const bearing = bearingFrom(run);
   return [...neighbours(board, run.playerNode)]
     .sort((a, b) => bearing(a.to) - bearing(b.to) || a.to.localeCompare(b.to))
     .slice(0, 9)
@@ -162,19 +159,64 @@ export function choices(run: RunState): Choice[] {
     });
 }
 
+/** Walking takes one hop a turn; sprinting takes two, and makes noise (issue 121). */
+export type Mode = "walk" | "sprint";
+
+/** Clockwise from twelve o'clock on screen, from the player's node, so numbers read in board order. */
+function bearingFrom(run: RunState): (id: string) => number {
+  const { board } = run;
+  const here = board.nodes.get(run.playerNode)!;
+  const from = project(here.x, here.y);
+  return (id) => {
+    const n = board.nodes.get(id)!;
+    const p = project(n.x, n.y);
+    const a = Math.atan2(p.x - from.x, -(p.y - from.y));
+    return a < 0 ? a + 2 * Math.PI : a;
+  };
+}
+
+/**
+ * The sprint targets: every node exactly two open hops away (not the player's
+ * node, not a neighbour), as the engine's `sprint` accepts them, each through
+ * the first open middle node in board order. Numbered clockwise like moves; at
+ * most nine. A locked door on either hop rules that way out.
+ */
+export function sprintChoices(run: RunState): Choice[] {
+  if (run.status !== "playing") return [];
+  const { board } = run;
+  const here = run.playerNode;
+  const bearing = bearingFrom(run);
+  const open = (doorId: string | undefined) => doorId === undefined || !run.locked.includes(doorId);
+  const firsts = [...neighbours(board, here)].filter((e) => open(e.doorId));
+  firsts.sort((a, b) => bearing(a.to) - bearing(b.to) || a.to.localeCompare(b.to));
+  const adjacent = new Set(neighbours(board, here).map((e) => e.to));
+  const via = new Map<string, string>();
+  for (const first of firsts) {
+    for (const second of neighbours(board, first.to)) {
+      if (second.to === here || adjacent.has(second.to) || !open(second.doorId) || via.has(second.to)) continue;
+      via.set(second.to, first.to);
+    }
+  }
+  return [...via.keys()]
+    .sort((a, b) => bearing(a) - bearing(b) || a.localeCompare(b))
+    .slice(0, 9)
+    .map((to, i): Choice => ({ key: i + 1, nodeId: to, action: { kind: "sprint", to, via: via.get(to)! }, kind: "sprint" }));
+}
+
 /** Whether the player stands on the objective and can take it. */
 export function canTake(run: RunState): boolean {
   return run.status === "playing" && !run.carrying && run.playerNode === run.board.level.objective;
 }
 
 /**
- * The action a key press asks for (DESIGN.md, Keyboard): 1–9 a neighbour,
- * `W` wait, `Space` take the objective. Null for any other key, or a key with
- * nothing to do.
+ * The action a key press asks for (DESIGN.md, Keyboard): 1–9 a neighbour (in
+ * sprint mode, a sprint target), `W` wait, `Space` take the objective. Null
+ * for any other key, or a key with nothing to do. `S` switches the mode; the
+ * Run screen handles it, since it is not a turn.
  */
-export function actionForKey(key: string, run: RunState): Action | null {
+export function actionForKey(key: string, run: RunState, mode: Mode = "walk"): Action | null {
   if (run.status !== "playing") return null;
-  if (/^[1-9]$/.test(key)) return choices(run).find((c) => c.key === Number(key))?.action ?? null;
+  if (/^[1-9]$/.test(key)) return choices(run, mode).find((c) => c.key === Number(key))?.action ?? null;
   if (key === "w" || key === "W") return { kind: "wait" };
   if (key === " " && canTake(run)) return { kind: "take" };
   return null;
@@ -339,5 +381,6 @@ export function describeTurn(placed: PlacedLevel, before: RunState, after: RunSt
   if (opened) return "The door is open.";
   if (after.picking) return `Picking the lock, ${after.picking.progress} of ${placed.level.pickTurns}.`;
   if (after.playerNode === before.playerNode) return `You wait in the ${where}.`;
+  if (after.turns.at(-1)?.player.kind === "sprint") return `You sprint to the ${where}.`;
   return `You move to the ${where}.`;
 }

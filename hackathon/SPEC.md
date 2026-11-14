@@ -39,6 +39,11 @@ to see which data put it there.
   the interior scan and the aerial attached to every candidate. For the
   owner, a vacant floor that hosts a shoot earns money while it waits for a
   tenant.
+- **The building's security lead** (Owner Mode, §13; proposed, Q9): a
+  property manager or corporate security lead who enters the security their
+  own building really has, lets the AI crew try about 50 ways in, and reads
+  the result as the first pass of a physical security review, which today
+  takes a consultant's site visit.
 
 **The story a judge hears.** "Pick a heist from history: the 1974 Summa
 Corporation burglary. The agent casts the building. It searches CoStar's
@@ -67,6 +72,9 @@ line until the team decides whether it stays (Q8).
   this building's."
 - Nothing claims to describe a real building's security. Guard posts, cameras
   and locks are always generated from the rules in §4.3, never from imagery.
+  The one exception is Owner Mode (§13): a setup the owner enters by hand.
+  It is shown only to them, never in the public game, and on stage it is a
+  made-up setup on a fixture building that says so.
 
 ## 2. The demo script (2 minutes)
 
@@ -100,6 +108,7 @@ Fake mode is the fallback for every beat and must look like the real thing
 | CoStar | "spatial and visual understanding, not only text" | same | The cast map narrowing to three pins, the aerial scout, the isometric board with cones and sightlines | C4, D14, D17 |
 | CoStar | "The data is required" (real data) | same | Casting and the levels read CoStar's data kit live; live Vexcel and Matterport adapters; each has a fake | C2, D25, D26, D27 |
 | LangChain | "Build a deepagent (LangChain's `deepagents` library) for any use case." | `tracks/prizes.md` | Two `deepagents` agents (`createDeepAgent`), each with planning (todos), subagents and its own tools: the Casting Director and the Level Builder. Both traces are shown in the product, and the README points to the code | C3, D11, D30, D29, D39 |
+| CoStar | 25% usefulness and 30% agentic depth (second answer; proposed, Q9) | same | Owner Mode (§13): the owner's own setup, about 50 AI crew attempts, a batch debrief naming the weakest door or camera, and a before-and-after rerun | O1–O5 |
 | Amazon | "applications that reason, plan, take action and adapt" | `tracks/prizes.md` | The Chief adapts between runs: it reads a summary of the player's previous runs and changes its posture, saying so in its rationale | D33 |
 | Amazon | "Must include: a working prototype or demo, a clear use case and target user, basic documentation, a presentation or pitch" | same | The app; the README's user and use-case section; `DEMO.md`; `devpost.md` | D39, D40, D41 |
 
@@ -441,16 +450,19 @@ funnel's first count is the inventory's own size in fake mode and the kit's
 
 ## 9. The cut list, in order (first cut first)
 
-1. A linked campaign (stretch in DECISION.md).
-2. Co-op Inside + Overwatch ("should" in DECISION.md; not ticketed until M3 is done).
-3. Live rebuild of a level, and live recasting, from the UI (the cached
+1. Owner Mode's Beat the crew and Defend modes (O6).
+2. A linked campaign (stretch in DECISION.md).
+3. Co-op Inside + Overwatch ("should" in DECISION.md; not ticketed until M3 is done).
+4. Owner Mode as a whole (O1 to O5), if Q9 says no or it is not in by M3.
+   Casting stays the Monday answer.
+5. Live rebuild of a level, and live recasting, from the UI (the cached
    manifests, shortlists and traces stay).
-4. Fixture buildings F2 to F5 and their missions (F1 alone carries the demo;
+6. Fixture buildings F2 to F5 and their missions (F1 alone carries the demo;
    the fixture inventory still casts every mission).
-5. Live Vexcel (the massing render stays).
-6. Drill plan print export (D32).
-7. The Chief adapting between runs (D33); this drops the Amazon "adapt" line.
-8. Live Matterport (the fixture floor stays the board).
+7. Live Vexcel (the massing render stays).
+8. Drill plan print export (D32).
+9. The Chief adapting between runs (D33); this drops the Amazon "adapt" line.
+10. Live Matterport (the fixture floor stays the board).
 
 Never cut: casting's funnel and finalists (CoStar's data use and the Monday
 answer), the rules table and Why card (CoStar's 30%), the deepagents agents
@@ -491,6 +503,7 @@ Each blocks only the tickets named; everything else proceeds on fakes.
 | Q6 | The overnight defaults in DECISION.md (provider, latency approach, Matterport stance, prize targets, the 2-minute slot) stand unless the builder overrules them. Casting is the builder's choice (2026-11-14) | the builder | none unless overruled |
 | Q7 | The real deadline (EVENT.md marks it as an estimate) | the builder, from the hacker guide | none; moves the freeze and M5 |
 | Q8 | Does Drill Mode stay? It is on hold: off the demo script, its code kept, #34 and its PR held | the builder and the team | the held drill work |
+| Q9 | Does Owner Mode (§13) join casting as a second Monday answer, and does its beat make the 2-minute slot? Until then it is built only as far as O1 to O3 (no demo-script or smoke changes). Also ask CoStar's table whether owners would use it and whether the framing sits well with them | the builder and the team; CoStar | O4, O6 |
 
 ## 12. The casting backlog (C1–C6)
 
@@ -508,3 +521,60 @@ milestone M1 unless noted. Dependencies use these ids until filed.
 
 After these merge, the demo script (#80) and the Devpost write-up (#86) follow
 the new beats.
+
+## 13. Owner Mode (proposed; Q9)
+
+Epic #131. The same heist played against a building's real security instead
+of generated security. It changes two things and nothing else: **who sets the
+security** (the owner instead of the rules table) and **who plays** (the AI
+crew, about 50 times, instead of the player). The missions, cast, scout,
+board, crew, Chief, Why cards and replay are unchanged.
+
+**Why beside casting.** Casting answers "would someone switch this on Monday?"
+for a location scout. Owner Mode answers it for the person who owns the
+building: a property manager or corporate security lead who today pays for a
+physical security review and runs tabletop exercises by hand. It also gives
+the agents a visible job at scale: the crew plans strategies, the engine
+plays them, and the Chief proposes a fix and reruns it to check.
+
+**The flow.**
+1. **Setup.** On the Run board, **Use my building's security** opens an editor:
+   guards and their rounds, cameras and their kind, doors as key, badge or
+   open, staffed desks. Named setups are saved per building in `localStorage`
+   (guarded). The floor graph and entries are unchanged, and the floor graph
+   stays in the browser (§4.5).
+2. **Autoplay.** One structured crew call returns about five strategies
+   (entry, timing, route preference, risk), schema-checked and clamped to
+   legal entries and zones. It receives zone ids only, never nodes, with a
+   recorded fake and the crew's 4 s fallback. The pure, seeded engine plays
+   each strategy over about ten seeds with a simple planner. No model call per
+   move; 50 runs take under 3 s.
+3. **Batch debrief.** Success count and a 50-cell strip, the most common
+   successful route on the board, the element that failed most often, the
+   Chief's suggested fix (one structured call, recorded fake, deterministic
+   template), and any run's replay.
+4. **Compare.** Two setups side by side: about 7/50 before moving one camera,
+   about 1/50 after.
+
+**Demo beat (only if Q9 says yes).** After the Debrief: "Same building. Now
+the owner puts in what they really have." Run 50, move camera C2, run again.
+About 15 s, on a fixture building with a setup that says it is made up. Making
+room in the 2-minute slot is part of Q9.
+
+**Guardrails.** The public game uses generated, fictional security only.
+Owner setups stay with the owner and never reach the server, a model or the
+repo. The real product would unlock per building for verified owners; the
+hackathon has no accounts.
+
+**Backlog.** Filed without `loop-ok`; the team builds O1 to O3 while the loop
+works through casting.
+
+| id | issue | title | area | size | acceptance |
+|---|---|---|---|---|---|
+| O0 | #124 | docs: add Owner Mode to the spec | `area:docs` | S | this section |
+| O1 | #125 | feat: the owner's security editor | `area:run`, `area:level` | M | a setup round-trips (save, reload, play on it); the engine accepts it in place of the generated profile; tests for invalid placements |
+| O2 | #126 | feat: the AI crew plays 50 attempts | `area:agent-crew`, `area:engine` | M | deterministic for a fixed seed set; illegal strategies dropped with a reason; 50 runs on F1 in under 3 s |
+| O3 | #127 | feat: the batch debrief | `area:debrief`, `area:agent-chief` | M | renders from a recorded batch in fake mode; `ui-craft` rubric at 1440×900. Depends on O2 |
+| O4 | #128 | feat: compare two setups, the usefulness beat | `area:debrief` | S | the smoke walks the beat in fake mode with the same result every run. Depends on O1, O3, Q9 |
+| O5 | #130 | docs: Owner Mode in the README and Devpost write-up | `area:docs` | S | the user, the practice it replaces and the guardrails. Coordinates with #86 |
+| O6 | #129 | feat: beat the crew and defend modes | `area:run` | S | stretch, first to cut (§9) |

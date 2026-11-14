@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { F1_DEMO, FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { CrewPlan, LevelManifest } from "@/domain";
 import { act, createRun, type Action, type RunState } from "@/engine";
-import cached from "../../data/levels/F1.json";
+import cached from "../../data/levels/F1.romaine-1974.json";
 import recording from "../../fixtures/llm/crew-F1.json";
 import { placeLevel } from "./placer";
 import { adviceFor, validatePlan, waitTurns } from "./validate-plan";
