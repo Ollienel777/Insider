@@ -95,6 +95,11 @@ const mission = {
   },
   objective: "Take the files from the records room",
   exitCondition: "Leave through any entry with the files",
+  casting: [
+    { kind: "city", label: "in LA", city: "LA" },
+    { kind: "yearBuilt", label: "built 1974 or earlier", yearBuilt: { max: 1974 } },
+    { kind: "needsScan", label: "a Matterport scan" },
+  ],
 } satisfies Mission;
 
 const yearBuilt = {
