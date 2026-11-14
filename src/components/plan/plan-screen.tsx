@@ -17,6 +17,7 @@ import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { validatePlan } from "@/level/validate-plan";
 import { askCrew, crewRequest, EXAMPLE_ORDER, type CrewAnswer } from "./crew-request";
 import { CrewReply, ghostOf } from "./crew-reply";
+import { warmModel } from "./warm-request";
 
 type Load =
   | { status: "loading" }
@@ -42,10 +43,13 @@ export function PlanScreen({
   building,
   manifest,
   heistMode,
+  warmModel: warm = false,
 }: {
   building: RunBuilding;
   manifest: LevelManifest | null;
   heistMode?: string;
+  /** The model is live: warm it once on this page load, so the crew's first call is not cold (#90). */
+  warmModel?: boolean;
 }) {
   const [loaded, setLoad] = useState<Load>({ status: "loading" });
   const [order, setOrder] = useState("");
@@ -73,6 +77,8 @@ export function PlanScreen({
       live = false;
     };
   }, [building, manifest, heistMode]);
+
+  useEffect(() => warmModel(warm), [warm]);
 
   useEffect(() => () => pending.current?.abort(), []);
 

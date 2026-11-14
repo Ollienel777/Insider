@@ -1,0 +1,453 @@
+{
+  "buildingId": "F1",
+  "securityProfile": {
+    "era": "analog",
+    "guardCount": 4,
+    "patrolTempo": 1,
+    "cameraKind": "analog-sweep",
+    "cameraCount": 2,
+    "lockKind": "key"
+  },
+  "zones": [
+    {
+      "id": "quiet-2202",
+      "name": "Suite 2202 (vacant)",
+      "role": "quiet",
+      "rule": "Available suite: dark, unpatrolled, sound carries 1 node further",
+      "provenance": [
+        {
+          "elementRole": "zone:quiet-2202",
+          "layer": "costar",
+          "field": "availableSpace",
+          "value": "suite 2202, 3,412 sf",
+          "rule": "Suite 2202 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+        }
+      ]
+    },
+    {
+      "id": "quiet-2203",
+      "name": "Suite 2203 (vacant)",
+      "role": "quiet",
+      "rule": "Available suite: dark, unpatrolled, sound carries 1 node further",
+      "provenance": [
+        {
+          "elementRole": "zone:quiet-2203",
+          "layer": "costar",
+          "field": "availableSpace",
+          "value": "suite 2203, 2,187 sf",
+          "rule": "Suite 2203 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+        }
+      ]
+    },
+    {
+      "id": "quiet-2204",
+      "name": "Suite 2204 (vacant)",
+      "role": "quiet",
+      "rule": "Available suite: dark, unpatrolled, sound carries 1 node further",
+      "provenance": [
+        {
+          "elementRole": "zone:quiet-2204",
+          "layer": "costar",
+          "field": "availableSpace",
+          "value": "suite 2204, 1,946 sf",
+          "rule": "Suite 2204 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+        }
+      ]
+    },
+    {
+      "id": "quiet-2205",
+      "name": "Suite 2205 (vacant)",
+      "role": "quiet",
+      "rule": "Available suite: dark, unpatrolled, sound carries 1 node further",
+      "provenance": [
+        {
+          "elementRole": "zone:quiet-2205",
+          "layer": "costar",
+          "field": "availableSpace",
+          "value": "suite 2205, 2,764 sf",
+          "rule": "Suite 2205 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+        }
+      ]
+    },
+    {
+      "id": "quiet-2206",
+      "name": "Suite 2206 (vacant)",
+      "role": "quiet",
+      "rule": "Available suite: dark, unpatrolled, sound carries 1 node further",
+      "provenance": [
+        {
+          "elementRole": "zone:quiet-2206",
+          "layer": "costar",
+          "field": "availableSpace",
+          "value": "suite 2206, 1,518 sf",
+          "rule": "Suite 2206 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+        }
+      ]
+    },
+    {
+      "id": "quiet-2207",
+      "name": "Suite 2207 (vacant)",
+      "role": "quiet",
+      "rule": "Available suite: dark, unpatrolled, sound carries 1 node further",
+      "provenance": [
+        {
+          "elementRole": "zone:quiet-2207",
+          "layer": "costar",
+          "field": "availableSpace",
+          "value": "suite 2207, 3,095 sf",
+          "rule": "Suite 2207 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+        }
+      ]
+    },
+    {
+      "id": "quiet-2208",
+      "name": "Suite 2208 (vacant)",
+      "role": "quiet",
+      "rule": "Available suite: dark, unpatrolled, sound carries 1 node further",
+      "provenance": [
+        {
+          "elementRole": "zone:quiet-2208",
+          "layer": "costar",
+          "field": "availableSpace",
+          "value": "suite 2208, 2,231 sf",
+          "rule": "Suite 2208 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+        }
+      ]
+    },
+    {
+      "id": "quiet-2209",
+      "name": "Suite 2209 (vacant)",
+      "role": "quiet",
+      "rule": "Available suite: dark, unpatrolled, sound carries 1 node further",
+      "provenance": [
+        {
+          "elementRole": "zone:quiet-2209",
+          "layer": "costar",
+          "field": "availableSpace",
+          "value": "suite 2209, 1,872 sf",
+          "rule": "Suite 2209 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+        }
+      ]
+    },
+    {
+      "id": "quiet-2210",
+      "name": "Suite 2210 (vacant)",
+      "role": "quiet",
+      "rule": "Available suite: dark, unpatrolled, sound carries 1 node further",
+      "provenance": [
+        {
+          "elementRole": "zone:quiet-2210",
+          "layer": "costar",
+          "field": "availableSpace",
+          "value": "suite 2210, 4,316 sf",
+          "rule": "Suite 2210 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+        }
+      ]
+    },
+    {
+      "id": "crowded-22",
+      "name": "Occupied floor 22",
+      "role": "crowded",
+      "rule": "Occupied space: night cleaners raise Suspicious if they see you",
+      "provenance": [
+        {
+          "elementRole": "zone:crowded-22",
+          "layer": "costar",
+          "field": "typicalFloorSf",
+          "value": 24850,
+          "rule": "A 24,850 sf floor with 23,341 sf available leaves 1,509 sf occupied → crowded zone: night cleaners raise Suspicious if they see you"
+        }
+      ]
+    },
+    {
+      "id": "secure",
+      "name": "Secure room",
+      "role": "secure",
+      "rule": "Analog era: keyed door, pickable in 2 turns",
+      "provenance": [
+        {
+          "elementRole": "zone:secure",
+          "layer": "costar",
+          "field": "yearBuilt",
+          "value": 1974,
+          "rule": "Built 1974 (before 1980) → Analog era: the secure room has a keyed door, pickable in 2 turns"
+        }
+      ]
+    },
+    {
+      "id": "objective",
+      "name": "The Dead Files Room",
+      "role": "objective",
+      "rule": "Enter Suite 2209 and spend 2 consecutive turns searching the filing cabinets to locate and pocket the Halvorsen dossier. Leaving the room mid-search resets the count to zero.",
+      "provenance": [
+        {
+          "elementRole": "zone:objective",
+          "layer": "fiction",
+          "field": "mission.objective",
+          "value": "Take the files from the records room",
+          "rule": "Mission \"The Romaine Street Papers\" (game fiction): take the files from the records room"
+        }
+      ]
+    }
+  ],
+  "entries": [
+    {
+      "id": "dock-N",
+      "kind": "dock",
+      "label": "Loading dock"
+    },
+    {
+      "id": "roof",
+      "kind": "roof",
+      "label": "Roof hatch"
+    },
+    {
+      "id": "garage-E",
+      "kind": "garage",
+      "label": "Garage ramp"
+    },
+    {
+      "id": "lobby-S",
+      "kind": "lobby",
+      "label": "Main lobby"
+    },
+    {
+      "id": "exit-W",
+      "kind": "service",
+      "label": "Stair B exit"
+    }
+  ],
+  "mission": {
+    "id": "romaine-1974",
+    "city": "LA",
+    "type": "heist",
+    "title": "The Romaine Street Papers",
+    "inspiredBy": {
+      "event": "The Summa Corporation burglary, 7000 Romaine St, Hollywood",
+      "date": "June 5, 1974",
+      "sourceUrl": "https://www.cia.gov/stories/story/the-exposing-of-project-azorian"
+    },
+    "objective": "Take the files from the records room",
+    "exitCondition": "Leave by any entry with the files before the alarm reaches Lockdown",
+    "briefing": "You're going into Halvorsen Tower, Bunker Hill — a forty-two-story glass-and-concrete monolith that still runs on analog everything: sweep cameras, key locks, and guards who write their rounds on paper logs. Stage on Floor 22; nine of its suites have been dark for months, which is exactly why someone chose it to stash the papers your client needs. The analyst clocked four roving guards and two CCTV cameras doing slow analog sweeps across the staging floor, plus a desk guard holding the lobby. Your way in is the loading dock on the north side — a lock you can pop in two turns while the dock is quiet. Get to Suite 2209, pull the dossier from the filing cabinets, and walk out the way you came before anyone at the desk looks twice."
+  },
+  "provenance": [
+    {
+      "elementRole": "profile:era",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 1974,
+      "rule": "Built 1974 (before 1980) → Analog era"
+    },
+    {
+      "elementRole": "profile:lockKind",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 1974,
+      "rule": "Built 1974 (before 1980) → Analog era: key locks, pickable in 2 turns"
+    },
+    {
+      "elementRole": "profile:cameraKind",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 1974,
+      "rule": "Built 1974 (before 1980) → Analog era: analog CCTV that sweeps, covering alternate halves each turn"
+    },
+    {
+      "elementRole": "profile:cameraCount",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 1974,
+      "rule": "Built 1974 (before 1980) → Analog era: 2 cameras on the staged floor"
+    },
+    {
+      "elementRole": "camera:C1",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 1974,
+      "rule": "Built 1974 (before 1980) → Analog era: camera 1 of 2, analog CCTV that sweeps, covering alternate halves each turn"
+    },
+    {
+      "elementRole": "camera:C2",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 1974,
+      "rule": "Built 1974 (before 1980) → Analog era: camera 2 of 2, analog CCTV that sweeps, covering alternate halves each turn"
+    },
+    {
+      "elementRole": "profile:guardCount",
+      "layer": "costar",
+      "field": "buildingClass",
+      "value": "A",
+      "rule": "Class A → 4 guards"
+    },
+    {
+      "elementRole": "profile:patrolTempo",
+      "layer": "costar",
+      "field": "buildingClass",
+      "value": "A",
+      "rule": "Class A → tight rounds, one hop a turn"
+    },
+    {
+      "elementRole": "guard:G1",
+      "layer": "costar",
+      "field": "buildingClass",
+      "value": "A",
+      "rule": "Class A → 4 guards; the 1st guard comes from Class A"
+    },
+    {
+      "elementRole": "guard:G2",
+      "layer": "costar",
+      "field": "buildingClass",
+      "value": "A",
+      "rule": "Class A → 4 guards; the 2nd guard comes from Class A"
+    },
+    {
+      "elementRole": "guard:G3",
+      "layer": "costar",
+      "field": "buildingClass",
+      "value": "A",
+      "rule": "Class A → 4 guards; the 3rd guard comes from Class A"
+    },
+    {
+      "elementRole": "guard:G4",
+      "layer": "costar",
+      "field": "buildingClass",
+      "value": "A",
+      "rule": "Class A → 4 guards; the 4th guard comes from Class A"
+    },
+    {
+      "elementRole": "level:stagingFloor",
+      "layer": "costar",
+      "field": "availableSpace",
+      "value": "floor 22: 23,341 sf in 9 suites",
+      "rule": "Floor 22 has the most available area, so it is the quietest night: the level is staged there"
+    },
+    {
+      "elementRole": "zone:quiet-2202",
+      "layer": "costar",
+      "field": "availableSpace",
+      "value": "suite 2202, 3,412 sf",
+      "rule": "Suite 2202 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+    },
+    {
+      "elementRole": "zone:quiet-2203",
+      "layer": "costar",
+      "field": "availableSpace",
+      "value": "suite 2203, 2,187 sf",
+      "rule": "Suite 2203 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+    },
+    {
+      "elementRole": "zone:quiet-2204",
+      "layer": "costar",
+      "field": "availableSpace",
+      "value": "suite 2204, 1,946 sf",
+      "rule": "Suite 2204 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+    },
+    {
+      "elementRole": "zone:quiet-2205",
+      "layer": "costar",
+      "field": "availableSpace",
+      "value": "suite 2205, 2,764 sf",
+      "rule": "Suite 2205 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+    },
+    {
+      "elementRole": "zone:quiet-2206",
+      "layer": "costar",
+      "field": "availableSpace",
+      "value": "suite 2206, 1,518 sf",
+      "rule": "Suite 2206 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+    },
+    {
+      "elementRole": "zone:quiet-2207",
+      "layer": "costar",
+      "field": "availableSpace",
+      "value": "suite 2207, 3,095 sf",
+      "rule": "Suite 2207 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+    },
+    {
+      "elementRole": "zone:quiet-2208",
+      "layer": "costar",
+      "field": "availableSpace",
+      "value": "suite 2208, 2,231 sf",
+      "rule": "Suite 2208 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+    },
+    {
+      "elementRole": "zone:quiet-2209",
+      "layer": "costar",
+      "field": "availableSpace",
+      "value": "suite 2209, 1,872 sf",
+      "rule": "Suite 2209 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+    },
+    {
+      "elementRole": "zone:quiet-2210",
+      "layer": "costar",
+      "field": "availableSpace",
+      "value": "suite 2210, 4,316 sf",
+      "rule": "Suite 2210 on floor 22 is available → quiet zone: available suite: dark, unpatrolled, sound carries 1 node further"
+    },
+    {
+      "elementRole": "zone:crowded-22",
+      "layer": "costar",
+      "field": "typicalFloorSf",
+      "value": 24850,
+      "rule": "A 24,850 sf floor with 23,341 sf available leaves 1,509 sf occupied → crowded zone: night cleaners raise Suspicious if they see you"
+    },
+    {
+      "elementRole": "zone:secure",
+      "layer": "costar",
+      "field": "yearBuilt",
+      "value": 1974,
+      "rule": "Built 1974 (before 1980) → Analog era: the secure room has a keyed door, pickable in 2 turns"
+    },
+    {
+      "elementRole": "entry:dock-N",
+      "layer": "vexcel",
+      "field": "entries.kind",
+      "value": "dock",
+      "rule": "The aerial tags \"Loading dock\" (dock): a loading dock is always offered as a way in and out"
+    },
+    {
+      "elementRole": "entry:roof",
+      "layer": "vexcel",
+      "field": "entries.kind",
+      "value": "roof",
+      "rule": "The aerial tags \"Roof hatch\" (roof): the roof is always offered as a way in and out"
+    },
+    {
+      "elementRole": "entry:garage-E",
+      "layer": "vexcel",
+      "field": "entries.kind",
+      "value": "garage",
+      "rule": "The aerial tags \"Garage ramp\" (garage): a garage is a way in and out"
+    },
+    {
+      "elementRole": "entry:lobby-S",
+      "layer": "vexcel",
+      "field": "entries.kind",
+      "value": "lobby",
+      "rule": "The aerial tags \"Main lobby\" (lobby): the lobby is a way in, and it carries a desk guard from the guard force"
+    },
+    {
+      "elementRole": "entry:exit-W",
+      "layer": "vexcel",
+      "field": "entries.kind",
+      "value": "service",
+      "rule": "The aerial tags \"Stair B exit\" (service): a service door is a way in and out"
+    },
+    {
+      "elementRole": "zone:objective",
+      "layer": "fiction",
+      "field": "mission.objective",
+      "value": "Take the files from the records room",
+      "rule": "Mission \"The Romaine Street Papers\" (game fiction): take the files from the records room"
+    },
+    {
+      "elementRole": "mission:romaine-1974",
+      "layer": "fiction",
+      "field": "mission.inspiredBy",
+      "value": "The Summa Corporation burglary, 7000 Romaine St, Hollywood, June 5, 1974",
+      "rule": "Picked from the LA library; inspired by The Summa Corporation burglary, 7000 Romaine St, Hollywood (June 5, 1974), staged in a comparable building"
+    }
+  ]
+}

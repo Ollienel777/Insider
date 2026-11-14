@@ -58,6 +58,8 @@ export type ScriptedAgent = z.infer<typeof ScriptedAgent>;
 
 export const Script = z.object({
   id: z.string().min(1),
+  /** Set when the turns were recorded from a live model (`npm run record:builds`), not written by hand. */
+  recorded: z.object({ model: z.string().min(1), recordedAt: z.iso.datetime() }).optional(),
   agents: z.array(ScriptedAgent).min(1),
 });
 export type Script = z.infer<typeof Script>;

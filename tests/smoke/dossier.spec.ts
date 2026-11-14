@@ -17,7 +17,10 @@ test("the dossier replays the trace and fills in 1974, Analog era and 4 guards",
   await expect(era).toContainText("Analog era");
   await expect(table.locator('[data-rule="guards"]')).toContainText("4 guards");
   await expect(table.locator('[data-rule="staging"]')).toContainText("2202–2210");
-  await expect(table.locator('[data-rule="dock"]')).toContainText("Entry and exit");
+  const dock = table.locator('[data-rule="dock"]');
+  await expect(dock.locator("td").nth(1)).toHaveText("entries.kind");
+  await expect(dock.locator("td").nth(2)).toHaveText("dock");
+  await expect(dock).toContainText("Always offered as a way in and out");
 
   await expect(page.getByTestId("dossier")).toHaveAttribute("data-done", "true", { timeout: 8_000 });
   await expect(page.getByTestId("trace-todo").and(page.locator('[data-status="completed"]'))).toHaveCount(3);
@@ -50,6 +53,21 @@ test("Skip shows everything at once, and the skeletons held each block's height"
   const after = { table: await table.boundingBox(), briefing: await briefing.boundingBox() };
   expect(after.table?.height).toBe(before.table?.height);
   expect(after.briefing?.height).toBe(before.briefing?.height);
+});
+
+test("Replay starts again from the top, with the header and the CoStar record in view at 1440x900", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/b/F1/dossier");
+  const column = page.getByTestId("dossier");
+  // Played through, the column has scrolled down to the briefing.
+  await expect(column).toHaveAttribute("data-done", "true", { timeout: 15_000 });
+  await expect.poll(() => column.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: "Replay" }).click();
+  await expect(column).toHaveAttribute("data-done", "false");
+  await expect.poll(() => column.evaluate((el) => el.scrollTop)).toBe(0);
+  await expect(column.getByRole("heading", { level: 1 })).toBeInViewport();
+  await expect(page.getByTestId("costar-facts")).toBeInViewport();
 });
 
 test("Brief the crew goes to the plan", async ({ page }) => {

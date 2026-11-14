@@ -22,8 +22,10 @@ import {
   guardOrders,
   planSteps,
   roomName,
+  sprintChoices,
   zoneName,
   type Choice,
+  type Mode,
 } from "./board";
 import { BoardView } from "./board-view";
 import { LensLegend, LensToggle, useLayerLens } from "./layer-lens";
@@ -36,6 +38,10 @@ export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
 /** The seed every run of the demo uses, so a rehearsed run plays the same way in front of judges. */
 export const RUN_SEED = 7;
+
+/** The status line when sprint mode comes on, and when it goes off again (issue 121). */
+export const SPRINT_STATUS = "Sprinting: pick a number two rooms on. It's loud, and guards nearby may hear. S or Esc to walk.";
+export const WALK_STATUS = "Walking again. Pick a number to move.";
 
 /** Where the run's log is kept for the Debrief (SPEC §4.1: run logs live in localStorage). */
 export { runLogKey } from "./run-log-store";
@@ -51,7 +57,8 @@ type Load =
  * board on the left, the alarm, the objective, the plan and the guards'
  * orders on the right. The floor comes from the Matterport adapter in the
  * browser (SPEC §4.5), the placer turns the cached manifest into a level on
- * it, and the engine plays it. Keys: 1–9 a neighbour, W wait, Space take.
+ * it, and the engine plays it. Keys: 1–9 a neighbour, W wait, Space take,
+ * S sprint (the numbers then mark nodes two open hops away; S or Esc walks).
  */
 export function RunScreen({
   building,
@@ -68,6 +75,8 @@ export function RunScreen({
   const [run, setRun] = useState<RunState | null>(null);
   const [status, setStatus] = useState<string>("");
   const [lens, toggleLens] = useLayerLens();
+  /** Walking or sprinting (issue 121): `S` switches; any action, and Restart, go back to walking. */
+  const [mode, setMode] = useState<Mode>("walk");
 
   // The Security Chief: one call per alarm event, answered between turns.
   // Nothing waits on it: the engine already has the guards converging.
@@ -95,6 +104,7 @@ export function RunScreen({
     const fresh = createRun(level);
     latestRun.current = fresh;
     setRun(fresh);
+    setMode("walk");
     saveRunLog(runLogOf(fresh, chiefSources.current));
   }, []);
 
@@ -150,8 +160,15 @@ export function RunScreen({
       const controller = new AbortController();
       pendingChief.current = controller;
       latestSeq.current = seq;
+      let request: ReturnType<typeof chiefRequest>;
+      try {
+        request = chiefRequest(building.id, placed, zones, state, state.alarmEvents[seq]);
+      } catch (error) {
+        // A board the request can't carry: the panel says so, and the turn (and its log) goes on.
+        setChief({ status: "error", seq, message: error instanceof Error ? error.message : String(error) });
+        return;
+      }
       setChief({ status: "pending", seq });
-      const request = chiefRequest(building.id, placed, zones, state, state.alarmEvents[seq]);
       askChief(request, { signal: controller.signal }).then(
         (answer) => {
           // A newer alarm event has its own call out; this answer is stale.
@@ -193,6 +210,7 @@ export function RunScreen({
         setStatus(`Not possible: ${result.reason}.`);
         return;
       }
+      setMode("walk");
       latestRun.current = result.run;
       setRun(result.run);
       setStatus(describeTurn(placed, run, result.run));
@@ -231,7 +249,27 @@ export function RunScreen({
       const owner = target?.closest("button, a, [role=button]");
       const ownsKey = owner && (!owner.hasAttribute("data-why-target") || owner.hasAttribute("data-tabbed"));
       if ((event.key === " " || event.key === "Enter") && ownsKey) return;
-      const action = actionForKey(event.key, run!);
+      if ((event.key === "s" || event.key === "S") && run!.status === "playing") {
+        event.preventDefault();
+        if (mode === "sprint") {
+          setMode("walk");
+          setStatus(WALK_STATUS);
+        } else if (sprintChoices(run!).length === 0) {
+          setStatus("Nowhere to sprint from here: nothing is two open hops away.");
+        } else {
+          setMode("sprint");
+          setStatus(SPRINT_STATUS);
+        }
+        return;
+      }
+      // Esc with a Why card open only closes the card. Either listener can run first: the card's
+      // marks the event taken (caught above), and if this one runs first the card is still there.
+      if (event.key === "Escape" && mode === "sprint" && !document.querySelector('[data-testid="why-card"]')) {
+        setMode("walk");
+        setStatus(WALK_STATUS);
+        return;
+      }
+      const action = actionForKey(event.key, run!, mode);
       if (event.key === " ") event.preventDefault();
       if (action) {
         event.preventDefault();
@@ -240,9 +278,9 @@ export function RunScreen({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [run, play]);
+  }, [run, play, mode]);
 
-  const options = useMemo(() => (run ? choicesOf(run) : []), [run]);
+  const options = useMemo(() => (run ? choicesOf(run, mode) : []), [run, mode]);
   const over = run !== null && run.status !== "playing";
 
   return (
@@ -321,10 +359,17 @@ export function RunScreen({
             </p>
             <div className="flex shrink-0 items-center gap-4 text-sm text-text-2 max-md:hidden">
               <span className="flex items-center gap-2">
-                <Kbd>1–9</Kbd> move
+                <Kbd>1–9</Kbd> {mode === "sprint" ? "sprint" : "move"}
               </span>
               <span className="flex items-center gap-2">
                 <Kbd>W</Kbd> wait
+              </span>
+              <span
+                data-testid="sprint-hint"
+                data-on={mode === "sprint" ? "true" : undefined}
+                className={cn("flex items-center gap-2", mode === "sprint" ? "text-accent" : null)}
+              >
+                <Kbd>S</Kbd> {mode === "sprint" ? "sprinting" : "sprint"}
               </span>
               <span className={cn("flex items-center gap-2", run && canTake(run) ? "text-text-1" : null)}>
                 <Kbd>Space</Kbd> take
