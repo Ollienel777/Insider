@@ -244,13 +244,28 @@ export function removeCleaner(setup: OwnerSetup, id: string): OwnerSetup {
   return { ...out, cleaners: (out.cleaners ?? []).filter((c) => c.id !== id) };
 }
 
-/** Starts drawing the cleaner's round: its first node alone, so each next click adds a node. */
-export function startCleanerRound(setup: OwnerSetup, id: string): OwnerSetup {
+/**
+ * Cuts the cleaner's round back to its first node. That is both "stay put"
+ * (the cleaner stands there all night) and the start of drawing a new round
+ * (each next click adds a node), so the editor's two buttons share it.
+ */
+export function clearCleanerRound(setup: OwnerSetup, id: string): OwnerSetup {
   return cleanerEdit(setup, id, (c) => ({ ...c, round: c.round.slice(0, 1) }));
 }
 
-/** Adds `node` to the end of the cleaner's round; the last node again takes it off (the first stays). */
+/** Starts drawing the cleaner's round: the same edit as `clearCleanerRound`, under the name the Draw button uses. */
+export const startCleanerRound = clearCleanerRound;
+
+/**
+ * Adds `node` to the end of the cleaner's round; the last node again takes it
+ * off (the first stays). The round's first node closes the loop, as for a
+ * guard (`extendRound`): a round already ends by walking back to it, so
+ * nothing is added and the setup stays as it was.
+ */
 export function extendCleanerRound(setup: OwnerSetup, id: string, node: string): OwnerSetup {
+  const cleaner = (setup.cleaners ?? []).find((c) => c.id === id);
+  if (!cleaner) return setup;
+  if (cleaner.round.length > 0 && cleaner.round[0] === node) return setup;
   return cleanerEdit(setup, id, (c) => {
     if (c.round.length === 0) return { ...c, round: [node] };
     if (c.round[c.round.length - 1] === node && c.round.length > 1) return { ...c, round: c.round.slice(0, -1) };
@@ -258,10 +273,6 @@ export function extendCleanerRound(setup: OwnerSetup, id: string, node: string):
   });
 }
 
-/** The cleaner stays on its first node all night. */
-export function clearCleanerRound(setup: OwnerSetup, id: string): OwnerSetup {
-  return cleanerEdit(setup, id, (c) => ({ ...c, round: c.round.slice(0, 1) }));
-}
 
 export function addCamera(setup: OwnerSetup, node: string, kind: OwnerCameraKind = "sweeping", facing: Compass = "n"): { setup: OwnerSetup; id: string } {
   const id = nextId("C", takenIds(setup));
