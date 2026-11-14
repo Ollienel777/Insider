@@ -3,11 +3,12 @@
 // dependency Node finds outside the copy's own node_modules must each fail.
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { FAKE_ENV, GateError, checkNextRoot, gateEnv } from "./gate.mjs";
+import { FAKE_ENV, GateError, checkNextRoot, freePort, gateEnv, pickPort } from "./gate.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.dirname(here);
@@ -219,9 +220,45 @@ describe("gateEnv", () => {
     for (const name of Object.keys(FAKE_ENV)) expect(env[name]).toBe("fake");
   });
 
-  it("defaults PORT to 3100 and keeps one the caller set", () => {
+  it("uses the port it is given, defaults to 3100, and keeps one the caller set", () => {
     expect(gateEnv({}).PORT).toBe("3100");
-    expect(gateEnv({ PORT: "3101" }).PORT).toBe("3101");
+    expect(gateEnv({}, "41234").PORT).toBe("41234");
+    expect(gateEnv({ PORT: "3101" }, "41234").PORT).toBe("3101");
+  });
+});
+
+describe("pickPort", () => {
+  const never = () => {
+    throw new Error("should not look for a free port");
+  };
+
+  it("keeps an explicit PORT, in CI or not", async () => {
+    expect(await pickPort({ PORT: "3147" }, never)).toBe("3147");
+    expect(await pickPort({ PORT: "3147", CI: "true" }, never)).toBe("3147");
+  });
+
+  it("keeps 3100 in CI, as before", async () => {
+    expect(await pickPort({ CI: "true" }, never)).toBe("3100");
+  });
+
+  it("asks for a free port outside CI, CI=false included", async () => {
+    const find = async () => "45678";
+    expect(await pickPort({}, find)).toBe("45678");
+    expect(await pickPort({ CI: "false" }, find)).toBe("45678");
+    expect(await pickPort({ CI: "0" }, find)).toBe("45678");
+  });
+
+  it("finds a port nothing is listening on, and a different one while the first is held", async () => {
+    const first = await freePort();
+    expect(Number(first)).toBeGreaterThan(0);
+    const holder = net.createServer();
+    await new Promise((resolve) => holder.listen(Number(first), "127.0.0.1", resolve));
+    try {
+      const second = await freePort();
+      expect(second).not.toBe(first);
+    } finally {
+      await new Promise((resolve) => holder.close(resolve));
+    }
   });
 });
 

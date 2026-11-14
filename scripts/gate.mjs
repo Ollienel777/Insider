@@ -11,6 +11,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { aliasRoot } from "./alias.mjs";
@@ -32,12 +33,46 @@ const FORBIDDEN_SEGMENTS = ["node_modules", ".next", "dist", ".claude"];
 
 export class GateError extends Error {}
 
+/** The smoke's port when nothing else decides it (SPEC §6 step 6). */
+export const DEFAULT_PORT = "3100";
+
+export function isCI(base = process.env) {
+  return Boolean(base.CI) && !["false", "0"].includes(base.CI);
+}
+
+/** A port the OS reports free on 127.0.0.1, where the smoke's server listens. */
+export function freePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address();
+      server.close(() => resolve(String(port)));
+    });
+  });
+}
+
+/**
+ * The port the build, start and smoke steps share. An explicit PORT wins. CI
+ * keeps 3100: a runner is a fresh machine with one gate on it. Otherwise
+ * another gate may hold 3100 (two worktrees, two agents on the VM), so ask the
+ * OS for a free port. It hands out ephemeral ports in turn, so two gates
+ * started together get different ones; probing upward from 3100 would let
+ * both see 3100 free at the start and collide at the smoke minutes later.
+ */
+export async function pickPort(base = process.env, find = freePort) {
+  if (base.PORT) return base.PORT;
+  if (isCI(base)) return DEFAULT_PORT;
+  return find();
+}
+
 /** The environment every step runs with. */
-export function gateEnv(base = process.env) {
+export function gateEnv(base = process.env, port = DEFAULT_PORT) {
   return {
     ...base,
     ...FAKE_ENV,
-    PORT: base.PORT || "3100",
+    PORT: base.PORT || port,
     NEXT_TELEMETRY_DISABLED: "1",
   };
 }
@@ -148,7 +183,7 @@ function run(command, args, { top, env }) {
 }
 
 export function steps(top, env) {
-  const ci = Boolean(process.env.CI) && !["false", "0"].includes(process.env.CI);
+  const ci = isCI();
   const sh = (command, ...args) => () => run(command, args, { top, env });
   return [
     { id: "0", name: "locate", run: () => checkAlias(top) },
@@ -179,20 +214,25 @@ export function steps(top, env) {
   ];
 }
 
-export function main(argv = process.argv.slice(2)) {
+export async function main(argv = process.argv.slice(2)) {
   const only = argv[0];
   if (only !== undefined && only !== "locate") {
     console.error(`gate: unknown argument ${only}; use no argument, or \`locate\``);
     return 2;
   }
   const packageDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const env = gateEnv();
   const results = [];
   let top;
   try {
     top = locateTop(packageDir);
   } catch (error) {
     return fail("0", "locate", error, results);
+  }
+  let env;
+  try {
+    env = gateEnv(process.env, await pickPort());
+  } catch (error) {
+    return fail("0", "locate (free port)", error, results);
   }
   console.log(`gate: testing ${top} (PORT=${env.PORT}, every service on fixtures)`);
   let list = steps(top, env);
@@ -227,5 +267,5 @@ function fail(id, name, error, results) {
 // instead of silently doing nothing and exiting 0. A path that cannot be
 // resolved throws, which fails loudly rather than skipping.
 if (process.argv[1] && real(fileURLToPath(import.meta.url)) === real(process.argv[1])) {
-  process.exitCode = main();
+  process.exitCode = await main();
 }
