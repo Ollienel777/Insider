@@ -21,13 +21,14 @@ export const RiskTolerance = z.enum(["low", "medium", "high"]);
 export type RiskTolerance = z.infer<typeof RiskTolerance>;
 
 export const STRATEGY_VIA_MAX = 2;
-export const STRATEGY_RATIONALE_MAX = 200;
+/** Short: five strategies must fit the fast call's 400-token budget (SPEC §4.5). */
+export const STRATEGY_RATIONALE_MAX = 120;
 
 /** One way in, as the crew proposes it. */
 export const Strategy = z.object({
   /** A short slug, unique in the set. */
   id: Id.max(40),
-  name: Text.max(60),
+  name: Text.max(40),
   /** An entry id of the manifest: where the crew comes in. */
   entryId: Id,
   /** An entry id of the manifest: where the crew leaves with the objective. */
