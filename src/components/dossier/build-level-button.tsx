@@ -3,7 +3,7 @@
 // Builds a kit building's level on demand (#93): posts to the build route,
 // says the Level Builder is working while it runs, then reloads the screen,
 // which now has the level. A failed build says what failed and offers a retry.
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 type State = { status: "idle" } | { status: "building" } | { status: "failed"; error: string };
@@ -12,13 +12,18 @@ export function BuildLevelButton({
   buildingId,
   missionId,
   initialError,
+  running = false,
 }: {
   buildingId: string;
   missionId: string;
   /** Why the last build of this level failed, when one did. */
   initialError?: string;
+  /** A build of this level is already running on the server: wait on it rather than offer a fresh one. */
+  running?: boolean;
 }) {
-  const [state, setState] = useState<State>(initialError ? { status: "failed", error: initialError } : { status: "idle" });
+  const [state, setState] = useState<State>(
+    running ? { status: "building" } : initialError ? { status: "failed", error: initialError } : { status: "idle" },
+  );
 
   async function build() {
     setState({ status: "building" });
@@ -37,6 +42,15 @@ export function BuildLevelButton({
       setState({ status: "failed", error: error instanceof Error ? error.message : String(error) });
     }
   }
+
+  // A build already running: the route joins it and answers when it ends, so wait on that.
+  const joined = useRef(false);
+  useEffect(() => {
+    if (!running || joined.current) return;
+    joined.current = true;
+    void build();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
+  }, [running]);
 
   return (
     <div className="flex flex-col items-start gap-2" data-testid="build-level">

@@ -24,7 +24,7 @@ export const levelKey = (buildingId: string, missionId: string): string => `${bu
 export type Entry =
   | { status: "building"; promise: Promise<CachedLevel> }
   | { status: "built"; level: CachedLevel }
-  | { status: "failed"; error: string };
+  | { status: "failed"; error: string; at: number };
 
 // On globalThis, so a dev server's module reload keeps what was built.
 const globalStore = globalThis as typeof globalThis & { __heistKitLevels?: Map<string, Entry> };

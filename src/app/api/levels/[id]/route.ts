@@ -19,7 +19,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         {
           error: isFixtureBuilding(id)
             ? `no cached level for building "${id}" and mission "${missionId}"; run npm run build:levels`
-            : `no level for building "${id}": only fixture buildings have levels`,
+            : `no level for building "${id}" and mission "${missionId}" yet: build it from its Dossier`,
         },
         { status: 404 },
       );

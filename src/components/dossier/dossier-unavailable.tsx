@@ -32,6 +32,8 @@ interface DossierUnavailableProps {
   buildable?: boolean;
   /** Why the last on-demand build of this level failed, when one did. */
   buildError?: string;
+  /** A build of this level is running now (the showcase warm, or another visitor's click). */
+  building?: boolean;
   /** Why this kit building's level can't be built here, when it can't. */
   unbuildable?: string;
 }
@@ -48,6 +50,7 @@ export function DossierUnavailable({
   missions,
   buildable = false,
   buildError,
+  building = false,
   unbuildable,
 }: DossierUnavailableProps) {
   const kit = source === "costar";
@@ -74,7 +77,7 @@ export function DossierUnavailable({
             </code>
           )}
           {kit && missionId && buildable ? (
-            <BuildLevelButton buildingId={buildingId} missionId={missionId} initialError={buildError} />
+            <BuildLevelButton buildingId={buildingId} missionId={missionId} initialError={buildError} running={building} />
           ) : null}
           {kit && missionId && unbuildable ? <p className="text-sm text-text-2">{unbuildable}</p> : null}
           {kit && (!missionId || !buildable) && missions?.length ? (
