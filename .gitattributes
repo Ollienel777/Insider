@@ -2,3 +2,7 @@
 # Shell scripts must keep LF: a CRLF checkout (Windows worktrees) breaks `sh`.
 *.sh text eol=lf
 *.mjs text eol=lf
+# Fixture media is binary: CRLF conversion has corrupted a binary fixture before.
+fixtures/**/*.png binary
+fixtures/**/*.jpg binary
+fixtures/**/*.glb binary

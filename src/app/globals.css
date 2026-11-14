@@ -1,0 +1,39 @@
+/* Tailwind scans src/ only (SPEC §6): `source(none)` turns off automatic
+   detection, which would otherwise walk .claude/worktrees/ in the main
+   checkout. Tailwind v4 has no `content` key; this is its equivalent. */
+@import "tailwindcss" source(none);
+@import "tw-animate-css";
+@source "../";
+
+/* A starter subset of the DESIGN.md tokens. The tokens ticket (#4) owns the
+   full set; components use these names only, never raw values. */
+:root {
+  --n-950: #07090c;
+  --n-900: #0c1015;
+  --n-700: #232b37;
+  --n-300: #939caa;
+  --n-50: #f4f6f8;
+
+  --surface-0: var(--n-950);
+  --surface-1: var(--n-900);
+  --border: var(--n-700);
+  --text-1: var(--n-50);
+  --text-2: var(--n-300);
+}
+
+@theme inline {
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-border: var(--border);
+  --color-text-1: var(--text-1);
+  --color-text-2: var(--text-2);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--surface-0);
+  color: var(--text-1);
+}
