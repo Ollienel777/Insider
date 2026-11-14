@@ -35,6 +35,8 @@ export interface Stage {
   /** The height the actors stand at. */
   baseY: number;
   cameras(run: RunState): Marks["cameras"];
+  /** Whether the picture around the walker has arrived: until it has, the view draws but the player waits. */
+  settled(pos: Vec): boolean;
   /** Draws the frame from the walker's place, the bob's lift, and where the player looks. */
   draw(walker: { pos: Vec; vel: Vec }, lift: number, yaw: number, pitch: number, dt: number): void;
   resize(width: number, height: number): void;
@@ -90,6 +92,7 @@ export function fixtureStage(
     camera,
     ground,
     baseY: 0,
+    settled: () => true,
     cameras: (run) =>
       run.board.cameras.map((c) => {
         const cover = c.parts.flat();
@@ -178,6 +181,7 @@ export function scanStage(view: ScanView, placed: PlacedLevel, run: RunState): (
     baseY,
     fit,
     rms: fit.rms,
+    settled: (pos) => view.settled([pos.x, ground.feetY + FP.eyeM, pos.y]),
     cameras: (state) => scanCameraMarks(floor, fit, state.board.cameras, (cover) => cameraMount(floor, cover)),
     draw({ pos, vel }, lift, yaw, pitch, dt) {
       view.setPose(eyePose([pos.x, ground.feetY, pos.y], yawFromHeading(yaw), pitch, FP.eyeM + lift), [vel.x, vel.y]);

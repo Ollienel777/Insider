@@ -337,8 +337,11 @@ export function RunScreen({
   }, []);
   const fpTurn = useCallback((current: RunState): Action => fpHeld.current?.(current) ?? { kind: "wait" }, []);
   const layoutMode = fpOn ? "live" : playMode;
+  // On a scan, the clock waits until first person lets the player loose (its picture has arrived).
+  const [fpReady, setFpReady] = useState(false);
   const clock = useTurnClock({
     live: layoutMode === "live",
+    hold: fpOn && liveScan && !fpReady,
     turnMs: fpOn ? FIRST_PERSON_TURN_MS : undefined,
     action: fpOn ? fpTurn : undefined,
     run,
@@ -559,6 +562,7 @@ export function RunScreen({
                 paused={clock.state === "paused"}
                 scan={scan?.handle ?? null}
                 onScanFailed={setScanFailed}
+                onReady={setFpReady}
                 onUnavailable={() => {
                   runView.fail();
                   setStatus(FP_UNAVAILABLE);
