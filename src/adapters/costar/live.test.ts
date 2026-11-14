@@ -125,7 +125,7 @@ describe("mapping.ts", () => {
   it("pins only scanned buildings with a vacant floor, largest floor first, capped per city", () => {
     const b = (id: string, sf: number, matterport = true, city = "LA") =>
       ({ id, city, layers: { costar: true, vexcel: false, matterport }, availableSpace: sf ? [{ floor: 3, suite: "1", sf }, { floor: 3, suite: "2", sf }] : [] }) as never;
-    const picked = mapSelection([b("5", 100), b("2", 900), b("3", 900), b("4", 0), b("6", 800, false), b("7", 999, true, "Houston")], "LA", undefined, 2);
+    const picked = mapSelection([b("5", 100), b("2", 900), b("3", 900), b("4", 0), b("6", 5000, false), b("7", 999, true, "Houston")], "LA", undefined, 2);
     expect(picked.map((x: { id: string }) => x.id)).toEqual(["2", "3"]);
   });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { modeChip, serviceModes } from "@/lib/mode";
+import { missingForLive, modeChip, serviceModes } from "@/lib/mode";
 
 describe("serviceModes", () => {
   it("is fake everywhere with an empty environment", () => {
@@ -36,5 +36,13 @@ describe("modeChip", () => {
       label: "LIVE",
       onFixtures: ["Vexcel"],
     });
+  });
+});
+
+describe("missingForLive costar", () => {
+  it("needs the kit directory, and no API key or base", () => {
+    expect(missingForLive("costar", {})).toEqual(["COSTAR_KIT_DIR"]);
+    expect(missingForLive("costar", { COSTAR_API_BASE: "https://costar.invalid", COSTAR_API_KEY: "k" })).toEqual(["COSTAR_KIT_DIR"]);
+    expect(missingForLive("costar", { COSTAR_KIT_DIR: "/kits/costar-test" })).toEqual([]);
   });
 });

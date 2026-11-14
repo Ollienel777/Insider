@@ -147,6 +147,16 @@ describe("MapScreen", () => {
     expect(houston.match(/Level in prep/g)).toHaveLength(2);
   });
 
+  it("marks a CoStar kit building facts only, not level in prep: no level is ever built for it", () => {
+    // A fictional kit building, not a CoStar record.
+    const kit: MapBuilding = { ...buildings.find((b) => b.id === "F4")!, id: "900001", name: "Testwood Tower", source: "costar", levelReady: false };
+    const html = renderToStaticMarkup(<MapScreen buildings={[...buildings, kit]} defaultCity="Houston" />);
+    expect(pinMarkup(html, "900001")).toContain('aria-disabled="true"');
+    expect(pinMarkup(html, "900001")).toContain('aria-label="Testwood Tower, facts only"');
+    expect(html.match(/Facts only/g)).toHaveLength(1);
+    expect(html.match(/Level in prep/g)).toHaveLength(2);
+  });
+
   it("starts with nothing selected and Scout this building disabled", () => {
     expect(la).toMatch(/<button[^>]*disabled=""[^>]*>Scout this building<\/button>/);
     expect(la).not.toContain('href="/b/F1/scout"');
