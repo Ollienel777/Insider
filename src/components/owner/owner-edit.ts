@@ -349,9 +349,8 @@ export function setupWithFix(setup: OwnerSetup, fix: ChiefFix, level: Level, nam
         ...named,
         guards: named.guards.map((g) => {
           if (g.id !== guard.id) return g;
-          const next = { ...g, retime };
-          if (retime === 0) delete next.retime;
-          return next;
+          const next: OwnerGuard = { id: g.id, post: g.post, round: g.round, tempo: g.tempo };
+          return retime === 0 ? next : { ...next, retime };
         }),
       };
     }
