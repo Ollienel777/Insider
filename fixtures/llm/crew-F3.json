@@ -67,7 +67,7 @@
             "action": "Out by the east stair to the roof deck"
           }
         ],
-        "pushback": "The run starts at the dock, so the east stair is your way out, not in. It lets out into the east hall, and every hall on this floor has a camera with analytics. One look and it's lockdown.",
+        "pushback": "The run starts at the dock, so the east stair is your way out, not in. And the way up to the lab is past the north hall's C1 and C2: they have analytics, so one look and it's lockdown.",
         "confidence": 0.3
       }
     },

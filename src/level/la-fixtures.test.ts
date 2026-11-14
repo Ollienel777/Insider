@@ -127,6 +127,8 @@ const CASES: Case[] = [
       { text: "c1-north-hall", phrase: "G1 blocks the loading dock", who: "G1", order: "dock-N" },
       { text: "quiet", phrase: "the south hall's glass wall looks into the middle of the suite, and G3 walks that hall", who: "G3", room: "south-hall" },
       { text: "quiet", phrase: "see which way G3 is facing", who: "G3", room: "south-hall" },
+      { text: "roof", phrase: "the north hall's C1 and C2", who: "C1", room: "north-hall" },
+      { text: "roof", phrase: "the north hall's C1 and C2", who: "C2", room: "north-hall" },
       { text: "lobby", phrase: "the north hall's C1 and C2", who: "C1", room: "north-hall" },
       { text: "lobby", phrase: "the north hall's C1 and C2", who: "C2", room: "north-hall" },
       { text: "garage", phrase: "the north hall's C1 and C2", who: "C1", room: "north-hall" },
@@ -299,10 +301,23 @@ describe.each(CASES)("$id on its fixture floor", (c) => {
       for (const step of rest.filter((s) => entryIds.has(s.zoneId))) {
         expect(named(step.action), `${r.id}: ${step.action}`).toEqual([step.zoneId]);
       }
+      // A reply the board catches warns about the camera or guard that does it, not another.
+      const plan = CrewPlan.parse(r.plan);
+      const caughtBy = validatePlan(placed, plan).warnings[0]?.text.match(/\b[CG]\d+\b/)?.[0];
+      if (caughtBy) {
+        const said = [plan.pushback, ...plan.steps.map((s) => s.action)].join(" ");
+        expect(said, `${r.id} is caught by ${caughtBy}`).toMatch(new RegExp(`\\b${caughtBy}\\b`));
+      }
     }
     // The exit line names each exit the Run screen's plan lists ("Out by the …"), and nothing else.
     const exits = placed.entries.filter((e) => placed.level.exits.includes(e.nodeId)).map((e) => e.entryId);
-    expect(named(manifest().mission.exitCondition)).toEqual([...exits].sort());
+    const exitLine = manifest().mission.exitCondition;
+    expect(named(exitLine)).toEqual([...exits].sort());
+    // Nor any entry that is not an exit, by its label or its kind ("the service lift" is the dock's).
+    for (const entry of manifest().entries.filter((e) => !exits.includes(e.id))) {
+      expect(exitLine.toLowerCase(), entry.id).not.toContain(entry.label.toLowerCase());
+      expect(exitLine.toLowerCase(), entry.id).not.toMatch(new RegExp(`\\b${entry.kind}\\b(?! lift)`));
+    }
   });
 
   it("puts each guard and camera a recorded crew or Chief text places where that text says (#39 review)", () => {

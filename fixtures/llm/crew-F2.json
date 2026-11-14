@@ -87,6 +87,10 @@
             "action": "Up from the loading dock on the freight lift"
           },
           {
+            "zoneId": "dock-W",
+            "action": "Wait one turn at the freight lift"
+          },
+          {
             "zoneId": "objective",
             "action": "Work the vault door from the east corridor and take the boxes"
           },
@@ -95,7 +99,7 @@
             "action": "Out by the east stair to the helipad"
           }
         ],
-        "pushback": "The helipad stair is the short way to the vault, but the run starts at the dock, so the stair is your way out, not in.",
+        "pushback": "The helipad stair is the short way to the vault, but the run starts at the dock, so the stair is your way out, not in. Wait one turn at the freight lift on the way up.",
         "confidence": 0.4
       }
     },
@@ -111,6 +115,10 @@
           {
             "zoneId": "dock-W",
             "action": "Up from the loading dock on the freight lift"
+          },
+          {
+            "zoneId": "dock-W",
+            "action": "Wait one turn at the freight lift"
           },
           {
             "zoneId": "objective",
@@ -139,6 +147,10 @@
             "action": "Up from the loading dock on the freight lift"
           },
           {
+            "zoneId": "dock-W",
+            "action": "Wait one turn at the freight lift"
+          },
+          {
             "zoneId": "objective",
             "action": "Work the vault door and take the boxes"
           },
@@ -147,7 +159,7 @@
             "action": "Out down the garage shuttle lift"
           }
         ],
-        "pushback": "The run starts at the dock, so the garage shuttle is your way out, not in. It opens at the east end of the service hall, and C1 turns along that hall the whole way. Wait at the freight lift first.",
+        "pushback": "The run starts at the dock, so the garage shuttle is your way out, not in. It opens at the east end of the service hall, and C1 turns along that hall the whole way.",
         "confidence": 0.35
       }
     },
