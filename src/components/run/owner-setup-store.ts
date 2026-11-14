@@ -1,5 +1,5 @@
 // The owner's named security setups, kept per building in localStorage (Owner
-// Mode, SPEC §13, issue 125). They stay in the owner's browser: nothing here sends
+// Mode, SPEC §13, issue 28). They stay in the owner's browser: nothing here sends
 // one anywhere. Storage can be blocked or full, so every read and write may
 // quietly fail, as with the run log (run-log-store.ts): even reaching
 // `localStorage` throws when site data is blocked, so it is reached inside the

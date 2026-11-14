@@ -1,4 +1,4 @@
-// The owner's setup as a level (Owner Mode, SPEC §13, #125). `validateOwnerSetup`
+// The owner's setup as a level (Owner Mode, SPEC §13, #28). `validateOwnerSetup`
 // checks a setup against a floor and names every problem with a reason;
 // `applyOwnerSetup` turns a valid one into the same placement the placer
 // returns, with the owner's guards, cameras, locks and staffed desks in place
@@ -147,8 +147,10 @@ export interface OwnerPlacedDesk {
 }
 
 /** The placer's level with the owner's security in it. Entries, zones and the objective are the placer's. */
-export interface OwnerPlacedLevel extends Omit<PlacedLevel, "guards" | "cameras" | "locks"> {
+export interface OwnerPlacedLevel extends Omit<PlacedLevel, "guards" | "cameras" | "locks" | "cleaners"> {
   setupName: string;
+  /** Always empty: the placer's generated cleaners are dropped, and the setup's staffed desks are its only staff. */
+  cleaners: readonly [];
   guards: readonly OwnerPlacedGuard[];
   cameras: readonly OwnerPlacedCamera[];
   locks: readonly OwnerPlacedLock[];
@@ -298,9 +300,9 @@ export function applyOwnerSetup(manifest: LevelManifest, floor: FloorGraph, setu
   };
 
   // The placer's own security misses are not this level's: only its entries' and zones' stay.
-  const unplaced = base.unplaced.filter((u) => !/^(guard|camera|lock):/.test(u.elementRole));
+  const unplaced = base.unplaced.filter((u) => !/^(guard|camera|lock|cleaner):/.test(u.elementRole));
   return {
     ok: true,
-    placed: { ...base, level, setupName: setup.name, guards, cameras, locks, desks, unplaced },
+    placed: { ...base, level, setupName: setup.name, guards, cameras, locks, desks, cleaners: [], unplaced },
   };
 }

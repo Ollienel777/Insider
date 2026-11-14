@@ -7,6 +7,7 @@ import type { FloorGraph, GuardIntent } from "@/domain";
 import {
   moveGuards,
   neighbours,
+  picksToOpen,
   plannedPath,
   visibleFrom,
   watched,
@@ -154,7 +155,7 @@ export function choices(run: RunState, mode: Mode = "walk"): Choice[] {
         action: { kind: "pick", doorId },
         kind: "pick",
         doorId,
-        progress: { done, of: board.level.pickTurns },
+        progress: { done, of: picksToOpen(board.level, doorId) },
       };
     });
 }
@@ -262,7 +263,7 @@ export function planSteps(placed: PlacedLevel, run: RunState, objective: string)
   ];
   if (lock) {
     steps.push({
-      label: `Pick the ${objectiveName.toLowerCase()} door, ${level.pickTurns} turns`,
+      label: `Pick the ${objectiveName.toLowerCase()} door, ${picksToOpen(level, lock.doorId)} turns`,
       done: !run.locked.includes(lock.doorId) || run.carrying,
     });
   }
@@ -379,7 +380,7 @@ export function describeTurn(placed: PlacedLevel, before: RunState, after: RunSt
   if (!before.carrying && after.carrying) return "You have the files. Get out.";
   const opened = before.locked.find((d) => !after.locked.includes(d));
   if (opened) return "The door is open.";
-  if (after.picking) return `Picking the lock, ${after.picking.progress} of ${placed.level.pickTurns}.`;
+  if (after.picking) return `Picking the lock, ${after.picking.progress} of ${picksToOpen(placed.level, after.picking.doorId)}.`;
   if (after.playerNode === before.playerNode) return `You wait in the ${where}.`;
   if (after.turns.at(-1)?.player.kind === "sprint") return `You sprint to the ${where}.`;
   return `You move to the ${where}.`;

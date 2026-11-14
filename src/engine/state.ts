@@ -314,6 +314,12 @@ export function createRun(level: Level): RunState {
   };
 }
 
+/** The consecutive picks that open locked door `doorId`: its own count when the level sets one, else `pickTurns`. */
+export function picksToOpen(level: Pick<Level, "pickTurns" | "doorPickTurns">, doorId: string): number {
+  const own = level.doorPickTurns;
+  return own && Object.hasOwn(own, doorId) ? own[doorId] : level.pickTurns;
+}
+
 /** A guard or cleaner on the first node of its loop, facing its first hop. */
 function placeWalker(board: Board, spec: GuardSpec): GuardState {
   const placed: GuardState = {

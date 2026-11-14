@@ -27,6 +27,7 @@ export {
   createRun,
   DEFAULT_HEARING,
   LevelError,
+  picksToOpen,
   zoneOf,
   zoneTarget,
   type Board,
