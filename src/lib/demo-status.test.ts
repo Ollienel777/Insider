@@ -18,6 +18,14 @@ describe("which services can answer live (missingForLive, configuredModes)", () 
     expect(missingForLive("llm", { LLM_PROVIDER: "bedrock", BEDROCK_ENABLED: "1" })).toEqual([]);
   });
 
+  it("counts a setting that would refuse every live call as missing, so the chip says fixtures", () => {
+    const key = { ANTHROPIC_API_KEY: "k" };
+    expect(missingForLive("llm", { ...key, LLM_PROVIDER: "openai" })).toEqual(["LLM_PROVIDER"]);
+    expect(missingForLive("llm", { ...key, LLM_TIMEOUT_MS: "4s" })).toEqual(["LLM_TIMEOUT_MS"]);
+    expect(missingForLive("llm", { ...key, LLM_TIMEOUT_MS: "1500" })).toEqual([]);
+    expect(configuredModes({ ...key, LLM_MODE: "live", LLM_PROVIDER: "openai" }).llm).toBe("fake");
+  });
+
   it("is live only where live is asked for and nothing is missing", () => {
     expect(configuredModes({ HEIST_MODE: "live" })).toEqual({ llm: "fake", costar: "fake", vexcel: "fake", matterport: "fake" });
     expect(
