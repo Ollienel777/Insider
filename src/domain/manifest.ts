@@ -41,6 +41,8 @@ export const SecurityProfile = z.object({
   /** Turns per guard hop: 1 is the tightest round. */
   patrolTempo: z.int().positive(),
   cameraKind: CameraKind,
+  /** How many cameras the placer posts on the staged floor (SPEC §4.3, #13). */
+  cameraCount: z.int().positive(),
   lockKind: LockKind,
 });
 export type SecurityProfile = z.infer<typeof SecurityProfile>;

@@ -111,6 +111,7 @@ const manifest = {
     guardCount: 4,
     patrolTempo: 1,
     cameraKind: "analog-sweep",
+    cameraCount: 2,
     lockKind: "key",
   },
   zones: [
@@ -301,6 +302,14 @@ describe("Building has no tenant field", () => {
 describe("LevelManifest", () => {
   it("rejects a stray key, so no floor graph rides along", () => {
     expect(LevelManifest.safeParse({ ...manifest, floor }).success).toBe(false);
+  });
+
+  it("requires a positive camera count in the security profile", () => {
+    const { cameraCount: _omit, ...noCount } = manifest.securityProfile;
+    void _omit;
+    expect(LevelManifest.safeParse({ ...manifest, securityProfile: noCount }).success).toBe(false);
+    const zero = { ...manifest.securityProfile, cameraCount: 0 };
+    expect(LevelManifest.safeParse({ ...manifest, securityProfile: zero }).success).toBe(false);
   });
 
   it("rejects duplicate zone ids", () => {
