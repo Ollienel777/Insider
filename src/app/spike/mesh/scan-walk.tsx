@@ -35,6 +35,7 @@ const HINTS: [string, string][] = [
   ["N", "next scan position"],
   ["G", "mesh edges"],
   ["B", "blend rule"],
+  ["E", "exposure match"],
   ["Esc", "release"],
 ];
 
@@ -143,6 +144,11 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, debug }: Props) {
               <Row label="Bytes">{`${hud.building.megabytes.toFixed(0)} MB held · GPU ≈ ${hud.building.gpuMegabytes.toFixed(0)} MB`}</Row>
               <Row label="Cubes">{`${hud.building.low} low · ${hud.building.sharp} sharp${hud.panosLoading > 0 ? " · 1 arriving" : ""}`}</Row>
               <Row label="Worst">{`${hud.building.worstFrame.toFixed(0)} ms frame in 5 s`}</Row>
+              <Row label="Exposure">
+                {hud.exposure
+                  ? `${hud.exposure.on ? "on" : "off"} · ${hud.exposure.pairs} pairs · ${hud.exposure.low.toFixed(2)}–${hud.exposure.high.toFixed(2)}`
+                  : "matching…"}
+              </Row>
               <Row label="Times">{`sharp ${seconds(hud.building.firstSharp)} · all ${seconds(hud.building.allHeld)}`}</Row>
             </>
           )}

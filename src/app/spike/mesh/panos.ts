@@ -41,6 +41,8 @@ import { conjugate, quatToMat3, type Vec3 } from "@/lib/scan-mesh/coords";
 import { isAllowedAssetUrl, type ScanPano } from "@/lib/scan-mesh/manifest";
 import { nearestFirst, planSharp, sharpOrder } from "@/lib/scan-mesh/pano-plan";
 import { slotFades, type BlendMode } from "@/lib/scan-mesh/blend";
+import type { Rgb } from "@/lib/scan-mesh/exposure";
+import type { ExposureSource } from "./exposure-match";
 import { alignToCube, CUBE_LOOKUP_FLIP, panoDistance, panoWeights } from "@/lib/scan-mesh/skybox";
 import type { DecodeReply, DecodeRequest } from "./decode-worker";
 import { createDistanceMaterial, SLOTS } from "./projection";
@@ -54,6 +56,8 @@ const SHARP_FETCHES = 2;
 const SHARE_RATE = 7;
 /** How quickly a slot fades between its small cube and its sharp one, per second: slow enough not to read as a swap. */
 const SHARP_RATE = 0.9;
+/** How quickly the exposure gains ease in once solved, per second. */
+const GAIN_RATE = 1.5;
 /** How far ahead of the player the sharp cubes look, seconds. */
 const HORIZON = 1.2;
 /** The small cube's face when it has to be made from the full-size bytes, pixels. */
@@ -201,8 +205,11 @@ export class PanoStore {
   needsLinks = false;
   /** How the slots are weighted (lib/scan-mesh/blend.ts). */
   mode: BlendMode = "view";
-  /** Each panorama's colour gain, by index in the scan's list; missing means 1. */
-  gains = new Map<number, Vec3>();
+  /** Whether the exposure gains are applied (to compare with and without). */
+  useGains = true;
+  /** Each panorama's colour gain as shown, by index in the scan's list, easing toward `targetGains`; missing means 1. */
+  private gains = new Map<number, [number, number, number]>();
+  private targetGains = new Map<number, Rgb>();
 
   /**
    * `capacity` sharp cubes, `sharpSize` pixels across, are made at once and
@@ -336,6 +343,19 @@ export class PanoStore {
     return out;
   }
 
+  /** Every panorama whose faces are held, for matching exposures: tiny copies are made from the smallest bytes there are. */
+  exposureSources(): ExposureSource[] {
+    return this.shown.flatMap((e) => {
+      const faces = e.lowBytes ?? e.sharpBytes;
+      return faces ? [{ index: e.index, origin: e.pano.position, rotation: e.pano.rotation, faces }] : [];
+    });
+  }
+
+  /** Each panorama's colour gain, by index: eased in over a second or so. */
+  setGains(gains: ReadonlyMap<number, Rgb>): void {
+    this.targetGains = new Map(gains);
+  }
+
   /** The panorama nearest `eye`, by index, or -1. */
   nearest(eye: Vec3): number {
     let best = -1;
@@ -395,6 +415,12 @@ export class PanoStore {
     ready.forEach((e, i) => target.set(e, targets[i]));
     const blend = 1 - Math.exp(-SHARE_RATE * dt);
     const fade = SHARP_RATE * dt;
+    const ease = 1 - Math.exp(-GAIN_RATE * dt);
+    for (const [index, target] of this.targetGains) {
+      const shown = this.gains.get(index) ?? [1, 1, 1];
+      for (let c = 0; c < 3; c++) shown[c] += ((this.useGains ? target[c] : 1) - shown[c]) * ease;
+      this.gains.set(index, shown);
+    }
     for (const e of shown) {
       const goal = target.get(e) ?? 0;
       e.share += (goal - e.share) * blend;

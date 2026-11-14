@@ -21,6 +21,7 @@ import { applyLook, stepMove, TUNING, viewBob, type MoveState } from "@/lib/scan
 import { parseObj } from "@/lib/scan-mesh/obj";
 import { MeshWorld } from "./collider";
 import { blankCube, PanoStore, type PanoUse } from "./panos";
+import { matchExposure } from "./exposure-match";
 import { createScanMaterial } from "./projection";
 import { RECORD_STEP, WalkRecorder, type RecordOptions } from "./recorder";
 import type { WalkSample } from "@/lib/scan-mesh/walk-stats";
@@ -50,6 +51,8 @@ export interface WalkHud {
   canMove: boolean;
   /** How much of the building is in memory. */
   building: WalkBuilding;
+  /** The exposure match: pairs of panoramas compared, the gains' range, and whether they are applied; null until solved. */
+  exposure: { pairs: number; low: number; high: number; on: boolean } | null;
   faces: PanoResolution;
   locked: boolean;
   /** The browser refused to lock the mouse: the page says to drag instead. */
@@ -151,6 +154,7 @@ export class ScanWalk {
   private frames = 0;
   private fps = 0;
   private used: PanoUse[] = [];
+  private exposureStarted = false;
   /** The debug recorder's walk, while one is running. */
   private recorder: WalkRecorder | null = null;
   private readonly opened = performance.now();
@@ -185,6 +189,7 @@ export class ScanWalk {
       speed: 0,
       projection: true,
       blend: "view",
+      exposure: null,
       sensitivity: 1,
       panos: [],
       panoCount: 0,
@@ -462,6 +467,7 @@ export class ScanWalk {
     if (event.repeat) return;
     if (event.code === "KeyT") this.setProjection(!this.projection);
     if (event.code === "KeyG") this.toggleWire();
+    if (event.code === "KeyE") this.setExposure(!(this.hud.exposure?.on ?? true));
     if (event.code === "KeyB") this.setBlend(this.hud.blend === "view" ? "nearest" : "view");
     if (event.code === "KeyP" && this.state && this.panos) {
       this.standAt(this.panos.nearest([this.state.x, this.state.y + TUNING.eyeHeight + this.eyeLift, this.state.z]));
@@ -515,6 +521,30 @@ export class ScanWalk {
   setLook(yaw: number, pitch: number): void {
     this.yaw = yaw;
     this.pitch = pitch;
+  }
+
+  /** Apply the exposure gains or not: to see what they do. */
+  setExposure(on: boolean): void {
+    if (this.panos) this.panos.useGains = on;
+    if (this.hud.exposure) this.hud.exposure = { ...this.hud.exposure, on };
+    this.push();
+  }
+
+  /** Once every panorama has its small cube, compare neighbours' colours and even out their exposures. */
+  private startExposure(): void {
+    const panos = this.panos;
+    const world = this.world;
+    if (this.exposureStarted || !panos || !world) return;
+    const counts = panos.counts();
+    if (counts.total === 0 || counts.low < counts.total) return;
+    this.exposureStarted = true;
+    void matchExposure(panos.exposureSources(), world, this.abort.signal).then(({ gains, pairs }) => {
+      if (this.disposed || gains.size === 0) return;
+      panos.setGains(gains);
+      const all = [...gains.values()].flat();
+      this.hud.exposure = { pairs, low: Math.min(...all), high: Math.max(...all), on: panos.useGains };
+      this.push();
+    });
   }
 
   /** Switch the rule that weights the panoramas: to judge the difference by eye, or to measure it. */
@@ -652,6 +682,7 @@ export class ScanWalk {
         this.linksUsable(),
       );
       if (this.panos.needsLinks) void this.refreshLinks();
+      this.startExposure();
     }
 
     this.hud.position = [next.x, next.y, next.z];
