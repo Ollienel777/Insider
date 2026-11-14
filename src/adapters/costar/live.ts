@@ -1,8 +1,8 @@
 // The live CoStar adapter: CoStar's data kit, read from `COSTAR_KIT_DIR`
 // (SPEC §4.5). The kit is indexed once per adapter, lazily, on the first call
 // (kit.ts); every call after that answers from memory. A failed load rejects
-// that call (the breaker in index.ts then serves fixtures) and is retried on
-// the next adapter, after `npm run demo:reset`.
+// that call and is retried on the next one; the breaker in index.ts serves
+// fixtures meanwhile, until `npm run demo:reset`.
 import { BASEMAPS } from "@/components/map/basemap";
 import type { Building, City } from "@/domain";
 import { loadKitIndex, type KitIndex } from "./kit";
