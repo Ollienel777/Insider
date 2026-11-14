@@ -369,6 +369,20 @@ describe("Aerial as a massing (keyless fake mode)", () => {
     expect(Aerial.safeParse({ ...aerial, entries: [{ ...bare, x: 820 }] }).success).toBe(false);
   });
 
+  it("on a view with an image, requires a pixel even when the entry has `at`", () => {
+    const anchored = { ...aerial.entries[0], x: undefined, y: undefined, at: dock.at };
+    const result = Aerial.safeParse({ ...aerial, entries: [anchored] });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0].message).toContain("needs a pixel (x, y)");
+    // Both a pixel and `at` is fine.
+    expect(Aerial.safeParse({ ...aerial, entries: [{ ...aerial.entries[0], at: dock.at }] }).success).toBe(true);
+  });
+
+  it("rejects a pixel outside its view's image", () => {
+    const off = { ...aerial.entries[0], x: 1601 };
+    expect(Aerial.safeParse({ ...aerial, entries: [off] }).error?.issues[0].message).toContain("outside view");
+  });
+
   it("rejects an anchor above the roof", () => {
     const entries = [{ ...dock, at: { ...dock.at, elevM: 161 } }];
     expect(Aerial.safeParse({ ...massing, entries }).success).toBe(false);

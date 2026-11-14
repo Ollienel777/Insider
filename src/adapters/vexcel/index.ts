@@ -8,11 +8,11 @@ import { syncDemoEpoch } from "@/lib/demo-epoch";
 import { withFallback, type Fallback } from "@/lib/fallback";
 import { missingForLive, serviceModes, type ServiceMode } from "@/lib/mode";
 import { resetServerSlot, serverSlot } from "@/lib/server-breakers";
-import { createFakeVexcel, fixtureLocation } from "./fake";
+import { createFakeVexcel } from "./fake";
 import { createLiveVexcel } from "./live";
 import type { VexcelAdapter } from "./types";
 
-export type { VexcelAdapter } from "./types";
+export type { AerialImage, VexcelAdapter } from "./types";
 
 type Env = Record<string, string | undefined>;
 
@@ -40,12 +40,13 @@ export function selectVexcel(env: Env): VexcelSelection {
     };
   }
   return {
-    // Live imagery is fetched at the fixture building's own block until the
-    // CoStar adapter can say where a building stands.
+    // Live imagery is fetched at the fixture massing's own block, and the
+    // massing's hand-placed entries are pinned onto it, until the CoStar kit
+    // can say where a real building stands (issue 29).
     adapter: createLiveVexcel({
       base: env.VEXCEL_API_BASE,
       key: env.VEXCEL_API_KEY,
-      locate: async (id) => fixtureLocation(id),
+      massing: (id) => fake.getAerial(id),
     }),
     mode: "live",
     reason: "Vexcel: live",

@@ -5,6 +5,9 @@
 import { getVexcel } from "@/adapters/vexcel";
 import { forcedFromRequest } from "@/lib/mode";
 
+/** What the browser is told when the aerial fails; the cause stays in the server log. */
+const AERIAL_FAILED = "The aerial service failed. Try again.";
+
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
   const { id } = await context.params;
   const forced = forcedFromRequest(request).has("vexcel");
@@ -18,7 +21,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     }
     return Response.json({ mode, aerial, ...(fallback && { fallback }) });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return Response.json({ mode: getVexcel({ forced }).mode, error: message }, { status: 502 });
+    // A schema error would dump field paths and values; none of that is for the browser.
+    console.error(`GET /api/buildings/${id}/aerial failed:`, error);
+    return Response.json({ mode: getVexcel({ forced }).mode, error: AERIAL_FAILED }, { status: 502 });
   }
 }

@@ -19,7 +19,7 @@ export interface BuildRun {
   /** The building this run builds; every tool refuses any other id. */
   buildingId: string;
   costar: CoStarAdapter;
-  vexcel: VexcelAdapter;
+  vexcel: Pick<VexcelAdapter, "getAerial">;
   missions?: readonly Mission[];
   /** Set by `derive_security_profile`. */
   derivation?: SecurityDerivation;

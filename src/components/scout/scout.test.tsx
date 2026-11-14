@@ -2,7 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { FIXTURE_BUILDINGS } from "@/adapters/costar/fake";
 import { FIXTURE_AERIALS } from "@/adapters/vexcel/fake";
-import { buildMassing, entryFace, FRAME, LABEL_GAP, layoutLabels, stepView, VIEW_ORDER } from "./massing";
+import { orthoBounds, placeOnOrtho } from "@/adapters/vexcel/mapping";
+import { buildImageViews, buildMassing, entryFace, FRAME, LABEL_GAP, layoutLabels, stepView, VIEW_ORDER } from "./massing";
 import { MassingSvg } from "./massing-view";
 import { ScoutPanel, ScoutScreen } from "./scout-screen";
 
@@ -123,6 +124,58 @@ describe("entryFace", () => {
     expect(entryFace(byId("dock-N"), f1.heightM)).toBe("North face");
     expect(entryFace(byId("exit-W"), f1.heightM)).toBe("West face");
     expect(entryFace(byId("roof"), f1.heightM)).toBe("Roof");
+  });
+
+  it("names the nearest face for an entry pinned on the ortho, as a live aerial pins them", () => {
+    const f1 = FIXTURE_AERIALS.get("F1")!;
+    for (const entry of f1.entries) {
+      const pinned = { ...entry, view: "ortho" as const, x: 1, y: 1 };
+      expect(entryFace(pinned, f1.heightM, f1.footprint), entry.id).toBe(entryFace(entry, f1.heightM));
+    }
+  });
+});
+
+describe("buildImageViews (live imagery)", () => {
+  const f1 = FIXTURE_AERIALS.get("F1")!;
+  const box = orthoBounds(f1.footprint);
+  const live = {
+    views: [
+      { dir: "N" as const, url: "/api/buildings/F1/aerial/N", width: 960, height: 700 },
+      { dir: "ortho" as const, url: "/api/buildings/F1/aerial/ortho", width: 2000, height: 1000 },
+    ],
+    entries: placeOnOrtho(f1.entries, box, { width: 2000, height: 1000 }, () => {}),
+  };
+  const views = buildImageViews(live);
+
+  it("fits each image whole and centred in the frame", () => {
+    const [n, ortho] = views;
+    // 960×700 is narrower than 16:10: full height, bars either side.
+    expect(n.box.height).toBeCloseTo(1);
+    expect(n.box.width).toBeCloseTo((960 / 700) * (FRAME.height / FRAME.width));
+    expect(n.box.x).toBeCloseTo((1 - n.box.width) / 2);
+    // 2:1 is wider: full width, bars above and below.
+    expect(ortho.box.width).toBeCloseTo(1);
+    expect(ortho.box.y).toBeCloseTo((1 - ortho.box.height) / 2);
+  });
+
+  it("draws each entry only on the view it is pinned to, inside the frame, every one facing", () => {
+    const [n, ortho] = views;
+    expect(n.markers).toEqual([]);
+    expect(ortho.markers.map((m) => m.entry.id)).toEqual(f1.entries.map((e) => e.id));
+    for (const m of ortho.markers) {
+      expect(m.facing).toBe(true);
+      for (const v of [m.x, m.y, m.labelX, m.labelY]) {
+        expect(v, m.entry.id).toBeGreaterThan(0);
+        expect(v, m.entry.id).toBeLessThan(1);
+      }
+    }
+    const dock = live.entries.find((e) => e.id === "dock-N")!;
+    const marker = ortho.markers.find((m) => m.entry.id === "dock-N")!;
+    expect(marker.x).toBeCloseTo((dock.x! * 0.8) / FRAME.width);
+  });
+
+  it("skips a view without an image", () => {
+    expect(buildImageViews({ views: [{ dir: "N", width: 10, height: 10 }], entries: [] })).toEqual([]);
   });
 });
 

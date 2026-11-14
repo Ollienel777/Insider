@@ -10,7 +10,17 @@ import { Aerial, type AerialEntry, type Building, type ViewDir } from "@/domain"
 import { cityName } from "@/lib/cities";
 import { noteResponse } from "@/lib/demo-status";
 import { cn } from "@/lib/utils";
-import { buildMassing, entryFace, FRAME, stepView, VIEW_LABEL, VIEW_ORDER, type Marker, type MassingView } from "./massing";
+import {
+  buildImageViews,
+  buildMassing,
+  entryFace,
+  FRAME,
+  VIEW_LABEL,
+  VIEW_ORDER,
+  type ImageView,
+  type Marker,
+  type MassingView,
+} from "./massing";
 import { MassingSvg } from "./massing-view";
 
 export type ScoutBuilding = Pick<
@@ -35,7 +45,7 @@ const DRAG_STEP = 72;
 export function ScoutScreen({ building }: { building: ScoutBuilding }) {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
-  const [view, setView] = useState<ViewDir>("N");
+  const [chosen, setView] = useState<ViewDir>("N");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -50,13 +60,25 @@ export function ScoutScreen({ building }: { building: ScoutBuilding }) {
     return () => controller.abort();
   }, [building.id, attempt]);
 
-  const views = useMemo(
-    () => (load.status === "ready" ? buildMassing(load.aerial, building.stories) : null),
-    [load, building.stories],
-  );
+  // Live imagery is drawn as photos; a fixture aerial as the massing render.
+  const views = useMemo<CanvasView[] | null>(() => {
+    if (load.status !== "ready") return null;
+    if (load.aerial.views.some((v) => v.url)) return buildImageViews(load.aerial).map((v) => ({ kind: "image", ...v }));
+    return buildMassing(load.aerial, building.stories).map((v) => ({ kind: "massing", ...v }));
+  }, [load, building.stories]);
   const ready = load.status === "ready";
+  // Live Vexcel may lack a direction; the chips, keys and drag skip it.
+  const available = useMemo(() => (views ? VIEW_ORDER.filter((d) => views.some((v) => v.dir === d)) : VIEW_ORDER), [views]);
+  const view = available.includes(chosen) ? chosen : available[0];
 
-  const turn = useCallback((by: 1 | -1) => setView((v) => stepView(v, by)), []);
+  const turn = useCallback(
+    (by: 1 | -1) =>
+      setView((v) => {
+        const i = Math.max(0, available.indexOf(v));
+        return available[(i + by + available.length) % available.length];
+      }),
+    [available],
+  );
 
   useEffect(() => {
     if (!ready) return;
@@ -127,7 +149,7 @@ export function ScoutScreen({ building }: { building: ScoutBuilding }) {
                   key={dir}
                   dir={dir}
                   active={dir === view}
-                  disabled={!ready}
+                  disabled={!ready || !available.includes(dir)}
                   onClick={() => setView(dir)}
                   className={dir === "ortho" ? "ml-3" : undefined}
                 />
@@ -194,8 +216,42 @@ function FrameArea({ children }: { children: ReactNode }) {
   );
 }
 
+/** One view on the canvas: a live photo, or the fixture massing's render. */
+type CanvasView = ({ kind: "image" } & ImageView) | ({ kind: "massing" } & MassingView);
+
+/**
+ * A live Vexcel image, fitted whole into the frame. It is fetched through the
+ * image route and drawn with a plain <img>: next/image's optimiser would
+ * write a copy to disk, and the imagery is never stored (SPEC §10).
+ */
+function AerialPhoto({ view }: { view: ImageView }) {
+  const [failed, setFailed] = useState(false);
+  const { box } = view;
+  return (
+    <div
+      data-testid="aerial-photo"
+      className="absolute overflow-hidden rounded-md bg-surface-1"
+      style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` }}
+    >
+      {failed ? (
+        <p className="flex size-full items-center justify-center text-sm text-text-2">This view didn&apos;t load.</p>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element -- see above: no optimiser, no copy on disk
+        <img
+          src={view.url}
+          alt=""
+          draggable={false}
+          decoding="async"
+          onError={() => setFailed(true)}
+          className="size-full object-cover"
+        />
+      )}
+    </div>
+  );
+}
+
 interface CanvasProps {
-  views: MassingView[];
+  views: CanvasView[];
   current: ViewDir;
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -253,7 +309,7 @@ function AerialCanvas({ views, current, selectedId, onSelect, onTurn }: CanvasPr
               active ? "opacity-100" : "pointer-events-none opacity-0",
             )}
           >
-            <MassingSvg view={v} />
+            {v.kind === "image" ? <AerialPhoto view={v} /> : <MassingSvg view={v} />}
             <Leaders markers={v.markers} selectedId={selectedId} />
             {v.markers.map((marker) => (
               <EntryMarker
@@ -518,7 +574,7 @@ export function ScoutPanel({ building, load, selected, onPick, onRetry }: PanelP
               <li key={entry.id}>
                 <EntryRow
                   entry={entry}
-                  face={entryFace(entry, aerial!.heightM)}
+                  face={entryFace(entry, aerial!.heightM, aerial!.footprint)}
                   selected={entry.id === selected?.id}
                   onPick={onPick}
                 />
@@ -532,7 +588,7 @@ export function ScoutPanel({ building, load, selected, onPick, onRetry }: PanelP
         {selected && aerial ? (
           <>
             <p className="label-caps text-text-3">
-              {selected.label} · {entryFace(selected, aerial.heightM)}
+              {selected.label} · {entryFace(selected, aerial.heightM, aerial.footprint)}
             </p>
             <p className="mt-2 text-base text-text-1">{selected.note}</p>
           </>

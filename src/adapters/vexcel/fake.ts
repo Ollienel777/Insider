@@ -35,5 +35,9 @@ export function createFakeVexcel(aerials: ReadonlyMap<string, Aerial> = FIXTURE_
       // Callers get a copy, so nothing they do can change the fixtures.
       return aerial ? structuredClone(aerial) : null;
     },
+    // A massing has no imagery to proxy.
+    async getImage() {
+      return null;
+    },
   };
 }

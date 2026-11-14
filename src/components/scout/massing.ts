@@ -142,11 +142,81 @@ export const VIEW_LABEL: Record<ViewDir, { chip: string; caption: string }> = {
   ortho: { chip: "Ortho", caption: "Straight down" },
 };
 
-/** Which face an entry is tagged on, in words. */
-export function entryFace(entry: AerialEntry, heightM: number): string {
+/**
+ * Which face an entry is tagged on, in words. An entry seen from straight
+ * down (a live aerial pins every entry on the ortho) is on the face nearest
+ * its anchor, when the footprint is given; otherwise on the roof.
+ */
+export function entryFace(entry: AerialEntry, heightM: number, footprint?: Aerial["footprint"]): string {
   if (entry.kind === "roof" || (entry.at && entry.at.elevM >= heightM)) return "Roof";
   const face: Record<ViewDir, string> = { N: "North face", E: "East face", S: "South face", W: "West face", ortho: "Roof" };
+  if (entry.view === "ortho" && entry.at && footprint) return face[nearestFace(entry.at.lngLat, footprint)];
   return face[entry.view];
+}
+
+/** The compass side of the footprint whose wall is nearest `point`. */
+function nearestFace(point: V2, footprint: Aerial["footprint"]): Exclude<ViewDir, "ortho"> {
+  const n = footprint.length;
+  const local = toLocal([footprint.reduce((s, [x]) => s + x, 0) / n, footprint.reduce((s, [, y]) => s + y, 0) / n]);
+  let ring = footprint.map((p) => local(p));
+  if (signedArea(ring) < 0) ring = [...ring].reverse();
+  const p = local(point);
+  let best = { d: Infinity, normal: [0, 1] as V2 };
+  for (let i = 0; i < ring.length; i++) {
+    const [a, b] = [ring[i], ring[(i + 1) % ring.length]];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    const d = toSegment(p, a, b);
+    if (d < best.d) best = { d, normal: [(b[1] - a[1]) / len, -(b[0] - a[0]) / len] };
+  }
+  const [e, nth] = best.normal;
+  return Math.abs(e) > Math.abs(nth) ? (e > 0 ? "E" : "W") : nth > 0 ? "N" : "S";
+}
+
+export interface ImageView {
+  dir: ViewDir;
+  url: string;
+  /** Where the image sits in the frame, as fractions (0..1): it is fitted whole, centred. */
+  box: { x: number; y: number; width: number; height: number };
+  markers: Marker[];
+}
+
+/**
+ * The views of a live aerial: each image fitted whole into the frame, and the
+ * entries pinned to it at their pixels. An entry is drawn only on the view it
+ * is pinned to, so every marker faces the camera.
+ */
+export function buildImageViews(aerial: Pick<Aerial, "views" | "entries">): ImageView[] {
+  return aerial.views.flatMap((view) => {
+    if (!view.url) return [];
+    const s = Math.min(FRAME.width / view.width, FRAME.height / view.height);
+    const [w, h] = [view.width * s, view.height * s];
+    const [ox, oy] = [(FRAME.width - w) / 2, (FRAME.height - h) / 2];
+    const placed = aerial.entries.flatMap((entry) =>
+      entry.view === view.dir && entry.x !== undefined && entry.y !== undefined
+        ? [{ entry, x: ox + entry.x * s, y: oy + entry.y * s }]
+        : [],
+    );
+    const xs = placed.map((p) => p.x);
+    const labels = layoutLabels(placed, { x0: Math.min(...xs, FRAME.width / 2) - 24, x1: Math.max(...xs, FRAME.width / 2) + 24 });
+    const markers: Marker[] = placed.map(({ entry, x, y }, i) => ({
+      entry,
+      x: x / FRAME.width,
+      y: y / FRAME.height,
+      facing: true,
+      side: labels[i].side,
+      // Kept inside the frame, whatever the image's edge does.
+      labelX: Math.min(FRAME.width - 140, Math.max(140, labels[i].labelX)) / FRAME.width,
+      labelY: labels[i].labelY / FRAME.height,
+    }));
+    return [
+      {
+        dir: view.dir,
+        url: view.url,
+        box: { x: ox / FRAME.width, y: oy / FRAME.height, width: w / FRAME.width, height: h / FRAME.height },
+        markers,
+      },
+    ];
+  });
 }
 
 /** The view one step from `dir`, wrapping round. */
