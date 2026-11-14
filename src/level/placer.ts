@@ -33,6 +33,7 @@ import type {
 } from "@/domain";
 import { compileBoard, DEFAULT_HEARING, zoneOf, type CameraSpec, type GuardSpec, type Level } from "@/engine";
 import { objectiveNoun } from "@/lib/objective-noun";
+import { quietRoute } from "./quiet-route";
 
 // The quiet route is computed from a placement (quiet-route.ts); it is
 // exported here too, since the placer owns it (#15, #19).
@@ -373,6 +374,23 @@ export function placeLevel(
   anchors: PlacementAnchors = ANCHORS[manifest.buildingId] ?? {},
   posture: Posture = {},
 ): PlacedLevel {
+  // An open-plan scan's extra rules (#127) add a camera or a guard only while the level can still be
+  // won unseen: when one leaves no quiet route, the level is placed without them.
+  const withRules = placeOnce(manifest, floor, seed, anchors, posture, true);
+  if (!withRules.openPlanUsed || quietRoute(withRules.placed) !== null) return withRules.placed;
+  return placeOnce(manifest, floor, seed, anchors, posture, false).placed;
+}
+
+/** One placement; `openPlan` turns on the open-plan scan rules (#127), and the result says if one was used. */
+function placeOnce(
+  manifest: LevelManifest,
+  floor: FloorGraph,
+  seed: number,
+  anchors: PlacementAnchors,
+  posture: Posture,
+  openPlan: boolean,
+): { placed: PlacedLevel; openPlanUsed: boolean } {
+  let openPlanUsed = false;
   if (!Number.isInteger(seed)) throw new PlacementError(`seed ${seed} is not an integer`);
 
   const unplaced: Unplaced[] = [];
@@ -600,6 +618,22 @@ export function placeLevel(
     .filter((r) => !claimed.has(r.id) && CORRIDOR.test(r.label))
     .map((r) => chainOf(adj, (roomNodes.get(r.id) ?? []).filter((id) => !anchoredNodes.has(id) && !isEntry(id) && !pickNodes.has(id)), fromStart))
     .filter((run) => run.length > 0);
+  // An open-plan scan has no corridor (#127): its cameras watch the open rooms no zone took, on the
+  // nodes the corridor rule would leave them (off the ways in, the picks and any anchored cover).
+  // The start and its first step stay unwatched, so a player is never seen before they move.
+  if (openPlan && runs.length === 0 && !tagsEntries) {
+    runs = floor.rooms
+      .filter((r) => !claimed.has(r.id))
+      .map((r) =>
+        chainOf(
+          adj,
+          (roomNodes.get(r.id) ?? []).filter((id) => !anchoredNodes.has(id) && !isEntry(id) && !pickNodes.has(id) && (fromStart.get(id) ?? 0) > 1),
+          fromStart,
+        ),
+      )
+      .filter((run) => run.length > 0);
+    openPlanUsed ||= runs.length > 0;
+  }
   const wanted = cameraIds.length - covers.size;
   // Too few corridors: cut the longest run in two until there are enough.
   while (runs.length < wanted) {
@@ -781,7 +815,21 @@ export function placeLevel(
     const turn = hash(seed, chain[0]) % starts.length;
     let at = starts[(turn + Math.floor((nth * starts.length) / sharing)) % starts.length];
     if (!tagsEntries && startedOn.has(chain[at])) {
-      const free = starts.find((i) => !startedOn.has(chain[i]));
+      // Every start clear of the ways in is taken (an open-plan scan's one short round, #127): the
+      // guard starts on the free node of the round farthest from the ways in, then from the guards
+      // already on it. Every node of a round is already out of sight and earshot of the start.
+      const byClearance = (i: number) => fromEntries.get(chain[i]) ?? 0;
+      const fromTaken = hops(adj, [...startedOn]);
+      const openStart = () =>
+        chain
+          .map((_, i) => i)
+          .filter((i) => !startedOn.has(chain[i]))
+          .sort((a, b) => byClearance(b) - byClearance(a) || (fromTaken.get(chain[b]) ?? 0) - (fromTaken.get(chain[a]) ?? 0) || a - b)[0];
+      let free = starts.find((i) => !startedOn.has(chain[i]));
+      if (free === undefined && openPlan) {
+        free = openStart();
+        openPlanUsed ||= free !== undefined;
+      }
       if (free === undefined) {
         unplaced.push({ elementRole: `guard:${id}`, reason: "every start on its round is taken" });
         continue;
@@ -888,7 +936,7 @@ export function placeLevel(
     hearing: DEFAULT_HEARING,
   };
 
-  return {
+  const placed: PlacedLevel = {
     level,
     entries,
     zones,
@@ -900,4 +948,5 @@ export function placeLevel(
     cleaners,
     unplaced,
   };
+  return { placed, openPlanUsed };
 }
