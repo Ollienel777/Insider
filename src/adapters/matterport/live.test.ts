@@ -18,6 +18,7 @@ import {
 import {
   fictionLabel,
   SHOWCASE,
+  SIGHT_M,
   toFloorGraph,
   UNASSIGNED_LABEL,
   UNASSIGNED_ROOM,
@@ -153,6 +154,23 @@ describe("toFloorGraph (mapping.ts)", () => {
 
   it("derives same-room sightlines only", () => {
     expect(graph.sightlines).toEqual({ s1: ["s2"], s2: ["s1"], s3: [], s4: [], s5: [] });
+  });
+
+  it("sees no farther than SIGHT_M (10 m) across a room: a scan shows no walls inside one", () => {
+    expect(SIGHT_M).toBe(10);
+    const sweeps = {
+      a: sweep("a", 0, 0, "r-hall", ["b"]),
+      b: sweep("b", 6, 0, "r-hall", ["a", "c"]),
+      c: sweep("c", 16, 0, "r-hall", ["b", "d"]),
+      d: sweep("d", 16, 10, "r-hall", ["c"]),
+    };
+    const rooms = { "r-hall": { id: "r-hall", label: "Open Floor", bounds: { min: v(-1, -1), max: v(20, 12) } } };
+    expect(toFloorGraph(sweeps, rooms).sightlines).toEqual({
+      a: ["b"],
+      b: ["a", "c"],
+      c: ["b", "d"],
+      d: ["c"],
+    });
   });
 
   it("refuses a model with no enabled sweeps", () => {

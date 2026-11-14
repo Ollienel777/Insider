@@ -104,6 +104,14 @@ export function fictionLabel(areaM2: number): string {
 const STAIR = /\bstair/i;
 const LIFT = /\b(elevator|lift)/i;
 
+/**
+ * How far a guard sees on a scan, in metres (Matterport space is metres). A
+ * scan says nothing about walls or furniture inside a room, so without a
+ * limit one open-plan room is in view end to end and no guard can stand in
+ * it. 10 m is a first choice, to be revisited.
+ */
+export const SIGHT_M = 10;
+
 function roomTags(label: string): NodeTag[] {
   const tags: NodeTag[] = [];
   if (STAIR.test(label)) tags.push("stair");
@@ -216,7 +224,8 @@ function largestComponent(nodes: string[], edges: { a: string; b: string }[]): S
 /**
  * The SDK's sweep and room collections as a `FloorGraph`, following SPEC
  * §4.3's last row: sweeps are nodes, the scan's sweep neighbours are edges,
- * an edge that crosses rooms gets a door, and sightlines are same-room.
+ * an edge that crosses rooms gets a door, and sightlines are same-room and
+ * at most `SIGHT_M` apart.
  *
  * - One floor: the scan's floor with the most enabled sweeps.
  * - Disabled sweeps are dropped; so is anything outside the largest connected
@@ -323,7 +332,9 @@ export function toFloorGraph(sweepCollection: Record<string, unknown>, roomColle
 
   const sightlines: Record<string, string[]> = {};
   for (const n of nodes) {
-    sightlines[n.id] = nodes.filter((m) => m.id !== n.id && m.roomId === n.roomId).map((m) => m.id);
+    sightlines[n.id] = nodes
+      .filter((m) => m.id !== n.id && m.roomId === n.roomId && Math.hypot(m.x - n.x, m.y - n.y) <= SIGHT_M)
+      .map((m) => m.id);
   }
 
   return FloorGraph.parse({ nodes, edges, rooms, sightlines, source: "matterport" });
