@@ -129,7 +129,7 @@
             "action": "Out down the passenger lifts to the Figueroa lobby"
           }
         ],
-        "pushback": "The run starts at the dock, so the passenger lifts are your way out, not in, and they come down in the Figueroa lobby past two guards at the desk. Up here they open two steps from the service hall, where C1 turns.",
+        "pushback": "The run starts at the dock, so the passenger lifts are your way out, not in, and they come down in the Figueroa lobby past the desk guard. Up here they open two steps from the service hall, where C1 turns.",
         "confidence": 0.3
       }
     },
