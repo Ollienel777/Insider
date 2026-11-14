@@ -14,6 +14,7 @@ import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
 import { debriefOf, LATE_NOTE, notStarted, UnreadableLog, type Debrief, type Decision } from "./debrief";
 import { ReplayBoard } from "./replay-board";
+import { OwnerModeLink } from "@/components/owner/owner-mode-link";
 
 export type DebriefBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -291,6 +292,7 @@ function DebriefReady({
           >
             Pick another building
           </Link>
+          <OwnerModeLink buildingId={placed.level.buildingId} />
         </div>
       }
     />
