@@ -96,7 +96,7 @@ The repo's `.mcp.json` connects every session to the team's Skein at
   demo), call `ask_skein` with `wait_seconds` 90 or less: the venue's route to
   Skein cuts a call off at 100 seconds. Use its answer and cite its id.
 - **When you start or finish a ticket**, call `report_status` with orchestrator
-  `<your GitHub login> claude-code`, repo `Ollienel777/heist-anywhere`, and your
+  `<your GitHub login> claude-code`, repo `Ollienel777/Insider`, and your
   whole `working_on` and `waiting_on` lists. Each report replaces your last.
 
 ## Things that bite
