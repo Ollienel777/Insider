@@ -49,7 +49,7 @@ let inventory: Inventory | undefined;
 const fixtureInventory = (): Inventory => (inventory ??= Inventory.parse(raw));
 
 /** The floor with the most available space (SPEC §4.3's staging floor), ties to the lower floor. */
-function largestVacantFloor(p: InventoryProperty): VacantFloor | null {
+export function largestVacantFloor(p: Pick<InventoryProperty, "availableSpace">): VacantFloor | null {
   const floors = new Map<number, VacantFloor>();
   for (const s of p.availableSpace) {
     const f = floors.get(s.floor) ?? { floor: s.floor, sf: 0, suites: [] };

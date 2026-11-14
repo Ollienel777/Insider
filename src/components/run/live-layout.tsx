@@ -121,6 +121,11 @@ export interface RunLayoutProps {
   canRestart: boolean;
   /** The board's bar: the floor's source, the mission, the Layer lens and Restart. */
   bar: ReactNode;
+  /**
+   * A kit building's record label (#95), which the bar carries too. Live's HUD shows it while the
+   * bar is closed, so the label never leaves the screen: it is what says the floor is a stand-in.
+   */
+  record?: ReactNode;
   /** The board's area, with whatever sits over its corners. */
   board: ReactNode;
   /** The Layer lens's legend, when the lens is on. */
@@ -159,6 +164,7 @@ export function RunLayout({
   onRestart,
   canRestart,
   bar,
+  record,
   board,
   legend,
   footer,
@@ -195,6 +201,8 @@ export function RunLayout({
                 HUD_RULE[hud?.danger.alarm ?? "calm"],
               )}
             >
+              {/* A line of its own, so nothing in the row beside it can cut the floor off. */}
+              {record && !open ? <div className="flex w-full min-w-0">{record}</div> : null}
               {objective ? (
                 <ObjectiveLine
                   label={objective.label}

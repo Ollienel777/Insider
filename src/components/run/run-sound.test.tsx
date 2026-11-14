@@ -91,7 +91,7 @@ describe("the Run screen", () => {
 
   it("shows no mute button while the board is still loading", () => {
     // A static render has no run yet: the loading board, which the button is kept off.
-    const out = renderToStaticMarkup(<RunScreen building={{ id: "F1", name: "Halvorsen Tower" }} manifest={manifest} />);
+    const out = renderToStaticMarkup(<RunScreen building={{ id: "F1", name: "Halvorsen Tower" }} manifest={manifest} source="fixture" />);
     expect(out).not.toContain('data-testid="mute-toggle"');
   });
 
