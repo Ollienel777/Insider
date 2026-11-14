@@ -1,4 +1,4 @@
-// The parts of the scan controls that are free of the DOM (issue #109): the
+// The parts of the scan controls that are free of the DOM (issue 109): the
 // geometry measured on a real scan, which position a key travels to, how long a
 // hop is asked to take, and the walk's state from hop to hop.
 import { describe, expect, it } from "vitest";

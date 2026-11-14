@@ -8,7 +8,7 @@
 // steady speed, no stop between hops while a key is held, and a choice of the
 // next position that matches where the player is looking and heading.
 //
-// What a real scan measured (issue #109, on localhost):
+// What a real scan measured (issue 109, on localhost):
 // - Forward is (-sin yaw, -cos yaw) on x and z, with `pose.rotation.y` as yaw in
 //   degrees. `Camera.rotate(+h, +v)` turns right and looks up.
 // - `Sweep.moveTo` with FLY takes its `transitionTime` plus about 35 ms, eased
