@@ -172,6 +172,40 @@ test("beat 5 to 6: caught after the wow beat, the debrief says so, with the Chie
   await expect(late.getByTestId("chief-decision-source")).toHaveText("Recorded");
   expect(log.lateChief!.chiefSource).toBe("recorded");
 
+  // At 1440×900 the late answer's note and Try again are in view without scrolling the panel: the
+  // late answer moved no guard, so its rationale and rows stay folded under its note. Checked by
+  // where they sit, not by the panel's exact height, so a font that wraps one line more passes.
+  // Measured once the page's own font is in, so a narrower fallback cannot pass for the real layout.
+  await page.evaluate(() => document.fonts.ready);
+  const panelBody = page.getByTestId("panel-body");
+  const note = late.getByTestId("chief-decision-late");
+  await expect
+    .poll(async () => {
+      const [panel, box] = await Promise.all([panelBody.boundingBox(), note.boundingBox()]);
+      return !!panel && !!box && box.y >= panel.y && box.y + box.height <= panel.y + panel.height;
+    })
+    .toBe(true);
+  // And nothing else pushes the panel past one wrapped line of scrolling.
+  await expect.poll(() => panelBody.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(24);
+  await expect(late.getByTestId("chief-decision-rationale")).toBeHidden();
+  await expect(late.getByTestId("chief-decision-order").first()).toBeHidden();
+  // It opens from the keyboard and by a click.
+  await late.locator("summary").focus();
+  await page.keyboard.press("Enter");
+  await expect(late.getByTestId("chief-decision-rationale")).toBeVisible();
+  await late.getByTestId("chief-decision-late").click();
+  await expect(late.getByTestId("chief-decision-rationale")).toBeHidden();
+  await late.getByTestId("chief-decision-late").click();
+  await expect(late.getByTestId("chief-decision-rationale")).toBeVisible();
+  await expect(late.getByTestId("chief-decision-order").first()).toBeVisible();
+  for (const row of [
+    ...(await late.getByTestId("chief-decision-order").all()),
+    ...(await late.getByTestId("chief-decision-dropped").all()),
+  ]) {
+    await expect(row.locator(".text-danger")).toHaveCount(0);
+    await expect(row).not.toHaveClass(/text-danger/);
+  }
+
   // The replay opens on the catch; scrubbing moves every piece to that turn's positions.
   await expect(page.getByTestId("replay-board")).toHaveAttribute("data-frame", String(log.turns.length));
   await expectPiecesAt(page, log, log.turns.length);
