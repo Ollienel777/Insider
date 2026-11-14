@@ -1,0 +1,454 @@
+{
+  "missionId": "night-desk",
+  "funnel": [
+    {
+      "label": "61 buildings in the inventory",
+      "count": 61
+    },
+    {
+      "label": "in LA",
+      "count": 32
+    },
+    {
+      "label": "built 2015 or later",
+      "count": 8
+    },
+    {
+      "label": "office",
+      "count": 7
+    },
+    {
+      "label": "Class A",
+      "count": 6
+    },
+    {
+      "label": "a floor with 15,000 SF or more on the market",
+      "count": 5
+    },
+    {
+      "label": "a Matterport scan",
+      "count": 4
+    },
+    {
+      "label": "a dock on the aerial",
+      "count": 3
+    }
+  ],
+  "finalists": [
+    {
+      "id": "F3",
+      "name": "Meridian on Wilshire",
+      "city": "LA",
+      "neighbourhood": "Westlake",
+      "lat": 34.05934,
+      "lng": -118.27512,
+      "yearBuilt": 2017,
+      "buildingClass": "A",
+      "propertyType": "office",
+      "stories": 30,
+      "layers": {
+        "costar": true,
+        "vexcel": true,
+        "matterport": true
+      },
+      "source": "fixture",
+      "vacantFloor": {
+        "floor": 24,
+        "sf": 18974,
+        "suites": [
+          "2401"
+        ]
+      },
+      "fit": [
+        {
+          "criterion": "in LA",
+          "value": "LA"
+        },
+        {
+          "criterion": "built 2015 or later",
+          "value": 2017
+        },
+        {
+          "criterion": "office",
+          "value": "office"
+        },
+        {
+          "criterion": "Class A",
+          "value": "Class A"
+        },
+        {
+          "criterion": "a floor with 15,000 SF or more on the market",
+          "value": "floor 24, 18,974 SF"
+        },
+        {
+          "criterion": "a Matterport scan",
+          "value": true
+        },
+        {
+          "criterion": "a dock on the aerial",
+          "value": "dock"
+        }
+      ],
+      "reason": "A 2017 Class A tower with a whole floor, 24, on the market and a dock: modern security worth defending, and the most empty space to defend it in."
+    },
+    {
+      "id": "L20",
+      "name": "Mateo Works",
+      "city": "LA",
+      "neighbourhood": "Arts District",
+      "lat": 34.03912,
+      "lng": -118.23253,
+      "yearBuilt": 2019,
+      "buildingClass": "A",
+      "propertyType": "office",
+      "stories": 7,
+      "layers": {
+        "costar": true,
+        "vexcel": true,
+        "matterport": true
+      },
+      "source": "fixture",
+      "vacantFloor": {
+        "floor": 5,
+        "sf": 17200,
+        "suites": [
+          "510",
+          "520"
+        ]
+      },
+      "fit": [
+        {
+          "criterion": "in LA",
+          "value": "LA"
+        },
+        {
+          "criterion": "built 2015 or later",
+          "value": 2019
+        },
+        {
+          "criterion": "office",
+          "value": "office"
+        },
+        {
+          "criterion": "Class A",
+          "value": "Class A"
+        },
+        {
+          "criterion": "a floor with 15,000 SF or more on the market",
+          "value": "floor 5, 17,200 SF"
+        },
+        {
+          "criterion": "a Matterport scan",
+          "value": true
+        },
+        {
+          "criterion": "a dock on the aerial",
+          "value": "dock (inventory tag; no aerial loaded)"
+        }
+      ],
+      "reason": "A 2019 creative office with floor 5 nearly empty and a dock: smart-era security in a low building with fewer floors to watch."
+    },
+    {
+      "id": "L21",
+      "name": "Ballona Creek Campus",
+      "city": "LA",
+      "neighbourhood": "Playa Vista",
+      "lat": 33.97521,
+      "lng": -118.42298,
+      "yearBuilt": 2021,
+      "buildingClass": "A",
+      "propertyType": "office",
+      "stories": 9,
+      "layers": {
+        "costar": true,
+        "vexcel": true,
+        "matterport": true
+      },
+      "source": "fixture",
+      "vacantFloor": {
+        "floor": 6,
+        "sf": 16450,
+        "suites": [
+          "610",
+          "620"
+        ]
+      },
+      "fit": [
+        {
+          "criterion": "in LA",
+          "value": "LA"
+        },
+        {
+          "criterion": "built 2015 or later",
+          "value": 2021
+        },
+        {
+          "criterion": "office",
+          "value": "office"
+        },
+        {
+          "criterion": "Class A",
+          "value": "Class A"
+        },
+        {
+          "criterion": "a floor with 15,000 SF or more on the market",
+          "value": "floor 6, 16,450 SF"
+        },
+        {
+          "criterion": "a Matterport scan",
+          "value": true
+        },
+        {
+          "criterion": "a dock on the aerial",
+          "value": "dock (inventory tag; no aerial loaded)"
+        }
+      ],
+      "reason": "A 2021 campus office with floor 6 on the market and a dock: the newest of the three, so the smartest locks and cameras."
+    }
+  ],
+  "trace": {
+    "recordedAt": "2026-11-14T11:26:30.714Z",
+    "model": "ScriptedChatModel (script casting-night-desk, no LLM)",
+    "liveData": false,
+    "subagents": [
+      "general-purpose",
+      "location-scout"
+    ],
+    "events": [
+      {
+        "atMs": 47,
+        "kind": "tool",
+        "agent": "casting-director",
+        "label": "get_mission",
+        "status": "completed",
+        "durationMs": 1,
+        "input": "{\"missionId\":\"night-desk\"}",
+        "output": "{\n  \"id\": \"night-desk\",\n  \"city\": \"LA\",\n  \"type\": \"prevent\",\n  \"title\": \"The Night Desk\",\n  \"inspiredBy\": null,\n  \"objective\": \"Get the prototype out of the lab before the hired crew reaches it\",\n  \"exitCondition\": \"Leave by the service lift or the east stair with the prototype before the alarm reaches Lockdown\",\n  \"casting\": [\n    {\n      \"kind\": \"city\",\n      \"label\": \"in LA\",\n      \"city\": \"LA\"\n    },\n    {\n      \"kind\": \"yearBuilt\",\n      \"label\": \"built 2015 or later\",\n      \"yearBuilt\": {\n        \"min\": 2015\n      }\n    },\n    {\n      \"kind\": \"propertyTypes\",\n      \"label\": \"office\",\n      \"propertyTypes\": [\n        \"office\"\n      ]\n    },\n    {\n      \"kind\": \"buildingClass\",\n      \"label\": \"Class A\",\n      \"buildingClass\": [\n        \"A\"\n      ]\n    },\n    {\n      \"kind\": \"minVacantFloorSf\",\n      \"label\": \"a floor with 15,000 SF or more on the market\",\n      \"minVacantFloorSf\": 15000\n    },\n    {\n      \"kind\": \"needsScan\",\n      \"label\": \"a Matterport scan\"\n    },\n    {\n      \"kind\": \"needsEntry\",\n      \"label\": \"a dock on the aerial\",\n      \"needsEntry\": [\n        \"dock\"\n      ]\n    }\n  ]\n}"
+      },
+      {
+        "atMs": 58,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Read mission night-desk and its casting needs",
+        "status": "completed"
+      },
+      {
+        "atMs": 58,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Narrow the inventory with the location scout, one filter at a time",
+        "status": "in_progress"
+      },
+      {
+        "atMs": 58,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Pick three finalists and write the shortlist",
+        "status": "pending"
+      },
+      {
+        "atMs": 64,
+        "kind": "subagent",
+        "agent": "location-scout",
+        "label": "Mission night-desk: apply its casting filters with search_inventory in this order: city, yearBuilt, propertyTypes, buildingClass, minVacantFloorSf, needsScan, needsEntry. Then check the candidates left with get_candidate and get_aerial_entries, and report the funnel's counts and each candidate's year, class, vacant floor and matching entries.",
+        "status": "completed",
+        "durationMs": 54,
+        "input": "Mission night-desk: apply its casting filters with search_inventory in this order: city, yearBuilt, propertyTypes, buildingClass, minVacantFloorSf, needsScan, needsEntry. Then check the candidates left with get_candidate and get_aerial_entries, and report the funnel's counts and each candidate's year, class, vacant floor and matching entries.",
+        "output": "Funnel: 61 in the inventory -> 32 (in LA) -> 8 (built 2015 or later) -> 7 (office) -> 6 (Class A) -> 5 (a floor with 15,000 SF or more on the market) -> 4 (a Matterport scan) -> 3 (a dock on the aerial). Left: F3 Meridian on Wilshire: built 2017, Class A office, floor 24 has 18,974 SF on the market, scanned, dock; L20 Mateo Works: built 2019, Class A office, floor 5 has 17,200 SF on the market, scanned, dock; L21 Ballona Creek Campus: built 2021, Class A office, floor 6 has 16,450 SF on the market, scanned, dock."
+      },
+      {
+        "atMs": 71,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "get_mission",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"missionId\":\"night-desk\"}",
+        "output": "{\n  \"id\": \"night-desk\",\n  \"city\": \"LA\",\n  \"type\": \"prevent\",\n  \"title\": \"The Night Desk\",\n  \"inspiredBy\": null,\n  \"objective\": \"Get the prototype out of the lab before the hired crew reaches it\",\n  \"exitCondition\": \"Leave by the service lift or the east stair with the prototype before the alarm reaches Lockdown\",\n  \"casting\": [\n    {\n      \"kind\": \"city\",\n      \"label\": \"in LA\",\n      \"city\": \"LA\"\n    },\n    {\n      \"kind\": \"yearBuilt\",\n      \"label\": \"built 2015 or later\",\n      \"yearBuilt\": {\n        \"min\": 2015\n      }\n    },\n    {\n      \"kind\": \"propertyTypes\",\n      \"label\": \"office\",\n      \"propertyTypes\": [\n        \"office\"\n      ]\n    },\n    {\n      \"kind\": \"buildingClass\",\n      \"label\": \"Class A\",\n      \"buildingClass\": [\n        \"A\"\n      ]\n    },\n    {\n      \"kind\": \"minVacantFloorSf\",\n      \"label\": \"a floor with 15,000 SF or more on the market\",\n      \"minVacantFloorSf\": 15000\n    },\n    {\n      \"kind\": \"needsScan\",\n      \"label\": \"a Matterport scan\"\n    },\n    {\n      \"kind\": \"needsEntry\",\n      \"label\": \"a dock on the aerial\",\n      \"needsEntry\": [\n        \"dock\"\n      ]\n    }\n  ]\n}"
+      },
+      {
+        "atMs": 74,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "search_inventory",
+        "status": "completed",
+        "durationMs": 1,
+        "input": "{\"missionId\":\"night-desk\",\"filter\":\"city\"}",
+        "output": "{\n  \"applied\": \"in LA\",\n  \"left\": 32,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"L19\",\n      \"name\": \"Boyle Heights Distribution Center\",\n      \"yearBuilt\": 1983,\n      \"buildingClass\": \"C\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 32000\n      }\n    },\n    {\n      \"id\": \"L13\",\n      \"name\": \"Ninth Street Freight Terminal\",\n      \"yearBuilt\": 1970,\n      \"buildingClass\": \"C\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 24000\n      }\n    },\n    {\n      \"id\": \"F1\",\n      \"name\": \"Halvorsen Tower\",\n      \"yearBuilt\": 1974,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 22,\n        \"sf\": 23341\n      }\n    },\n    {\n      \"id\": \"L22\",\n      \"name\": \"Cole Street Tower\",\n      \"yearBuilt\": 2022,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 11,\n        \"sf\": 20100\n      }\n    },\n    {\n      \"id\": \"F3\",\n      \"name\": \"Meridian on Wilshire\",\n      \"yearBuilt\": 2017,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 24,\n        \"sf\": 18974\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"yearBuilt\",\n    \"propertyTypes\",\n    \"buildingClass\",\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
+      },
+      {
+        "atMs": 78,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "search_inventory",
+        "status": "completed",
+        "durationMs": 1,
+        "input": "{\"missionId\":\"night-desk\",\"filter\":\"yearBuilt\"}",
+        "output": "{\n  \"applied\": \"built 2015 or later\",\n  \"left\": 8,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    },\n    {\n      \"label\": \"built 2015 or later\",\n      \"count\": 8\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"L22\",\n      \"name\": \"Cole Street Tower\",\n      \"yearBuilt\": 2022,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 11,\n        \"sf\": 20100\n      }\n    },\n    {\n      \"id\": \"F3\",\n      \"name\": \"Meridian on Wilshire\",\n      \"yearBuilt\": 2017,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 24,\n        \"sf\": 18974\n      }\n    },\n    {\n      \"id\": \"L25\",\n      \"name\": \"Atwater Creative Office\",\n      \"yearBuilt\": 2020,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 3,\n        \"sf\": 17600\n      }\n    },\n    {\n      \"id\": \"L20\",\n      \"name\": \"Mateo Works\",\n      \"yearBuilt\": 2019,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 5,\n        \"sf\": 17200\n      }\n    },\n    {\n      \"id\": \"L21\",\n      \"name\": \"Ballona Creek Campus\",\n      \"yearBuilt\": 2021,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 6,\n        \"sf\": 16450\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"propertyTypes\",\n    \"buildingClass\",\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
+      },
+      {
+        "atMs": 81,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "search_inventory",
+        "status": "completed",
+        "durationMs": 1,
+        "input": "{\"missionId\":\"night-desk\",\"filter\":\"propertyTypes\"}",
+        "output": "{\n  \"applied\": \"office\",\n  \"left\": 7,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    },\n    {\n      \"label\": \"built 2015 or later\",\n      \"count\": 8\n    },\n    {\n      \"label\": \"office\",\n      \"count\": 7\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"L22\",\n      \"name\": \"Cole Street Tower\",\n      \"yearBuilt\": 2022,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 11,\n        \"sf\": 20100\n      }\n    },\n    {\n      \"id\": \"F3\",\n      \"name\": \"Meridian on Wilshire\",\n      \"yearBuilt\": 2017,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 24,\n        \"sf\": 18974\n      }\n    },\n    {\n      \"id\": \"L25\",\n      \"name\": \"Atwater Creative Office\",\n      \"yearBuilt\": 2020,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 3,\n        \"sf\": 17600\n      }\n    },\n    {\n      \"id\": \"L20\",\n      \"name\": \"Mateo Works\",\n      \"yearBuilt\": 2019,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 5,\n        \"sf\": 17200\n      }\n    },\n    {\n      \"id\": \"L21\",\n      \"name\": \"Ballona Creek Campus\",\n      \"yearBuilt\": 2021,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 6,\n        \"sf\": 16450\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"buildingClass\",\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
+      },
+      {
+        "atMs": 85,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "search_inventory",
+        "status": "completed",
+        "durationMs": 1,
+        "input": "{\"missionId\":\"night-desk\",\"filter\":\"buildingClass\"}",
+        "output": "{\n  \"applied\": \"Class A\",\n  \"left\": 6,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    },\n    {\n      \"label\": \"built 2015 or later\",\n      \"count\": 8\n    },\n    {\n      \"label\": \"office\",\n      \"count\": 7\n    },\n    {\n      \"label\": \"Class A\",\n      \"count\": 6\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"L22\",\n      \"name\": \"Cole Street Tower\",\n      \"yearBuilt\": 2022,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 11,\n        \"sf\": 20100\n      }\n    },\n    {\n      \"id\": \"F3\",\n      \"name\": \"Meridian on Wilshire\",\n      \"yearBuilt\": 2017,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 24,\n        \"sf\": 18974\n      }\n    },\n    {\n      \"id\": \"L20\",\n      \"name\": \"Mateo Works\",\n      \"yearBuilt\": 2019,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 5,\n        \"sf\": 17200\n      }\n    },\n    {\n      \"id\": \"L21\",\n      \"name\": \"Ballona Creek Campus\",\n      \"yearBuilt\": 2021,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 6,\n        \"sf\": 16450\n      }\n    },\n    {\n      \"id\": \"L23\",\n      \"name\": \"Larkin Tower\",\n      \"yearBuilt\": 2016,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 26,\n        \"sf\": 15800\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
+      },
+      {
+        "atMs": 89,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "search_inventory",
+        "status": "completed",
+        "durationMs": 1,
+        "input": "{\"missionId\":\"night-desk\",\"filter\":\"minVacantFloorSf\"}",
+        "output": "{\n  \"applied\": \"a floor with 15,000 SF or more on the market\",\n  \"left\": 5,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    },\n    {\n      \"label\": \"built 2015 or later\",\n      \"count\": 8\n    },\n    {\n      \"label\": \"office\",\n      \"count\": 7\n    },\n    {\n      \"label\": \"Class A\",\n      \"count\": 6\n    },\n    {\n      \"label\": \"a floor with 15,000 SF or more on the market\",\n      \"count\": 5\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"L22\",\n      \"name\": \"Cole Street Tower\",\n      \"yearBuilt\": 2022,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 11,\n        \"sf\": 20100\n      }\n    },\n    {\n      \"id\": \"F3\",\n      \"name\": \"Meridian on Wilshire\",\n      \"yearBuilt\": 2017,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 24,\n        \"sf\": 18974\n      }\n    },\n    {\n      \"id\": \"L20\",\n      \"name\": \"Mateo Works\",\n      \"yearBuilt\": 2019,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 5,\n        \"sf\": 17200\n      }\n    },\n    {\n      \"id\": \"L21\",\n      \"name\": \"Ballona Creek Campus\",\n      \"yearBuilt\": 2021,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 6,\n        \"sf\": 16450\n      }\n    },\n    {\n      \"id\": \"L23\",\n      \"name\": \"Larkin Tower\",\n      \"yearBuilt\": 2016,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 26,\n        \"sf\": 15800\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
+      },
+      {
+        "atMs": 92,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "search_inventory",
+        "status": "completed",
+        "durationMs": 1,
+        "input": "{\"missionId\":\"night-desk\",\"filter\":\"needsScan\"}",
+        "output": "{\n  \"applied\": \"a Matterport scan\",\n  \"left\": 4,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    },\n    {\n      \"label\": \"built 2015 or later\",\n      \"count\": 8\n    },\n    {\n      \"label\": \"office\",\n      \"count\": 7\n    },\n    {\n      \"label\": \"Class A\",\n      \"count\": 6\n    },\n    {\n      \"label\": \"a floor with 15,000 SF or more on the market\",\n      \"count\": 5\n    },\n    {\n      \"label\": \"a Matterport scan\",\n      \"count\": 4\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"L22\",\n      \"name\": \"Cole Street Tower\",\n      \"yearBuilt\": 2022,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 11,\n        \"sf\": 20100\n      }\n    },\n    {\n      \"id\": \"F3\",\n      \"name\": \"Meridian on Wilshire\",\n      \"yearBuilt\": 2017,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 24,\n        \"sf\": 18974\n      }\n    },\n    {\n      \"id\": \"L20\",\n      \"name\": \"Mateo Works\",\n      \"yearBuilt\": 2019,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 5,\n        \"sf\": 17200\n      }\n    },\n    {\n      \"id\": \"L21\",\n      \"name\": \"Ballona Creek Campus\",\n      \"yearBuilt\": 2021,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 6,\n        \"sf\": 16450\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"needsEntry\"\n  ]\n}"
+      },
+      {
+        "atMs": 95,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "search_inventory",
+        "status": "completed",
+        "durationMs": 1,
+        "input": "{\"missionId\":\"night-desk\",\"filter\":\"needsEntry\"}",
+        "output": "{\n  \"applied\": \"a dock on the aerial\",\n  \"left\": 3,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    },\n    {\n      \"label\": \"built 2015 or later\",\n      \"count\": 8\n    },\n    {\n      \"label\": \"office\",\n      \"count\": 7\n    },\n    {\n      \"label\": \"Class A\",\n      \"count\": 6\n    },\n    {\n      \"label\": \"a floor with 15,000 SF or more on the market\",\n      \"count\": 5\n    },\n    {\n      \"label\": \"a Matterport scan\",\n      \"count\": 4\n    },\n    {\n      \"label\": \"a dock on the aerial\",\n      \"count\": 3\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"F3\",\n      \"name\": \"Meridian on Wilshire\",\n      \"yearBuilt\": 2017,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 24,\n        \"sf\": 18974\n      }\n    },\n    {\n      \"id\": \"L20\",\n      \"name\": \"Mateo Works\",\n      \"yearBuilt\": 2019,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 5,\n        \"sf\": 17200\n      }\n    },\n    {\n      \"id\": \"L21\",\n      \"name\": \"Ballona Creek Campus\",\n      \"yearBuilt\": 2021,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 6,\n        \"sf\": 16450\n      }\n    }\n  ],\n  \"filtersLeft\": []\n}"
+      },
+      {
+        "atMs": 98,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "get_candidate",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"id\":\"F3\"}",
+        "output": "{\n  \"id\": \"F3\",\n  \"name\": \"Meridian on Wilshire\",\n  \"city\": \"LA\",\n  \"neighbourhood\": \"Westlake\",\n  \"yearBuilt\": 2017,\n  \"buildingClass\": \"A\",\n  \"propertyType\": \"office\",\n  \"stories\": 30,\n  \"rbaSf\": 571893,\n  \"typicalFloorSf\": 19615,\n  \"vacantFloors\": [\n    {\n      \"floor\": 24,\n      \"sf\": 18974,\n      \"suites\": [\n        \"2401\"\n      ]\n    },\n    {\n      \"floor\": 12,\n      \"sf\": 8079,\n      \"suites\": [\n        \"1205\",\n        \"1230\"\n      ]\n    },\n    {\n      \"floor\": 6,\n      \"sf\": 3742,\n      \"suites\": [\n        \"610\"\n      ]\n    }\n  ],\n  \"scanned\": true,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
+      },
+      {
+        "atMs": 101,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "get_aerial_entries",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"id\":\"F3\"}",
+        "output": "{\n  \"source\": \"fixture\",\n  \"entries\": [\n    {\n      \"id\": \"lobby-S\",\n      \"kind\": \"lobby\",\n      \"label\": \"Wilshire lobby\",\n      \"view\": \"S\"\n    },\n    {\n      \"id\": \"garage-W\",\n      \"kind\": \"garage\",\n      \"label\": \"Garage ramp\",\n      \"view\": \"W\"\n    },\n    {\n      \"id\": \"dock-N\",\n      \"kind\": \"dock\",\n      \"label\": \"Loading dock\",\n      \"view\": \"N\"\n    },\n    {\n      \"id\": \"bike-E\",\n      \"kind\": \"service\",\n      \"label\": \"Bike room door\",\n      \"view\": \"E\"\n    },\n    {\n      \"id\": \"roof\",\n      \"kind\": \"roof\",\n      \"label\": \"Roof deck\",\n      \"view\": \"ortho\"\n    }\n  ]\n}"
+      },
+      {
+        "atMs": 104,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "get_candidate",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"id\":\"L20\"}",
+        "output": "{\n  \"id\": \"L20\",\n  \"name\": \"Mateo Works\",\n  \"city\": \"LA\",\n  \"neighbourhood\": \"Arts District\",\n  \"yearBuilt\": 2019,\n  \"buildingClass\": \"A\",\n  \"propertyType\": \"office\",\n  \"stories\": 7,\n  \"rbaSf\": 164640,\n  \"typicalFloorSf\": 24500,\n  \"vacantFloors\": [\n    {\n      \"floor\": 5,\n      \"sf\": 17200,\n      \"suites\": [\n        \"510\",\n        \"520\"\n      ]\n    },\n    {\n      \"floor\": 3,\n      \"sf\": 4200,\n      \"suites\": [\n        \"310\"\n      ]\n    }\n  ],\n  \"scanned\": true,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
+      },
+      {
+        "atMs": 109,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "get_aerial_entries",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"id\":\"L20\"}",
+        "output": "{\n  \"source\": \"inventory\",\n  \"entryKinds\": [\n    \"dock\",\n    \"garage\"\n  ],\n  \"note\": \"no aerial yet; the inventory's entry tags\"\n}"
+      },
+      {
+        "atMs": 111,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "get_candidate",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"id\":\"L21\"}",
+        "output": "{\n  \"id\": \"L21\",\n  \"name\": \"Ballona Creek Campus\",\n  \"city\": \"LA\",\n  \"neighbourhood\": \"Playa Vista\",\n  \"yearBuilt\": 2021,\n  \"buildingClass\": \"A\",\n  \"propertyType\": \"office\",\n  \"stories\": 9,\n  \"rbaSf\": 231552,\n  \"typicalFloorSf\": 26800,\n  \"vacantFloors\": [\n    {\n      \"floor\": 6,\n      \"sf\": 16450,\n      \"suites\": [\n        \"610\",\n        \"620\"\n      ]\n    },\n    {\n      \"floor\": 2,\n      \"sf\": 3900,\n      \"suites\": [\n        \"210\"\n      ]\n    }\n  ],\n  \"scanned\": true,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
+      },
+      {
+        "atMs": 114,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "get_aerial_entries",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"id\":\"L21\"}",
+        "output": "{\n  \"source\": \"inventory\",\n  \"entryKinds\": [\n    \"dock\",\n    \"lobby\",\n    \"roof\"\n  ],\n  \"note\": \"no aerial yet; the inventory's entry tags\"\n}"
+      },
+      {
+        "atMs": 121,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Read mission night-desk and its casting needs",
+        "status": "completed"
+      },
+      {
+        "atMs": 121,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Narrow the inventory with the location scout, one filter at a time",
+        "status": "completed"
+      },
+      {
+        "atMs": 121,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Pick three finalists and write the shortlist",
+        "status": "in_progress"
+      },
+      {
+        "atMs": 124,
+        "kind": "tool",
+        "agent": "casting-director",
+        "label": "write_shortlist",
+        "status": "completed",
+        "durationMs": 10,
+        "input": "{\"missionId\":\"night-desk\",\"finalists\":[{\"id\":\"F3\",\"reason\":\"A 2017 Class A tower with a whole floor, 24, on the market and a dock: modern security worth defending, and the most empty space to defend it in.\"},{\"id\":\"L20\",\"reason\":\"A 2019 creative office with floor 5 nearly empty and a dock: smart-era security in a low building with fewer floors to watch.\"},{\"id\":\"L21\",\"reason\":\"A 2021 campus office with floor 6 on the market and a dock: the newest of the three, so the smartest locks and cameras.\"}]}",
+        "output": "Shortlist written for night-desk: F3, L20, L21, from a funnel of 8 rows."
+      },
+      {
+        "atMs": 137,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Read mission night-desk and its casting needs",
+        "status": "completed"
+      },
+      {
+        "atMs": 137,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Narrow the inventory with the location scout, one filter at a time",
+        "status": "completed"
+      },
+      {
+        "atMs": 137,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Pick three finalists and write the shortlist",
+        "status": "completed"
+      }
+    ]
+  },
+  "source": "fixture"
+}

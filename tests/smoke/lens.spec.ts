@@ -68,9 +68,11 @@ test("the legend counts are the placed elements, each counted under every layer 
   await page.keyboard.press("l");
   const board = page.getByTestId("run-board");
 
-  // Every guard, camera, locked door, entry and room on the board is tinted.
+  // Every guard, cleaner, camera, locked door, entry and room on the board is tinted.
+  await expect(board.getByTestId("cleaner-piece")).toHaveCount(1);
   const placed =
     (await board.getByTestId("guard-piece").count()) +
+    (await board.getByTestId("cleaner-piece").count()) +
     (await board.getByTestId("camera-piece").count()) +
     (await board.getByTestId("locked-door").count()) +
     (await board.locator("[data-room]").count()) +
@@ -105,7 +107,8 @@ test("the elements carry their tints: the dock post both Vexcel and CoStar, a ro
   const board = page.getByTestId("run-board");
   const strokes = (key: string) =>
     board
-      .locator(`[data-lens="${key}"] [data-testid="lens-mark"]`)
+      // A camera's marks are drawn above the pawns, apart from its housing (`data-lens-marks-of`).
+      .locator(`[data-lens="${key}"] [data-testid="lens-mark"], [data-lens-marks-of="${key}"] [data-testid="lens-mark"]`)
       .evaluateAll((els) =>
         els.map((el) => [el.getAttribute("data-layer"), getComputedStyle(el.querySelector("rect")!).stroke]),
       );

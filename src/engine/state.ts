@@ -171,6 +171,8 @@ export interface RunState {
   picking: { doorId: string; progress: number } | null;
   /** Ids of the doors locked now, sorted. */
   locked: readonly string[];
+  /** Ids of the doors a Chief order locked, sorted; they unlock when the alarm decays to Calm. */
+  chiefLocks: readonly string[];
   guards: readonly GuardState[];
   alarm: AlarmState;
   /** Turns in a row that nothing has held the alarm at its level (see alarm.ts). */
@@ -298,6 +300,7 @@ export function createRun(level: Level): RunState {
     carrying: false,
     picking: null,
     locked: [...new Set(level.lockedDoors)].sort(),
+    chiefLocks: [],
     guards: level.guards.map((g) => placeWalker(board, g)),
     alarm: "calm",
     alarmQuiet: 0,
@@ -309,6 +312,12 @@ export function createRun(level: Level): RunState {
     status: "playing",
     turns: [],
   };
+}
+
+/** The consecutive picks that open locked door `doorId`: its own count when the level sets one, else `pickTurns`. */
+export function picksToOpen(level: Pick<Level, "pickTurns" | "doorPickTurns">, doorId: string): number {
+  const own = level.doorPickTurns;
+  return own && Object.hasOwn(own, doorId) ? own[doorId] : level.pickTurns;
 }
 
 /** A guard or cleaner on the first node of its loop, facing its first hop. */

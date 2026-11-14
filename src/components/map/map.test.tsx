@@ -8,7 +8,7 @@ import { buildingsWithLevel } from "@/lib/levels";
 import { ATTRIBUTION, BASEMAPS, project } from "./basemap";
 import { cardPlacement } from "./building-card";
 import { MapPin } from "./map-pin";
-import { MapScreen } from "./map-screen";
+import { cityFromParam, cityHref, MapScreen } from "./map-screen";
 import { MapSkeleton } from "./map-skeleton";
 import { toMapBuilding, type MapBuilding } from "./types";
 
@@ -71,8 +71,8 @@ describe("the basemap images", () => {
 });
 
 describe("buildingsWithLevel", () => {
-  it("is the buildings with a floor fixture: only F1 until the other floors land", () => {
-    expect([...ready]).toEqual(["F1"]);
+  it("is the buildings with a floor fixture: the LA three until the Houston floors land (#40)", () => {
+    expect([...ready].sort()).toEqual(["F1", "F2", "F3"]);
   });
 
   it("enables a building as soon as its floor file exists, and is empty without a floors directory", () => {
@@ -84,8 +84,35 @@ describe("buildingsWithLevel", () => {
   });
 });
 
+describe("cityFromParam", () => {
+  it("reads a known city", () => {
+    expect(cityFromParam("Houston")).toBe("Houston");
+    expect(cityFromParam("LA", "Houston")).toBe("LA");
+  });
+
+  it("falls back to the screen's default for a missing or unknown city", () => {
+    expect(cityFromParam(null)).toBe("LA");
+    expect(cityFromParam(undefined, "Houston")).toBe("Houston");
+    expect(cityFromParam("houston", "LA")).toBe("LA");
+    expect(cityFromParam("", "Houston")).toBe("Houston");
+  });
+});
+
+describe("cityHref (#111 R1-N1: the tab writes the current route, not /)", () => {
+  it("keeps the map's address on the map", () => {
+    expect(cityHref("/map", "Houston", "LA")).toBe("/map?city=Houston");
+    expect(cityHref("/map", "LA", "LA")).toBe("/map");
+  });
+
+  it("keeps the cast screen's address on the cast screen, whose default is the mission's city", () => {
+    expect(cityHref("/m/romaine-1974/cast", "Houston", "LA")).toBe("/m/romaine-1974/cast?city=Houston");
+    expect(cityHref("/m/romaine-1974/cast", "LA", "LA")).toBe("/m/romaine-1974/cast");
+    expect(cityHref("/m/paper-trail-2001/cast", "LA", "Houston")).toBe("/m/paper-trail-2001/cast?city=LA");
+  });
+});
+
 describe("MapScreen", () => {
-  const la = renderToStaticMarkup(<MapScreen buildings={buildings} initialCity="LA" />);
+  const la = renderToStaticMarkup(<MapScreen buildings={buildings} defaultCity="LA" />);
 
   it("shows the three LA buildings as pins and rows", () => {
     expect(pins(la)).toEqual(["F1", "F2", "F3"]);
@@ -94,7 +121,7 @@ describe("MapScreen", () => {
   });
 
   it("shows the two Houston buildings on the Houston tab", () => {
-    const houston = renderToStaticMarkup(<MapScreen buildings={buildings} initialCity="Houston" />);
+    const houston = renderToStaticMarkup(<MapScreen buildings={buildings} defaultCity="Houston" />);
     expect(pins(houston)).toEqual(["F4", "F5"]);
     expect(rows(houston)).toEqual(["F4", "F5"]);
     expect(houston).toMatch(/<button[^>]*role="tab"[^>]*id="tab-Houston"[^>]*aria-selected="true"/);
@@ -107,15 +134,17 @@ describe("MapScreen", () => {
   });
 
   it("disables every building without a level and marks it level in prep", () => {
-    expect(pinMarkup(la, "F1")).not.toContain("aria-disabled");
+    for (const id of ["F1", "F2", "F3"]) expect(pinMarkup(la, id), id).not.toContain("aria-disabled");
     expect(pinMarkup(la, "F1")).toContain('aria-label="Halvorsen Tower"');
-    for (const id of ["F2", "F3"]) {
-      expect(pinMarkup(la, id)).toContain('aria-disabled="true"');
-      expect(pinMarkup(la, id)).toContain("level in prep");
+    expect(la).not.toContain("Level in prep");
+    const houston = renderToStaticMarkup(<MapScreen buildings={buildings} defaultCity="Houston" />);
+    for (const id of ["F4", "F5"]) {
+      expect(pinMarkup(houston, id)).toContain('aria-disabled="true"');
+      expect(pinMarkup(houston, id)).toContain("level in prep");
     }
-    const inPrepRows = la.match(/<button[^>]*data-testid="building-row"[^>]*aria-disabled="true"/g) ?? [];
+    const inPrepRows = houston.match(/<button[^>]*data-testid="building-row"[^>]*aria-disabled="true"/g) ?? [];
     expect(inPrepRows).toHaveLength(2);
-    expect(la.match(/Level in prep/g)).toHaveLength(2);
+    expect(houston.match(/Level in prep/g)).toHaveLength(2);
   });
 
   it("starts with nothing selected and Scout this building disabled", () => {
@@ -128,7 +157,7 @@ describe("MapScreen", () => {
   });
 
   it("says so when a city has no buildings, and offers the other city", () => {
-    const html = renderToStaticMarkup(<MapScreen buildings={buildings.filter((b) => b.city === "LA")} initialCity="Houston" />);
+    const html = renderToStaticMarkup(<MapScreen buildings={buildings.filter((b) => b.city === "LA")} defaultCity="Houston" />);
     expect(pins(html)).toEqual([]);
     expect(html).toContain('data-testid="empty-city"');
     expect(html).toContain("No buildings are staged in Houston yet.");

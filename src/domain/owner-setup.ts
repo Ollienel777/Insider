@@ -1,4 +1,4 @@
-// The owner's security setup (Owner Mode, SPEC §13, #125): the guards,
+// The owner's security setup (Owner Mode, SPEC §13, #28): the guards,
 // cameras, door locks and staffed desks a building's owner says it really
 // has, entered by hand in place of the rules table's generated security. It
 // names floor-graph ids (nodes and doors) but holds none of the graph, and it
@@ -98,7 +98,11 @@ export const OwnerSetup = z
     cameras: z.array(OwnerCamera),
     /** Door id → what closes it. A door left out is open. */
     doors: z.record(Id, OwnerDoorLock),
-    /** Nodes with a staffed desk: someone sits there all night and watches all around. */
+    /**
+     * Nodes with a staffed desk: someone sits there all night. In the engine it is a cleaner that never
+     * moves, so it never turns away and sees every node in its node's sightlines; seeing the player
+     * raises the alarm to Suspicious, and it never catches anyone.
+     */
     desks: z.array(Id),
     /** Night cleaners walking rounds. Absent: none. */
     cleaners: z.array(OwnerCleaner).optional(),

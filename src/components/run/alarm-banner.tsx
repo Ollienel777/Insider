@@ -20,7 +20,8 @@ export function AlarmBanner({ alarm, turn }: { alarm: AlarmState; turn: number }
       data-testid="alarm-banner"
       data-state={alarm}
       aria-label="Alarm"
-      className={cn("border-l-2 pl-4 transition-colors duration-fast", style.bar)}
+      // No transition: the trip shows on the next frame (DESIGN.md the wow beat: under 100 ms).
+      className={cn("border-l-2 pl-4", style.bar)}
     >
       <div className="flex items-baseline justify-between">
         <p className="label-caps text-text-3">Alarm</p>
@@ -32,7 +33,7 @@ export function AlarmBanner({ alarm, turn }: { alarm: AlarmState; turn: number }
         role="status"
         aria-live="assertive"
         data-testid="alarm-state"
-        className={cn("text-3xl font-semibold transition-colors duration-fast", style.text)}
+        className={cn("text-3xl font-semibold", style.text)}
       >
         {style.label}
       </p>

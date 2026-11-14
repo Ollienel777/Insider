@@ -50,8 +50,14 @@ export function loadRunLog(buildingId: string, storage?: Pick<Storage, "getItem"
  * Chief's orders gets their source (`sources`, by turn number). Orders applied
  * to a run still being played, that no turn's entry carries yet, ride along as
  * `pendingChief`; a Chief answer that landed after the run ended, as `lateChief`.
+ * `watchEntry` is the posture the level was placed with, so the Debrief places the same board.
  */
-export function runLogOf(run: RunState, sources: ReadonlyMap<number, ChiefSource>, late: LateChief | null = null): RunLog {
+export function runLogOf(
+  run: RunState,
+  sources: ReadonlyMap<number, ChiefSource>,
+  late: LateChief | null = null,
+  watchEntry?: string,
+): RunLog {
   const log = toRunLog(run);
   const source = (turn: number) => (sources.has(turn) ? { chiefSource: sources.get(turn) } : {});
   return {
@@ -59,5 +65,6 @@ export function runLogOf(run: RunState, sources: ReadonlyMap<number, ChiefSource
     turns: log.turns.map((t) => (t.chief ? { ...t, ...source(t.turn) } : t)),
     ...(run.status === "playing" && run.chief ? { pendingChief: { turn: run.turn, chief: run.chief, ...source(run.turn) } } : {}),
     ...(late ? { lateChief: late } : {}),
+    ...(watchEntry ? { watchEntry } : {}),
   };
 }

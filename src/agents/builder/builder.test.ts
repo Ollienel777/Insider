@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { DEFAULT_SUBAGENT_PROMPT } from "deepagents";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { resetCoStar } from "@/adapters/costar";
 import { createFakeCoStar } from "@/adapters/costar/fake";
 import { loadScript, ScriptedChatModel } from "@/adapters/llm";
 import type { ScriptInput } from "@/adapters/llm/scripted";
@@ -298,29 +299,42 @@ describe("the builder takes the chosen mission as input (#119)", () => {
 
   it("with no mission named, builds a building's own mission: the one that casts it first", () => {
     expect(defaultMissionId("F1")).toBe("romaine-1974");
+    expect(defaultMissionId("F2")).toBe("sunset-1986");
+    expect(defaultMissionId("F3")).toBe("night-desk");
     expect(defaultMissionId("F4")).toBe("paper-trail-2001");
     expect(defaultMissionId("L01")).toBeNull();
   });
 });
 
-describe("the cached F1 × romaine-1974 level in data/levels/", () => {
+// F1 is the demo building; F2 and F3 are the other LA pins a judge can pick (#39).
+describe.each([
+  ["F1", "romaine-1974"],
+  ["F2", "sunset-1986"],
+  ["F3", "night-desk"],
+])("the cached %s × %s level in data/levels/", (id, missionId) => {
   const read = (file: string): unknown => JSON.parse(readFileSync(path.join(root, "data", "levels", file), "utf8"));
 
-  it("is what the builder writes today (rerun npm run build:levels -- F1:romaine-1974 when this fails)", async () => {
-    const fresh = await buildLevel("F1", "romaine-1974");
-    expect(read("F1.romaine-1974.json")).toEqual(fresh.manifest);
-    expect(fresh.trace.model).toBe("scripted (builder-F1-romaine-1974), no LLM ran");
+  it(`is what the builder writes today (rerun npm run build:levels -- ${id}:${missionId} when this fails)`, async () => {
+    const fresh = await buildLevel(id, missionId);
+    expect(read(`${id}.${missionId}.json`)).toEqual(fresh.manifest);
+    expect(fresh.trace.model).toBe(`scripted (builder-${id}-${missionId}), no LLM ran`);
   });
 
   it("has a trace with a todo list, both subagents and five tool calls", () => {
-    const trace = BuildTrace.parse(read("F1.romaine-1974.trace.json"));
-    expect(trace.buildingId).toBe("F1");
+    const trace = BuildTrace.parse(read(`${id}.${missionId}.trace.json`));
+    expect(trace.buildingId).toBe(id);
     expect(trace.events.some((e) => e.kind === "todo")).toBe(true);
     expect(trace.events.filter((e) => e.kind === "subagent").map((e) => e.agent)).toEqual([
       "data-analyst",
       "game-master",
     ]);
     expect(trace.events.filter((e) => e.kind === "tool").length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("wrote the manifest on the first try: one write_manifest call, and it succeeded", () => {
+    const trace = BuildTrace.parse(read(`${id}.${missionId}.trace.json`));
+    const writes = trace.events.filter((e) => e.kind === "tool" && e.label === "write_manifest");
+    expect(writes.map((e) => e.status)).toEqual(["completed"]);
   });
 });
 
@@ -409,6 +423,18 @@ describe("the builder's guard rails", () => {
     expect(error.trace.events[0].output).toMatch(/^Error: the general-purpose subagent's run failed: /);
   });
 
+  it("records a task naming a subagent the builder lacks as an unknown subagent, under the builder (#72)", async () => {
+    const script = builder([
+      { toolCalls: [{ name: "task", args: { subagent_type: "made-up", description: "Look around F1." } }] },
+      { content: "Giving up." },
+    ]);
+    const error = (await buildLevel("F1", "romaine-1974", { model: new ScriptedChatModel({ script }) }).catch((e: unknown) => e)) as LevelBuildError;
+    expect(error.trace.events).toEqual([
+      expect.objectContaining({ kind: "subagent", agent: "level-builder", status: "failed", failure: "unknown" }),
+    ]);
+    expect(error.trace.events[0].output).toMatch(/^Error: unknown subagent "made-up"; /);
+  });
+
   it("keeps live adapters' data out of the trace: no input or output on any event (SPEC §4.5, M1)", async () => {
     const adapters = spiedAdapters();
     // The same fixture data, but passed with no modes, so treated as live.
@@ -443,6 +469,30 @@ describe("the builder's guard rails", () => {
     });
     expect(vexcelLive.trace.liveData).toBe(true);
     expect(vexcelLive.trace.events.some((e) => e.input !== undefined || e.output !== undefined)).toBe(false);
+  });
+
+  it("with no adapters passed, reads live mode from the environment and keeps the data out of the trace (#72)", async () => {
+    // `npm run build:levels` with COSTAR_MODE=live: the adapter's own mode
+    // decides. The stubbed fetch refuses every call, so nothing leaves the
+    // process; the breaker answers from the fixtures after the mode is read.
+    const fetch = vi.fn(() => Promise.reject(new Error("no network in tests")));
+    vi.stubGlobal("fetch", fetch);
+    vi.stubEnv("COSTAR_MODE", "live");
+    vi.stubEnv("COSTAR_API_BASE", "https://costar.invalid");
+    vi.stubEnv("COSTAR_API_KEY", "test-key");
+    resetCoStar();
+    try {
+      const built = await buildLevel("F1", "romaine-1974", {
+        model: new ScriptedChatModel({ script: await loadScript("builder-F1-romaine-1974") }),
+      });
+      expect(fetch).toHaveBeenCalled();
+      expect(built.trace.liveData).toBe(true);
+      expect(built.trace.events.some((e) => e.input !== undefined || e.output !== undefined)).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.stubEnv("COSTAR_MODE", "fake");
+      resetCoStar();
+    }
   });
 
   it("offers general-purpose to the task tool exactly once, beside the two subagents, and lists all three in the trace (R1-M2)", async () => {

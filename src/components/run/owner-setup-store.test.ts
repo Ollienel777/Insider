@@ -1,4 +1,4 @@
-// The owner's saved setups (issue 125): a round trip per building, and storage that
+// The owner's saved setups (issue 28): a round trip per building, and storage that
 // throws (blocked site data, a full quota) stays inside the store.
 import { afterEach, describe, expect, it } from "vitest";
 import { OwnerSetup } from "@/domain/owner-setup";

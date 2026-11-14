@@ -156,6 +156,10 @@ describe("the fake Vexcel adapter", () => {
     expect(await fake.getAerial("F9")).toBeNull();
   });
 
+  it("has no image for any view: a massing is drawn, not fetched", async () => {
+    expect(await createFakeVexcel().getImage("F1", "N")).toBeNull();
+  });
+
   it("hands out copies, so a caller cannot change the fixtures", async () => {
     const fake = createFakeVexcel();
     const first = (await fake.getAerial("F1"))!;
@@ -213,10 +217,20 @@ describe("selectVexcel", () => {
     expect(selection.mode).toBe("live");
     expect(selection.reason).toBe("Vexcel: live");
 
-    expect(await selection.adapter.getAerial("F1")).toBeNull();
+    // A 404 from Vexcel is no coverage, not a failure: that building gets its massing, nothing throws.
+    expect((await selection.adapter.getAerial("F1"))?.source).toBe("fixture");
     expect(fetch).toHaveBeenCalledOnce();
     const url = new URL(String((fetch.mock.calls[0] as unknown[])[0]));
-    expect(url.origin).toBe("https://vexcel.invalid");
-    expect(Number(url.searchParams.get("lat"))).toBeCloseTo(34.05226, 4);
+    expect(url.origin + url.pathname).toBe("https://vexcel.invalid/v1/oriented/collections");
+    const [lng, lat] = /POINT\((\S+) (\S+)\)/.exec(url.searchParams.get("wkt")!)!.slice(1).map(Number);
+    expect(lat).toBeCloseTo(34.05226, 4);
+    expect(lng).toBeCloseTo(-118.25287, 4);
+  });
+
+  it("asks Vexcel nothing for a building with no massing", async () => {
+    const fetch = vi.fn(async () => new Response("{}", { status: 404 }));
+    vi.stubGlobal("fetch", fetch);
+    expect(await selectVexcel({ HEIST_MODE: "live", ...KEYS }).adapter.getAerial("F9")).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

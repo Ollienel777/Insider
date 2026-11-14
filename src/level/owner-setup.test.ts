@@ -1,11 +1,13 @@
-// The owner's setup (#125) on the cached F1 manifest (data/levels/F1.romaine-1974.json) and
+// The owner's setup (#28) on the cached F1 manifest (data/levels/F1.romaine-1974.json) and
 // the F1 fixture floor: the validator's reasons, and a valid setup played by
 // the engine in place of the generated security.
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
-import { type FloorGraph, LevelManifest } from "@/domain";
+import { type FloorGraph, LevelManifest, type Strategy } from "@/domain";
 import { OwnerSetup } from "@/domain/owner-setup";
-import { act, type Action, createRun, type RunState } from "@/engine";
+import { act, type Action, createRun, runBatch, type RunState } from "@/engine";
 import cached from "../../data/levels/F1.romaine-1974.json";
 import { applyOwnerSetup, cameraCover, OWNER_RULE, type OwnerPlacedLevel, validateOwnerSetup } from "./owner-setup";
 import { placeLevel } from "./placer";
@@ -167,7 +169,33 @@ describe("applyOwnerSetup on F1", () => {
       ["d-records-room", "key", generated.objective.zoneId],
       ["d-server-closet", "badge", expect.any(String)],
     ]);
-    expect(owner.unplaced.filter((u) => /^(guard|camera|lock):/.test(u.elementRole))).toEqual([]);
+    expect(owner.unplaced.filter((u) => /^(guard|camera|lock|cleaner):/.test(u.elementRole))).toEqual([]);
+  });
+
+  it("drops the placer's generated cleaners: the setup's desks are its only staff", () => {
+    // The generated F1 placement at seed 7 has a night cleaner; the owner's placement must not carry it.
+    expect(placeLevel(manifest(), floor(), 7).cleaners.length).toBeGreaterThan(0);
+    const owner = placed();
+    expect(owner.cleaners).toEqual([]);
+    expect(owner.level.cleaners).toEqual([{ id: "D1", patrol: ["el-south"] }]);
+    const noDesks = placed(variant({ desks: [] }));
+    expect(noDesks.cleaners).toEqual([]);
+    expect(noDesks.level.cleaners).toEqual([]);
+  });
+
+  it("lets the crew's autoplay through a badge door: the batch picks it as many times as the engine needs", () => {
+    const { strategies } = JSON.parse(readFileSync(path.join(process.cwd(), "fixtures", "llm", "strategies-F1.json"), "utf8")) as {
+      strategies: Strategy[];
+    };
+    const reached = (lock: "key" | "badge") => {
+      const setup = variant({ guards: [], cameras: [], desks: [], doors: { "d-records-room": lock } });
+      const result = runBatch({ buildingId: "F1", strategies, levelFor: (seed) => placed(setup, seed).level });
+      expect(result.runs.length).toBeGreaterThan(0);
+      return result.runs.filter((r) => r.reachedObjective).length / result.runs.length;
+    };
+    // With nobody watching, only the lock stands in the way: a 3-pick badge door must stop the crew no more than a key lock.
+    expect(reached("key")).toBe(1);
+    expect(reached("badge")).toBe(1);
   });
 
   it("marks everything it places as the owner's, never as data", () => {

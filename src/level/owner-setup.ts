@@ -1,4 +1,4 @@
-// The owner's setup as a level (Owner Mode, SPEC §13, #125). `validateOwnerSetup`
+// The owner's setup as a level (Owner Mode, SPEC §13, #28). `validateOwnerSetup`
 // checks a setup against a floor and names every problem with a reason;
 // `applyOwnerSetup` turns a valid one into the same placement the placer
 // returns, with the owner's guards, cameras, locks and staffed desks in place
@@ -191,7 +191,11 @@ export interface OwnerPlacedLock extends Owned<Omit<PlacedLock, "zoneId">> {
 
 export interface OwnerPlacedCleaner {
   id: string;
+  /** The zone its first waypoint is in, or "" when that node is in no placed zone. */
+  zoneId: string;
   roomId: string;
+  /** The placer's rule for a cleaner still as generated; "" for the owner's own. */
+  rule: string;
   /** Waypoints, as the engine's cleaner patrol: it starts on the first. */
   patrol: readonly string[];
   provenance: readonly (OwnerProvenance | Provenance)[];
@@ -206,7 +210,7 @@ export interface OwnerPlacedDesk {
 }
 
 /** The placer's level with the owner's security in it. Entries, zones and the objective are the placer's. */
-export interface OwnerPlacedLevel extends Omit<PlacedLevel, "guards" | "cameras" | "locks"> {
+export interface OwnerPlacedLevel extends Omit<PlacedLevel, "guards" | "cameras" | "locks" | "cleaners"> {
   setupName: string;
   guards: readonly OwnerPlacedGuard[];
   cameras: readonly OwnerPlacedCamera[];
@@ -342,10 +346,13 @@ export function applyOwnerSetup(manifest: LevelManifest, floor: FloorGraph, setu
     const kept = asGenerated(from?.patrol, c.round);
     // A generated cleaner walks a crowded zone: that zone's data says why it is there.
     const zone = kept ? base.zones.find((z) => z.role === "crowded" && z.nodes.includes(kept[0])) : undefined;
+    const patrol = kept ?? c.round;
     return {
       id: c.id,
+      zoneId: (kept && base.cleaners.find((b) => b.id === c.id)?.zoneId) || (base.zones.find((z) => z.nodes.includes(patrol[0]))?.zoneId ?? ""),
       roomId: roomOf.get(c.round[0])!,
-      patrol: kept ?? c.round,
+      rule: (kept && base.cleaners.find((b) => b.id === c.id)?.rule) || "",
+      patrol,
       provenance: kept && zone ? zone.provenance : owner(`cleaner:${c.id}`, `cleaners.${c.id}`),
     };
   });
@@ -410,7 +417,7 @@ export function applyOwnerSetup(manifest: LevelManifest, floor: FloorGraph, setu
   };
 
   // The placer's own security misses are not this level's: only its entries' and zones' stay.
-  const unplaced = base.unplaced.filter((u) => !/^(guard|camera|lock):/.test(u.elementRole));
+  const unplaced = base.unplaced.filter((u) => !/^(guard|camera|lock|cleaner):/.test(u.elementRole));
   return {
     ok: true,
     placed: { ...base, level, setupName: setup.name, guards, cameras, locks, cleaners, desks, unplaced },
