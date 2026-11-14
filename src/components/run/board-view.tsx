@@ -6,7 +6,7 @@ import type { RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
 import { objectiveLabel } from "@/lib/objective-noun";
 import { recordNote } from "@/lib/record-label";
-import { cameraMount, cones, coverage, guardOrders, roomName, type Choice, type Cone } from "./board";
+import { cameraMount, cones, coverage, guardOrders, roomName, sprintWay, type Choice, type Cone } from "./board";
 import { useHop } from "./hop";
 import { frameOf, hull, LABEL_FONT, matrixAttr, pointsAttr, project, projectRect, round, TILE_DEPTH, type Point } from "./iso";
 import {
@@ -624,6 +624,7 @@ export function BoardView({
               choice={choice}
               at={at(choice.nodeId)}
               room={roomName(floor, choice.nodeId)}
+              way={choice.via ? sprintWay(floor, run.playerNode, choice.via, choice.nodeId) : undefined}
               onChoose={onChoose}
             />
           ))}
@@ -1351,18 +1352,22 @@ function ChoiceHint({
   choice,
   at,
   room,
+  way,
   onChoose,
 }: {
   choice: Choice;
   at: Point;
   room: string;
+  /** For a sprint: the way it runs, from `sprintWay`. */
+  way?: string;
   onChoose: (choice: Choice) => void;
 }) {
   const label =
     choice.kind === "pick"
       ? `Pick the door to ${room}, ${choice.progress!.done} of ${choice.progress!.of} (${choice.key})`
       : choice.kind === "sprint"
-        ? `Sprint to ${room}, two hops, loud (${choice.key})`
+        ? // Rooms are the finest names the board has; `sprintWay` keeps the way true for all three nodes.
+          `Sprint to ${room}, ${way ?? "two hops"}, loud (${choice.key})`
         : `Move to ${room} (${choice.key})`;
   const onKey = (event: KeyboardEvent) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -1379,11 +1384,14 @@ function ChoiceHint({
       data-key={choice.key}
       data-node={choice.nodeId}
       data-kind={choice.kind}
+      data-via={choice.via}
       className="group cursor-pointer outline-none"
       transform={`translate(${round(at.x)}, ${round(at.y)})`}
       onClick={() => onChoose(choice)}
       onKeyDown={onKey}
     >
+      {/* On hover, the label says the way: for a sprint, the room it runs through. */}
+      <title>{label}</title>
       <rect {...CHOICE_HIT} fill="transparent" />
       <ellipse
         cx="0"
