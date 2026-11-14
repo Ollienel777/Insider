@@ -38,6 +38,8 @@ export interface Collision {
 }
 
 export interface Ground {
+  /** Metres to one floor-plan unit, for what the level places in plan units (a camera's mount). */
+  unitM: number;
   /** Every engine node's place on the floor, in metres. */
   nodes: ReadonlyMap<string, GroundNode>;
   /** The doors that can be shut. Which are shut now is the run's `locked` list, passed in. */

@@ -279,6 +279,7 @@ export function edgePath(world: World, a: string, b: string): Vec[] {
 export function groundOf(world: World): Ground {
   const barDoor = new Map<Seg, string>(world.openings.flatMap((o) => (o.doorId === null ? [] : [[o.bar, o.doorId] as const])));
   return {
+    unitM: FP.unitM,
     nodes: world.nodes,
     doors: world.openings.flatMap((o) => (o.doorId === null ? [] : [{ doorId: o.doorId, centre: o.centre, bar: o.bar }])),
     collide(pos, vel, dt, locked) {

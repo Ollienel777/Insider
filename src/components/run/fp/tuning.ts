@@ -1,15 +1,15 @@
 // Every number the first-person view is tuned by (issue 115), in one place.
 // Lengths are metres and times seconds unless the name says otherwise.
 export const FP = Object.freeze({
-  /** One floor-plan unit in metres: F1's 4-unit corridors come out 2.4 m wide. */
-  unitM: 0.6,
+  /** One floor-plan unit in metres: F1's 4-unit corridors come out 2.8 m wide. */
+  unitM: 0.7,
   /** The camera's height off the floor. */
   eyeM: 1.6,
   /** The player's body, a circle on the floor plan. */
   radiusM: 0.35,
 
   /** Running, the default: constant, the same forwards, sideways and diagonally. */
-  runMps: 4.6,
+  runMps: 4.4,
   /** Walking, with Shift held. */
   walkMps: 2.0,
   /** Speeding up: full run speed in about five frames at 60 Hz. */
