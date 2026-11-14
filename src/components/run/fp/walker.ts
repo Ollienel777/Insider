@@ -11,8 +11,9 @@
 //   `FP.maxHops`; with none, the body is held at the edge of its own area.
 //   What is legal is the engine's own adjacency with its locked doors shut,
 //   as `choices` (board.ts) reads it.
-// - Holding E at a locked door, looking at it, hands back the moves to the
-//   door's own node if the player is not on it, then a `pick`. While E stays
+// - Holding E at a locked door, looking at it with nothing between, standing
+//   in the area of the door's node on this side, hands back a `pick`; from
+//   anywhere else E does nothing and the prompt says to step up. While E stays
 //   down, the turn clock picks again each turn (`heldAction`); letting go
 //   lets the clock wait instead, and the engine then starts the lock over.
 //   A press plays a pick at once only to start a lock. On a part-picked one
@@ -79,16 +80,26 @@ function destination(walker: Walker): string {
 
 /**
  * Brings the walker in line with the engine's state. A new turn that left the
- * player where this view expected (on the same node, or on the node of the
- * move it handed back) changes nothing about the body. Anything else, and a
- * turn count that went backwards, is the engine saying the player is
- * somewhere this view did not put them: the body goes onto the engine's node.
+ * player where this view expected (on the node of the move it handed back, or
+ * on the same node when it handed back no move) changes nothing about the
+ * body. A new turn that left the player on the same node while a move waits
+ * for its answer is that move refused: the body goes back to where it last
+ * stood in the node's area. Anything else, and a turn count that went
+ * backwards, is the engine saying the player is somewhere this view did not
+ * put them: the body goes onto the engine's node.
  */
 export function reconcile(walker: Walker, ground: Ground, run: RunState): Walker {
   if (run.turn === walker.turn && run.playerNode === walker.node) return walker;
-  const expected = run.playerNode === walker.node || (walker.pending !== null && run.playerNode === walker.pending.to);
   const next: Walker = { ...walker, node: run.playerNode, turn: run.turn, pending: null, pickDue: null };
-  if (run.turn >= walker.turn && expected) return next;
+  if (run.turn >= walker.turn) {
+    const to = walker.pending?.to ?? null;
+    // A move handed back, and a turn that left the player elsewhere (another turn, a clock's wait, landed
+    // instead): the move was refused. Back to where the engine has the player, as when no answer comes.
+    if (to !== null && run.playerNode !== to && run.playerNode === walker.node) {
+      return { ...next, pos: walker.home, region: run.playerNode, vel: { x: 0, y: 0 }, queue: [] };
+    }
+    if (to === null ? run.playerNode === walker.node : run.playerNode === to) return next;
+  }
   const at = ground.nodes.get(run.playerNode);
   if (!at) return { ...next, queue: [] };
   const pos = { x: at.x, y: at.y };
@@ -134,11 +145,9 @@ function nearestOnBar(door: GroundDoor, pos: Vec): Vec {
 
 /** What E does from here, for the HUD's prompt, the door's ring and `stepWalker`. */
 export type Prompt =
-  /** A locked door: `node` is its node on the player's side, `moves` the legal moves there first. */
-  | { kind: "pick"; doorId: string; node: string; moves: readonly Action[]; done: number; of: number }
-  /** A locked door in reach that cannot be picked from here: its node on this side is too far by legal moves. */
-  | { kind: "locked"; doorId: string }
-  /** A locked door in view, too far off to pick: the player should step up to it. */
+  /** A locked door in reach, with nothing between: `node` is its node on the player's side, the area the body stands in. */
+  | { kind: "pick"; doorId: string; node: string; done: number; of: number }
+  /** A locked door in view that cannot be picked from here (too far off, or the body is not in its node's area): the player should step up to it. */
   | { kind: "far"; doorId: string }
   | { kind: "take" }
   | null;
@@ -183,12 +192,14 @@ export function doorInView(ground: Ground, run: RunState, pos: Vec, yaw: number,
 export function promptFor(walker: Walker, ground: Ground, run: RunState, yaw: number): Prompt {
   if (run.status !== "playing") return null;
   const door = doorInView(ground, run, walker.pos, yaw);
-  if (door) {
+  // A door behind a wall is not in reach, however near: the line to its face must be clear.
+  if (door && ground.clear(walker.pos, nearestOnBar(door, walker.pos), run.locked.filter((id) => id !== door.doorId))) {
     const node = nearSide(ground, door, walker.pos);
-    const moves = legalMoves(run, run.playerNode, node);
-    if (!moves) return { kind: "locked", doorId: door.doorId };
+    // Picked only from the door's own node, standing in its area: E then plays no move, so the engine's node
+    // stays where the body is. From anywhere else, the player steps up to it, and that walk plays the moves.
+    if (ground.regionOf(walker.pos) !== node) return { kind: "far", doorId: door.doorId };
     const done = run.picking?.doorId === door.doorId ? run.picking.progress : 0;
-    return { kind: "pick", doorId: door.doorId, node, moves, done, of: picksToOpen(run.board.level, door.doorId) };
+    return { kind: "pick", doorId: door.doorId, node, done, of: picksToOpen(run.board.level, door.doorId) };
   }
   const objective = ground.nodes.get(run.board.level.objective);
   if (canTake(run) && objective && distance(objective, walker.pos) <= FP.reachM) return { kind: "take" };
@@ -262,9 +273,11 @@ export function stepWalker(
   if (walker.pending) return { walker, action: null };
   if (walker.queue.length === 0 && controls.usePressed) {
     const prompt = promptFor(walker, ground, run, controls.yaw);
-    // A lock already under way is the clock's to pick, once a turn, however often E is tapped.
-    if (prompt?.kind === "pick" && prompt.done > 0 && prompt.node === run.playerNode) walker = { ...walker, pickDue: prompt.doorId };
-    else if (prompt?.kind === "pick") walker ={ ...walker, queue: [...prompt.moves, { kind: "pick", doorId: prompt.doorId }] };
+    if (prompt?.kind === "pick" && prompt.node === run.playerNode) {
+      // A lock already under way is the clock's to pick, once a turn, however often E is tapped.
+      if (prompt.done > 0) walker = { ...walker, pickDue: prompt.doorId };
+      else walker = { ...walker, queue: [{ kind: "pick", doorId: prompt.doorId }] };
+    }
     if (prompt?.kind === "take") walker = { ...walker, queue: [{ kind: "take" }] };
   }
   const [action, ...rest] = walker.queue;
