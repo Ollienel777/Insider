@@ -10,6 +10,7 @@ export {
   BATCH_SEEDS,
   resolveStrategy,
   runBatch,
+  varyLevel,
   type Attempt,
   type BatchInput,
   type Resolution,
