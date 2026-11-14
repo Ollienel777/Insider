@@ -179,7 +179,8 @@ test("beat 5 to 6: caught after the wow beat, the debrief says so, with the Chie
       return !!panel && !!box && box.y >= panel.y && box.y + box.height <= panel.y + panel.height;
     })
     .toBe(true);
-  await expect(page.getByTestId("debrief-try-again")).toBeInViewport({ ratio: 1 });
+  // And nothing else pushes the panel past one wrapped line of scrolling.
+  await expect.poll(() => panelBody.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(24);
   await expect(late.getByTestId("chief-decision-rationale")).toBeHidden();
   await expect(late.getByTestId("chief-decision-order").first()).toBeHidden();
   // It opens from the keyboard and by a click.
