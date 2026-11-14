@@ -5,7 +5,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
-import { ChiefFix, LevelManifest, type Strategy } from "@/domain";
+import { ChiefFix, LevelManifest, type DroppedStrategy, type Strategy } from "@/domain";
 import { OwnerSetup } from "@/domain/owner-setup";
 import { applyFix, BATCH_SEEDS, rerunWithFix, runBatch, summariseBatch as sum, varyLevel, type Level } from "@/engine";
 import { applyOwnerSetup, validateOwnerSetup } from "@/level/owner-setup";
@@ -15,10 +15,13 @@ import fixRecording from "../../../fixtures/llm/fix-F1.json";
 import recording from "../../../fixtures/llm/strategies-F1.json";
 import { BatchPanel } from "./batch-panel";
 import { toEngineFix, type FixAnswer } from "./chief-fix";
-import { ownerZones, playOwnerBatch, rerunOwner } from "./owner-batch";
-import { boardCaption, setupKey } from "./owner-ready";
+import { compareOptions, ComparePanel, ComparePicker, defaultPick, DemoList, type CompareOption } from "./compare-panel";
+import { demoSetups, isDemoSetup } from "./demo-setups";
+import { compareOwnerSetups, ownerZones, playOwnerBatch, rerunOwner, type PairSide } from "./owner-batch";
+import { boardCaption, pairCaption, setupKey } from "./owner-ready";
 import {
   addCleaner,
+  addGuard,
   boardOf,
   clearCleanerRound,
   extendCleanerRound,
@@ -29,11 +32,15 @@ import {
   playable,
   problemsOf,
   removeCleaner,
+  removeCamera,
   setDoor,
+  setTempo,
+  setupChanges,
   setupFromPlaced,
   setupWithFix,
   startCleanerRound,
   startRound,
+  toggleDesk,
   updateCamera,
 } from "./owner-edit";
 import type { Selection } from "./owner-board";
@@ -400,7 +407,300 @@ describe("50 attempts, the fix, and the rerun", () => {
     expect(html).toContain('data-testid="owner-fix-recorded"');
     expect(html).toContain('data-testid="owner-crew-recorded"');
     expect(html).toMatch(/data-testid="owner-route" data-side="before" data-count="14"/);
-    expect(boardCaption(rerun.after, "after")).toBe("After the fix: 0 of 50 got out. No way out to draw");
+    expect(boardCaption(rerun.after, "after")).toBe("After the fix: 0 of 50 got out. No way out to draw.");
+  });
+
+  it("the route and the detector card follow the side the board shows", () => {
+    const batch: OwnerBatch = { status: "done", key: "generated", setup: starting, result: before, summary: sum(before), recorded: true, ms: 1 };
+    const applied: OwnerFix = { status: "applied", answer: { fix: recordedFix, recorded: true, source: "recorded" }, rerun, ms: 1 };
+    const panel = (fix: OwnerFix, side: "before" | "after") =>
+      renderToStaticMarkup(
+        <BatchPanel
+          batch={batch}
+          fix={fix}
+          side={side}
+          zones={ownerZones(manifest, floor)}
+          generated={generated}
+          setupName={null}
+          stale={false}
+          fixedSaved={null}
+          onEdit={noop}
+          onRetry={noop}
+          onOpenFixed={noop}
+        />,
+      );
+    const beforeTop = sum(before).detectors[0];
+    const afterTop = rerun.after.detectors[0];
+
+    const shownBefore = panel(applied, "before");
+    expect(shownBefore).toMatch(/data-testid="owner-route" data-side="before" data-count="14"/);
+    expect(shownBefore).toContain("Before the fix: The way most got out");
+    expect(shownBefore).toContain(`data-detector="${beforeTop.kind}:${beforeTop.id}"`);
+    expect(shownBefore).toContain("Before the fix: Noticed the crew first most often");
+
+    const shownAfter = panel(applied, "after");
+    expect(shownAfter).toMatch(/data-testid="owner-route" data-side="after" data-count="0"/);
+    expect(shownAfter).toContain("After the fix: The way most got out");
+    if (afterTop) {
+      expect(shownAfter).toContain(`data-detector="${afterTop.kind}:${afterTop.id}"`);
+      expect(shownAfter).toContain(`data-count="${afterTop.count}"`);
+      expect(shownAfter).toContain('data-side="after"');
+    } else {
+      expect(shownAfter).toContain('data-testid="owner-detector-none"');
+    }
+
+    // Before any fix, the side does not apply: the batch itself, with no side named.
+    const noFix = panel({ status: "idle" }, "after");
+    expect(noFix).toMatch(/data-testid="owner-route" data-side="" data-count="14"/);
+    expect(noFix).not.toContain("Before the fix:");
+  });
+});
+
+// ---- the prepared demo pair, and the compare (issue 31) ----------------------------------
+
+describe("the prepared demo pair", () => {
+  const demos = demoSetups("F1");
+  const [night, moved] = demos.map((d) => d.setup);
+
+  it("is two named, made-up setups on F1, every element the owner's, that fit the floor", () => {
+    expect(demos.map((d) => d.setup.name)).toEqual(["Demo: night shift", "Demo: night shift, C2 moved"]);
+    for (const { setup, note } of demos) {
+      expect(validateOwnerSetup(setup, floor)).toEqual([]);
+      expect(setup.generated).toBeUndefined();
+      expect(setup.buildingId).toBe("F1");
+      expect(note.length).toBeGreaterThan(0);
+    }
+    expect(demos[0].note).toContain("Made up");
+    expect(demoSetups("F2")).toEqual([]);
+  });
+
+  it("differs by one change: C2 moved from the freight lift lobby into the dock corridor", () => {
+    expect(setupChanges(night, moved, floor)).toEqual(["C2 moved from the Freight Lift Lobby to the Dock Corridor"]);
+    expect(setupChanges(moved, night, floor)).toEqual(["C2 moved from the Dock Corridor to the Freight Lift Lobby"]);
+    expect(setupChanges(night, night, floor)).toEqual([]);
+  });
+
+  it("gets 7 of 50 out, then 1 of 50 with C2 moved, the same on every run", () => {
+    const [a, b] = compareOwnerSetups(manifest, floor, night, moved, answer);
+    expect(a.summary).toMatchObject({ total: 50, escaped: 7 });
+    expect(b.summary).toMatchObject({ total: 50, escaped: 1 });
+    expect(Object.fromEntries(a.summary.byStrategy.map((s) => [s.strategyId, s.escaped]))).toEqual({
+      "dock-patient": 3,
+      "dock-fast": 4,
+      "roof-quiet": 0,
+      "suite-detour": 0,
+      "dock-in-roof-out": 0,
+    });
+    expect(Object.fromEntries(b.summary.byStrategy.map((s) => [s.strategyId, s.escaped]))).toEqual({
+      "dock-patient": 0,
+      "dock-fast": 1,
+      "roof-quiet": 0,
+      "suite-detour": 0,
+      "dock-in-roof-out": 0,
+    });
+    expect(a.summary.topRoute?.count).toBe(7);
+    expect(b.summary.topRoute?.count).toBe(1);
+    expect(a.summary.detectors[0]).toMatchObject({ kind: "cleaner", id: "D1" });
+    expect(b.summary.detectors[0]).toMatchObject({ kind: "camera", id: "C2" });
+    // Again, and each alone: the same batches.
+    expect(compareOwnerSetups(manifest, floor, night, moved, answer)).toEqual([a, b]);
+    expect(playOwnerBatch(manifest, floor, night, answer)).toEqual(a.result);
+    expect(playOwnerBatch(manifest, floor, moved, answer)).toEqual(b.result);
+  });
+
+  it("C2 sees only the lobby floor before, and the corridor, the lobby and the lift after", () => {
+    const cover = (setup: OwnerSetup) => boardOf(manifest, floor, setup, 1)!.cameras.find((c) => c.id === "C2")!.cover;
+    expect(cover(night)).toEqual(["fl-lobby"]);
+    expect(cover(moved)).toEqual(["dc-west", "fl-lobby", "fl-car"]);
+  });
+
+  it("is still itself once saved: a stored copy parses and reads as made up", () => {
+    const stored = OwnerSetup.parse(JSON.parse(JSON.stringify(night)));
+    expect(isDemoSetup(stored)).toBe(true);
+    expect(isDemoSetup({ ...stored, desks: [] })).toBe(false);
+    expect(isDemoSetup(starting)).toBe(false);
+  });
+
+  it("shows in the editor as made up, with a Load button each", () => {
+    const html = renderToStaticMarkup(<DemoList demos={demos} onLoad={noop} />);
+    expect(html.match(/data-testid="owner-demo-load"/g)).toHaveLength(2);
+    expect(html.match(/data-testid="owner-made-up-chip"/g)).toHaveLength(2);
+    const loaded = editor({ setup: night, pristine: false, state: "preset" });
+    expect(loaded).toContain('data-state="preset"');
+    expect(loaded).toContain("A made-up setup prepared for the demo, not any real building&#x27;s.");
+    expect(loaded).toContain("4 guards · 0 cleaners · 2 cameras · 2 locked doors · 1 desk");
+  });
+});
+
+describe("what changed between two setups", () => {
+  it("names each element's change in the owner's words", () => {
+    let b = setTempo(starting, "G1", 2);
+    b = moveGuard(b, "G3", "mc-w");
+    b = updateCamera(b, "C1", { kind: "fixed", facing: "n" });
+    b = setDoor(b, "d-records-room", "badge");
+    b = setDoor(b, "d-server-closet", "open");
+    b = toggleDesk(b, "el-north");
+    b = removeCamera(b, "C2");
+    b = addGuard(b, "o-west").setup;
+    expect(setupChanges(starting, b, floor)).toEqual([
+      "G1 takes 2 turns per hop (was 1)",
+      "G3 moved from the West Stair (Stair B) to the Main Corridor",
+      "G5 added, posted in the Open Office 2210",
+      "C2 removed",
+      "C1 turned to face N (was SW), is now fixed (was sweeping)",
+      "Door d-records-room is now a badge reader (was a key lock)",
+      "Door d-server-closet is left open (was a key lock)",
+      "A staffed desk in the Elevator Lobby",
+    ]);
+  });
+
+  it("names the nodes when an element moves inside one room, and ignores the name and the generated list", () => {
+    const moved = moveGuard(starting, "G1", "mc-1");
+    // mc-1 is on G1's round, so it keeps walking it.
+    expect(setupChanges(starting, moved, floor)).toEqual(["G1 moved from mc-w to mc-1 in the Main Corridor"]);
+    expect(setupChanges(starting, moveGuard(starting, "G1", "o-west"), floor)).toEqual([
+      "G1 moved from the Main Corridor to the Open Office 2210, stands its post",
+    ]);
+    expect(setupChanges(starting, { ...starting, name: "Other", generated: {} }, floor)).toEqual([]);
+  });
+});
+
+describe("the compare", () => {
+  const demos = demoSetups("F1");
+  const [night, moved] = demos.map((d) => d.setup);
+  const saved = { ...starting, name: "My night" };
+
+  it("offers the prepared setups first, then the saved ones, and starts on the prepared pair", () => {
+    const options = compareOptions(demos, [saved, night]);
+    expect(options.map((o) => [o.value, o.madeUp])).toEqual([
+      ["demo:Demo: night shift", true],
+      ["demo:Demo: night shift, C2 moved", true],
+      ["saved:My night", false],
+      ["saved:Demo: night shift", false],
+    ]);
+    expect(defaultPick(options)).toEqual({ a: "demo:Demo: night shift", b: "demo:Demo: night shift, C2 moved" });
+    expect(defaultPick(compareOptions([], [saved]))).toEqual({ a: "saved:My night", b: "saved:My night" });
+  });
+
+  it("picks any two: an empty list says to save two, the same one twice blocks the run", () => {
+    const picker = (options: CompareOption[], pick: { a: string; b: string }) =>
+      renderToStaticMarkup(<ComparePicker options={options} pick={pick} planning={false} onPick={noop} onCompare={noop} />);
+    expect(picker([], { a: "", b: "" })).toContain('data-testid="owner-pair-empty"');
+    const options = compareOptions(demos, [saved]);
+    expect(picker(options, defaultPick(options))).not.toMatch(/data-testid="owner-pair-run"[^>]*disabled/);
+    const same = picker(options, { a: "saved:My night", b: "saved:My night" });
+    expect(same).toMatch(/data-testid="owner-pair-run"[^>]*disabled/);
+    expect(same).toContain("Pick two different setups.");
+  });
+
+  it("renders each side's count, strip, way out and detector, and what changed, A to B", () => {
+    const sides = compareOwnerSetups(manifest, floor, night, moved, answer);
+    const boards: [PlacedLevel, PlacedLevel] = [boardOf(manifest, floor, night, 1)!, boardOf(manifest, floor, moved, 1)!];
+    const html = (side: "a" | "b") =>
+      renderToStaticMarkup(
+        <ComparePanel
+          pair={{ status: "done", sides, recorded: true }}
+          floor={floor}
+          boards={boards}
+          madeUp={[true, true]}
+          side={side}
+          onSide={noop}
+          onRetry={noop}
+          onBack={noop}
+        />,
+      );
+    const a = html("a");
+    expect(a).toMatch(/data-testid="owner-pair-a-count" data-escaped="7" data-total="50"/);
+    expect(a).toMatch(/data-testid="owner-pair-b-count" data-escaped="1" data-total="50"/);
+    expect(a.match(/data-outcome=/g)).toHaveLength(100);
+    expect(a.match(/data-outcome="escaped"/g)).toHaveLength(8);
+    expect(a).toMatch(/data-testid="owner-pair-a-route" data-count="7"/);
+    expect(a).toMatch(/data-testid="owner-pair-b-route" data-count="1"/);
+    expect(a).toContain("Freight Lift Lobby → Dock Corridor → Records Room");
+    expect(a).toContain('data-detector="cleaner:D1"');
+    expect(a).toContain("Desk D1");
+    expect(a).toContain("C2 moved from the Freight Lift Lobby to the Dock Corridor");
+    expect(a).toContain("6 fewer got out");
+    expect(a).toContain('data-testid="owner-pair-recorded"');
+    expect(a.match(/data-testid="owner-made-up-chip"/g)).toHaveLength(2);
+    expect(a).toMatch(/data-testid="owner-pair-a" data-selected="true"/);
+    // The text says which side is drawn.
+    expect(a.match(/It is drawn on the board/g)).toHaveLength(1);
+    expect(html("b")).toMatch(/data-testid="owner-pair-b" data-selected="true"/);
+    expect(pairCaption("b", moved.name, sides[1].summary)).toBe(
+      "B, Demo: night shift, C2 moved: 1 of 50 got out. The way most got out is drawn.",
+    );
+    // The prepared pair plays every strategy: 50 on each, and nothing left out.
+    expect(a).toContain("Same crew strategies, same ten nights: 50 attempts on each.");
+    expect(a).toContain("7 → 1 of 50: 6 fewer got out.");
+    expect(a).not.toContain("Left out:");
+  });
+
+  it("counts the attempts each side played, not 50, and names the strategy a side left out", () => {
+    // A live answer with one strategy the board could not play: four strategies, 40 attempts.
+    const short: { strategies: Strategy[]; dropped: DroppedStrategy[] } = {
+      strategies: strategies.slice(0, 4),
+      dropped: [{ strategyId: "dock-in-roof-out", reason: "no roof exit on this floor" }],
+    };
+    const side = (setup: OwnerSetup, played: typeof short): PairSide => {
+      const result = playOwnerBatch(manifest, floor, setup, played);
+      return { setup, result, summary: sum(result) };
+    };
+    const boards: [PlacedLevel, PlacedLevel] = [boardOf(manifest, floor, night, 1)!, boardOf(manifest, floor, moved, 1)!];
+    const html = (sides: [PairSide, PairSide]) =>
+      renderToStaticMarkup(
+        <ComparePanel
+          pair={{ status: "done", sides, recorded: false }}
+          floor={floor}
+          boards={boards}
+          madeUp={[true, true]}
+          side="a"
+          onSide={noop}
+          onRetry={noop}
+          onBack={noop}
+        />,
+      );
+
+    // Only A left it out: each side's own number, in the count line and the delta.
+    const uneven = html([side(night, short), side(moved, { strategies, dropped: [] })]);
+    expect(uneven).toMatch(/data-testid="owner-pair-a-count" data-escaped="7" data-total="40"/);
+    expect(uneven).toMatch(/data-testid="owner-pair-b-count" data-escaped="1" data-total="50"/);
+    expect(uneven).toContain("Same ten nights, but not the same strategies: 40 attempts on A, 50 on B.");
+    expect(uneven).toContain("7 of 40 → 1 of 50: 6 fewer got out.");
+    expect(uneven).toMatch(/data-testid="owner-pair-a-dropped"[^>]*>.*?Left out: dock-in-roof-out \(no roof exit on this floor\)\./);
+    expect(uneven).not.toContain('data-testid="owner-pair-b-dropped"');
+    expect(uneven).not.toContain("attempts on each");
+
+    // Both left it out: 40 on each, and a line for each side.
+    const both = html([side(night, short), side(moved, short)]);
+    expect(both).toContain("Same crew strategies, same ten nights: 40 attempts on each.");
+    expect(both).toContain("7 → 1 of 40: 6 fewer got out.");
+    expect(both.match(/Left out: dock-in-roof-out \(no roof exit on this floor\)\./g)).toHaveLength(2);
+    expect(both).not.toMatch(/50 attempts|of 50|data-total="50"/);
+  });
+
+  it("the picker promises no number of attempts before the crew has planned", () => {
+    const options = compareOptions(demos, [saved]);
+    const html = renderToStaticMarkup(<ComparePicker options={options} pick={defaultPick(options)} planning={false} onPick={noop} onCompare={noop} />);
+    expect(html).toContain("Both play the same strategies on the same nights.");
+    expect(html).not.toContain("50 attempts");
+  });
+
+  it("says when the crew didn't plan", () => {
+    const html = renderToStaticMarkup(
+      <ComparePanel
+        pair={{ status: "error", message: "the crew route failed" }}
+        floor={floor}
+        boards={null}
+        madeUp={[false, false]}
+        side="a"
+        onSide={noop}
+        onRetry={noop}
+        onBack={noop}
+      />,
+    );
+    expect(html).toContain('data-state="error"');
+    expect(html).toContain("the crew route failed");
   });
 });
 
