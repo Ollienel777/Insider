@@ -318,7 +318,7 @@ export function RunScreen({
                 testId="board-empty"
                 label="No floor yet"
                 title="This building's level isn't ready yet."
-                body="Only Halvorsen Tower has a board so far. Pick it on the map to play the run."
+                body="Only the Los Angeles buildings have a board so far. Pick one on the map to play the run."
                 action={
                   <Link href="/map" className={buttonVariants({ variant: "secondary" })}>
                     Back to the map

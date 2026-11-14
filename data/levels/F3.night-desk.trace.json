@@ -1,0 +1,156 @@
+{
+  "buildingId": "F3",
+  "recordedAt": "2026-11-14T05:40:47.808Z",
+  "model": "scripted (builder-F3-night-desk), no LLM ran",
+  "liveData": false,
+  "subagents": [
+    "general-purpose",
+    "data-analyst",
+    "game-master"
+  ],
+  "events": [
+    {
+      "atMs": 13,
+      "kind": "todo",
+      "agent": "level-builder",
+      "label": "Read F3's CoStar record and Vexcel aerial, and derive its security",
+      "status": "in_progress"
+    },
+    {
+      "atMs": 13,
+      "kind": "todo",
+      "agent": "level-builder",
+      "label": "Write the briefing for mission night-desk",
+      "status": "pending"
+    },
+    {
+      "atMs": 13,
+      "kind": "todo",
+      "agent": "level-builder",
+      "label": "Write the level manifest",
+      "status": "pending"
+    },
+    {
+      "atMs": 18,
+      "kind": "subagent",
+      "agent": "data-analyst",
+      "label": "Read building F3's CoStar record, available space and aerial entries, then derive its security profile with the rules table.",
+      "status": "completed",
+      "durationMs": 15,
+      "input": "Read building F3's CoStar record, available space and aerial entries, then derive its security profile with the rules table.",
+      "output": "Built 2017 (2015 or later): Smart era, badge plus PIN readers with door-held alarms, IP cameras with analytics, 5 cameras. Class A: 4 guards on tight rounds. Floor 24 has the most available area, suite 2401, so the level is staged there and that suite is a quiet zone; the small occupied rest of the floor is crowded. Entries from the aerial: loading dock and roof deck first, then the Wilshire lobby (with a desk guard), the garage ramp and the bike room door."
+    },
+    {
+      "atMs": 26,
+      "kind": "tool",
+      "agent": "data-analyst",
+      "label": "get_building",
+      "status": "completed",
+      "durationMs": 1,
+      "input": "{\n  \"buildingId\": \"F3\"\n}",
+      "output": "{\n  \"id\": \"F3\",\n  \"name\": \"Meridian on Wilshire\",\n  \"city\": \"LA\",\n  \"neighbourhood\": \"Westlake\",\n  \"lat\": 34.05934,\n  \"lng\": -118.27512,\n  \"yearBuilt\": 2017,\n  \"buildingClass\": \"A\",\n  \"stories\": 30,\n  \"rbaSf\": 571893,\n  \"typicalFloorSf\": 19615,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  },\n  \"source\": \"fixture\",\n  \"availableSuites\": 4\n}"
+    },
+    {
+      "atMs": 26,
+      "kind": "tool",
+      "agent": "data-analyst",
+      "label": "get_available_space",
+      "status": "completed",
+      "durationMs": 1,
+      "input": "{\n  \"buildingId\": \"F3\"\n}",
+      "output": "[\n  {\n    \"floor\": 6,\n    \"suite\": \"610\",\n    \"sf\": 3742\n  },\n  {\n    \"floor\": 12,\n    \"suite\": \"1205\",\n    \"sf\": 2118\n  },\n  {\n    \"floor\": 12,\n    \"suite\": \"1230\",\n    \"sf\": 5961\n  },\n  {\n    \"floor\": 24,\n    \"suite\": \"2401\",\n    \"sf\": 18974\n  }\n]"
+    },
+    {
+      "atMs": 26,
+      "kind": "tool",
+      "agent": "data-analyst",
+      "label": "get_aerial_entries",
+      "status": "completed",
+      "durationMs": 0,
+      "input": "{\n  \"buildingId\": \"F3\"\n}",
+      "output": "{\n  \"source\": \"fixture\",\n  \"heightM\": 123,\n  \"entries\": [\n    {\n      \"id\": \"lobby-S\",\n      \"kind\": \"lobby\",\n      \"label\": \"Wilshire lobby\",\n      \"view\": \"S\",\n      \"note\": \"On Wilshire: the lobby and the café share one entrance. Facial-recognition turnstiles past the desk.\"\n    },\n    {\n      \"id\": \"garage-W\",\n      \"kind\": \"garage\",\n      \"label\": \"Garage ramp\",\n      \"view\": \"W\",\n      \"note\": \"A podium garage with plate readers at the gate; residents and tenants share it after 7 pm.\"\n    },\n    {\n      \"id\": \"dock-N\",\n      \"kind\": \"dock\",\n      \"label\": \"Loading dock\",\n      \"view\": \"N\",\n      \"note\": \"Off the rear alley: one bay with a roll-up door on a timed lock, open 7 am to 3 pm.\"\n    },\n    {\n      \"id\": \"bike-E\",\n      \"kind\": \"service\",\n      \"label\": \"Bike room door\",\n      \"view\": \"E\",\n      \"note\": \"A side door to the bike room. Badge only, and a camera over the frame.\"\n    },\n    {\n      \"id\": \"roof\",\n      \"kind\": \"roof\",\n      \"label\": \"Roof deck\",\n      \"view\": \"ortho\",\n      \"note\": \"The tenant roof deck. Its door to the lift lobby locks at 10 pm.\"\n    }\n  ]\n}"
+    },
+    {
+      "atMs": 30,
+      "kind": "tool",
+      "agent": "data-analyst",
+      "label": "derive_security_profile",
+      "status": "completed",
+      "durationMs": 0,
+      "input": "{\n  \"buildingId\": \"F3\"\n}",
+      "output": "{\n  \"securityProfile\": {\n    \"era\": \"smart\",\n    \"guardCount\": 4,\n    \"patrolTempo\": 1,\n    \"cameraKind\": \"ip-analytics\",\n    \"cameraCount\": 5,\n    \"lockKind\": \"badge-pin\"\n  },\n  \"stagingFloor\": 24,\n  \"zones\": [\n    {\n      \"id\": \"quiet-2401\",\n      \"name\": \"Suite 2401 (vacant)\",\n      \"role\": \"quiet\",\n      \"rule\": \"Available suite: dark, unpatrolled, sound carries 1 node further\"\n    },\n    {\n      \"id\": \"crowded-24\",\n      \"name\": \"Occupied floor 24\",\n      \"role\": \"crowded\",\n      \"rule\": \"Occupied space: night cleaners raise Suspicious if they see you\"\n    },\n    {\n      \"id\": \"secure\",\n      \"name\": \"Secure room\",\n      \"role\": \"secure\",\n      \"rule\": \"Smart era: badge plus PIN door with a door-held alarm\"\n    }\n  ],\n  \"entries\": [\n    {\n      \"id\": \"dock-N\",\n      \"kind\": \"dock\",\n      \"label\": \"Loading dock\"\n    },\n    {\n      \"id\": \"roof\",\n      \"kind\": \"roof\",\n      \"label\": \"Roof deck\"\n    },\n    {\n      \"id\": \"lobby-S\",\n      \"kind\": \"lobby\",\n      \"label\": \"Wilshire lobby\"\n    },\n    {\n      \"id\": \"garage-W\",\n      \"kind\": \"garage\",\n      \"label\": \"Garage ramp\"\n    },\n    {\n      \"id\": \"bike-E\",\n      \"kind\": \"service\",\n      \"label\": \"Bike room door\"\n    }\n  ],\n  \"provenance\": [\n    {\n      \"elementRole\": \"profile:era\",\n      \"rule\": \"Built 2017 (2015 or later) → Smart era\"\n    },\n    {\n      \"elementRole\": \"profile:lockKind\",\n      \"rule\": \"Built 2017 (2015 or later) → Smart era: badge plus PIN readers; doors held open raise an alarm\"\n    },\n    {\n      \"elementRole\": \"profile:cameraKind\",\n      \"rule\": \"Built 2017 (2015 or later) → Smart era: IP cameras with analytics: a sighting raises the alarm one extra step\"\n    },\n    {\n      \"elementRole\": \"profile:cameraCount\",\n      \"rule\": \"Built 2017 (2015 or later) → Smart era: 5 cameras on the staged floor\"\n    },\n    {\n      \"elementRole\": \"camera:C1\",\n      \"rule\": \"Built 2017 (2015 or later) → Smart era: camera 1 of 5, IP cameras with analytics: a sighting raises the alarm one extra step\"\n    },\n    {\n… [2909 more characters not recorded]"
+    },
+    {
+      "atMs": 38,
+      "kind": "todo",
+      "agent": "level-builder",
+      "label": "Read F3's CoStar record and Vexcel aerial, and derive its security",
+      "status": "completed"
+    },
+    {
+      "atMs": 38,
+      "kind": "todo",
+      "agent": "level-builder",
+      "label": "Write the briefing for mission night-desk",
+      "status": "in_progress"
+    },
+    {
+      "atMs": 38,
+      "kind": "todo",
+      "agent": "level-builder",
+      "label": "Write the level manifest",
+      "status": "pending"
+    },
+    {
+      "atMs": 38,
+      "kind": "subagent",
+      "agent": "game-master",
+      "label": "Building F3, Meridian on Wilshire, LA, built 2017. Smart era: badge plus PIN readers, IP cameras with analytics, 5 cameras. Class A: 4 guards on tight rounds. Staged on floor 24, quiet suite 2401. Entries: loading dock, roof deck, Wilshire lobby, garage ramp, bike room door. Mission night-desk: write its briefing.",
+      "status": "completed",
+      "durationMs": 13,
+      "input": "Building F3, Meridian on Wilshire, LA, built 2017. Smart era: badge plus PIN readers, IP cameras with analytics, 5 cameras. Class A: 4 guards on tight rounds. Staged on floor 24, quiet suite 2401. Entries: loading dock, roof deck, Wilshire lobby, garage ramp, bike room door. Mission night-desk: write its briefing.",
+      "output": "Mission: night-desk, The Night Desk, a fictional mission staged in a 2017 smart-era building. Objective zone: Prototype lab, take the prototype, then reach an exit before the hired crew gets to it. Briefing: Meridian on Wilshire, Westlake, a 2017 tower with smart-era security: badge plus PIN on the locked doors, five IP cameras with analytics in the halls, four guards on tight rounds. Someone on the night desk has sold the prototype, and tonight's guards will hand it to a hired crew. Suite 2401 on floor 24 is vacant and dark; the prototype lab opens off the north hall. Get it out first: up the service lift from the loading dock, keep out of the halls, open the lab, and leave by the service lift or the east stair. Nobody gets hurt. The mission is fictional, and the security here is game fiction, drawn from the building's class and era."
+    },
+    {
+      "atMs": 48,
+      "kind": "tool",
+      "agent": "game-master",
+      "label": "get_mission",
+      "status": "completed",
+      "durationMs": 0,
+      "input": "{\n  \"missionId\": \"night-desk\"\n}",
+      "output": "{\n  \"id\": \"night-desk\",\n  \"city\": \"LA\",\n  \"type\": \"prevent\",\n  \"title\": \"The Night Desk\",\n  \"inspiredBy\": null,\n  \"objective\": \"Get the prototype out of the lab before the hired crew reaches it\",\n  \"exitCondition\": \"Leave by the service lift or the east stair with the prototype before the alarm reaches Lockdown\"\n}"
+    },
+    {
+      "atMs": 55,
+      "kind": "tool",
+      "agent": "level-builder",
+      "label": "write_manifest",
+      "status": "completed",
+      "durationMs": 1,
+      "input": "{\n  \"buildingId\": \"F3\",\n  \"missionId\": \"night-desk\",\n  \"briefing\": \"Meridian on Wilshire, Westlake, a 2017 tower with smart-era security: badge plus PIN on the locked doors, five IP cameras with analytics in the halls, four guards on tight rounds. Someone on the night desk has sold the prototype, and tonight's guards will hand it to a hired crew. Suite 2401 on floor 24 is vacant and dark; the prototype lab opens off the north hall. Get it out first: up the service lift from the loading dock, keep out of the halls, open the lab, and leave by the service lift or the east stair. Nobody gets hurt. The mission is fictional, and the security here is game fiction, drawn from the building's class and era.\",\n  \"objective\": {\n    \"name\": \"Prototype lab\",\n    \"rule\": \"The prototype is here: take it, then reach an exit before the hired crew gets to it\"\n  }\n}",
+      "output": "Manifest written for F3: 4 zones, 5 entries, 26 provenance entries, mission night-desk."
+    },
+    {
+      "atMs": 59,
+      "kind": "todo",
+      "agent": "level-builder",
+      "label": "Read F3's CoStar record and Vexcel aerial, and derive its security",
+      "status": "completed"
+    },
+    {
+      "atMs": 59,
+      "kind": "todo",
+      "agent": "level-builder",
+      "label": "Write the briefing for mission night-desk",
+      "status": "completed"
+    },
+    {
+      "atMs": 59,
+      "kind": "todo",
+      "agent": "level-builder",
+      "label": "Write the level manifest",
+      "status": "completed"
+    }
+  ]
+}

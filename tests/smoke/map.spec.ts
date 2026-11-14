@@ -103,11 +103,12 @@ test("hovering a pin shows its card", async ({ page }) => {
 
 test("a building without a level is disabled and marked level in prep", async ({ page }) => {
   await page.goto("/map");
-  const pin = page.getByRole("button", { name: "Figueroa Exchange, level in prep" });
+  await page.getByRole("tab", { name: /Houston/ }).click();
+  const pin = page.getByRole("button", { name: "Smith Street Center, level in prep" });
   await expect(pin).toHaveAttribute("aria-disabled", "true");
   // Playwright treats aria-disabled as not actionable; force the click to prove it does nothing.
   await pin.click({ force: true });
-  const row = page.getByTestId("building-row").filter({ hasText: "Figueroa Exchange" });
+  const row = page.getByTestId("building-row").filter({ hasText: "Smith Street Center" });
   await expect(row).toContainText("Level in prep");
   await row.click({ force: true });
   await expect(page.getByRole("button", { name: "Scout this building" })).toBeDisabled();

@@ -86,7 +86,7 @@
                 "finalists": [
                   {
                     "id": "F2",
-                    "reason": "A late-1980s Class A tower with a garage ramp and a service entry: the tunnel crew's era, and the most empty space on one floor."
+                    "reason": "A late-1980s Class B tower with a garage ramp and a service entry: the tunnel crew's era, and the most empty space on one floor."
                   },
                   {
                     "id": "L14",
@@ -284,7 +284,7 @@
           ]
         },
         {
-          "content": "Funnel: 61 in the inventory -> 32 (in LA) -> 7 (built in the 1980s) -> 6 (office or retail) -> 5 (a floor with 10,000 SF or more on the market) -> 4 (a Matterport scan) -> 3 (a garage or service entry on the aerial). Left: F2 Figueroa Exchange: built 1989, Class A office, floor 41 has 11,254 SF on the market, scanned, garage and service entry; L14 Sepulveda Pacific Tower: built 1984, Class B office, floor 12 has 10,640 SF on the market, scanned, garage; L15 Larkspur Galleria: built 1982, Class B retail, floor 1 has 10,180 SF on the market, scanned, service entry."
+          "content": "Funnel: 61 in the inventory -> 32 (in LA) -> 7 (built in the 1980s) -> 6 (office or retail) -> 5 (a floor with 10,000 SF or more on the market) -> 4 (a Matterport scan) -> 3 (a garage or service entry on the aerial). Left: F2 Figueroa Exchange: built 1989, Class B office, floor 41 has 11,254 SF on the market, scanned, garage and service entry; L14 Sepulveda Pacific Tower: built 1984, Class B office, floor 12 has 10,640 SF on the market, scanned, garage; L15 Larkspur Galleria: built 1982, Class B retail, floor 1 has 10,180 SF on the market, scanned, service entry."
         }
       ]
     }

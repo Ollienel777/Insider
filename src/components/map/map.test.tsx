@@ -71,8 +71,8 @@ describe("the basemap images", () => {
 });
 
 describe("buildingsWithLevel", () => {
-  it("is the buildings with a floor fixture: only F1 until the other floors land", () => {
-    expect([...ready]).toEqual(["F1"]);
+  it("is the buildings with a floor fixture: the LA three until the Houston floors land (#40)", () => {
+    expect([...ready].sort()).toEqual(["F1", "F2", "F3"]);
   });
 
   it("enables a building as soon as its floor file exists, and is empty without a floors directory", () => {
@@ -134,15 +134,17 @@ describe("MapScreen", () => {
   });
 
   it("disables every building without a level and marks it level in prep", () => {
-    expect(pinMarkup(la, "F1")).not.toContain("aria-disabled");
+    for (const id of ["F1", "F2", "F3"]) expect(pinMarkup(la, id), id).not.toContain("aria-disabled");
     expect(pinMarkup(la, "F1")).toContain('aria-label="Halvorsen Tower"');
-    for (const id of ["F2", "F3"]) {
-      expect(pinMarkup(la, id)).toContain('aria-disabled="true"');
-      expect(pinMarkup(la, id)).toContain("level in prep");
+    expect(la).not.toContain("Level in prep");
+    const houston = renderToStaticMarkup(<MapScreen buildings={buildings} defaultCity="Houston" />);
+    for (const id of ["F4", "F5"]) {
+      expect(pinMarkup(houston, id)).toContain('aria-disabled="true"');
+      expect(pinMarkup(houston, id)).toContain("level in prep");
     }
-    const inPrepRows = la.match(/<button[^>]*data-testid="building-row"[^>]*aria-disabled="true"/g) ?? [];
+    const inPrepRows = houston.match(/<button[^>]*data-testid="building-row"[^>]*aria-disabled="true"/g) ?? [];
     expect(inPrepRows).toHaveLength(2);
-    expect(la.match(/Level in prep/g)).toHaveLength(2);
+    expect(houston.match(/Level in prep/g)).toHaveLength(2);
   });
 
   it("starts with nothing selected and Scout this building disabled", () => {
