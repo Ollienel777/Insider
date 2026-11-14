@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { BatchResult, LevelManifest, type Strategy } from "@/domain";
 import { placeLevel } from "@/level/placer";
-import cached from "../../data/levels/F1.json";
+import cached from "../../data/levels/F1.romaine-1974.json";
 import { autoplay, BATCH_SEEDS, resolveStrategy, runBatch, varyLevel } from "./index";
 
 const manifest = LevelManifest.parse(structuredClone(cached));

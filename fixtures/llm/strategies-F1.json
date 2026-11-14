@@ -1,6 +1,6 @@
 {
   "buildingId": "F1",
-  "note": "The crew's recorded strategies for Halvorsen Tower (Owner Mode, #126): src/agents/crew/strategies.ts answers with these in fake mode and when a live call fails. Entry and zone ids are the cached manifest's (data/levels/F1.json).",
+  "note": "The crew's recorded strategies for Halvorsen Tower (Owner Mode, #126): src/agents/crew/strategies.ts answers with these in fake mode and when a live call fails. Entry and zone ids are the cached manifest's (data/levels/F1.romaine-1974.json; these strategies are kept per building, so any mission on F1 reuses them).",
   "strategies": [
     {
       "id": "dock-patient",

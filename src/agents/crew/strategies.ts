@@ -10,6 +10,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { readCachedLevel } from "@/agents/builder/cache";
+import { defaultMissionId } from "@/agents/builder/missions";
 import { structuredCall, type StructuredCallOptions } from "@/adapters/llm";
 import { Strategy, StrategySet, type DroppedStrategy, type LevelManifest } from "@/domain";
 import { crewContext, type CrewContext } from "./prompt";
@@ -48,6 +49,8 @@ export interface StrategiesOptions {
   timeoutMs?: number;
   fixturesDir?: string;
   levelsDir?: string;
+  /** The mission whose level to read (#119); the building's own mission by default. */
+  missionId?: string;
 }
 
 /** Reads and checks a building's recorded strategies; null when there are none. */
@@ -138,12 +141,13 @@ export function strategiesMessages(context: StrategyContext) {
   ];
 }
 
-/** The crew's strategies for one building's cached level. Null when the building has no cached level. */
+/** The crew's strategies for one building's cached level for a mission. Null when there is no cached level. */
 export async function proposeStrategies(
   buildingId: string,
   options: StrategiesOptions = {},
 ): Promise<StrategiesAnswer | null> {
-  const cached = await readCachedLevel(buildingId, options.levelsDir);
+  const missionId = options.missionId ?? defaultMissionId(buildingId);
+  const cached = missionId ? await readCachedLevel(buildingId, missionId, options.levelsDir) : null;
   if (!cached) return null;
   const { manifest } = cached;
   const fake = async (): Promise<StrategySet> => {
