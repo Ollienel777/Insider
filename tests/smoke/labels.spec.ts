@@ -6,8 +6,10 @@ import { expect, test, type Page } from "@playwright/test";
 // streamed in (beat 5). Every <text> on the board is measured as drawn, through
 // its own transform (a room's name lies skewed on its tile), as the box its
 // glyphs fill: its advance across, and from the cap height to just below the
-// baseline down, since every board label is set in caps and digits. Two boxes
-// that intersect at all are a collision.
+// baseline down, since every board label is set in caps and digits. A Layer
+// lens mark counts as its whole chip, not just its letter: a label's halo over
+// the chip hides it as surely as its glyphs. Two boxes that intersect at all
+// are a collision.
 
 const DEMO_ORDER = "Go in through the dock, wait for the 2 am round to pass, take the records room.";
 
@@ -18,7 +20,18 @@ function collisions(page: Page, board: string): Promise<string[]> {
   return page.getByTestId(board).evaluate((svg) => {
     type P = { x: number; y: number };
     const boxes: { text: string; quad: P[] }[] = [];
+    const quadOf = (el: SVGGraphicsElement, x0: number, y0: number, x1: number, y1: number): P[] => {
+      const m = el.getScreenCTM()!;
+      const at = (x: number, y: number): P => ({ x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f });
+      return [at(x0, y0), at(x1, y0), at(x1, y1), at(x0, y1)];
+    };
+    for (const chip of svg.querySelectorAll<SVGGElement>('[data-testid="lens-mark"]')) {
+      const rect = chip.querySelector("rect")!;
+      const b = rect.getBBox();
+      boxes.push({ text: `lens mark ${chip.dataset.layer}`, quad: quadOf(rect, b.x, b.y, b.x + b.width, b.y + b.height) });
+    }
     for (const el of svg.querySelectorAll<SVGTextElement>("text")) {
+      if (el.closest('[data-testid="lens-mark"]')) continue;
       const text = el.textContent?.trim() ?? "";
       if (!text || el.getNumberOfChars() === 0) continue;
       const bbox = el.getBBox();
@@ -26,9 +39,7 @@ function collisions(page: Page, board: string): Promise<string[]> {
       const baseline = el.getStartPositionOfChar(0).y;
       const top = baseline - 0.78 * font;
       const bottom = baseline + 0.12 * font;
-      const m = el.getScreenCTM()!;
-      const at = (x: number, y: number): P => ({ x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f });
-      boxes.push({ text, quad: [at(bbox.x, top), at(bbox.x + bbox.width, top), at(bbox.x + bbox.width, bottom), at(bbox.x, bottom)] });
+      boxes.push({ text, quad: quadOf(el, bbox.x, top, bbox.x + bbox.width, bottom) });
     }
     // The separating axis test for two convex quads; boxes that only touch are apart.
     const apart = (a: P[], b: P[]) =>
@@ -47,6 +58,55 @@ function collisions(page: Page, board: string): Promise<string[]> {
     }
     return hits;
   });
+}
+
+/** How far, in board units, a plan mark's glyphs may stand from its own node (`GHOST_REACH`). */
+const GHOST_REACH = 30;
+
+/**
+ * Each plan mark's label that covers a camera's, lock's or entry's lens ring, as "LABEL × ring
+ * LAYER", or stands farther than `GHOST_REACH` from its own node, as "LABEL: N from its node".
+ */
+function planLabelFaults(page: Page, board: string, reach: number): Promise<string[]> {
+  return page.getByTestId(board).evaluate((svg, reach) => {
+    type P = { x: number; y: number };
+    const screen = (el: SVGGraphicsElement, x0: number, y0: number, x1: number, y1: number): P[] => {
+      const m = el.getScreenCTM()!;
+      const at = (x: number, y: number): P => ({ x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f });
+      return [at(x0, y0), at(x1, y0), at(x1, y1), at(x0, y1)];
+    };
+    const overlap = (a: P[], b: P[]) =>
+      Math.min(...a.map((p) => p.x)) < Math.max(...b.map((p) => p.x)) &&
+      Math.min(...b.map((p) => p.x)) < Math.max(...a.map((p) => p.x)) &&
+      Math.min(...a.map((p) => p.y)) < Math.max(...b.map((p) => p.y)) &&
+      Math.min(...b.map((p) => p.y)) < Math.max(...a.map((p) => p.y));
+    // The rings of the elements that never move: every lens ring but a guard's.
+    const rings = [...svg.querySelectorAll<SVGGraphicsElement>('[data-testid="lens-ring"]')]
+      .filter((r) => !r.closest("[data-lens]")?.getAttribute("data-lens")?.startsWith("guard:"))
+      .map((r) => {
+        const b = r.getBBox();
+        const w = 1; // half the ring's stroke
+        return { layer: r.dataset.layer, quad: screen(r, b.x - w, b.y - w, b.x + b.width + w, b.y + b.height + w) };
+      });
+    const faults: string[] = [];
+    for (const label of svg.querySelectorAll<SVGTextElement>('[data-testid="ghost-label"]')) {
+      const text = label.textContent?.trim() ?? "";
+      const b = label.getBBox();
+      const font = parseFloat(getComputedStyle(label).fontSize);
+      const baseline = label.getStartPositionOfChar(0).y;
+      const [top, bottom] = [baseline - 0.78 * font, baseline + 0.12 * font];
+      const quad = screen(label, b.x, top, b.x + b.width, bottom);
+      for (const ring of rings) if (overlap(quad, ring.quad)) faults.push(`${text} × ring ${ring.layer}`);
+      // Its node: the centre of its mark's ring, in the same board units as the label.
+      const node = label.parentElement!.querySelector("ellipse")!;
+      const [cx, cy] = [node.cx.baseVal.value, node.cy.baseVal.value];
+      const dx = Math.max(b.x - cx, 0, cx - (b.x + b.width));
+      const dy = Math.max(top - cy, 0, cy - bottom);
+      const d = Math.hypot(dx, dy);
+      if (d > reach) faults.push(`${text}: ${d.toFixed(1)} from its node`);
+    }
+    return faults;
+  }, reach);
 }
 
 /** How many labels the board draws, so a check over none of them cannot pass. */
@@ -70,6 +130,7 @@ test("beat 4: no label on the Plan board covers another, before and after the cr
   await expect(page.getByTestId("ghost-label")).toHaveCount(3, { timeout: 3_000 });
   // This includes the ghost's WAIT · T12 mark against OPEN OFFICE 2210 (PR #64 R1-M1).
   expect(await collisions(page, "plan-board")).toEqual([]);
+  expect(await planLabelFaults(page, "plan-board", GHOST_REACH)).toEqual([]);
 });
 
 test("beat 5: no label on the Run board covers another, at the start and at the wow beat", async ({ page }) => {
@@ -95,12 +156,20 @@ test("with the Layer lens on, no label or lens mark covers another on Plan and R
   // Two page loads, two hops and the Chief's stream (about 2 s); 60 s leaves room for a loaded
   // 2-vCPU VM running two gates (see demo-path.spec.ts).
   test.setTimeout(60_000);
-  // The lens marks are <text> on the board (a layer's letter), so the same check covers them.
+  // The lens marks are measured as their chips (see `collisions`).
   await page.goto("/b/F1/plan");
   await expect(page.getByTestId("plan-board")).toBeVisible();
   await page.keyboard.press("l");
   await expect(page.getByTestId("lens-mark").first()).toBeVisible();
   expect(await collisions(page, "plan-board")).toEqual([]);
+  // After the crew's answer: the ghost's marks keep clear of the chips and of the rings round the
+  // cameras, locks and entries, each beside its own node (WAIT · T1 once hid the dock lock's chip,
+  // then sat on its ring).
+  await page.getByTestId("crew-order").fill(DEMO_ORDER);
+  await page.getByRole("button", { name: "Brief the crew" }).click();
+  await expect(page.getByTestId("ghost-label")).toHaveCount(3, { timeout: 10_000 });
+  expect(await collisions(page, "plan-board")).toEqual([]);
+  expect(await planLabelFaults(page, "plan-board", GHOST_REACH)).toEqual([]);
 
   await page.goto("/b/F1/run");
   const board = page.getByTestId("run-board");

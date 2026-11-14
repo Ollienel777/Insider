@@ -11,6 +11,7 @@ import {
   addNode,
   addPawn,
   box,
+  boxReach,
   MARK_FONT,
   PAWN_SPOTS,
   PIECE_FONT,
@@ -726,7 +727,7 @@ function GhostPath({
         const p = at(mark.nodeId);
         const sighting = mark.kind === "sighting";
         const colour = sighting ? "var(--warning)" : "var(--n-100)";
-        const spot = spots[i] ?? ghostSpots(mark.kind)[0];
+        const spot = spots[i] ?? ghostSpots(mark.kind, mark.label.length)[0];
         return (
           <g
             key={`${mark.kind}-${mark.nodeId}-${i}`}
@@ -795,13 +796,23 @@ const PAWN_FONT = PIECE_FONT;
 /** "PICK 0/2": the PICK label beside a door's badge (`ChoiceHint`). */
 const PICK_CHARS = 8;
 
-/** A plan mark's label: right of its ring, above it for a sighting and below for a wait, then the other way, then left, then centred. */
-function ghostSpots(kind: GhostPlan["marks"][number]["kind"]): LabelSpot[] {
+/** The farthest a plan mark's glyphs stand from its node, in board units, so it reads as that node's. */
+export const GHOST_REACH = 30;
+
+/**
+ * A plan mark's label: right of its ring, above it for a sighting and below for a wait, then the
+ * other way, then left, then centred. With the Layer lens on, its marks and rings block more of
+ * those, so then also level with the node on either side, and every spot is tried nearest first:
+ * a clear spot on the far side of the node beats a farther one on the near side. None stands
+ * more than `GHOST_REACH` from the node; when none of them is clear, the label covers what the
+ * fewest of them cover rather than drift away from its node.
+ */
+function ghostSpots(kind: GhostPlan["marks"][number]["kind"], chars: number, lens = false): LabelSpot[] {
   const right = DISC.rx + 10;
   const above = -DISC.ry - 6;
   const below = DISC.ry + 16;
   const [first, second] = kind === "sighting" ? [above, below] : [below, above];
-  return [
+  const spots: LabelSpot[] = [
     { x: right, y: first, anchor: "start" },
     { x: right, y: second, anchor: "start" },
     { x: -right, y: first, anchor: "end" },
@@ -809,6 +820,11 @@ function ghostSpots(kind: GhostPlan["marks"][number]["kind"]): LabelSpot[] {
     { x: 0, y: first < 0 ? first - 6 : first + 6, anchor: "middle" },
     { x: 0, y: second < 0 ? second - 6 : second + 6, anchor: "middle" },
   ];
+  if (!lens) return spots;
+  const reach = (s: LabelSpot) => boxReach(textBox(s.x, s.y, chars, MARK_FONT, s.anchor, 0), { x: 0, y: 0 });
+  return [...spots, { x: right, y: 0, anchor: "start" as const }, { x: -right, y: 0, anchor: "end" as const }]
+    .filter((s) => reach(s) <= GHOST_REACH)
+    .sort((a, b) => reach(a) - reach(b));
 }
 
 /** Where each piece stands on the board, back to front, so a nearer pawn overlaps a farther one. */
@@ -832,6 +848,10 @@ export function standingOf(run: RunState, at: (nodeId: string) => Point) {
 export interface FixedLabels {
   rooms: RoomLabel[];
   taken: Taken;
+  /** Whether these were placed with the Layer lens on. */
+  lens: boolean;
+  /** With the lens on, the rings round the cameras, locks and entries: no plan mark covers one. */
+  rings: Quad[];
 }
 
 /**
@@ -866,8 +886,10 @@ export function movingLabels(
     const n = piece.kind === "guard" && markCount ? markCount(piece.id) : 0;
     if (n > 0) lensMarks.set(piece.id, placeMarks(piece.p, n, taken));
   }
+  // A plan mark keeps clear of the lens's rings too, so it never reads as a lock's or a camera's label.
+  taken.text.push(...fixed.rings);
   const marks = ghost
-    ? ghost.marks.map((mark) => placeLabel(at(mark.nodeId), ghostSpots(mark.kind), mark.label.length, MARK_FONT, taken))
+    ? ghost.marks.map((mark) => placeLabel(at(mark.nodeId), ghostSpots(mark.kind, mark.label.length, fixed.lens), mark.label.length, MARK_FONT, taken))
     : [];
   return { pawns, ghost: marks, marks: lensMarks, taken };
 }
@@ -904,14 +926,15 @@ export function fixedLabels(placed: PlacedLevel, cameras: RunState["board"]["cam
   }
   const beforePicks = taken.text.length;
   for (const id of doorNodes(floor.edges)) taken.text.push(pickBox(id));
-  // With the Layer lens on, its letter marks on the elements that never move (#83 R1-M1): the
-  // rooms' names never cover them, and the labels that move avoid them where there is room.
-  // With it off they are not drawn, so nothing keeps clear of them.
+  // With the Layer lens on, its letter marks on the elements that never move (#83 R1-M1): no
+  // label covers them, the rooms' names nor the ones that move (a ghost mark's halo hid a lock's
+  // chip). With it off they are not drawn, so nothing keeps clear of them.
   const lensMarks = lens ? fixedLensMarks(placed, cameras) : [];
+  taken.text.push(...lensMarks);
   taken.marks.push(...lensMarks);
   // The rooms' names keep clear of every node, and of a pawn standing on it (with its lens marks,
   // while the lens is on), where they can: a numbered choice or a piece can stand on any of them.
-  const forRooms: Taken = { text: [...taken.text, ...lensMarks], marks: [...taken.marks] };
+  const forRooms: Taken = { text: [...taken.text], marks: [...taken.marks] };
   for (const n of floor.nodes) {
     const p = project(n.x, n.y);
     addNode(forRooms, p);
@@ -925,7 +948,7 @@ export function fixedLabels(placed: PlacedLevel, cameras: RunState["board"]["cam
     marks: [],
   };
   const rooms = placeRoomLabels(floor, (label) => shortLabel(label).toUpperCase(), forRooms, outside, frameOf(floor));
-  return { rooms, taken: { text: [...taken.text, ...rooms.map((r) => r.quad)], marks: taken.marks } };
+  return { rooms, taken: { text: [...taken.text, ...rooms.map((r) => r.quad)], marks: taken.marks }, lens, rings: lens ? fixedLensRings(placed, cameras) : [] };
 }
 
 /** Where a guard's lens marks start beside its pawn (see `Pawn`), unless the board places them elsewhere. */
@@ -960,10 +983,11 @@ function markRow(x: number, y: number, count: number): Quad {
 }
 
 /**
- * The lens marks of the cameras, the locks and the entries, where the board draws them with the
- * lens on (`CameraPiece`, the locked doors and the nodes in `BoardView`): one box per element.
+ * The lens footprints of the cameras, the locks and the entries, where the board draws them with
+ * the lens on (`CameraPiece`, the locked doors and the nodes in `BoardView`), one per element: the
+ * box of its row of letter marks, and the box of its outermost ring with the ring's stroke.
  */
-export function fixedLensMarks(placed: PlacedLevel, cameras: RunState["board"]["cameras"]): Quad[] {
+function fixedLensFootprints(placed: PlacedLevel, cameras: RunState["board"]["cameras"]): { marks: Quad[]; rings: Quad[] } {
   const { floor } = placed.level;
   const elements = lensElements(placed, placed.level.lockedDoors);
   const count = (key: string) => elements.find((e) => e.key === key)?.layers.length ?? 0;
@@ -971,29 +995,50 @@ export function fixedLensMarks(placed: PlacedLevel, cameras: RunState["board"]["
     const n = floor.nodes.find((node) => node.id === id)!;
     return project(n.x, n.y);
   };
-  const boxes: Quad[] = [];
+  const marks: Quad[] = [];
+  const rings: Quad[] = [];
+  // An ellipse `LayerRings` draws, its `n`th ring the outermost, as the box round it.
+  const ellipse = (p: Point, rx: number, ry: number, n: number) => {
+    const [x, y] = [rx + (n - 1) * 5 + 1, ry + (n - 1) * 2.5 + 1];
+    return box(p.x - x, p.y - y, p.x + x, p.y + y);
+  };
   for (const camera of cameras) {
     const n = count(whyKey.camera(camera.id));
     if (n === 0) continue;
     const m = cameraMount(floor, camera.parts.flat());
     const p = project(m.x, m.y);
-    boxes.push(markRow(p.x + 24 + (n - 1) * 4, p.y - 28, n));
+    marks.push(markRow(p.x + 24 + (n - 1) * 4, p.y - 28, n));
+    const grow = (n - 1) * 4 + 1;
+    rings.push(box(p.x - 20 - grow, p.y - 34 - grow, p.x + 20 + grow, p.y - 10 + grow));
   }
   for (const edge of floor.edges) {
     const n = edge.door ? count(whyKey.lock(edge.door.id)) : 0;
     if (n === 0) continue;
     const a = point(edge.a);
     const b = point(edge.b);
+    const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     const at = lockMarksAt(n);
-    boxes.push(markRow((a.x + b.x) / 2 + at.x, (a.y + b.y) / 2 + at.y, n));
+    marks.push(markRow(m.x + at.x, m.y + at.y, n));
+    rings.push(ellipse(m, 13, 13, n));
   }
   for (const entry of placed.entries) {
     const n = count(lensKey.entry(entry.entryId));
     if (n === 0) continue;
     const p = point(entry.nodeId);
-    boxes.push(markRow(p.x + ENTRY_MARKS.x, p.y + ENTRY_MARKS.y, n));
+    marks.push(markRow(p.x + ENTRY_MARKS.x, p.y + ENTRY_MARKS.y, n));
+    rings.push(ellipse(p, DISC.rx + 5, DISC.ry + 3, n));
   }
-  return boxes;
+  return { marks, rings };
+}
+
+/** The lens's letter marks on the cameras, the locks and the entries (`fixedLensFootprints`). */
+export function fixedLensMarks(placed: PlacedLevel, cameras: RunState["board"]["cameras"]): Quad[] {
+  return fixedLensFootprints(placed, cameras).marks;
+}
+
+/** The lens's rings round the cameras, the locks and the entries (`fixedLensFootprints`). */
+export function fixedLensRings(placed: PlacedLevel, cameras: RunState["board"]["cameras"]): Quad[] {
+  return fixedLensFootprints(placed, cameras).rings;
 }
 
 /** How far above its mount a camera's lens sits, in board units (see `CameraPiece`). */

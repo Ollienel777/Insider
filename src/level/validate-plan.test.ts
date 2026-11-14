@@ -167,6 +167,17 @@ describe("validatePlan on the other recorded replies", () => {
     expect(validatePlan(placed, outByRoof).startNote).toBeNull();
   });
 
+  it("gives no roof note when the roof step is dropped for want of a way there (#138 R2)", () => {
+    // The roof hatch cut off from the rest of the floor: the first step has nowhere to go.
+    const roof = new Set(placed.level.zones!.roof);
+    const floor = placed.level.floor;
+    const cut = { ...placed, level: { ...placed.level, floor: { ...floor, edges: floor.edges.filter((e) => roof.has(e.a) === roof.has(e.b)) } } };
+    const checked = validatePlan(cut, reply("roof"));
+    expect(checked.dropped[0]).toMatchObject({ number: 1, zoneId: "roof" });
+    expect(checked.dropped[0].reason).toMatch(/^no way from here/);
+    expect(checked.startNote).toBeNull();
+  });
+
   it("says when a plan never leaves with the files", () => {
     const plan: CrewPlan = { steps: [{ zoneId: "dock-N", action: "Wait one turn" }], pushback: "", confidence: 0.5 };
     const checked = validatePlan(placed, plan);

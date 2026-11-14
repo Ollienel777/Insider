@@ -91,6 +91,15 @@ export function matrixBox(m: Matrix, chars: number, font: number): Quad {
   return [at(0, top), at(width, top), at(width, bottom), at(0, bottom)];
 }
 
+/** How far `p` stands from the nearest point of an upright box `q`: 0 when inside it. */
+export function boxReach(q: Quad, p: Point): number {
+  const xs = q.map((c) => c.x);
+  const ys = q.map((c) => c.y);
+  const dx = Math.max(Math.min(...xs) - p.x, 0, p.x - Math.max(...xs));
+  const dy = Math.max(Math.min(...ys) - p.y, 0, p.y - Math.max(...ys));
+  return Math.hypot(dx, dy);
+}
+
 const clearOf = (q: Quad, quads: readonly Quad[]) => !quads.some((t) => quadsOverlap(q, t));
 
 /** A node on the board: its disc and a choice's ring are marks; a choice's number is a label. */

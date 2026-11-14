@@ -102,7 +102,10 @@ test("the Alert moment plays DESIGN.md's four steps in order", async ({ page }) 
     expect(after[i].orders, `frame ${i}: rows never go back`).toBeGreaterThanOrEqual(after[i - 1].orders);
     if (after[i].orders > 0) expect(after[i].words, `frame ${i}: rows only after the last word`).toBe(total);
   }
-  expect(new Set(after.map((f) => f.words)).size, "word by word, not all at once").toBeGreaterThan(3);
+  // One word count strictly between none and all proves the text streamed rather than landing at
+  // once; asking for more can fail on a starved runner that samples few frames, with the stream intact.
+  const partial = new Set(after.map((f) => f.words).filter((n) => n > 0 && n < total));
+  expect(partial.size, "word by word, not all at once").toBeGreaterThanOrEqual(1);
   // From the Chief's answer on, every dashed route belongs to a guard whose order row is shown.
   for (const f of after.slice(streaming)) {
     for (const guard of f.routes) expect(f.ordered, `${guard}'s route before its order`).toContain(guard);

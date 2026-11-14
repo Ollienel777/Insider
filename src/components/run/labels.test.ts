@@ -13,9 +13,9 @@ import { act, createRun, type Action, type RunState } from "@/engine";
 import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.json";
 import { actionForKey, cameraMount, choices as choicesOf } from "./board";
-import { CHOICE_HIT, DISC, fixedLabels, fixedLensMarks, movingLabels, PICK_HIT, standingOf, type GhostPlan } from "./board-view";
+import { CHOICE_HIT, DISC, fixedLabels, fixedLensMarks, fixedLensRings, GHOST_REACH, movingLabels, PICK_HIT, standingOf, type GhostPlan } from "./board-view";
 import { project } from "./iso";
-import { box, MARK_FONT, PIECE_FONT, quadsOverlap, textBox, type Quad } from "./labels";
+import { box, boxReach, MARK_FONT, PIECE_FONT, quadsOverlap, textBox, type Quad } from "./labels";
 import { lensElements } from "./lens";
 import { RUN_SEED } from "./run-screen";
 
@@ -137,6 +137,30 @@ describe("the board's labels (#68)", () => {
     expect(collisions(lensed(createRun(placed.level)))).toEqual([]);
     const wow = play(createRun(placed.level), [{ kind: "move", to: "fl-lobby" }, { kind: "move", to: "dc-west" }]);
     expect(collisions(lensed(wow))).toEqual([]);
+  });
+
+  it("keeps the plan's marks clear of the Layer lens's marks and rings on beat 4, beside their own nodes (#138 R2)", () => {
+    const demo = CrewPlan.parse(crewF1.replies.find((r) => r.id === "dock-wait")!.plan);
+    const ghost: GhostPlan = ghostOf(validatePlan(placed, demo));
+    const run = createRun(placed.level);
+    const lensed = [...drawn(run, ghost, true), ...fixedLensMarks(placed, run.board.cameras).map((quad, i) => ({ name: `lens mark ${i}`, quad }))];
+    expect(collisions(lensed)).toEqual([]);
+    // No plan mark covers a camera's, lock's or entry's ring.
+    const rings = fixedLensRings(placed, run.board.cameras);
+    expect(rings).toHaveLength(6);
+    const plan = new Set(ghost.marks.map((m) => m.label));
+    const onRings = lensed.filter((l) => plan.has(l.name)).flatMap((l) => rings.filter((r) => quadsOverlap(l.quad, r)).map(() => l.name));
+    expect(onRings).toEqual([]);
+    // Each stays beside its own node, lens on and off.
+    for (const lens of [false, true]) {
+      const moving = movingLabels(fixedLabels(placed, run.board.cameras, lens), at(run), choicesOf(run), standingOf(run, at(run)), ghost);
+      ghost.marks.forEach((mark, i) => {
+        const p = at(run)(mark.nodeId);
+        const spot = moving.ghost[i];
+        const quad = textBox(p.x + spot.x, p.y + spot.y, mark.label.length, MARK_FONT, spot.anchor, 0);
+        expect(boxReach(quad, p), `${mark.label}, lens ${lens}`).toBeLessThanOrEqual(GHOST_REACH);
+      });
+    }
   });
 
   it("never lets a PICK badge's hit area reach a move badge's, at the server closet and the records door (#37 S1)", () => {
