@@ -13,6 +13,7 @@ const MISSIONS = [
 test("/ lists the five missions, each with its Inspired by line, city and era", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Pick a mission");
+  await expect(page.getByText("Every heist in history needed a building. Our agent finds one that's empty tonight.")).toBeVisible();
   const cards = page.getByTestId("mission-card");
   await expect(cards).toHaveCount(5);
   for (const [i, [, title]] of MISSIONS.entries()) await expect(cards.nth(i)).toContainText(title);

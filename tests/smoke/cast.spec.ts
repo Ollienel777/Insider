@@ -36,7 +36,9 @@ test("the cast screen replays to three finalists, F1 first, with the pins dimmin
   await expect(cards.first().locator("[data-layer]")).toHaveCount(3);
   await expect(cards.first().getByTestId("finalist-reason")).toContainText("1974 tower");
   await expect(cards.first()).toContainText("Casting Director · scripted");
+  await expect(page.getByTestId("trace-header")).toContainText("Scripted run");
   await expect(page.getByTestId("trace-header")).toContainText("ScriptedChatModel");
+  await expect(cards.first().getByRole("img", { name: /^Massing of Halvorsen Tower/ })).toBeVisible();
   await expect(page.getByTestId("replay-notice")).toHaveText("A replay of a run recorded on fixtures. Nothing on this screen calls a model.");
   await expect(page.getByTestId("replay")).toBeVisible();
 });
@@ -65,8 +67,11 @@ test("under reduced motion the cast screen starts at its end", async ({ page }) 
 test("picking F1 and Scout it opens its scout with the mission", async ({ page }) => {
   await page.goto("/m/romaine-1974/cast");
   await page.getByTestId("skip").click();
-  await expect(page.getByRole("button", { name: "Scout it" })).toBeDisabled();
-  await page.getByRole("button", { name: /^Halvorsen Tower, finalist 1/ }).click();
+  const off = page.getByRole("button", { name: "Scout it" });
+  await expect(off).toHaveAttribute("aria-disabled", "true");
+  await expect(off).toHaveAttribute("aria-describedby", "selection");
+  await page.getByRole("button", { name: /^Finalist 1 · F1 Halvorsen Tower/ }).click();
+  await expect(page.getByTestId("selection")).toHaveText("Halvorsen Tower, Bunker Hill");
   await expect(page.locator('[data-testid="finalist-card"][data-building="F1"]')).toHaveAttribute("data-selected", "true");
   await expect(page.locator('[data-testid="cast-pin"][data-building="F1"]')).toHaveAttribute("data-selected", "true");
   await page.getByRole("link", { name: "Scout it" }).click();
@@ -77,9 +82,11 @@ test("picking F1 and Scout it opens its scout with the mission", async ({ page }
 test("a finalist with no level shows Level in prep when picked, and cannot be scouted", async ({ page }) => {
   await page.goto("/m/romaine-1974/cast");
   await page.getByTestId("skip").click();
-  await page.getByRole("button", { name: "Lancaster Building, finalist 2, level in prep" }).click();
+  const pick = page.getByRole("button", { name: /^Finalist 2 · L01 Lancaster Building/ });
+  await expect(pick).toHaveAccessibleDescription("Level in prep");
+  await pick.click();
   await expect(page.getByTestId("selection")).toContainText("Level in prep");
-  await expect(page.getByRole("button", { name: "Scout it" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Scout it" })).toHaveAttribute("aria-disabled", "true");
   await expect(page.getByRole("link", { name: "Scout it" })).toHaveCount(0);
 });
 
@@ -95,12 +102,30 @@ test("a city tab on the cast screen keeps the address on the cast route", async 
   await expect(page.locator('[data-testid="cast-pin"][data-state="in"]')).toHaveCount(3);
 });
 
-test("an unknown mission shows the error state with a way back", async ({ page }) => {
-  await page.goto("/m/no-such-mission/cast");
-  const error = page.getByTestId("cast-unavailable");
-  await expect(error).toHaveAttribute("data-reason", "unknown");
-  await expect(error).toContainText("There is no mission called no-such-mission.");
-  await page.getByRole("link", { name: "Pick a mission" }).click();
-  await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByTestId("mission-card")).toHaveCount(5);
+test("an unknown mission is a not-found page with a way back", async ({ page }) => {
+  const response = await page.goto("/m/no-such-mission/cast");
+  expect(response?.status()).toBe(404);
+  await expect(page.getByRole("link", { name: "Back to the map" })).toBeVisible();
 });
+
+const MISSIONS = ["romaine-1974", "sunset-1986", "night-desk", "paper-trail-2001", "syntactic-2019"];
+
+for (const id of MISSIONS) {
+  test(`${id}: all three finalists' pins are on the map at the end`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/m/${id}/cast`);
+    await expect(page.getByTestId("finalists")).toHaveAttribute("data-shown", "true");
+    const map = (await page.getByTestId("cast-map").boundingBox())!;
+    const pins = page.locator('[data-testid="cast-pin"][data-finalist="true"]');
+    await expect(pins).toHaveCount(3);
+    for (const pin of await pins.all()) {
+      const dot = (await pin.locator("span").first().boundingBox())!;
+      const name = await pin.getAttribute("data-building");
+      expect(dot.x, name!).toBeGreaterThanOrEqual(map.x);
+      expect(dot.y, name!).toBeGreaterThanOrEqual(map.y);
+      expect(dot.x + dot.width, name!).toBeLessThanOrEqual(map.x + map.width);
+      expect(dot.y + dot.height, name!).toBeLessThanOrEqual(map.y + map.height);
+    }
+  });
+}

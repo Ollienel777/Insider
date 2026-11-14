@@ -3,9 +3,10 @@
 import { RotateCcw, SkipForward } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BASEMAPS, project } from "@/components/map/basemap";
+import { useReducedMotion } from "@/components/drill/use-reduced-motion";
+import { BASEMAPS, fitView, project } from "@/components/map/basemap";
 import { CityTabs, MapView, useCityTab } from "@/components/map/map-screen";
-import { recordedRunHeader, traceView } from "@/components/dossier/replay";
+import { formatRecordedAt, recordedRunHeader, traceView } from "@/components/dossier/replay";
 import { Reveal } from "@/components/dossier/reveal";
 import { FIXTURE_REPLAY_NOTICE, TraceList } from "@/components/dossier/trace-list";
 import { LAYERS, LayerDot, type Layer } from "@/components/shell/layer-dot";
@@ -15,7 +16,8 @@ import { cityName } from "@/lib/cities";
 import { cn } from "@/lib/utils";
 import { FinalistCard } from "./finalist-card";
 import type { CastPinData } from "./pins";
-import { castSchedule, countLeft, pinState, rowsLanded, type PinState } from "./replay";
+import { castSchedule, countLeft, pinState, rowsLanded, startElapsed, type PinState } from "./replay";
+import type { MassingView } from "@/components/scout/massing";
 import { scoutHref } from "./scout-href";
 
 const LAYER_ORDER = Object.keys(LAYERS) as Layer[];
@@ -28,6 +30,8 @@ export interface CastScreenProps {
   pins: CastPinData[];
   /** Ids of the finalists that have building pages to scout. */
   scoutable: string[];
+  /** One massing view per finalist with a fixture aerial, for its card's thumbnail. */
+  thumbnails?: Record<string, MassingView>;
   /** Start with everything shown, as Skip does. For tests. */
   startComplete?: boolean;
 }
@@ -39,9 +43,23 @@ export function castNotice(source: CastingResult["source"]): string {
     : "A replay of a run cast ahead on CoStar's data. Nothing on this screen calls a model.";
 }
 
+/** A scripted run's words come from its script, not a model: its header says so. */
+const isScripted = (model: string | undefined) => model?.startsWith("ScriptedChatModel") ?? false;
+
+/**
+ * The trace's header line: "Scripted run · <timestamp> · <model>" for a
+ * ScriptedChatModel run (hand-written turns replayed by a scripted model),
+ * else the Dossier's "Recorded run · …".
+ */
+export function castRunHeader(trace: { recordedAt?: string; model?: string }): string {
+  return isScripted(trace.model)
+    ? ["Scripted run", formatRecordedAt(trace.recordedAt), trace.model].join(" · ")
+    : recordedRunHeader(trace);
+}
+
 /** Who wrote a finalist's reason, and how: a scripted run's words are the script's, not a model's. */
 export function reasonLabel(model: string | undefined): string {
-  return model?.startsWith("ScriptedChatModel") ? "Casting Director · scripted" : "Casting Director · recorded";
+  return isScripted(model) ? "Casting Director · scripted" : "Casting Director · recorded";
 }
 
 /**
@@ -53,11 +71,14 @@ export function reasonLabel(model: string | undefined): string {
  * its Scout with the mission. Skip shows everything at once; Replay starts it
  * again; under reduced motion it starts whole.
  */
-export function CastScreen({ mission, result, pins, scoutable, startComplete = false }: CastScreenProps) {
+export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, startComplete = false }: CastScreenProps) {
   const { funnel, finalists, trace } = result;
   const schedule = useMemo(() => castSchedule(trace, funnel.length), [trace, funnel.length]);
-  const [elapsed, setElapsed] = useState(startComplete ? Number.POSITIVE_INFINITY : 0);
+  const [clock, setElapsed] = useState(startComplete ? Number.POSITIVE_INFINITY : 0);
   const [runId, setRunId] = useState(0);
+  const reducedMotion = useReducedMotion();
+  // Until Replay is pressed, reduced motion (DESIGN.md: streams appear whole) starts at the end.
+  const elapsed = runId === 0 ? Math.max(clock, startElapsed(startComplete, reducedMotion)) : clock;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [city, switchCity] = useCityTab(mission.city);
   const frame = useRef<number | null>(null);
@@ -66,9 +87,10 @@ export function CastScreen({ mission, result, pins, scoutable, startComplete = f
   const landed = rowsLanded(schedule, elapsed);
 
   // The replay clock, as the dossier's: one animation frame at a time until
-  // the schedule ends. Under reduced motion the first frame shows the end.
+  // the schedule ends. Under reduced motion the first run is not played at
+  // all: the screen derives its end state below, so no frame shows it hidden.
   useEffect(() => {
-    if (startComplete && runId === 0) return;
+    if ((startComplete || reducedMotion) && runId === 0) return;
     const whole = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     const start = performance.now();
     const tick = (now: number) => {
@@ -80,7 +102,7 @@ export function CastScreen({ mission, result, pins, scoutable, startComplete = f
     return () => {
       if (frame.current !== null) cancelAnimationFrame(frame.current);
     };
-  }, [runId, schedule.end, startComplete]);
+  }, [runId, schedule.end, startComplete, reducedMotion]);
 
   const skip = useCallback(() => {
     if (frame.current !== null) cancelAnimationFrame(frame.current);
@@ -111,9 +133,12 @@ export function CastScreen({ mission, result, pins, scoutable, startComplete = f
   const inCity = pins.filter((p) => p.city === city);
   const states = new Map(inCity.map((p) => [p.id, pinState(p.outAt, landed)]));
   const left = inCity.filter((p) => states.get(p.id) === "in");
-  const basemap = BASEMAPS[city];
+  // Every finalist in this city is on the map: the view widens past the
+  // basemap when one stands beyond it. Only other properties can be off it.
+  const mapView = fitView(BASEMAPS[city].bounds, finalists.filter((c) => c.city === city));
   const offMap = left.filter((p) => {
-    const { x, y } = project(basemap.bounds, p.lat, p.lng);
+    if (finalistIds.has(p.id)) return false;
+    const { x, y } = project(mapView, p.lat, p.lng);
     return x < 0 || x > 1 || y < 0 || y > 1;
   }).length;
   const counts = Object.fromEntries(City.options.map((c) => [c, pins.filter((p) => p.city === c).length])) as Record<City, number>;
@@ -124,9 +149,28 @@ export function CastScreen({ mission, result, pins, scoutable, startComplete = f
     .filter(Boolean)
     .join(" · ");
 
+  // DOM order is reading and focus order: the mission and the run first (the
+  // page's h1), then the map and the finalists, then the one action.
   return (
-    <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_400px]">
-      <div className="flex min-h-0 min-w-0 flex-col">
+    <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_400px] lg:grid-rows-[minmax(0,1fr)_auto]">
+      <div className="min-h-0 overflow-y-auto border-border bg-surface-1 p-4 lg:col-start-2 lg:row-start-1 lg:border-l">
+        <header className="mb-4">
+          <p className="label-caps text-text-3">
+            Cast · {mission.type === "heist" ? "Heist" : "Prevent"} · {cityName(mission.city)}
+          </p>
+          <h1 className="mt-1 text-xl font-semibold text-text-1">{mission.title}</h1>
+        </header>
+        <TraceList
+          view={view}
+          header={castRunHeader(trace)}
+          control={control}
+          title="Casting Director"
+          wrapLongParts
+          notice={castNotice(result.source)}
+          afterPlan={<Funnel funnel={funnel} landed={landed} source={result.source} />}
+        />
+      </div>
+      <div className="flex min-h-0 min-w-0 flex-col lg:col-start-1 lg:row-span-2 lg:row-start-1">
         <section
           aria-label={`Cast map: ${caption}`}
           data-testid="cast-map"
@@ -137,6 +181,7 @@ export function CastScreen({ mission, result, pins, scoutable, startComplete = f
               city={city}
               buildings={inCity}
               caption={caption}
+              view={mapView}
               pin={(p, x, y) => (
                 <CastPin
                   pin={p}
@@ -174,6 +219,7 @@ export function CastScreen({ mission, result, pins, scoutable, startComplete = f
                     selected={c.id === selected?.id}
                     scoutable={scoutable.includes(c.id)}
                     reasonLabel={reasonLabel(trace.model)}
+                    thumbnail={thumbnails[c.id]}
                     onSelect={setSelectedId}
                   />
                 </Reveal>
@@ -183,53 +229,36 @@ export function CastScreen({ mission, result, pins, scoutable, startComplete = f
         </section>
       </div>
 
-      <aside className="flex min-h-0 flex-col border-t border-border bg-surface-1 lg:border-t-0 lg:border-l">
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          <header className="mb-4">
-            <p className="label-caps text-text-3">
-              Cast · {mission.type === "heist" ? "Heist" : "Prevent"} · {cityName(mission.city)}
-            </p>
-            <h1 className="mt-1 text-xl font-semibold text-text-1">{mission.title}</h1>
-          </header>
-          <TraceList
-            view={view}
-            header={recordedRunHeader(trace)}
-            control={control}
-            title="Casting Director"
-            notice={castNotice(result.source)}
-            afterPlan={<Funnel funnel={funnel} landed={landed} source={result.source} />}
-          />
-        </div>
-        <div className="flex flex-col gap-2 border-t border-border p-4 [&>*]:w-full">
-          <p data-testid="selection" className="text-sm text-text-2">
-            {selected ? (
-              scoutable.includes(selected.id) ? (
-                <>
-                  <span className="text-text-1">{selected.name}</span>, {selected.neighbourhood}
-                </>
-              ) : (
-                <>
-                  <span className="label-caps text-text-3">Level in prep</span>{" "}
-                  <span className="text-text-1">{selected.name}</span> has no floor yet. Pick another finalist.
-                </>
-              )
-            ) : cardsShown ? (
-              "Pick a finalist to scout."
+      <div className="flex flex-col gap-2 border-t border-border bg-surface-1 p-4 lg:col-start-2 lg:row-start-2 lg:border-l [&>*]:w-full">
+        <p id="selection" data-testid="selection" aria-live="polite" className="text-sm text-text-2">
+          {selected ? (
+            scoutable.includes(selected.id) ? (
+              <>
+                <span className="text-text-1">{selected.name}</span>, {selected.neighbourhood}
+              </>
             ) : (
-              "The Casting Director is narrowing the inventory."
-            )}
-          </p>
-          {selected && scoutable.includes(selected.id) ? (
-            <Link href={scoutHref(selected.id, mission.id)} className={buttonVariants({ variant: "primary" })}>
-              Scout it
-            </Link>
+              <>
+                <span className="label-caps text-text-3">Level in prep</span>{" "}
+                <span className="text-text-1">{selected.name}</span> has no floor yet. Pick another finalist.
+              </>
+            )
+          ) : cardsShown ? (
+            "Pick a finalist to scout."
           ) : (
-            <Button variant="primary" disabled>
-              Scout it
-            </Button>
+            "Replaying the Casting Director's run."
           )}
-        </div>
-      </aside>
+        </p>
+        {selected && scoutable.includes(selected.id) ? (
+          <Link href={scoutHref(selected.id, mission.id)} className={buttonVariants({ variant: "primary" })}>
+            Scout it
+          </Link>
+        ) : (
+          // Focusable, and it says why it is off: the line above (the map's "level in prep" pattern).
+          <Button variant="primary" aria-disabled="true" aria-describedby="selection" data-testid="scout-off">
+            Scout it
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

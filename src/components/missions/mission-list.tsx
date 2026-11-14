@@ -28,9 +28,9 @@ export function MissionList({ missions }: { missions: readonly Mission[] }) {
         <header>
           <p className="label-caps text-text-3">Missions · {missions.length}</p>
           <h1 className="mt-1 text-xl font-semibold text-text-1">Pick a mission</h1>
+          {/* SPEC §2 beat 1, the hook, word for word. */}
           <p className="mt-1 max-w-[640px] text-base text-text-2">
-            Every heist in history needed a building. The agent searches CoStar&apos;s inventory for one of the right era
-            that is empty tonight.
+            Every heist in history needed a building. Our agent finds one that&apos;s empty tonight.
           </p>
         </header>
         <ul aria-label="Missions" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -40,6 +40,14 @@ export function MissionList({ missions }: { missions: readonly Mission[] }) {
             </li>
           ))}
         </ul>
+        {/* Off the demo path: the map of every prepared building, kept for the building screens' "Back to the map". */}
+        <Link
+          href="/map"
+          className="inline-flex h-10 w-fit items-center gap-1 rounded-sm text-sm text-text-2 hover:text-text-1"
+        >
+          Or browse every prepared building on the map
+          <ArrowRight aria-hidden className="size-4 stroke-[1.5]" />
+        </Link>
       </div>
     </div>
   );

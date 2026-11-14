@@ -49,9 +49,11 @@ test("the city tab and the address stay in step both ways: after Houston, /map s
   await expect(page).toHaveURL(/\/map\?city=Houston$/);
   await expect(tab(/Houston/)).toHaveAttribute("aria-selected", "true");
 
-  // Address → tab: navigating to `/map` (the wordmark's old job, before `/`
-  // became the mission picker) moves the tab back to LA.
-  await page.goto("/map");
+  // Address → tab, by client-side navigation: the wordmark goes to the
+  // mission picker (`/`, #118), whose link back to `/map` moves the tab to LA.
+  await page.getByRole("link", { name: "Heist Anywhere" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await page.getByRole("link", { name: "Or browse every prepared building on the map" }).click();
   await expect(page).toHaveURL(/\/map$/);
   await expect(tab(/Los Angeles/)).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("building-row")).toHaveCount(3);

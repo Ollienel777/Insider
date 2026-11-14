@@ -10,7 +10,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { City } from "@/domain";
 import { cityName } from "@/lib/cities";
 import { cn } from "@/lib/utils";
-import { ATTRIBUTION, BASEMAPS, project } from "./basemap";
+import { aspect, ATTRIBUTION, BASEMAPS, placeIn, project, type Bounds } from "./basemap";
 import { MapPin } from "./map-pin";
 import type { MapBuilding } from "./types";
 
@@ -267,8 +267,15 @@ interface MapViewProps<B extends Pick<MapBuilding, "id" | "lat" | "lng">> {
   buildings: B[];
   /** The mono caps line over the map's top-left corner. */
   caption: ReactNode;
-  /** Draws one building's pin at (`x`, `y`), fractions of the basemap. */
+  /** Draws one building's pin at (`x`, `y`), fractions of the map's box. */
   pin: (building: B, x: number, y: number) => ReactNode;
+  /**
+   * Show all of this view (`fitView`: the basemap, widened when a pin that
+   * must show is off it), fitted inside the area with the basemap at its
+   * place in it, so nothing in it is cropped. By default the basemap covers
+   * the area, cropping its edges to fill it.
+   */
+  view?: Bounds;
 }
 
 /**
@@ -276,16 +283,29 @@ interface MapViewProps<B extends Pick<MapBuilding, "id" | "lat" | "lng">> {
  * a box with the image's aspect ratio, so a pin placed at a fraction of the
  * box lands on the right street at every viewport.
  */
-export function MapView<B extends Pick<MapBuilding, "id" | "lat" | "lng">>({ city, buildings, caption, pin }: MapViewProps<B>) {
+export function MapView<B extends Pick<MapBuilding, "id" | "lat" | "lng">>({ city, buildings, caption, pin, view }: MapViewProps<B>) {
   const basemap = BASEMAPS[city];
-  const ratio = basemap.width / basemap.height;
+  const fitted = view !== undefined;
+  const bounds = fitted ? view : basemap.bounds;
+  const ratio = fitted ? aspect(view) : basemap.width / basemap.height;
+  const image = fitted ? placeIn(view, basemap.bounds) : null;
   return (
     <div className="absolute inset-0 overflow-hidden [container-type:size]">
       <div
         data-testid="basemap"
         className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
-        style={{ width: `max(100cqw, calc(100cqh * ${ratio}))`, aspectRatio: `${basemap.width} / ${basemap.height}` }}
+        data-fitted={fitted || undefined}
+        style={{
+          // Cover the area with the basemap; or fit a wider view inside it, the
+          // basemap's ground colour being the page's, so the margin is seamless.
+          width: fitted ? `min(100cqw, calc(100cqh * ${ratio}))` : `max(100cqw, calc(100cqh * ${ratio}))`,
+          aspectRatio: fitted ? String(ratio) : `${basemap.width} / ${basemap.height}`,
+        }}
       >
+        <div
+          className="absolute"
+          style={image ? { left: `${image.left}%`, top: `${image.top}%`, width: `${image.width}%`, height: `${image.height}%` } : { inset: 0 }}
+        >
         <Image
           key={city}
           src={basemap.file}
@@ -296,8 +316,9 @@ export function MapView<B extends Pick<MapBuilding, "id" | "lat" | "lng">>({ cit
           sizes="100vw"
           className="select-none animate-in fade-in-0 duration-base"
         />
+        </div>
         {buildings.map((building) => {
-          const { x, y } = project(basemap.bounds, building.lat, building.lng);
+          const { x, y } = project(bounds, building.lat, building.lng);
           return <Fragment key={building.id}>{pin(building, x, y)}</Fragment>;
         })}
       </div>

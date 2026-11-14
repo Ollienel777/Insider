@@ -16,6 +16,8 @@ interface TraceListProps {
   notice?: string;
   /** Shown between the plan and the subagents and tools (the cast screen's funnel). */
   afterPlan?: ReactNode;
+  /** Let a header part over 40 characters wrap inside itself (a long model name in a narrow panel). */
+  wrapLongParts?: boolean;
 }
 
 /** The dossier's notice: its trace was recorded on fixtures, and replays without a model. */
@@ -34,6 +36,7 @@ export function TraceList({
   title = "Level Builder",
   notice = FIXTURE_REPLAY_NOTICE,
   afterPlan,
+  wrapLongParts = false,
 }: TraceListProps) {
   return (
     <section aria-labelledby="trace-title" data-testid="trace-list" className="flex flex-col gap-4">
@@ -48,7 +51,7 @@ export function TraceList({
             {/* Each part keeps together, so a line breaks only between parts. */}
             {header.split(" · ").map((part, i, parts) => (
               <Fragment key={part}>
-                <span className={part.length > 40 ? "break-words" : "whitespace-nowrap"}>
+                <span className={wrapLongParts && part.length > 40 ? "break-words" : "whitespace-nowrap"}>
                   {part}
                   {i < parts.length - 1 ? " ·" : null}
                 </span>

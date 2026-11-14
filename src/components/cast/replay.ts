@@ -36,8 +36,11 @@ export interface CastSchedule {
  */
 export function castSchedule(trace: Pick<CastingTrace, "events">, rowCount: number): CastSchedule {
   const moments = [...new Set(trace.events.map((e) => e.atMs))].sort((a, b) => a - b);
-  const step = moments.length > 1 ? CAST_TRACE_MS / (moments.length - 1) : 0;
-  const events = trace.events.map((e) => CAST_START_MS + moments.indexOf(e.atMs) * step);
+  // A trace whose events all share one moment (timings not recorded) still
+  // plays out: each event then gets its own slot, in order.
+  const slots = moments.length > 1 ? moments.length : trace.events.length;
+  const step = slots > 1 ? CAST_TRACE_MS / (slots - 1) : 0;
+  const events = trace.events.map((e, i) => CAST_START_MS + (moments.length > 1 ? moments.indexOf(e.atMs) : i) * step);
   const last = CAST_START_MS + CAST_TRACE_MS;
 
   const shortlist = trace.events.findIndex((e) => e.kind === "tool" && e.label === "write_shortlist");
@@ -59,6 +62,14 @@ export function castSchedule(trace: Pick<CastingTrace, "events">, rowCount: numb
   }
   const end = Math.max(last, cards, ...rows, ...events);
   return { events, rows, cards, end };
+}
+
+/**
+ * Where the clock starts: at the end when the screen starts complete or the
+ * viewer prefers reduced motion (DESIGN.md, Motion: streams appear whole).
+ */
+export function startElapsed(startComplete: boolean, reducedMotion: boolean): number {
+  return startComplete || reducedMotion ? Number.POSITIVE_INFINITY : 0;
 }
 
 /** How many funnel rows have landed at `elapsed`. */

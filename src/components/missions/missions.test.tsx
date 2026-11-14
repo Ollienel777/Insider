@@ -35,6 +35,11 @@ describe("MissionList", () => {
     expect(text).toContain("A fictional mission, written for the game.");
   });
 
+  it("opens with the hook as SPEC §2 beat 1 words it, and links to the map of every building", () => {
+    expect(text).toContain("Every heist in history needed a building. Our agent finds one that's empty tonight.");
+    expect(html).toContain('href="/map"');
+  });
+
   it("names the era each mission needs from its year-built filter", () => {
     const romaine = MISSIONS.find((m) => m.id === "romaine-1974")!;
     expect(eraNeeded(romaine)).toBe("built 1974 or earlier");

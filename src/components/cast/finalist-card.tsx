@@ -1,6 +1,8 @@
 import { ChevronRight } from "lucide-react";
 import { LAYERS, LayerDot, type Layer } from "@/components/shell/layer-dot";
 import { suiteRange } from "@/components/dossier/data-to-level";
+import type { MassingView } from "@/components/scout/massing";
+import { MassingSvg } from "@/components/scout/massing-view";
 import type { Candidate } from "@/domain";
 import { cityName } from "@/lib/cities";
 import { cn } from "@/lib/utils";
@@ -17,6 +19,8 @@ interface FinalistCardProps {
   scoutable: boolean;
   /** "Casting Director · scripted": who wrote the reason, and how this run made it. */
   reasonLabel: string;
+  /** One view of its massing (fixture aerials only); none shows "Level in prep" or "No aerial" in the slot. */
+  thumbnail?: MassingView;
   onSelect: (id: string) => void;
 }
 
@@ -38,7 +42,7 @@ export function vacantFloorLine(floor: Candidate["vacantFloor"]): string {
  * building fits each filter. Its heading is the button that picks it (a
  * click anywhere else on the card does too); the fit list opens on its own.
  */
-export function FinalistCard({ candidate, rank, selected, scoutable, reasonLabel, onSelect }: FinalistCardProps) {
+export function FinalistCard({ candidate, rank, selected, scoutable, reasonLabel, thumbnail, onSelect }: FinalistCardProps) {
   const c = candidate;
   return (
     <article
@@ -51,36 +55,31 @@ export function FinalistCard({ candidate, rank, selected, scoutable, reasonLabel
         selected ? "border-accent bg-accent-wash" : "border-border hover:border-border-strong",
       )}
     >
-      <button
-        type="button"
-        data-testid="finalist-pick"
-        aria-pressed={selected}
-        aria-label={`${c.name}, finalist ${rank}${scoutable ? "" : ", level in prep"}`}
-        onClick={(event) => {
-          event.stopPropagation();
-          onSelect(c.id);
-        }}
-        className="-m-1 block min-w-0 rounded-sm p-1 pr-12 text-left"
-      >
-        <span className="flex items-center gap-2 label-caps text-text-3">
-          <span className="whitespace-nowrap">
+      <div className="flex items-start gap-3">
+        <button
+          type="button"
+          data-testid="finalist-pick"
+          aria-pressed={selected}
+          aria-describedby={scoutable ? undefined : `finalist-${c.id}-prep`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect(c.id);
+          }}
+          className="-m-1 block min-w-0 flex-1 rounded-sm p-1 text-left"
+        >
+          <span className="block label-caps whitespace-nowrap text-text-3">
             Finalist {rank} · <span className="font-mono">{c.id}</span>
           </span>
-          {scoutable ? null : <span className="rounded-sm border border-border px-1.5 whitespace-nowrap">Level in prep</span>}
-        </span>
-        <span className={cn("mt-1 block truncate text-base font-semibold", selected ? "text-accent" : "text-text-1")}>
-          {c.name}
-        </span>
-        <span className="block truncate text-sm text-text-2">
-          {c.neighbourhood}, {cityName(c.city)}
-        </span>
-      </button>
-      <span className="absolute top-4 right-4 flex gap-1" role="group" aria-label="Data layers">
-        {LAYER_ORDER.map((layer) => (
-          <LayerDot key={layer} layer={layer} absent={!c.layers[layer]} />
-        ))}
-      </span>
-      <dl className="grid grid-cols-3 gap-2">
+          <span className={cn("mt-1 block truncate text-base font-semibold", selected ? "text-accent" : "text-text-1")}>
+            {c.name}
+          </span>
+          <span className="block text-sm text-text-2">
+            {c.neighbourhood}, {cityName(c.city)}
+          </span>
+        </button>
+        <Thumbnail candidate={c} view={thumbnail} prepId={scoutable ? undefined : `finalist-${c.id}-prep`} />
+      </div>
+      <dl className="grid grid-cols-4 gap-2">
         {(
           [
             ["Built", c.yearBuilt],
@@ -93,7 +92,15 @@ export function FinalistCard({ candidate, rank, selected, scoutable, reasonLabel
             <dd className="font-mono text-sm text-text-1">{value}</dd>
           </div>
         ))}
-        <div className="col-span-3">
+        <div>
+          <dt className="label-caps text-text-3">Layers</dt>
+          <dd className="flex h-5 items-center gap-1" role="group" aria-label="Data layers">
+            {LAYER_ORDER.map((layer) => (
+              <LayerDot key={layer} layer={layer} absent={!c.layers[layer]} />
+            ))}
+          </dd>
+        </div>
+        <div className="col-span-4">
           <dt className="label-caps text-text-3">Vacant floor</dt>
           <dd data-testid="vacant-floor" className="font-mono text-sm text-text-1">
             {/* The floor on one line, its suites on the next: "Floor 22 · 23,341 SF" / "suites 2202–2210". */}
@@ -124,5 +131,35 @@ export function FinalistCard({ candidate, rank, selected, scoutable, reasonLabel
         </ul>
       </details>
     </article>
+  );
+}
+
+/**
+ * The card's aerial slot (SPEC §2 beat 2's "aerial thumbnail"). The Vexcel
+ * fake has no photographs, so a fixture building shows the Scout screen's
+ * massing, drawn from its fixture footprint, height and tags; a finalist
+ * without a level shows "Level in prep" there instead, and one with a level
+ * but no aerial says so.
+ */
+function Thumbnail({ candidate, view, prepId }: { candidate: Candidate; view?: MassingView; prepId?: string }) {
+  const box = "relative h-16 w-[102px] shrink-0 overflow-hidden rounded-sm border border-border bg-surface-0";
+  if (view) {
+    return (
+      <div
+        role="img"
+        aria-label={`Massing of ${candidate.name}, drawn from fixture footprint and tags, not imagery`}
+        data-testid="finalist-thumbnail"
+        className={box}
+      >
+        <MassingSvg view={view} />
+      </div>
+    );
+  }
+  return (
+    <div data-testid="finalist-thumbnail" className={cn(box, "flex items-center justify-center")}>
+      <span id={prepId} className="px-1 text-center label-caps text-text-3">
+        {prepId ? "Level in prep" : "No aerial"}
+      </span>
+    </div>
   );
 }
