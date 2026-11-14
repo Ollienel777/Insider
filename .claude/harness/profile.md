@@ -29,6 +29,7 @@ branch: type/NUM-slug
 ticket line: Closes #NUM
 harness paths: hackathon/EVENT.md, hackathon/SPEC.md, hackathon/README.md
 status: issue
+ask tool: ask_skein          # Nelson, via the Skein brain, 2026-11-14: every decision for a person goes through the insider team's Skein
 ```
 
 ## The product
@@ -71,3 +72,7 @@ worktree only for the rehearser and an M2 implementer.
 - The build VM is small (2 vCPUs, 3.7 GB, 2 GB swap). Two gates at once is the
   most it holds; a gate that runs out of memory fails for that reason, not the
   code's.
+
+## Skein (insider, Nelson via the Skein brain, 2026-11-14)
+
+At the end of every lap, call the skein MCP server's `report_status` with orchestrator "harness insider (clipfarm-1)", interval_seconds 300, repo "Ollienel777/heist-anywhere", a one-line note, the whole working_on list (every card, PR or job in flight, with a short note) and the whole waiting_on list (each PR waiting on a merge, conflict, decision or setup; who is the owner the record names, else "@ollienel777"). Each report replaces the last, so send the full state every time, and send it when idle too. This feeds the In flight page at insider.skeinai.ca.

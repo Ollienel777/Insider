@@ -123,11 +123,12 @@ export function analystTools(run: BuildRun) {
 /** The tool the game master uses: the mission library. */
 export function gameMasterTools(run: BuildRun) {
   const listMissions = tool(
-    async ({ city }) => json(missionsFor(city, run.missions ?? MISSIONS)),
+    // The building is already cast, so the casting needs stay out of the reply (JSON drops the undefined key).
+    async ({ city }) => json(missionsFor(city, run.missions ?? MISSIONS).map((m) => ({ ...m, casting: undefined }))),
     {
       name: "list_missions",
       description:
-        "The missions staged in a city: each one's id, type, title, the documented event it is inspired by (or " +
+        "Every mission staged in a city: each one's id, type, title, the documented event it is inspired by (or " +
         "null when fictional), objective and exit condition.",
       schema: z.object({ city: z.enum(["LA", "Houston"]) }),
     },

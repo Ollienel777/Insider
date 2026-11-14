@@ -5,6 +5,7 @@
 // as a floor graph fails to parse.
 import { z } from "zod";
 import { AerialEntry } from "./aerial";
+import { Casting } from "./casting";
 import { checkUnique, City, Id, Text } from "./common";
 
 /** Where a level element came from. `fiction` is game invention (the mission). */
@@ -77,7 +78,8 @@ export type InspiredBy = z.infer<typeof InspiredBy>;
 
 /**
  * A mission in the library (`fixtures/missions.json`). `inspiredBy` is null
- * for a fictional mission, which the card labels as fiction.
+ * for a fictional mission, which the card labels as fiction. `casting` is
+ * what its stand-in building must have (SPEC §4.6).
  */
 export const Mission = z.object({
   id: Id,
@@ -87,11 +89,15 @@ export const Mission = z.object({
   inspiredBy: InspiredBy.nullable(),
   objective: Text,
   exitCondition: Text,
+  casting: Casting,
 });
 export type Mission = z.infer<typeof Mission>;
 
-/** A library mission with the briefing the Game Master wrote for one building. */
-export const BriefedMission = Mission.extend({ briefing: Text });
+/**
+ * A library mission with the briefing the Game Master wrote for one building.
+ * The manifest carries no casting: the building is already chosen.
+ */
+export const BriefedMission = Mission.omit({ casting: true }).extend({ briefing: Text });
 export type BriefedMission = z.infer<typeof BriefedMission>;
 
 /** An entry the level offers, chosen from the aerial's tags. */
