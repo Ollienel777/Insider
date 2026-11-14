@@ -11,6 +11,8 @@ import { DISCLAIMER, DossierScreen } from "./dossier-screen";
 import { DossierUnavailable } from "./dossier-unavailable";
 import { StepDetail, TraceList } from "./trace-list";
 import { dossierFacts } from "./facts";
+import { ProvenanceRow } from "./provenance-row";
+import { Reveal } from "./reveal";
 import {
   formatRecordedAt,
   recordedRunHeader,
@@ -51,7 +53,7 @@ const screen = (startComplete: boolean) =>
     />,
   );
 
-/** Visible text: tags dropped, and nothing inside a `visibility: hidden` wrapper. */
+/** All text, tags dropped, hidden or not. */
 const textOf = (html: string) =>
   html
     .replace(/&#x27;/g, "'")
@@ -59,6 +61,56 @@ const textOf = (html: string) =>
     .replace(/&amp;/g, "&")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ");
+
+const VOID = new Set(["area", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]);
+
+/**
+ * The text a viewer can see: nothing inside an element with the `invisible`
+ * class (`visibility: hidden`), which is how Reveal holds content back.
+ */
+function visibleText(html: string): string {
+  const stack: boolean[] = [];
+  let hidden = 0;
+  let out = "";
+  for (const m of html.matchAll(/<(\/?)([a-zA-Z][\w-]*)([^>]*?)(\/?)>|([^<]+)/g)) {
+    const [, close, tag, attrs, selfClose, text] = m;
+    if (text !== undefined) {
+      if (hidden === 0) out += ` ${text}`;
+    } else if (close) {
+      if (stack.pop()) hidden--;
+    } else if (!selfClose && !VOID.has(tag.toLowerCase())) {
+      const hides = /\bclass="[^"]*\binvisible\b/.test(attrs);
+      stack.push(hides);
+      if (hides) hidden++;
+    }
+  }
+  return textOf(out);
+}
+
+/** Each `<tr data-testid="provenance-row">`, its own markup only. */
+const provenanceRows = (html: string) => [...html.matchAll(/<tr data-testid="provenance-row"[\s\S]*?<\/tr>/g)].map((m) => m[0]);
+
+/**
+ * One element's own markup, found by its `data-testid`: from its opening tag
+ * to the tag that closes it, counting nested tags of the same name.
+ */
+function byTestId(html: string, id: string): string {
+  const open = new RegExp(`<([a-zA-Z][\\w-]*)[^>]*\\bdata-testid="${id}"[^>]*>`).exec(html);
+  if (!open) throw new Error(`no element with data-testid="${id}"`);
+  const tag = open[1];
+  const re = new RegExp(`<(/?)${tag}\\b[^>]*?(/?)>`, "g");
+  re.lastIndex = open.index + open[0].length;
+  let depth = 1;
+  for (let m = re.exec(html); m; m = re.exec(html)) {
+    if (m[1]) depth--;
+    else if (!m[2]) depth++;
+    if (depth === 0) return html.slice(open.index, m.index + m[0].length);
+  }
+  throw new Error(`data-testid="${id}" is never closed`);
+}
+
+/** Each CoStar fact's value cell. */
+const factCells = (html: string) => [...html.matchAll(/<dd[^>]*>[\s\S]*?<\/dd>/g)].map((m) => m[0]);
 
 describe("the Data → Level table for F1", () => {
   const row = (id: string) => rows.find((r) => r.id === id);
@@ -261,6 +313,55 @@ describe("DossierScreen", () => {
     expect(html.match(/data-testid="provenance-row"/g)).toHaveLength(rows.length);
   });
 
+  it("shows no record, row or briefing content before its reveal", () => {
+    // The dossier column only: the reveal holds back the record, the table and
+    // the briefing there. The Level Builder panel beside it is visible from
+    // the start, and its replay header names the script (…-romaine-1974),
+    // which would otherwise match the year built.
+    const before = visibleText(byTestId(screen(false), "dossier"));
+    const after = visibleText(byTestId(screen(true), "dossier"));
+    const content = [
+      ...dossierFacts(building).map((f) => f.value),
+      ...rows.flatMap((r) => [r.field, r.value, r.rule, r.result]),
+      manifest.mission.title,
+      manifest.mission.briefing,
+      DISCLAIMER,
+    ].filter((piece) => piece.length >= 3); // "A" (the class) is found in any sentence
+    expect(content.length).toBeGreaterThan(rows.length * 3);
+    for (const piece of content) {
+      expect(after, `missing once revealed: ${piece}`).toContain(piece);
+      expect(before, `seen before its reveal: ${piece}`).not.toContain(piece);
+    }
+    // The frame around the content is there from the start.
+    expect(before).toContain(building.name);
+    expect(before).toContain("Data → Level");
+  });
+
+  it("holds back every fact and every row, short values included, until its own reveal", () => {
+    const facts = dossierFacts(building);
+    const factsBefore = factCells(screen(false));
+    const factsAfter = factCells(screen(true));
+    expect(factsBefore).toHaveLength(facts.length);
+    facts.forEach((fact, i) => {
+      expect(factsBefore[i], fact.label).toContain('data-shown="false"');
+      expect(factsBefore[i], fact.label).toContain('data-testid="skeleton"');
+      expect(visibleText(factsBefore[i]).trim(), fact.label).toBe("");
+      expect(visibleText(factsAfter[i]).trim(), fact.label).toBe(fact.value);
+    });
+
+    const rowsBefore = provenanceRows(screen(false));
+    const rowsAfter = provenanceRows(screen(true));
+    expect(rowsBefore).toHaveLength(rows.length);
+    rows.forEach((row, i) => {
+      expect(rowsBefore[i], row.id).toMatch(/^<tr data-testid="provenance-row"[^>]*data-shown="false"/);
+      expect(rowsBefore[i], row.id).toContain('data-testid="skeleton"');
+      expect(visibleText(rowsBefore[i]).trim(), row.id).toBe("");
+      for (const piece of [row.field, row.value, row.rule, row.result]) {
+        expect(visibleText(rowsAfter[i]), row.id).toContain(piece);
+      }
+    });
+  });
+
   it("complete, shows the facts, the table and the briefing with its source and disclaimer", () => {
     const html = screen(true);
     const text = textOf(html);
@@ -288,6 +389,40 @@ describe("DossierScreen", () => {
     expect(dossierFacts(building).map((f) => f.label)).toEqual(["Built", "Class", "Stories", "Floor", "Available"]);
     const text = textOf(screen(true));
     expect(text).not.toMatch(/tenant|leased to|occupied by/i);
+  });
+});
+
+describe("Reveal", () => {
+  it("hides its content under a skeleton until shown, then shows it with no skeleton", () => {
+    const hidden = renderToStaticMarkup(<Reveal shown={false}>secret line</Reveal>);
+    expect(textOf(hidden)).toContain("secret line");
+    expect(visibleText(hidden)).not.toContain("secret line");
+    expect(hidden).toContain('data-testid="skeleton"');
+    const shown = renderToStaticMarkup(<Reveal shown>secret line</Reveal>);
+    expect(visibleText(shown)).toContain("secret line");
+    expect(shown).not.toContain('data-testid="skeleton"');
+  });
+
+  it("fills a table row by row: only the rows already reached are readable", () => {
+    const html = renderToStaticMarkup(
+      <table>
+        <tbody>
+          {rows.map((row, i) => (
+            <ProvenanceRow key={row.id} row={row} shown={i < 2} />
+          ))}
+        </tbody>
+      </table>,
+    );
+    const trs = provenanceRows(html);
+    expect(trs).toHaveLength(rows.length);
+    rows.forEach((row, i) => {
+      const text = visibleText(trs[i]);
+      if (i < 2) {
+        for (const piece of [row.field, row.value, row.rule, row.result]) expect(text, row.id).toContain(piece);
+      } else {
+        expect(text.trim(), row.id).toBe("");
+      }
+    });
   });
 });
 

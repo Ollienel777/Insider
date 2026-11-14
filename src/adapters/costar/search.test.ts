@@ -1,5 +1,6 @@
 // The inventory search on the fixture inventory only: no kit record is ever
 // in the repo (SPEC §4.5).
+import { rmSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 import { type CastingFilter, InventorySearch, Mission, SEARCH_TOP } from "@/domain";
@@ -9,6 +10,7 @@ import { FIXTURE_INVENTORY, createFakeCoStar } from "./fake";
 import { getCoStar, resetCoStar } from "./index";
 import { createLiveCoStar } from "./live";
 import { passes, searchInventory } from "./search";
+import { smallFictionalKit } from "./test-kit";
 
 const missions = Mission.array().parse(missionsRaw);
 const romaine = missions.find((m) => m.id === "romaine-1974")!;
@@ -84,91 +86,56 @@ describe.each(missions.map((m) => m.id))("searchInventory for %s", (id) => {
   });
 });
 
-describe("searchInventory live (the kit is not mapped yet, #2)", () => {
+describe("searchInventory live (the kit is not searched yet, #2)", () => {
+  const dirs: string[] = [];
   afterEach(() => {
     vi.unstubAllEnvs();
-    vi.unstubAllGlobals();
     vi.restoreAllMocks();
     resetCoStar();
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   });
 
-  // A hand-written live building in the shape mapping.ts assumes; not a CoStar record.
-  const PROPERTY = {
-    propertyId: 48213,
-    propertyName: "Sample Plaza",
-    city: "Los Angeles",
-    submarket: "Downtown Los Angeles",
-    latitude: 34.0489,
-    longitude: -118.2551,
-    yearBuilt: 1986,
-    buildingClass: "A",
-    numberOfStories: 34,
-    rentableBuildingArea: 702318,
-    typicalFloorSize: 21460,
-  };
+  /** Live mode on the fictional kit in test-kit.ts; no real kit record. */
+  function live() {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const dir = smallFictionalKit();
+    dirs.push(dir);
+    vi.stubEnv("HEIST_MODE", "");
+    vi.stubEnv("COSTAR_MODE", "live");
+    vi.stubEnv("COSTAR_KIT_DIR", dir);
+    resetCoStar();
+  }
 
-  it("answers from the fixture inventory, marked as fixtures, without calling CoStar", async () => {
-    const fetch = vi.fn();
-    const live = createLiveCoStar({ base: "https://costar.invalid/api", key: "test-key", fetch });
-    const search = await live.searchInventory(romaine.casting);
+  it("answers from the fixture inventory, marked as fixtures, without reading the kit", async () => {
+    const load = vi.fn();
+    const costar = createLiveCoStar({ kitDir: "/kits/costar-test", load });
+    const search = await costar.searchInventory(romaine.casting);
     expect(search).toEqual(await createFakeCoStar().searchInventory(romaine.casting));
     expect(search.source).toBe("fixture");
-    expect(fetch).not.toHaveBeenCalled();
+    expect(load).not.toHaveBeenCalled();
   });
 
   it("leaves live buildings live: no breaker trip, no fallback", async () => {
-    vi.spyOn(console, "info").mockImplementation(() => {});
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.stubEnv("HEIST_MODE", "");
-    vi.stubEnv("COSTAR_MODE", "live");
-    vi.stubEnv("COSTAR_API_BASE", "https://costar.test/api");
-    vi.stubEnv("COSTAR_API_KEY", "test-key");
-    const hits: string[] = [];
-    vi.stubGlobal("fetch", async (input: string | URL | Request) => {
-      const path = new URL(String(input)).pathname;
-      hits.push(path);
-      if (path === "/api/properties") return Response.json([PROPERTY]);
-      if (path === "/api/properties/48213") return Response.json(PROPERTY);
-      if (path === "/api/properties/48213/spaces") return Response.json({ items: [] });
-      return new Response("", { status: 404 });
-    });
-    resetCoStar();
-
+    live();
     const search = await getCoStar().adapter.searchInventory(romaine.casting);
     expect(search.source).toBe("fixture");
     expect(search.steps.at(-1)!.top.map((c) => c.id)).toEqual(ROMAINE);
     expect(getCoStar()).toMatchObject({ mode: "live" });
     expect(getCoStar().fallback).toBeUndefined();
 
-    expect((await getCoStar().adapter.listBuildings("LA")).map((b) => [b.id, b.source])).toEqual([["48213", "costar"]]);
-    expect((await getCoStar().adapter.getBuilding("48213"))?.name).toBe("Sample Plaza");
-    expect(hits).toContain("/api/properties");
-    expect(hits).toContain("/api/properties/48213");
+    expect((await getCoStar().adapter.listBuildings("LA")).map((b) => [b.id, b.source])).toContainEqual(["900001", "costar"]);
+    expect((await getCoStar().adapter.getBuilding("900001"))?.source).toBe("costar");
     expect(getCoStar()).toMatchObject({ mode: "live" });
   });
 
   it("rejects a malformed filter to the caller, and live buildings stay live", async () => {
-    vi.spyOn(console, "info").mockImplementation(() => {});
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.stubEnv("HEIST_MODE", "");
-    vi.stubEnv("COSTAR_MODE", "live");
-    vi.stubEnv("COSTAR_API_BASE", "https://costar.test/api");
-    vi.stubEnv("COSTAR_API_KEY", "test-key");
-    const hits: string[] = [];
-    vi.stubGlobal("fetch", async (input: string | URL | Request) => {
-      const path = new URL(String(input)).pathname;
-      hits.push(path);
-      if (path === "/api/properties") return Response.json([PROPERTY]);
-      return Response.json({ items: [] });
-    });
-    resetCoStar();
-
+    live();
     const bad = [{ kind: "roofDeck", label: "a roof deck" }] as unknown as CastingFilter[];
     await expect(getCoStar().adapter.searchInventory(bad)).rejects.toThrow(ZodError);
     expect(getCoStar()).toMatchObject({ mode: "live" });
     expect(getCoStar().fallback).toBeUndefined();
-    expect((await getCoStar().adapter.listBuildings("LA")).map((b) => b.source)).toEqual(["costar"]);
-    expect(hits).toContain("/api/properties");
+    expect((await getCoStar().adapter.listBuildings("LA")).map((b) => b.source)).toContain("costar");
   });
 });
 

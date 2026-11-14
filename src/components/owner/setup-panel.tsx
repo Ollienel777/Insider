@@ -355,6 +355,12 @@ function Inspector({
             +
           </Button>
         </div>
+        {guard.retime && guard.round.length > 1 ? (
+          <p data-testid="owner-retime" className="text-sm text-text-2">
+            Walks its round {Math.abs(guard.retime)} {Math.abs(guard.retime) === 1 ? "turn" : "turns"}{" "}
+            {guard.retime > 0 ? "later" : "earlier"} than it starts each night.
+          </p>
+        ) : null}
         <Button
           variant="ghost"
           data-testid="owner-remove"

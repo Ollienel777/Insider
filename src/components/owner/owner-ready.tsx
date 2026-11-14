@@ -4,16 +4,14 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { BatchSummary, FloorGraph, LevelManifest } from "@/domain";
 import type { OwnerSetup } from "@/domain/owner-setup";
-import { applyFix } from "@/engine";
 import { deleteOwnerSetup, loadOwnerSetups, saveOwnerSetup } from "@/components/run/owner-setup-store";
 import { BuildingScreen } from "@/components/shell/building-screen";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
 import { BatchPanel, type Side } from "./batch-panel";
-import { toEngineFix } from "./chief-fix";
-import { OwnerBoard, type Selection } from "./owner-board";
 import { ownerZones } from "./owner-batch";
+import { OwnerBoard, type Selection } from "./owner-board";
 import {
   addCamera,
   addCleaner,
@@ -26,7 +24,6 @@ import {
   playable,
   problemsOf,
   setupFromPlaced,
-  setupWithFix,
   toggleDesk,
   updateCamera,
 } from "./owner-edit";
@@ -41,10 +38,10 @@ export function boardCaption(summary: BatchSummary, side: Side | null): string {
   return summary.topRoute ? `${lead}${out}. The way most got out is drawn` : `${lead}${out}. No way out to draw`;
 }
 
-/** The setup as the batch keys it: the generated level while untouched, else everything but the name. */
 /** The key of the untouched starting point. */
 export const GENERATED_KEY = "generated";
 
+/** The setup as the batch keys it: the generated level while untouched, else everything but the name. */
 export const setupKey = (draft: Pick<Draft, "setup" | "pristine">) =>
   draft.pristine ? GENERATED_KEY : JSON.stringify({ ...draft.setup, name: "" });
 
@@ -84,21 +81,23 @@ export function OwnerReady({
     () => (batch.status === "done" ? (boardOf(manifest, floor, batch.setup, OWNER_SEED) ?? generated) : null),
     [batch, manifest, floor, generated],
   );
+  // After the fix, the board draws the setup the After batch played: the one "Save the fixed setup" stores.
   const batchBoard = useMemo<PlacedLevel | null>(() => {
     if (!batchBefore) return null;
-    const before = batchBefore;
-    if (fix.status !== "applied" || side === "before" || fix.rerun.dropped) return before;
-    const engineFix = toEngineFix(fix.answer.fix, ownerZones(manifest, floor));
-    const applied = applyFix(before.level, engineFix.change);
-    if (!applied.ok) return before;
-    const cameras = before.cameras.map((c) => {
-      const spec = applied.level.cameras?.find((s) => s.id === c.id);
-      return spec ? { ...c, cover: spec.cover } : c;
-    });
-    return { ...before, level: applied.level, cameras };
+    if (fix.status !== "applied" || side === "before" || fix.rerun.dropped || !fix.rerun.fixed) return batchBefore;
+    return boardOf(manifest, floor, fix.rerun.fixed, OWNER_SEED) ?? batchBefore;
   }, [batchBefore, fix, side, manifest, floor]);
 
-  const edit = (next: OwnerSetup) => setDraft({ setup: next, pristine: false, state: "editing" });
+  // An edit that changed nothing (the same object back) leaves the draft as it was.
+  const edit = (next: OwnerSetup) => {
+    if (next !== draft.setup) setDraft({ setup: next, pristine: false, state: "editing" });
+  };
+
+  // The side the board shows: only once a fix is applied and fitted. The caption, the
+  // board's route and ring, and the panel's route and detector cards all describe it.
+  const shownSide: Side | null = fix.status === "applied" && !fix.rerun.dropped ? side : null;
+  const shownSummary: BatchSummary | null =
+    batch.status !== "done" ? null : shownSide === "after" && fix.status === "applied" ? fix.rerun.after : batch.summary;
 
   const save = () => {
     const ok = saveOwnerSetup(draft.setup);
@@ -127,12 +126,10 @@ export function OwnerReady({
     setView("results");
   };
 
+  // Saves exactly the setup the After batch played, so replaying it gives the After count shown.
   const saveFixed = () => {
-    if (batch.status !== "done" || fix.status !== "applied") return;
-    const base = batch.setup;
-    const engineFix = toEngineFix(fix.answer.fix, ownerZones(manifest, floor));
-    const name = `${base.name}, after the fix`.slice(0, 80);
-    const fixed = setupWithFix(base, engineFix, generated.level, name);
+    if (batch.status !== "done" || fix.status !== "applied" || fix.rerun.dropped || !fix.rerun.fixed) return;
+    const fixed = fix.rerun.fixed;
     const ok = saveOwnerSetup(fixed);
     if (ok) setSaved(loadOwnerSetups(manifest.buildingId));
     setFixedSaved({ key: batch.key, ok, setup: fixed });
@@ -178,9 +175,17 @@ export function OwnerReady({
       <Button variant="primary" data-testid="owner-apply" onClick={apply}>
         Apply and rerun
       </Button>
+    ) : fix.rerun.dropped ? (
+      <Button variant="primary" data-testid="owner-save-fixed" disabled>
+        The change didn&apos;t fit: nothing to save
+      </Button>
     ) : (
       <Button variant="primary" data-testid="owner-save-fixed" onClick={saveFixed} disabled={fixedSaved?.ok === true}>
-        {fixedSaved?.ok ? "Saved on this device" : "Save the fixed setup"}
+        {fixedSaved?.ok
+          ? "Saved on this device"
+          : fix.status === "applied" && fix.rerun.after.escaped < fix.rerun.before.escaped
+            ? "Save the fixed setup"
+            : "Save this setup"}
       </Button>
     );
 
@@ -189,16 +194,19 @@ export function OwnerReady({
       visualLabel="Owner board"
       visual={
         <div className="absolute inset-0 flex flex-col">
-          <div className="flex h-14 shrink-0 items-center gap-3 px-6">
-            <span className="label-caps text-text-2">{view === "setup" ? "Your security" : "50 attempts"}</span>
-            <span aria-hidden className="h-4 w-px bg-border" />
-            <span data-testid="owner-board-caption" className="truncate text-sm text-text-1">
+          <div className="flex h-14 shrink-0 items-center gap-3 px-4 sm:px-6">
+            <span className="hidden label-caps text-text-2 sm:inline">
+              {view === "setup" ? "Your security" : shownSummary ? `${shownSummary.total} attempts` : "The crew's attempts"}
+            </span>
+            <span aria-hidden className="hidden h-4 w-px bg-border sm:block" />
+            {/* On a phone the caption takes two lines, so the count and the side are never cut off. */}
+            <span data-testid="owner-board-caption" className="line-clamp-2 min-w-0 text-xs leading-snug text-text-1 sm:truncate sm:text-sm">
               {view === "setup"
                 ? draft.pristine
                   ? "The building's generated security, as a starting point"
                   : draft.setup.name || "Unnamed setup"
-                : batch.status === "done"
-                  ? boardCaption(fix.status === "applied" ? (side === "after" ? fix.rerun.after : fix.rerun.before) : batch.summary, fix.status === "applied" ? side : null)
+                : shownSummary
+                  ? boardCaption(shownSummary, shownSide)
                   : "The crew is planning its ways in"}
             </span>
             {view === "results" && fix.status === "applied" && !fix.rerun.dropped ? (
@@ -239,11 +247,8 @@ export function OwnerReady({
               <OwnerBoard
                 placed={batchBoard}
                 result={{
-                  route: side === "after" && fix.status === "applied" ? (fix.rerun.after.topRoute?.nodes ?? null) : batch.status === "done" ? (batch.summary.topRoute?.nodes ?? null) : null,
-                  detector:
-                    batch.status === "done"
-                      ? ((side === "after" && fix.status === "applied" ? fix.rerun.after : batch.summary).detectors[0] ?? null)
-                      : null,
+                  route: shownSummary?.topRoute?.nodes ?? null,
+                  detector: shownSummary?.detectors[0] ?? null,
                 }}
               />
             ) : (
@@ -292,6 +297,8 @@ export function OwnerReady({
               setupName={batch.status === "done" && batch.key !== GENERATED_KEY ? batch.setup.name : null}
               stale={batch.status === "done" && !fresh}
               fixedSaved={fixedSaved}
+              side={side}
+              board={batchBoard ?? undefined}
               onEdit={() => setView("setup")}
               onRetry={runBatch}
               onOpenFixed={openFixed}

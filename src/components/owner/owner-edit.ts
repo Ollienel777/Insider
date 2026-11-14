@@ -179,6 +179,8 @@ export function addGuard(setup: OwnerSetup, node: string, tempo = 1): { setup: O
 
 /** Moves the guard's post; a round that no longer passes the post is walked from the new post instead (it stands there). */
 export function moveGuard(setup: OwnerSetup, id: string, node: string): OwnerSetup {
+  // Onto its own post: nothing moves, and the guard stays as generated.
+  if (setup.guards.find((g) => g.id === id)?.post === node) return setup;
   return guardEdit(setup, id, (g) => ({ ...g, post: node, round: g.round.includes(node) ? g.round : [] }));
 }
 
@@ -192,8 +194,15 @@ export function startRound(setup: OwnerSetup, id: string): OwnerSetup {
   return guardEdit(setup, id, (g) => ({ ...g, round: [g.post] }));
 }
 
-/** Adds `node` to the end of the round being drawn; the last node again takes it off. */
+/**
+ * Adds `node` to the end of the round being drawn; the last node again takes
+ * it off. The round's first node closes the loop: a round already ends by
+ * walking back to it, so nothing is added and the setup stays as it was.
+ */
 export function extendRound(setup: OwnerSetup, id: string, node: string): OwnerSetup {
+  const guard = setup.guards.find((g) => g.id === id);
+  if (!guard) return setup;
+  if ((guard.round.length === 0 ? guard.post : guard.round[0]) === node) return setup;
   return guardEdit(setup, id, (g) => {
     const round = g.round.length === 0 ? [g.post] : g.round;
     if (round[round.length - 1] === node && round.length > 1) return { ...g, round: round.slice(0, -1) };
@@ -261,6 +270,9 @@ export function addCamera(setup: OwnerSetup, node: string, kind: OwnerCameraKind
 
 /** Changes a camera. Moved, turned or of another kind, it covers what it now sees: a kept cover goes. */
 export function updateCamera(setup: OwnerSetup, id: string, change: Partial<Omit<OwnerCamera, "id" | "cover">>): OwnerSetup {
+  const camera = setup.cameras.find((c) => c.id === id);
+  // Nothing differs (a click on the active kind or facing): the camera stays as generated.
+  if (!camera || Object.entries(change).every(([k, v]) => camera[k as keyof OwnerCamera] === v)) return setup;
   const out = touched(setup, "cameras", id);
   return {
     ...out,
@@ -282,6 +294,8 @@ export function removeCamera(setup: OwnerSetup, id: string): OwnerSetup {
 }
 
 export function setDoor(setup: OwnerSetup, doorId: string, lock: OwnerDoorLock): OwnerSetup {
+  // The lock it already has (a door left out is open): nothing changes, and the door stays as generated.
+  if ((setup.doors[doorId] ?? "open") === lock) return setup;
   const out = touched(setup, "doors", doorId);
   const doors = { ...out.doors };
   if (lock === "open") delete doors[doorId];
@@ -354,9 +368,11 @@ export function playable(setup: OwnerSetup, floor: FloorGraph): OwnerSetup {
 
 /**
  * The setup with the Chief's change made, as near as a setup can say it (the
- * fix itself is a change to the engine's level): a moved camera goes on the
- * zone's node and facing that see most of it; a retimed guard starts its
- * round further back; a locked zone's doors get key locks; a new guard walks
+ * fix itself is a change to the engine's level). The Owner screen's After
+ * batch plays this setup (`rerunOwner`), so its count is this setup's. A
+ * moved camera goes on the zone's node and facing that see most of it and
+ * covers the zone's nodes; a retimed guard carries the retime as a start
+ * offset, so it plays the engine's retime on every seed; a locked zone's doors get key locks; a new guard walks
  * the zone. `level` is a level of this building, for the zones' nodes and the
  * doors. The fix is in the engine's zone ids (`toEngineFix`).
  */
@@ -371,7 +387,8 @@ export function setupWithFix(setup: OwnerSetup, fix: ChiefFix, level: Level, nam
       const nodes = zoneNodes(change.to);
       const camera = setup.cameras.find((c) => c.id === change.elementId);
       if (!nodes || !camera) return named;
-      const placed = nearestCamera(floor, camera.id, nodes, camera.kind);
+      // On the zone's nearest node and facing, covering exactly the zone, as the engine's fix does.
+      const placed: OwnerCamera = { ...nearestCamera(floor, camera.id, nodes, camera.kind), cover: [...nodes] };
       const out = touched(named, "cameras", camera.id);
       return { ...out, cameras: out.cameras.map((c) => (c.id === camera.id ? placed : c)) };
     }
@@ -379,11 +396,18 @@ export function setupWithFix(setup: OwnerSetup, fix: ChiefFix, level: Level, nam
       const by = change.byTurns ?? 0;
       const guard = setup.guards.find((g) => g.id === change.elementId);
       if (!guard || guard.round.length < 2) return named;
-      return guardEdit(named, guard.id, (g) => {
-        const at = g.round.indexOf(g.post);
-        const n = g.round.length;
-        return { ...g, post: g.round[(((at - by) % n) + n) % n] };
-      });
+      // A start offset on the guard, not a new post: a round that passes a node twice, or a generated
+      // guard that starts somewhere else each night, would otherwise start from the wrong place. It
+      // stays on the generated list, so it keeps each night's start and is retimed from there.
+      const retime = (guard.retime ?? 0) + by;
+      return {
+        ...named,
+        guards: named.guards.map((g) => {
+          if (g.id !== guard.id) return g;
+          const next: OwnerGuard = { id: g.id, post: g.post, round: g.round, tempo: g.tempo };
+          return retime === 0 ? next : { ...next, retime };
+        }),
+      };
     }
     case "lock-door": {
       const nodes = zoneNodes(change.elementId);

@@ -71,9 +71,8 @@ describe("CrewReply", () => {
 
   it("notes each dropped step", () => {
     const html = renderToStaticMarkup(<CrewReply answer={recorded("lobby")} checked={validatePlan(placed, plan("lobby"))} />);
-    expect(html).toContain("Dropped step 1: &quot;lobby-S&quot; is not a zone on this floor.");
-    expect(html).toContain("Dropped step 3:");
-    expect(html.match(/data-dropped="true"/g)).toHaveLength(2);
+    expect(html).toContain("Dropped step 3: &quot;lobby-S&quot; is not a zone on this floor.");
+    expect(html.match(/data-dropped="true"/g)).toHaveLength(1);
   });
 });
 

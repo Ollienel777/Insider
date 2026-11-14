@@ -56,7 +56,9 @@ export function BuildingCard({ building, placement }: { building: MapBuilding; p
         ))}
       </dl>
       {building.levelReady ? null : (
-        <p className="mt-3 border-t border-border pt-2 text-sm text-text-2">Level in prep: no floor yet.</p>
+        <p className="mt-3 border-t border-border pt-2 text-sm text-text-2">
+          {building.source === "costar" ? "From the CoStar kit: facts only, no level is built for it." : "Level in prep: no floor yet."}
+        </p>
       )}
     </div>
   );

@@ -2,7 +2,7 @@
 // mission, a 404 when it names none, and with no `m` the building's own
 // mission, by a redirect that puts it in the address.
 import { describe, expect, it } from "vitest";
-import { missionParam } from "./mission-param";
+import { missionParam, optionalMissionParam } from "./mission-param";
 
 const params = (query: Record<string, string | string[] | undefined>) => Promise.resolve(query);
 /** What next/navigation's redirect() and notFound() throw, as a string to match. */
@@ -41,5 +41,18 @@ describe("missionParam", () => {
   it("tolerant (Drill, which reads no level), keeps an m that names no mission instead of a 404", async () => {
     expect(await missionParam("F1", "drill", params({ m: "typo" }), { tolerant: true })).toBe("typo");
     expect(await thrown(missionParam("F1", "drill", params({}), { tolerant: true }))).toMatch(/\/b\/F1\/drill\?m=romaine-1974;/);
+  });
+});
+
+describe("optionalMissionParam (Scout and the Dossier's facts)", () => {
+  it("is null, not a 404, for a building with no own mission and no m (a kit pin from the map)", async () => {
+    expect(await optionalMissionParam("900001", "scout", params({}))).toBeNull();
+    expect(await optionalMissionParam("900001", "dossier", params({ m: "" }))).toBeNull();
+  });
+
+  it("otherwise behaves as missionParam", async () => {
+    expect(await optionalMissionParam("900001", "dossier", params({ m: "romaine-1974" }))).toBe("romaine-1974");
+    expect(await thrown(optionalMissionParam("F1", "scout", params({})))).toMatch(/\/b\/F1\/scout\?m=romaine-1974;/);
+    expect(await thrown(optionalMissionParam("900001", "scout", params({ m: "no-such-mission" })))).toMatch(/NOT_FOUND|404/);
   });
 });

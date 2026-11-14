@@ -10,12 +10,13 @@ import type { Building } from "@/domain";
 import type { ServerStatus } from "@/lib/demo-status";
 import { DemoSafety } from "./demo-safety";
 import { StepRail } from "./step-rail";
+import { isFactsOnly } from "./steps";
 import { TopBar } from "./top-bar";
 
 interface AppShellProps {
   children: ReactNode;
   /** On building screens: the building, which also turns the step rail on. */
-  building?: Pick<Building, "id" | "name" | "city">;
+  building?: Pick<Building, "id" | "name" | "city"> & Partial<Pick<Building, "source">>;
 }
 
 /**
@@ -43,7 +44,7 @@ export async function AppShell({ children, building }: AppShellProps) {
     <div className="flex min-h-dvh flex-col lg:h-dvh">
       {epoch ? <script dangerouslySetInnerHTML={{ __html: demoEpochScript(epoch) }} /> : null}
       <TopBar status={status} building={building} />
-      {building ? <StepRail buildingId={building.id} /> : null}
+      {building ? <StepRail buildingId={building.id} factsOnly={isFactsOnly(building.source)} /> : null}
       <main className="flex min-h-0 flex-1 flex-col">{children}</main>
       <DemoSafety status={status} />
     </div>
