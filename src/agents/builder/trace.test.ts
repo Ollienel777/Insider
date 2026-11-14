@@ -1,3 +1,4 @@
+import { ToolMessage } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
 import { TRACE_TEXT_MAX, TraceRecorder, traceText } from "./trace";
 
@@ -58,6 +59,46 @@ describe("TraceRecorder", () => {
     expect(task).toMatchObject({ agent: "general-purpose", status: "failed", output: "Error: it failed" });
     expect(bare).not.toHaveProperty("input");
     expect(bare).not.toHaveProperty("output");
+  });
+});
+
+describe("TraceRecorder on live data (SPEC §4.5)", () => {
+  it("keeps no input or output when recordPayloads is false, and still times and labels each call", () => {
+    const recorder = new TraceRecorder({ now: () => 0, recordPayloads: false });
+    recorder.start("tool", "data-analyst", "get_building", '{"buildingId":"B9"}')(true, '{"name":"A kit record"}');
+    recorder.start("subagent", "data-analyst", "Read B9", "Read B9")(false, "Error: it failed", "thrown");
+    const events = recorder.toTrace("B9").events;
+    expect(events.map((e) => [e.label, e.status])).toEqual([["get_building", "completed"], ["Read B9", "failed"]]);
+    for (const event of events) {
+      expect(event).not.toHaveProperty("input");
+      expect(event).not.toHaveProperty("output");
+    }
+  });
+});
+
+describe("the recorder's middleware on a failed task (R1-M1)", () => {
+  /** Runs one `task` call through the middleware, answered by `handler`. */
+  async function task(handler: () => Promise<unknown>) {
+    const recorder = new TraceRecorder({ now: () => 0 });
+    const middleware = recorder.middleware("level-builder") as unknown as {
+      wrapToolCall: (request: unknown, handler: () => Promise<unknown>) => Promise<unknown>;
+    };
+    const toolCall = { name: "task", args: { subagent_type: "game-master", description: "Pick it" }, id: "t1" };
+    const result = await middleware.wrapToolCall({ toolCall }, handler);
+    return { event: recorder.toTrace("F1").events[0], result };
+  }
+
+  it("records a task that throws as the subagent's run failing", async () => {
+    const { event, result } = await task(() => Promise.reject(new Error("model gave up")));
+    expect(event).toMatchObject({ kind: "subagent", agent: "game-master", status: "failed", failure: "thrown" });
+    expect(event.output).toBe("Error: the game-master subagent's run failed: model gave up");
+    expect(ToolMessage.isInstance(result) && result.status).toBe("error");
+  });
+
+  it("records a task that returns an error result as a returned error, not a failed run", async () => {
+    const error = new ToolMessage({ content: "Error: refused", tool_call_id: "t1", name: "task", status: "error" });
+    const { event } = await task(() => Promise.resolve(error));
+    expect(event).toMatchObject({ kind: "subagent", status: "failed", failure: "returned", output: "Error: refused" });
   });
 });
 

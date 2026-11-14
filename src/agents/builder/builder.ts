@@ -14,7 +14,8 @@ import { todoListMiddleware } from "langchain";
 import { getCoStar } from "@/adapters/costar";
 import { getChatModelSelection, loadScript, type Script } from "@/adapters/llm";
 import { getVexcel } from "@/adapters/vexcel";
-import { BuildTrace, LevelManifest } from "@/domain";
+import { type BuilderAgent, BuildTrace, LevelManifest } from "@/domain";
+import type { ServiceMode } from "@/lib/mode";
 import { BUILDER_PROMPT, DATA_ANALYST_PROMPT, GAME_MASTER_PROMPT, SUBAGENT_DESCRIPTIONS } from "./prompts";
 import { analystTools, builderTools, type BuildRun, gameMasterTools } from "./tools";
 import { TraceRecorder, type TraceRecorderOptions } from "./trace";
@@ -33,10 +34,18 @@ export interface BuildOptions extends TraceRecorderOptions {
   modelLabel?: string;
   costar?: BuildRun["costar"];
   vexcel?: BuildRun["vexcel"];
+  /**
+   * Which of `costar` and `vexcel` serve fixtures. A passed adapter counts as
+   * live unless said here, so its data stays out of the trace (SPEC §4.5).
+   */
+  dataModes?: { costar?: ServiceMode; vexcel?: ServiceMode };
   missions?: BuildRun["missions"];
   /** The run's start time, for the trace header. */
   recordedAt?: Date;
 }
+
+/** The subagents the builder can dispatch, as its trace lists them. */
+export const SUBAGENTS = ["general-purpose", "data-analyst", "game-master"] as const satisfies readonly BuilderAgent[];
 
 /** The recorded script name for a building. */
 export const scriptName = (buildingId: string): string => `builder-${buildingId}`;
@@ -73,13 +82,13 @@ async function resolveModel(buildingId: string, options: BuildOptions): Promise<
 export async function buildLevel(buildingId: string, options: BuildOptions = {}): Promise<BuiltLevel> {
   const recordedAt = options.recordedAt ?? new Date();
   const { model, label } = await resolveModel(buildingId, options);
-  const run: BuildRun = {
-    buildingId,
-    costar: options.costar ?? getCoStar().adapter,
-    vexcel: options.vexcel ?? getVexcel().adapter,
-    missions: options.missions,
-  };
-  const recorder = new TraceRecorder({ now: options.now });
+  // The modes the adapters actually serve, as the mode chip reads them; a
+  // live one that falls back to fixtures mid-run only withholds more.
+  const costar = options.costar ? { adapter: options.costar, mode: options.dataModes?.costar ?? "live" } : getCoStar();
+  const vexcel = options.vexcel ? { adapter: options.vexcel, mode: options.dataModes?.vexcel ?? "live" } : getVexcel();
+  const liveData = costar.mode === "live" || vexcel.mode === "live";
+  const run: BuildRun = { buildingId, costar: costar.adapter, vexcel: vexcel.adapter, missions: options.missions };
+  const recorder = new TraceRecorder({ now: options.now, recordPayloads: !liveData });
 
   const agent = createDeepAgent({
     model,
@@ -116,7 +125,7 @@ export async function buildLevel(buildingId: string, options: BuildOptions = {})
   });
 
   const traceSoFar = (): BuildTrace =>
-    recorder.toTrace(buildingId, { recordedAt: recordedAt.toISOString(), model: label });
+    recorder.toTrace(buildingId, { recordedAt: recordedAt.toISOString(), model: label, liveData, subagents: [...SUBAGENTS] });
 
   let summary = "";
   try {

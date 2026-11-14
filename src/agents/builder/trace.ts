@@ -11,6 +11,8 @@
 // Subagent and tool events keep what went in (the task's brief, the tool's
 // arguments as JSON) and what came back (the answer, the tool's result or its
 // error), each cut to TRACE_TEXT_MAX characters, so the dossier can show them.
+// A run on live CoStar or Vexcel data records neither (`recordPayloads:
+// false`): nothing derived from a kit record is ever committed (SPEC §4.5).
 //
 // A tool that throws is answered with an error ToolMessage instead of ending
 // the run, so a live model sees what went wrong and can call again.
@@ -38,15 +40,19 @@ export function traceText(text: string): string | undefined {
 export interface TraceRecorderOptions {
   /** The clock, in milliseconds. Tests pass a fake one. */
   now?: () => number;
+  /** False when live data served the run: events then keep no input or output. Defaults to true. */
+  recordPayloads?: boolean;
 }
 
 export class TraceRecorder {
   readonly events: BuildTraceEvent[] = [];
   private readonly now: () => number;
   private readonly startedAt: number;
+  private readonly recordPayloads: boolean;
 
   constructor(options: TraceRecorderOptions = {}) {
     this.now = options.now ?? (() => performance.now());
+    this.recordPayloads = options.recordPayloads ?? true;
     this.startedAt = this.now();
   }
 
@@ -71,16 +77,17 @@ export class TraceRecorder {
     agent: BuilderAgent,
     label: string,
     input?: string,
-  ): (ok: boolean, output?: string) => void {
+  ): (ok: boolean, output?: string, failure?: BuildTraceEvent["failure"]) => void {
     const startMs = this.now();
     const event: BuildTraceEvent = { atMs: this.elapsed(), kind, agent, label, status: "in_progress" };
-    const recordedInput = input === undefined ? undefined : traceText(input);
+    const recordedInput = input === undefined || !this.recordPayloads ? undefined : traceText(input);
     if (recordedInput !== undefined) event.input = recordedInput;
     this.events.push(event);
-    return (ok, output) => {
+    return (ok, output, failure) => {
       event.status = ok ? "completed" : "failed";
       event.durationMs = Math.max(0, Math.round(this.now() - startMs));
-      const recordedOutput = output === undefined ? undefined : traceText(output);
+      if (!ok && failure) event.failure = failure;
+      const recordedOutput = output === undefined || !this.recordPayloads ? undefined : traceText(output);
       if (recordedOutput !== undefined) event.output = recordedOutput;
     };
   }
@@ -101,14 +108,17 @@ export class TraceRecorder {
             : this.start("tool", agent, name, JSON.stringify(args, null, 2));
         try {
           const result = await handler(request);
+          // deepagents' `task` throws when the subagent's run fails, so an
+          // error result here is a call that returned an error, not a failed run.
           const message = toolMessageOf(result);
-          end(message?.status !== "error", message ? contentText(message.content) : undefined);
+          const ok = message?.status !== "error";
+          end(ok, message ? contentText(message.content) : undefined, ok ? undefined : "returned");
           return result;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           // A `task` that throws is the subagent's whole run failing, not one tool's error (R1-M1).
           const content = name === "task" ? `Error: the ${String(args.subagent_type)} subagent's run failed: ${message}` : `Error: ${message}`;
-          end(false, content);
+          end(false, content, "thrown");
           return new ToolMessage({ content, tool_call_id: id ?? name, name, status: "error" });
         }
       },
@@ -116,7 +126,7 @@ export class TraceRecorder {
   }
 
   /** The trace as the dossier reads it, in the order events started. */
-  toTrace(buildingId: string, extra: Pick<BuildTrace, "recordedAt" | "model"> = {}): BuildTrace {
+  toTrace(buildingId: string, extra: Pick<BuildTrace, "recordedAt" | "model" | "liveData" | "subagents"> = {}): BuildTrace {
     const events = this.events
       .map((event, i) => ({ event, i }))
       .sort((a, b) => a.event.atMs - b.event.atMs || a.i - b.i)
