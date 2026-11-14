@@ -11,7 +11,9 @@
 // go stalls the frame for a third of a second or more, which is a hitch every
 // few steps of a run. So the photo cube is filled by hand, one face a frame,
 // and its smaller copies are made on the frame after: no frame carries more
-// than one face.
+// than one face. Making the texture is the slowest step of all (the GPU clears
+// all of it), so the cubes are made once, up front, and handed from one
+// panorama to the next: a panorama that is dropped gives its cube back.
 import {
   BackSide,
   BoxGeometry,
@@ -65,7 +67,10 @@ interface Entry {
 /** A panorama's photos on their way into the GPU, a face a frame. */
 interface Upload {
   entry: Entry;
-  raw: WebGLTexture;
+  /** Null until its turn comes and it takes a cube from the pool. */
+  raw: WebGLTexture | null;
+  /** The faces' width in pixels. */
+  size: number;
   /** One image per GPU cube slot. */
   images: (ImageBitmap | HTMLCanvasElement)[];
   bitmaps: ImageBitmap[];
@@ -108,6 +113,12 @@ export class PanoStore {
   private disposed = false;
   private readonly align = alignToCube();
   private uploads: Upload[] = [];
+  /** Cubes made and not in use, all `poolSize` across; `warming` more are still to be made. */
+  private pool: WebGLTexture[] = [];
+  private poolSize = 0;
+  private warming = 0;
+  private readonly sizes = new Map<WebGLTexture, number>();
+  private decoding: Promise<unknown> = Promise.resolve();
   private readonly depthScene = new Scene();
   private readonly depthMaterial = createDistanceMaterial();
   private readonly depthCamera = new PerspectiveCamera(90, 1, 0.05, 4000);
@@ -229,7 +240,7 @@ export class PanoStore {
       e.lastWanted = now;
       if (e.status !== "idle") continue;
       if (!linksUsable) this.needsLinks = true;
-      else if (this.loading < CONCURRENT) void this.load(e);
+      else if (this.loading < CONCURRENT && this.makeRoom(now)) void this.load(e);
     }
 
     const ready = ranked.filter(({ e }) => e.status === "ready");
@@ -246,8 +257,6 @@ export class PanoStore {
       if (e.share < 1e-4 && (target.get(e) ?? 0) === 0) e.share = 0;
       if (e.share > 0) e.lastWanted = now;
     }
-
-    this.evict();
 
     const used = entries
       .filter((e) => e.status === "ready" && e.share > 0)
@@ -269,20 +278,31 @@ export class PanoStore {
     return used.map((e) => ({ index: e.index, share: e.share }));
   }
 
-  private evict(): void {
-    const loaded = this.entries.filter((e) => e.status === "ready");
-    if (loaded.length <= this.capacity) return;
-    loaded.sort((a, b) => a.lastWanted - b.lastWanted);
-    for (const e of loaded.slice(0, loaded.length - this.capacity)) {
-      if (e.share > 0) continue;
-      this.release(e);
-      e.status = "idle";
+  /**
+   * Whether one more panorama may start loading: true when fewer than
+   * `capacity` are loaded or loading, or once the one wanted longest ago, and
+   * no longer shown, has been dropped to make room.
+   */
+  private makeRoom(now: number): boolean {
+    const held = this.entries.filter((e) => e.status === "ready" || e.status === "loading");
+    if (held.length < this.capacity) return true;
+    let oldest: Entry | null = null;
+    for (const e of held) {
+      if (e.status !== "ready" || e.share > 0 || e.lastWanted >= now) continue;
+      if (!oldest || e.lastWanted < oldest.lastWanted) oldest = e;
     }
+    if (!oldest) return false;
+    this.release(oldest);
+    oldest.status = "idle";
+    return true;
   }
 
   private release(e: Entry): void {
     if (e.cube) this.renderer.properties.remove(e.cube);
-    if (e.raw) this.renderer.getContext().deleteTexture(e.raw);
+    if (e.raw) {
+      if (this.sizes.get(e.raw) === this.poolSize) this.pool.push(e.raw);
+      else this.discard(e.raw);
+    }
     e.depth?.dispose();
     e.cube = null;
     e.raw = null;
@@ -310,8 +330,7 @@ export class PanoStore {
             signal: this.abort.signal,
           });
           if (!response.ok) throw new Error(`face ${response.status}`);
-          // Decoded off the main thread, in the form the GPU takes as it is.
-          return createImageBitmap(await response.blob(), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+          return this.decode(await response.blob());
         }),
       );
       if (this.disposed) throw new Error("gone");
@@ -330,17 +349,13 @@ export class PanoStore {
         context.drawImage(source, -size / 2, -size / 2);
         return canvas;
       });
-      const gl = this.renderer.getContext() as WebGL2RenderingContext;
-      const raw = gl.createTexture();
-      if (!raw) throw new Error("no texture");
-      this.renderer.state.bindTexture(gl.TEXTURE_CUBE_MAP, raw);
-      gl.texStorage2D(gl.TEXTURE_CUBE_MAP, Math.floor(Math.log2(size)) + 1, gl.RGBA8, size, size);
-      gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-      gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      this.renderer.state.unbindTexture();
-      this.uploads.push({ entry: e, raw, images, bitmaps, next: 0 });
+      if (this.poolSize === 0) {
+        // The first panorama says how big the cubes are: make them all now,
+        // while the player is still reading the hints.
+        this.poolSize = size;
+        this.warming = this.capacity;
+      }
+      this.uploads.push({ entry: e, raw: null, size, images, bitmaps, next: 0 });
     } catch {
       for (const bitmap of bitmaps) bitmap.close();
       this.loading--;
@@ -351,10 +366,63 @@ export class PanoStore {
     }
   }
 
-  /** One step of the upload at the head of the queue: a face, or the smaller copies and the depth cube. */
+  /**
+   * A face as a bitmap, decoded off the main thread and in the form the GPU
+   * takes as it is. One at a time, across every panorama loading: a dozen
+   * decodes at once starve the frame of processor time.
+   */
+  private decode(blob: Blob): Promise<ImageBitmap> {
+    const next = this.decoding.then(() => createImageBitmap(blob, { premultiplyAlpha: "none", colorSpaceConversion: "none" }));
+    this.decoding = next.catch(() => undefined);
+    return next;
+  }
+
+  /** A new, empty cube `size` across, with its smaller copies' room. Slow: the GPU clears it. */
+  private allocate(size: number): WebGLTexture {
+    const gl = this.renderer.getContext() as WebGL2RenderingContext;
+    const state = this.renderer.state;
+    const raw = gl.createTexture();
+    state.bindTexture(gl.TEXTURE_CUBE_MAP, raw);
+    gl.texStorage2D(gl.TEXTURE_CUBE_MAP, Math.floor(Math.log2(size)) + 1, gl.RGBA8, size, size);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    // One texel a face: the driver puts off making the texture until it is
+    // written to, and this is the moment to pay for that.
+    const texel = new Uint8Array(4);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    for (let face = 0; face < 6; face++) {
+      gl.texSubImage2D(gl.TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, 0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, texel);
+    }
+    state.unbindTexture();
+    this.sizes.set(raw, size);
+    return raw;
+  }
+
+  private discard(raw: WebGLTexture): void {
+    this.renderer.getContext().deleteTexture(raw);
+    this.sizes.delete(raw);
+  }
+
+  /**
+   * One step of work for the GPU, and no more, each frame: a cube made for the
+   * pool, or the next face of the upload at the head of the queue, or its
+   * smaller copies and depth cube.
+   */
   private pump(): void {
+    if (this.warming > 0) {
+      this.pool.push(this.allocate(this.poolSize));
+      this.warming--;
+      return;
+    }
     const job = this.uploads[0];
     if (!job) return;
+    if (!job.raw) {
+      job.raw = (job.size === this.poolSize ? this.pool.pop() : undefined) ?? this.allocate(job.size);
+      return;
+    }
     const gl = this.renderer.getContext() as WebGL2RenderingContext;
     const state = this.renderer.state;
     state.bindTexture(gl.TEXTURE_CUBE_MAP, job.raw);
@@ -423,12 +491,15 @@ export class PanoStore {
     this.disposed = true;
     this.abort.abort();
     for (const job of this.uploads) {
-      this.renderer.getContext().deleteTexture(job.raw);
+      if (job.raw) this.discard(job.raw);
       for (const bitmap of job.bitmaps) bitmap.close();
     }
     this.uploads = [];
+    // Releasing an entry hands its cube to the pool, so the pool goes last.
     for (const e of this.entries) this.release(e);
     this.entries = [];
+    for (const raw of this.pool) this.discard(raw);
+    this.pool = [];
     this.depthMaterial.dispose();
     (this.far.material as ShaderMaterial).dispose();
     this.far.geometry.dispose();
