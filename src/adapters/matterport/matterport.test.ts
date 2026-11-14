@@ -4,7 +4,7 @@ import raw from "../../../fixtures/floors/F1.json";
 import { FIXTURE_BUILDINGS } from "../costar/fake";
 import { checkFloor } from "../../../scripts/check-floor.mjs";
 import { F1_DEMO, FIXTURE_FLOORS, createFakeMatterport } from "./fake";
-import { insideViewFor, modelOverride, scanModelId, selectMatterport, withFixtureFloor } from "./index";
+import { insideViewFor, matterportEnv, modelOverride, scanModelId, selectMatterport, withFixtureFloor } from "./index";
 
 const f1 = FloorGraph.parse(raw);
 const node = (id: string) => f1.nodes.find((n) => n.id === id);
@@ -290,5 +290,31 @@ describe("insideViewFor (the Run screen's Inside view)", () => {
   it("offers no Inside view in fake mode, so the demo path shows no panel", () => {
     vi.stubEnv("NEXT_PUBLIC_MATTERPORT_MODE", "fake");
     expect(insideViewFor({ id: "F1", matterportModelId: "m" })).toBeNull();
+  });
+
+  it("offers an opener in live mode with a key, for a building with a scan or an override", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_MATTERPORT_MODE", "live");
+    vi.stubEnv("NEXT_PUBLIC_MATTERPORT_SDK_KEY", "test-key");
+    vi.stubEnv("NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE", "F1=mOdel1");
+    vi.stubEnv("NODE_ENV", "development");
+    // A fresh module, so the page's adapter is chosen from this environment.
+    const fresh = await import("./index");
+    expect(fresh.getMatterport().mode).toBe("live");
+    expect(fresh.insideViewFor({ id: "48213", matterportModelId: "own" })).toBeTypeOf("function");
+    expect(fresh.insideViewFor({ id: "F1" })).toBeTypeOf("function");
+    expect(fresh.insideViewFor({ id: "F2" })).toBeNull();
+  });
+});
+
+describe("matterportEnv (what the browser bundle reads)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("drops the model override in a production build, so the bundle never holds it", () => {
+    vi.stubEnv("NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE", "F1=mOdel1");
+    vi.stubEnv("NODE_ENV", "production");
+    expect(matterportEnv().NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE).toBeUndefined();
+    vi.stubEnv("NODE_ENV", "development");
+    expect(matterportEnv().NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE).toBe("F1=mOdel1");
   });
 });

@@ -2,7 +2,7 @@
 // derived from the scan is written to storage or sent in a request body. The
 // scanned board here is F1's fixture floor marked as a scan, so every node id
 // stands in for a sweep id and every room for a scanned room.
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { F1_DEMO, FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { LevelManifest, type FloorGraph } from "@/domain";
 import { act, createRun, type Action, type RunState } from "@/engine";
@@ -10,7 +10,7 @@ import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.json";
 import { chiefRequest, chiefZones } from "./chief-request";
 import { clearRunLog, keepRunLogInMemory, loadRunLog, runLogKey, runLogOf, saveRunLog } from "./run-log-store";
-import { RUN_SEED } from "./run-screen";
+import { boardOn, RUN_SEED } from "./run-screen";
 
 const scannedFloor: FloorGraph = { ...structuredClone(FIXTURE_FLOORS.F1), source: "matterport" };
 const placed = placeLevel(LevelManifest.parse(structuredClone(cached)), scannedFloor, RUN_SEED);
@@ -61,6 +61,34 @@ describe("a scanned board's run log stays out of storage", () => {
     saveRunLog(log, storage);
     expect(storage.setItem).toHaveBeenCalledTimes(1);
     expect(loadRunLog(id, storage)).toEqual(log);
+  });
+});
+
+describe("the Run screen keeps a scanned board's log out of storage from its first run", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("marks the building before the run starts, so the fresh run's log is never written", () => {
+    const storage = fakeStorage();
+    vi.stubGlobal("localStorage", storage);
+    const id = "scan-building-3";
+    const manifest = LevelManifest.parse(structuredClone(cached));
+    // What the Run screen does on a loaded floor: `boardOn`, then `startRun`, which saves the fresh run's log.
+    const { placed: board, live } = boardOn(id, manifest, structuredClone(scannedFloor));
+    expect(live).toBe(true);
+    saveRunLog({ ...runLogOf(createRun(board.level), new Map()), buildingId: id });
+    expect(storage.setItem).not.toHaveBeenCalled();
+    expect(loadRunLog(id)?.buildingId).toBe(id);
+  });
+
+  it("still writes the log to storage on a fixture floor", () => {
+    const storage = fakeStorage();
+    vi.stubGlobal("localStorage", storage);
+    const id = "fixture-building-1";
+    const manifest = LevelManifest.parse(structuredClone(cached));
+    const { placed: board, live } = boardOn(id, manifest, structuredClone(FIXTURE_FLOORS.F1));
+    expect(live).toBe(false);
+    saveRunLog({ ...runLogOf(createRun(board.level), new Map()), buildingId: id });
+    expect(storage.setItem).toHaveBeenCalledTimes(1);
   });
 });
 

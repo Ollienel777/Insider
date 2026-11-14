@@ -1,12 +1,14 @@
 // Everything the live Matterport adapter assumes about the Showcase SDK, and
 // the one place scan data becomes a `FloorGraph`.
 //
-// Not verified against Matterport: there is no SDK key yet (open question Q2,
-// SPEC §11). The embed URL, the SDK script, the connect call, `Sweep.moveTo`
-// (the Inside view, live.ts) and the shapes of `Sweep.data` and `Room.data` below are taken from the Showcase SDK's
-// public documentation as remembered, not from a recorded response. When a
-// key arrives (#26), this is the file to check; live.ts only connects and
-// reads.
+// Checked once against a real model on localhost (SDK 26.11, no data kept):
+// the embed URL, the SDK script and the connect call work; a sweep's `id`
+// and `sid` are the same string, and its `neighbors` name those ids; a sweep
+// carries `roomInfo`, but its `id` can be empty, so a sweep without one is
+// placed in the room whose bounds hold it; room labels can all be empty.
+// Shapes not seen there (a labelled room, a sweep with a room id, several
+// floors) follow the Showcase SDK's public reference. live.ts only connects
+// and reads.
 //
 // Terms (SPEC §4.5, DECISION risk 2): until the sponsor says yes in writing,
 // what this file returns is held in browser memory only. Nothing here or in
@@ -68,6 +70,7 @@ const RawRoom = z.object({
   id: z.string().min(1),
   label: z.string().nullish(),
   bounds: z.object({ min: Vector3, max: Vector3 }),
+  floorInfo: z.object({ id: z.string() }).nullish(),
 });
 type RawRoom = z.infer<typeof RawRoom>;
 
@@ -116,7 +119,14 @@ function roomTags(label: string): NodeTag[] {
  * `stair` or `lift` tag; tagging every sweep would turn one stairwell into
  * several.
  */
-function landings(nodes: { id: string; roomId: string }[], edges: { a: string; b: string }[]): Map<string, string> {
+function landings(nodes: { id: string; roomId: string }[], outward: Map<string, number>): Map<string, string> {
+  const byRoom = new Map<string, string[]>();
+  for (const n of nodes) byRoom.set(n.roomId, [...(byRoom.get(n.roomId) ?? []), n.id]);
+  return new Map([...byRoom].map(([roomId, ids]) => [roomId, doorSide(ids, outward)]));
+}
+
+/** For each node, how many of its edges lead out of its room. */
+function outwardEdges(nodes: { id: string; roomId: string }[], edges: { a: string; b: string }[]): Map<string, number> {
   const room = new Map(nodes.map((n) => [n.id, n.roomId]));
   const outward = new Map<string, number>();
   for (const { a, b } of edges) {
@@ -124,12 +134,37 @@ function landings(nodes: { id: string; roomId: string }[], edges: { a: string; b
     outward.set(a, (outward.get(a) ?? 0) + 1);
     outward.set(b, (outward.get(b) ?? 0) + 1);
   }
-  const best = new Map<string, string>();
-  for (const n of [...nodes].sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0))) {
-    const current = best.get(n.roomId);
-    if (current === undefined || (outward.get(n.id) ?? 0) > (outward.get(current) ?? 0)) best.set(n.roomId, n.id);
+  return outward;
+}
+
+/** The id with the most edges out of its room; a tie goes to the lower id. */
+function doorSide(ids: string[], outward: Map<string, number>): string {
+  return [...ids].sort().reduce((best, id) => ((outward.get(id) ?? 0) > (outward.get(best) ?? 0) ? id : best));
+}
+
+/**
+ * Stairs the scan shows by itself: sweeps whose neighbours include a sweep on
+ * another floor. Such sweeps that touch, in one room, are one landing, so a
+ * flight scanned from three spots is still one stair; each landing's
+ * door-side sweep is the one tagged.
+ */
+function crossFloorLandings(
+  nodes: { id: string; roomId: string }[],
+  edges: { a: string; b: string }[],
+  crossing: Set<string>,
+  outward: Map<string, number>,
+): Set<string> {
+  const room = new Map(nodes.map((n) => [n.id, n.roomId]));
+  const linked = edges.filter(({ a, b }) => crossing.has(a) && crossing.has(b) && room.get(a) === room.get(b));
+  const tagged = new Set<string>();
+  let rest = nodes.map((n) => n.id).filter((id) => crossing.has(id));
+  while (rest.length > 0) {
+    const left = new Set(rest);
+    const group = largestComponent(rest, linked.filter(({ a, b }) => left.has(a) && left.has(b)));
+    tagged.add(doorSide([...group], outward));
+    rest = rest.filter((id) => !group.has(id));
   }
-  return best;
+  return tagged;
 }
 
 /** The floor with the most enabled sweeps; a tie goes to the lower floor. */
@@ -188,15 +223,21 @@ function largestComponent(nodes: string[], edges: { a: string; b: string }[]): S
  *   part of the walk graph, since the engine needs a connected board.
  * - Doors are never lockable here. Which doors lock is game fiction from the
  *   rules table (SPEC §4.3), not something a scan says.
- * - `stair` and `lift` tags come from room labels, one landing per room.
- *   `entry` tags are left to the placer, which chooses entries from the
- *   Vexcel tags (SPEC §4.3).
- * - A room the scan left unlabelled gets a game-fiction name by its size.
+ * - A sweep the scan puts in no room (an empty `roomInfo.id`) goes to the
+ *   smallest room on the floor whose bounds hold it, else to the unassigned
+ *   room.
+ * - `stair` and `lift` tags come from room labels, one landing per room, and
+ *   `stair` also from sweeps with a neighbour on another floor, one per
+ *   landing. `entry` tags are left to the placer, which chooses entries from
+ *   the Vexcel tags (SPEC §4.3).
+ * - A room the scan left unlabelled gets a game-fiction name by its size, and
+ *   repeated names are numbered.
  */
 export function toFloorGraph(sweepCollection: Record<string, unknown>, roomCollection: Record<string, unknown>): FloorGraph {
   const all = Object.values(sweepCollection).map((s) => RawSweep.parse(s));
-  const floor = busiestFloor(all.filter((s) => s.enabled !== false));
-  const sweeps = all.filter((s) => s.enabled !== false && s.floorInfo?.id === floor);
+  const enabled = all.filter((s) => s.enabled !== false);
+  const floor = busiestFloor(enabled);
+  const sweeps = enabled.filter((s) => s.floorInfo?.id === floor);
   if (sweeps.length === 0) throw new Error("Matterport: the model has no enabled sweeps on any floor");
 
   const rawRooms = new Map<string, RawRoom>();
@@ -204,10 +245,20 @@ export function toFloorGraph(sweepCollection: Record<string, unknown>, roomColle
     const room = RawRoom.parse(r);
     rawRooms.set(room.id, room);
   }
+  const floorRooms = [...rawRooms.values()].filter((r) => !r.floorInfo || r.floorInfo.id === floor);
+  const area = (r: RawRoom) => (r.bounds.max.x - r.bounds.min.x) * (r.bounds.max.z - r.bounds.min.z);
   const roomOf = (s: RawSweep) => {
     const id = s.roomInfo?.id;
-    return id && rawRooms.has(id) ? id : UNASSIGNED_ROOM;
+    if (id && rawRooms.has(id)) return id;
+    const { x, z } = s.position;
+    const holding = floorRooms.filter(({ bounds: { min, max } }) => x >= min.x && x <= max.x && z >= min.z && z <= max.z);
+    holding.sort((p, q) => area(p) - area(q) || (p.id < q.id ? -1 : 1));
+    return holding[0]?.id ?? UNASSIGNED_ROOM;
   };
+  const floorOf = new Map(enabled.map((s) => [s.sid, s.floorInfo?.id]));
+  const crossing = new Set(
+    sweeps.filter((s) => s.neighbors.some((n) => floorOf.has(n) && floorOf.get(n) !== floor)).map((s) => s.sid),
+  );
   /** The scan's own label, or "" when it has none (`withFictionLabels` names those). */
   const scanLabel = (roomId: string) =>
     roomId === UNASSIGNED_ROOM ? UNASSIGNED_LABEL : (rawRooms.get(roomId)?.label?.trim() ?? "");
@@ -226,11 +277,18 @@ export function toFloorGraph(sweepCollection: Record<string, unknown>, roomColle
   const kept = sweeps
     .filter((s) => keep.has(s.sid))
     .map((s) => ({ id: s.sid, x: s.position.x, y: s.position.z, roomId: roomOf(s) }));
-  const landing = landings(kept, [...pairs.values()].filter(({ a }) => keep.has(a)));
-  const nodes: FloorNode[] = kept.map((n) => ({
-    ...n,
-    tags: landing.get(n.roomId) === n.id ? roomTags(scanLabel(n.roomId)) : [],
-  }));
+  const keptEdges = [...pairs.values()].filter(({ a }) => keep.has(a));
+  const outward = outwardEdges(kept, keptEdges);
+  const landing = landings(kept, outward);
+  // A room whose label already makes it a stair or lift has its one landing;
+  // its sweeps that reach another floor are that landing, not more stairs.
+  const unlabelledCrossing = new Set(kept.filter((n) => crossing.has(n.id) && roomTags(scanLabel(n.roomId)).length === 0).map((n) => n.id));
+  const stairs = crossFloorLandings(kept, keptEdges, unlabelledCrossing, outward);
+  const nodes: FloorNode[] = kept.map((n) => {
+    const tags = landing.get(n.roomId) === n.id ? roomTags(scanLabel(n.roomId)) : [];
+    if (stairs.has(n.id)) tags.push("stair");
+    return { ...n, tags };
+  });
   const nodeRoom = new Map(nodes.map((n) => [n.id, n.roomId]));
 
   const edges: FloorEdge[] = [...pairs.values()]
@@ -272,16 +330,16 @@ export function toFloorGraph(sweepCollection: Record<string, unknown>, roomColle
 }
 
 /**
- * Rooms with the scan's blank labels filled in by size (`fictionLabel`). Two
- * rooms given the same name are numbered, north-west first (board y, then x),
- * so the crew can tell them apart: "Office 1", "Office 2". A label the scan
- * gave is kept as it is.
+ * Rooms with the scan's blank labels filled in by size (`fictionLabel`).
+ * Rooms that end up with the same name, whether the scan gave it or this
+ * did, are numbered together, north-west first (board y, then x), so every
+ * name is unique and the crew can tell them apart: "Office 1", "Office 2".
+ * A label the scan gave is otherwise kept as it is.
  */
 export function withFictionLabels(rooms: Room[]): Room[] {
   const named = new Map<string, Room[]>();
   for (const room of rooms) {
-    if (room.label) continue;
-    const label = fictionLabel(room.rect.w * room.rect.h);
+    const label = room.label || fictionLabel(room.rect.w * room.rect.h);
     named.set(label, [...(named.get(label) ?? []), room]);
   }
   const labels = new Map<string, string>();
@@ -293,5 +351,5 @@ export function withFictionLabels(rooms: Room[]): Room[] {
     const ordered = [...group].sort((p, q) => p.rect.y - q.rect.y || p.rect.x - q.rect.x || (p.id < q.id ? -1 : 1));
     ordered.forEach((room, i) => labels.set(room.id, `${name} ${i + 1}`));
   }
-  return rooms.map((room) => (room.label ? room : { ...room, label: labels.get(room.id)! }));
+  return rooms.map((room) => ({ ...room, label: labels.get(room.id)! }));
 }

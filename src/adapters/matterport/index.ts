@@ -97,7 +97,9 @@ export function matterportEnv(): Env {
   return {
     NEXT_PUBLIC_MATTERPORT_MODE: process.env.NEXT_PUBLIC_MATTERPORT_MODE,
     NEXT_PUBLIC_MATTERPORT_SDK_KEY: process.env.NEXT_PUBLIC_MATTERPORT_SDK_KEY,
-    NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE: process.env.NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE,
+    // Read only outside production, so a production bundle never holds the override's value.
+    NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE:
+      process.env.NODE_ENV !== "production" ? process.env.NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE : undefined,
     NODE_ENV: process.env.NODE_ENV,
   };
 }

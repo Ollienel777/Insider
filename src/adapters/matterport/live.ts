@@ -2,8 +2,12 @@
 // reads `Sweep.data` and `Room.data` once, and hands them to mapping.ts. What
 // it assumes about the SDK lives in mapping.ts.
 //
-// Not exercised against Matterport: there is no SDK key yet. Its unit tests
-// run it on a stubbed SDK connection.
+// Checked against a real model on localhost (SDK 26.11): a Showcase player
+// smaller than a few pixels never reaches its playing phase, so it never sends
+// a sweep, and one placed off screen is throttled by the browser and often
+// stalls the same way. The hidden player below is a full-size frame inside
+// the viewport, transparent and behind the page. Its unit tests run it on a
+// stubbed SDK connection.
 //
 // Terms (SPEC §4.5): every call connects afresh and builds the graph again;
 // nothing is cached, stored or sent anywhere. The graph exists only in the
@@ -17,19 +21,22 @@ export interface ShowcaseSession {
   disconnect(): void;
 }
 
-/** Opens a Showcase SDK session on one model. */
-export type ShowcaseConnect = (modelId: string, sdkKey: string) => Promise<ShowcaseSession>;
+/**
+ * Opens a Showcase SDK session on one model. `signal` aborts when the caller
+ * stops waiting: the connection then takes its player out of the page.
+ */
+export type ShowcaseConnect = (modelId: string, sdkKey: string, signal?: AbortSignal) => Promise<ShowcaseSession>;
 
 export interface LiveMatterportConfig {
   sdkKey?: string;
   /** Injected in tests; defaults to a hidden Showcase iframe. */
   connect?: ShowcaseConnect;
-  /** How long each collection may take to arrive once connected. */
+  /** How long the sweeps may take to arrive once connected. */
   timeoutMs?: number;
   /**
    * How long the connection itself may take (the SDK script, the player and
    * the handshake). Without it a player that never loads holds the board on
-   * its skeleton for good; with it the fixture floor takes over (issue 28).
+   * its skeleton for good; with it the fixture floor takes over.
    */
   connectTimeoutMs?: number;
 }
@@ -43,21 +50,29 @@ export class MatterportTimeoutError extends Error {
 }
 
 /**
- * `connect`, bounded by `ms`. A session that opens after the deadline is
- * disconnected at once, so a late player does not linger in the page.
+ * `start`, bounded by `ms`. At the deadline the signal aborts, so the starter
+ * can tidy up after itself, and the promise rejects with a `TimeoutError`.
+ * A result that arrives after the deadline is handed to `release`.
  */
-export function connectWithin(connect: ShowcaseConnect, modelId: string, sdkKey: string, ms: number): Promise<ShowcaseSession> {
+export function within<T>(
+  start: (signal: AbortSignal) => Promise<T>,
+  what: string,
+  ms: number,
+  release: (late: T) => void,
+): Promise<T> {
+  const abort = new AbortController();
   return new Promise((resolve, reject) => {
     let late = false;
     const timer = setTimeout(() => {
       late = true;
-      reject(new MatterportTimeoutError("the Showcase connection", ms));
+      abort.abort();
+      reject(new MatterportTimeoutError(what, ms));
     }, ms);
-    connect(modelId, sdkKey).then(
-      (session) => {
-        if (late) return session.disconnect();
+    start(abort.signal).then(
+      (value) => {
+        if (late) return release(value);
         clearTimeout(timer);
-        resolve(session);
+        resolve(value);
       },
       (error: unknown) => {
         if (late) return;
@@ -68,6 +83,14 @@ export function connectWithin(connect: ShowcaseConnect, modelId: string, sdkKey:
   });
 }
 
+/**
+ * `connect`, bounded by `ms`. A session that opens after the deadline is
+ * disconnected at once, so a late player does not linger in the page.
+ */
+export function connectWithin(connect: ShowcaseConnect, modelId: string, sdkKey: string, ms: number): Promise<ShowcaseSession> {
+  return within((signal) => connect(modelId, sdkKey, signal), "the Showcase connection", ms, (session) => session.disconnect());
+}
+
 export class MatterportNotConfiguredError extends Error {
   constructor() {
     super("Matterport live adapter not configured: NEXT_PUBLIC_MATTERPORT_SDK_KEY missing");
@@ -75,27 +98,58 @@ export class MatterportNotConfiguredError extends Error {
   }
 }
 
-/** The collection's first full snapshot, then unsubscribe. */
-function snapshot<T>(collection: ObservableCollection<T>, what: string, timeoutMs: number): Promise<Record<string, T>> {
+/** How long the rooms may trail the sweeps: a model with no rooms sends none. */
+const ROOM_GRACE_MS = 2_000;
+
+/**
+ * The first non-empty snapshot of the sweeps, with the rooms as they stand
+ * then (or up to `ROOM_GRACE_MS` later). The player can call back with an
+ * empty collection before it is playing, so an empty sweep list is not an
+ * answer; an empty room list can be.
+ */
+function snapshots(
+  sweepData: ObservableCollection<unknown>,
+  roomData: ObservableCollection<unknown>,
+  timeoutMs: number,
+): Promise<[Record<string, unknown>, Record<string, unknown>]> {
   return new Promise((resolve, reject) => {
+    let sweeps: Record<string, unknown> | null = null;
+    let rooms: Record<string, unknown> = {};
     let done = false;
-    // The timer and the callback both run after `subscribe` has returned (the
-    // callback defers its cancel), so `subscription` is always set by then.
+    let grace: ReturnType<typeof setTimeout> | undefined;
+    const subscriptions: { cancel(): void }[] = [];
+    const finish = () => {
+      if (done || !sweeps) return;
+      done = true;
+      clearTimeout(timer);
+      clearTimeout(grace);
+      // The SDK may call back before `subscribe` returns.
+      queueMicrotask(() => subscriptions.forEach((s) => s.cancel()));
+      resolve([sweeps, rooms]);
+    };
     const timer = setTimeout(() => {
       done = true;
-      subscription.cancel();
-      reject(new MatterportTimeoutError(what, timeoutMs));
+      clearTimeout(grace);
+      subscriptions.forEach((s) => s.cancel());
+      reject(new MatterportTimeoutError("Sweep.data", timeoutMs));
     }, timeoutMs);
-    const subscription = collection.subscribe({
-      onCollectionUpdated(items) {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        // The SDK may call back before `subscribe` returns.
-        queueMicrotask(() => subscription.cancel());
-        resolve({ ...items });
-      },
-    });
+    subscriptions.push(
+      roomData.subscribe({
+        onCollectionUpdated(items) {
+          if (done) return;
+          rooms = { ...items };
+          if (sweeps && Object.keys(rooms).length > 0) finish();
+        },
+      }),
+      sweepData.subscribe({
+        onCollectionUpdated(items) {
+          if (done || Object.keys(items).length === 0) return;
+          sweeps = { ...items };
+          if (Object.keys(rooms).length > 0) finish();
+          else grace ??= setTimeout(finish, ROOM_GRACE_MS);
+        },
+      }),
+    );
   });
 }
 
@@ -106,19 +160,27 @@ export function createLiveMatterport(config: LiveMatterportConfig): MatterportAd
   const timeoutMs = config.timeoutMs ?? 15_000;
   const connectTimeoutMs = config.connectTimeoutMs ?? 20_000;
 
+  async function load(modelId: string) {
+    const session = await connectWithin(connect, modelId, sdkKey!, connectTimeoutMs);
+    try {
+      const [sweeps, rooms] = await snapshots(session.sdk.Sweep.data, session.sdk.Room.data, timeoutMs);
+      return toFloorGraph(sweeps, rooms);
+    } finally {
+      session.disconnect();
+    }
+  }
+
+  // One hidden player at a time: two players of one model opened together
+  // (a screen that mounts twice, a quick Retry) stalled each other on SDK
+  // 26.11, so a load waits for the one before it to settle.
+  let queue: Promise<unknown> = Promise.resolve();
   return {
-    async loadFloor(building) {
-      if (!building.matterportModelId) return null;
-      const session = await connectWithin(connect, building.matterportModelId, sdkKey, connectTimeoutMs);
-      try {
-        const [sweeps, rooms] = await Promise.all([
-          snapshot(session.sdk.Sweep.data, "Sweep.data", timeoutMs),
-          snapshot(session.sdk.Room.data, "Room.data", timeoutMs),
-        ]);
-        return toFloorGraph(sweeps, rooms);
-      } finally {
-        session.disconnect();
-      }
+    loadFloor(building) {
+      const modelId = building.matterportModelId;
+      if (!modelId) return Promise.resolve(null);
+      const next = queue.then(() => load(modelId));
+      queue = next.catch(() => {});
+      return next;
     },
   };
 }
@@ -149,26 +211,44 @@ function loadSdkScript(): Promise<void> {
 /**
  * Puts a Showcase player for `modelId` into `parent` and connects the SDK to
  * it once both the player and the SDK script have loaded. The listener is set
- * before the iframe joins the page, so a fast load is not missed.
+ * before the iframe joins the page, so a fast load is not missed. When
+ * `signal` aborts, the player leaves the page and the call rejects.
  */
 async function mountPlayer(
   parent: HTMLElement,
   iframe: HTMLIFrameElement,
   modelId: string,
   sdkKey: string,
+  signal?: AbortSignal,
 ): Promise<ShowcaseSdk & InsideSdk> {
+  const aborted = new Promise<never>((_, reject) => {
+    signal?.addEventListener(
+      "abort",
+      () => {
+        iframe.remove();
+        reject(new Error("Matterport: the player was given up on"));
+      },
+      { once: true },
+    );
+  });
+  aborted.catch(() => {});
   const loaded = new Promise<void>((resolve) => iframe.addEventListener("load", () => resolve(), { once: true }));
   iframe.src = SHOWCASE.embedUrl(modelId, sdkKey);
   iframe.allow = "xr-spatial-tracking";
   parent.appendChild(iframe);
-  await Promise.all([loadSdkScript(), loaded]);
+  await Promise.race([Promise.all([loadSdkScript(), loaded]), aborted]);
   const mp = (window as unknown as { MP_SDK?: MpSdkGlobal }).MP_SDK;
   if (!mp) throw new Error("Matterport: MP_SDK missing after the SDK script loaded");
-  return mp.connect(iframe, sdkKey, SHOWCASE.sdkVersion);
+  return Promise.race([mp.connect(iframe, sdkKey, SHOWCASE.sdkVersion), aborted]);
 }
 
-/** Loads the model in a hidden iframe and connects the SDK to it. */
-export const connectShowcase: ShowcaseConnect = async (modelId, sdkKey) => {
+/**
+ * Loads the model in a hidden iframe and connects the SDK to it. The frame is
+ * full size and in the viewport, but transparent, behind the page and
+ * unclickable: a tiny or off-screen player stalls before it plays (see the
+ * header), and only a playing player sends its sweeps.
+ */
+export const connectShowcase: ShowcaseConnect = async (modelId, sdkKey, signal) => {
   if (typeof document === "undefined") {
     throw new Error("Matterport: the Showcase SDK runs only in the browser");
   }
@@ -176,9 +256,19 @@ export const connectShowcase: ShowcaseConnect = async (modelId, sdkKey) => {
   iframe.title = "Matterport model (hidden)";
   iframe.setAttribute("aria-hidden", "true");
   iframe.tabIndex = -1;
-  Object.assign(iframe.style, { position: "fixed", width: "1px", height: "1px", left: "-10px", top: "-10px", border: "0" });
+  Object.assign(iframe.style, {
+    position: "fixed",
+    width: "640px",
+    height: "360px",
+    left: "0",
+    top: "0",
+    border: "0",
+    opacity: "0",
+    zIndex: "-1",
+    pointerEvents: "none",
+  });
   try {
-    const sdk = await mountPlayer(document.body, iframe, modelId, sdkKey);
+    const sdk = await mountPlayer(document.body, iframe, modelId, sdkKey, signal);
     return {
       sdk,
       disconnect() {
@@ -202,20 +292,38 @@ export interface InsideSdk {
 
 /** A connected Inside view: move it to a sweep, and let it go. */
 export interface InsideView {
-  /** Moves the view to `sweepId`. A move the player refuses is ignored: the board, not the view, is the game. */
+  /**
+   * Sends the view to `sweepId`. Moves never overlap: one made while another
+   * is in flight is held, and only the latest held target is flown to once
+   * the flight settles. A move the player refuses is ignored: the board, not
+   * the view, is the game.
+   */
   moveTo(sweepId: string): Promise<void>;
   disconnect(): void;
 }
 
 /** Opens the Inside view's player in `parent`; injected in tests. */
-export type InsideConnect = (parent: HTMLElement, modelId: string, sdkKey: string) => Promise<InsideSdk>;
+export type InsideConnect = (parent: HTMLElement, modelId: string, sdkKey: string, signal?: AbortSignal) => Promise<InsideSdk>;
 
-const connectVisiblePlayer: InsideConnect = async (parent, modelId, sdkKey) => {
+/** `Sweep.Transition.FLY` in the SDK (checked on SDK 26.11, where `Camera.TransitionType.FLY` has the same value). */
+export const FLY = "transition.fly";
+
+/** What the player says when a move is refused because another transition is still running (SDK 26.11). */
+const TRANSITION_ACTIVE = /transition.*(active|in progress)/i;
+const BUSY_RETRIES = 5;
+const BUSY_WAIT_MS = 400;
+
+/** How long the Inside view's player may take to connect before the panel says it failed. */
+export const INSIDE_CONNECT_MS = 20_000;
+
+const connectVisiblePlayer: InsideConnect = async (parent, modelId, sdkKey, signal) => {
   const iframe = document.createElement("iframe");
   iframe.title = "Inside view: the scan at the player's spot";
+  // Out of the tab order, so the board keeps the number keys.
+  iframe.tabIndex = -1;
   Object.assign(iframe.style, { width: "100%", height: "100%", border: "0", display: "block" });
   try {
-    const sdk = await mountPlayer(parent, iframe, modelId, sdkKey);
+    const sdk = await mountPlayer(parent, iframe, modelId, sdkKey, signal);
     return {
       Sweep: sdk.Sweep,
       disconnect() {
@@ -231,25 +339,68 @@ const connectVisiblePlayer: InsideConnect = async (parent, modelId, sdkKey) => {
 
 /**
  * The Inside view: a visible Showcase player in `parent`, connected to the
- * SDK. It only moves the camera; it reads nothing, and nothing leaves the
- * page (SPEC §4.5).
+ * SDK within `connectMs` (a player that connects later is let go). It only
+ * moves the camera; it reads nothing, and nothing leaves the page (SPEC §4.5).
+ * Sweep ids are the board's node ids: in the SDK a sweep's `id` and `sid` are
+ * the same string.
  */
 export async function connectInsideView(
   parent: HTMLElement,
   modelId: string,
   sdkKey: string,
   connect: InsideConnect = connectVisiblePlayer,
+  connectMs: number = INSIDE_CONNECT_MS,
 ): Promise<InsideView> {
-  const sdk = await connect(parent, modelId, sdkKey);
-  return {
-    async moveTo(sweepId) {
-      try {
-        await sdk.Sweep.moveTo(sweepId, { transition: "transition.fly", transitionTime: 600 });
-      } catch (error) {
-        console.warn(`Matterport: the Inside view did not move (${(error as Error)?.message ?? String(error)})`);
+  const sdk = await within(
+    (signal) => connect(parent, modelId, sdkKey, signal),
+    "the Inside view's player",
+    connectMs,
+    (late) => late.disconnect?.(),
+  );
+  let flying: Promise<void> | null = null;
+  let target: string | null = null;
+  let at: string | null = null;
+  let gone = false;
+  let busy = 0;
+
+  async function fly(): Promise<void> {
+    // Yield first, so `flying` is set before this can finish and clear it.
+    await Promise.resolve();
+    try {
+      while (!gone && target !== null && target !== at) {
+        const sweepId = target;
+        try {
+          await sdk.Sweep.moveTo(sweepId, { transition: FLY, transitionTime: 600 });
+          at = sweepId;
+          busy = 0;
+        } catch (error) {
+          // The player refuses a move while it is still flying (its own opening
+          // flight included): wait for that to end and try again, a few times.
+          if (TRANSITION_ACTIVE.test(String((error as Error)?.message ?? error)) && busy < BUSY_RETRIES) {
+            busy += 1;
+            await new Promise((resolve) => setTimeout(resolve, BUSY_WAIT_MS));
+            continue;
+          }
+          busy = 0;
+          console.warn(`Matterport: the Inside view did not move (${(error as Error)?.message ?? String(error)})`);
+          // Not there; a newer target is still tried, the refused one is not retried.
+          if (target === sweepId) return;
+        }
       }
+    } finally {
+      // No await between the loop's last check and here, so a move made now starts a new flight.
+      flying = null;
+    }
+  }
+
+  return {
+    moveTo(sweepId) {
+      target = sweepId;
+      flying ??= fly();
+      return flying;
     },
     disconnect() {
+      gone = true;
       sdk.disconnect?.();
     },
   };

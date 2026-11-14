@@ -8,7 +8,7 @@ import { BuildingScreen } from "@/components/shell/building-screen";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Building, LateChief, LevelManifest } from "@/domain";
+import type { Building, FloorGraph, LateChief, LevelManifest } from "@/domain";
 import { act, applyChiefOrders, createRun, type Action, type RunState } from "@/engine";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
@@ -40,6 +40,17 @@ export const RUN_SEED = 7;
 
 /** Where the run's log is kept for the Debrief (SPEC §4.1: run logs live in localStorage). */
 export { runLogKey } from "./run-log-store";
+
+/**
+ * The level placed on `floor`, and whether the floor is a live scan. A board
+ * from the scan names its sweeps, so before any run on it writes its log, the
+ * log is kept out of storage (SPEC §4.5). Call this before `startRun`.
+ */
+export function boardOn(buildingId: string, manifest: LevelManifest, floor: FloorGraph): { placed: PlacedLevel; live: boolean } {
+  const live = floor.source === "matterport";
+  keepRunLogInMemory(buildingId, live);
+  return { placed: placeLevel(manifest, floor, RUN_SEED), live };
+}
 
 type Load =
   | { status: "loading" }
@@ -111,10 +122,8 @@ export function RunScreen({
         (floor) => {
           if (!live) return;
           if (!floor) return setLoad({ status: "no-floor" });
-          const placed = placeLevel(manifest, floor, RUN_SEED);
-          // A board from the scan names its sweeps: its log stays out of storage (SPEC §4.5).
-          keepRunLogInMemory(building.id, floor.source === "matterport");
-          setLoad({ status: "ready", placed, live: floor.source === "matterport" });
+          const { placed, live: scanned } = boardOn(building.id, manifest, floor);
+          setLoad({ status: "ready", placed, live: scanned });
           startRun(placed.level);
           setStatus(`You're in at the ${placed.entries[0].label.toLowerCase()}. Pick a number to move.`);
         },

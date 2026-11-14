@@ -279,6 +279,25 @@ function suitesIn(label: string): (suite: string) => boolean {
   };
 }
 
+/**
+ * The nodes an entry may take: those tagged `entry`. A floor built from a
+ * live scan has none (a scan does not say where the ways in are), so there
+ * the floor's stairs and lifts are offered instead, as SPEC §4.3 always
+ * offers the dock (by the freight lift) and the roof (by a stair). A scan
+ * with neither offers every node, the edge of the plate first (farthest from
+ * its centre, a tie to the lower id).
+ */
+function entryCandidates(floor: FloorGraph): FloorGraph["nodes"] {
+  const tagged = floor.nodes.filter((n) => n.tags.includes("entry"));
+  if (tagged.length > 0) return tagged;
+  const ways = floor.nodes.filter((n) => n.tags.includes("stair") || n.tags.includes("lift"));
+  if (ways.length > 0) return ways;
+  const cx = floor.nodes.reduce((s, n) => s + n.x, 0) / floor.nodes.length;
+  const cy = floor.nodes.reduce((s, n) => s + n.y, 0) / floor.nodes.length;
+  const far = (n: { x: number; y: number }) => (n.x - cx) ** 2 + (n.y - cy) ** 2;
+  return [...floor.nodes].sort((p, q) => far(q) - far(p) || (p.id < q.id ? -1 : 1));
+}
+
 // ---- the placer -------------------------------------------------------------
 
 /**
@@ -312,7 +331,7 @@ export function placeLevel(
   const profileProvenance = (field: string) => provenanceOf(`profile:${field}`);
 
   // Entries: each takes an entry node, the anchored one or the first free one with its preferred tag.
-  const entryNodes = floor.nodes.filter((n) => n.tags.includes("entry"));
+  const entryNodes = entryCandidates(floor);
   const taken = new Set<string>();
   const entries: PlacedEntry[] = [];
   for (const entry of manifest.entries) {
@@ -355,6 +374,16 @@ export function placeLevel(
     for (const word of words) {
       const room = floor.rooms.find((r) => r.label.toLowerCase().includes(word) && !claimed.has(r.id));
       if (room) return [room.id];
+    }
+    if (zone.role === "objective") {
+      // A scanned floor names no records room: the objective goes to the free
+      // room farthest from the start (its nearest node, in moves), a tie to the lower id.
+      const reach = (roomId: string) => Math.min(...(roomNodes.get(roomId) ?? []).map((id) => fromStart.get(id) ?? Infinity));
+      const far = floor.rooms
+        .filter((r) => !claimed.has(r.id) && (roomNodes.get(r.id)?.length ?? 0) > 0 && !roomNodes.get(r.id)!.includes(start))
+        .filter((r) => Number.isFinite(reach(r.id)))
+        .sort((p, q) => reach(q.id) - reach(p.id) || (p.id < q.id ? -1 : 1));
+      if (far[0]) return [far[0].id];
     }
     return [];
   };

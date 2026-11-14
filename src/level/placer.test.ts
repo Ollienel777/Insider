@@ -354,15 +354,61 @@ describe("placeLevel refuses what it cannot run", () => {
     expect(() => placeLevel(manifest(), floor(), 1.5)).toThrow(PlacementError);
   });
 
-  it("throws on a floor with no entry node", () => {
+  it("throws on a floor with no room left for the objective", () => {
+    const f: FloorGraph = {
+      nodes: [
+        { id: "a", x: 0, y: 0, roomId: "only", tags: ["entry"] },
+        { id: "b", x: 1, y: 0, roomId: "only", tags: [] },
+      ],
+      edges: [{ a: "a", b: "b" }],
+      rooms: [{ id: "only", label: "Hall", rect: { x: 0, y: 0, w: 2, h: 1 } }],
+      sightlines: { a: ["b"], b: ["a"] },
+      source: "matterport",
+    };
+    expect(() => placeLevel(manifest(), f, SEED, {})).toThrow(/objective/);
+  });
+});
+
+describe("placeLevel on a floor from a live scan (no entry tags, no named records room)", () => {
+  it("offers the floor's lifts and stairs as entries when no node is tagged entry: the dock by a lift, the roof by a stair", () => {
     const f = floor();
     for (const n of f.nodes) n.tags = n.tags.filter((t) => t !== "entry");
-    expect(() => placeLevel(manifest(), f, SEED)).toThrow(/no entry node/);
+    const p = placeLevel(manifest(), f, SEED, {});
+    const kinds = new Map(p.entries.map((e) => [e.kind, e.nodeId]));
+    expect(f.nodes.find((n) => n.id === kinds.get("dock"))?.tags).toContain("lift");
+    expect(f.nodes.find((n) => n.id === kinds.get("roof"))?.tags).toContain("stair");
+    // Only the stairs and lifts count as ways in, so the guards still find rounds clear of them.
+    expect(p.guards).toHaveLength(placeF1().guards.length);
+    expect(p.unplaced.filter((u) => u.elementRole.startsWith("guard:"))).toEqual([]);
   });
 
-  it("throws on a floor with no room for the objective", () => {
+  it("offers the edge of the plate when there are no stairs or lifts either, farthest from the centre first", () => {
+    const f = floor();
+    for (const n of f.nodes) n.tags = [];
+    const p = placeLevel(manifest(), f, SEED, {});
+    const cx = f.nodes.reduce((s, n) => s + n.x, 0) / f.nodes.length;
+    const cy = f.nodes.reduce((s, n) => s + n.y, 0) / f.nodes.length;
+    const far = (id: string) => {
+      const n = f.nodes.find((m) => m.id === id)!;
+      return (n.x - cx) ** 2 + (n.y - cy) ** 2;
+    };
+    const farthest = Math.max(...f.nodes.map((n) => far(n.id)));
+    expect(far(p.entries[0].nodeId)).toBe(farthest);
+    expect(new Set(p.entries.map((e) => e.nodeId)).size).toBe(p.entries.length);
+  });
+
+  it("puts the objective in the free room farthest from the start when no room's name fits it", () => {
     const f = floor();
     for (const r of f.rooms) if (r.id === "records-room") r.label = "Storage";
-    expect(() => placeLevel(manifest(), f, SEED)).toThrow(/objective/);
+    const p = placeLevel(manifest(), f, SEED, {});
+    const objectiveRoom = f.nodes.find((n) => n.id === p.level.objective)!.roomId;
+    expect(objectiveRoom).not.toBe(f.nodes.find((n) => n.id === p.entries[0].nodeId)!.roomId);
+    expect(placeLevel(manifest(), f, SEED, {}).level.objective).toBe(p.level.objective);
+  });
+
+  it("leaves F1's own placement as it was", () => {
+    const p = placeF1();
+    expect(p.entries.map((e) => e.nodeId)).toEqual([F1_DEMO.dockEntry, F1_DEMO.roofEntry]);
+    expect(p.level.objective).toBe(F1_DEMO.objective);
   });
 });
