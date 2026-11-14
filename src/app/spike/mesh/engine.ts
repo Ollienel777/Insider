@@ -37,8 +37,13 @@ export interface WalkHud {
   sensitivity: number;
   panos: PanoUse[];
   panoCount: number;
+  /** Panoramas with a sharp cube on the GPU, and being given one. */
   panosReady: number;
   panosLoading: number;
+  /** False while the picture around the start is still arriving: the player can look but not walk. */
+  canMove: boolean;
+  /** How much of the building is in memory. */
+  building: WalkBuilding;
   faces: PanoResolution;
   locked: boolean;
   /** The browser refused to lock the mouse: the page says to drag instead. */
@@ -46,6 +51,24 @@ export interface WalkHud {
   fps: number;
   /** Seconds each loading step took, and the mesh file's size. */
   timings: { manifest: number | null; download: number | null; megabytes: number | null; build: number | null };
+}
+
+export interface WalkBuilding {
+  /** Panoramas whose every byte is held, of how many. */
+  held: number;
+  total: number;
+  /** Megabytes of face files held. */
+  megabytes: number;
+  /** Small cubes on the GPU (one per panorama, for good) and sharp ones. */
+  low: number;
+  sharp: number;
+  /** A rough count of GPU memory the cubes take, megabytes. */
+  gpuMegabytes: number;
+  /** The longest gap between two frames in the last five seconds, ms. */
+  worstFrame: number;
+  /** Seconds from opening the page to the first sharp cube, and to holding every byte. */
+  firstSharp: number | null;
+  allHeld: number | null;
 }
 
 export interface WalkOptions {
@@ -67,6 +90,10 @@ const LINK_MARGIN = 20_000;
 const MOUSE_JUMP = 600;
 /** A drag with the button held turns the view this much faster than a locked mouse, pixel for pixel. */
 const DRAG_GAIN = 1.8;
+/** The window the HUD's worst frame is taken over, ms. */
+const WORST_OVER = 5000;
+/** The longest the player is held at the start waiting for the picture around them, ms. */
+const MOVE_WAIT = 10_000;
 /** Radians per second of turning on the arrow keys. */
 const KEY_TURN = 2.2;
 
@@ -118,6 +145,12 @@ export class ScanWalk {
   private frames = 0;
   private fps = 0;
   private used: PanoUse[] = [];
+  private readonly opened = performance.now();
+  /** When the scene became walkable, for the wait's time limit. */
+  private readyAt = 0;
+  private canMove = false;
+  /** Recent frames: when each ended and how long after the one before, ms. */
+  private gaps: [number, number][] = [];
   private hud: WalkHud;
 
   constructor(
@@ -148,6 +181,18 @@ export class ScanWalk {
       panoCount: 0,
       panosReady: 0,
       panosLoading: 0,
+      canMove: false,
+      building: {
+        held: 0,
+        total: 0,
+        megabytes: 0,
+        low: 0,
+        sharp: 0,
+        gpuMegabytes: 0,
+        worstFrame: 0,
+        firstSharp: null,
+        allHeld: null,
+      },
       faces: options.faces,
       locked: false,
       lockRefused: false,
@@ -241,12 +286,16 @@ export class ScanWalk {
       this.hud.triangles = parsed.index.length / 3;
       this.scene.add(new Mesh(geometry, this.material));
 
-      const capacity = this.options.faces === "4k" ? 3 : this.options.faces === "2k" ? 6 : 8;
-      this.panos = new PanoStore(this.renderer, geometry, capacity);
+      // The sharp layer's size: six 2k cubes are about 800 MB of GPU memory.
+      const { faces } = this.options;
+      const capacity = faces === "4k" ? 3 : faces === "2k" ? 6 : 8;
+      const sharpSize = faces === "4k" ? 4096 : faces === "2k" ? 2048 : faces === "high" ? 1024 : 512;
+      this.panos = new PanoStore(this.renderer, geometry, capacity, sharpSize);
       this.panos.onStale = () => void this.refreshLinks();
       this.panos.setPanos(manifest.panos);
 
       this.spawn(parsed.bounds);
+      this.readyAt = performance.now();
       this.hud.phase = "ready";
       this.push();
     } catch (error) {
@@ -463,7 +512,7 @@ export class ScanWalk {
   }
 
   snapshot(): WalkHud {
-    return { ...this.hud, panos: [...this.hud.panos], timings: { ...this.hud.timings } };
+    return { ...this.hud, panos: [...this.hud.panos], timings: { ...this.hud.timings }, building: { ...this.hud.building } };
   }
 
   // ---- the frame ----
@@ -472,6 +521,8 @@ export class ScanWalk {
     if (this.disposed) return;
     this.frame = requestAnimationFrame(this.tick);
     const dt = this.last === 0 ? 0 : Math.min(0.1, (time - this.last) / 1000);
+    if (this.last !== 0) this.gaps.push([time, time - this.last]);
+    while (this.gaps.length > 0 && time - this.gaps[0][0] > WORST_OVER) this.gaps.shift();
     this.last = time;
     this.step(dt);
     this.renderer.render(this.scene, this.camera);
@@ -500,9 +551,21 @@ export class ScanWalk {
       this.pitch = look.pitch;
     }
 
+    // The player looks around from the first frame, and walks once there is a
+    // picture to walk into (or the wait has gone on too long).
+    if (!this.canMove) {
+      const eye: [number, number, number] = [state.x, state.y + TUNING.eyeHeight + this.eyeLift, state.z];
+      const waited = performance.now() - this.readyAt;
+      if (!this.panos || this.panos.settled(eye) || waited > MOVE_WAIT) {
+        this.canMove = true;
+        this.hud.canMove = true;
+        this.push();
+      }
+    }
+    const go = this.canMove ? 1 : 0;
     const input = {
-      forward: (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0),
-      right: (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0),
+      forward: go * ((keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0)),
+      right: go * ((keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0)),
       walk: keys.has("ShiftLeft") || keys.has("ShiftRight"),
     };
     const next: MoveState = stepMove(state, input, this.yaw, dt, world);
@@ -528,8 +591,8 @@ export class ScanWalk {
       const eye: [number, number, number] = [next.x, eyeY, next.z];
       this.used = this.panos.update(
         eye,
+        [next.vx, next.vz],
         dt,
-        performance.now(),
         [this.material, this.backdropMaterial],
         this.blank,
         this.linksUsable(),
@@ -546,8 +609,21 @@ export class ScanWalk {
     if (this.disposed) return;
     const counts = this.panos?.counts();
     this.hud.panos = this.used;
-    this.hud.panosReady = counts?.ready ?? 0;
-    this.hud.panosLoading = counts?.loading ?? 0;
+    this.hud.panosReady = counts?.sharp ?? 0;
+    this.hud.panosLoading = counts?.sharpLoading ?? 0;
+    if (counts) {
+      const b = this.hud.building;
+      const now = (performance.now() - this.opened) / 1000;
+      b.held = counts.held;
+      b.total = counts.total;
+      b.megabytes = counts.bytes / 1e6;
+      b.low = counts.low;
+      b.sharp = counts.sharp;
+      b.gpuMegabytes = counts.gpu / 1e6;
+      if (b.firstSharp === null && counts.sharp > 0) b.firstSharp = now;
+      if (b.allHeld === null && counts.total > 0 && counts.held + counts.failed >= counts.total) b.allHeld = now;
+    }
+    this.hud.building.worstFrame = this.gaps.reduce((worst, [, gap]) => Math.max(worst, gap), 0);
     this.hud.fps = this.fps;
     this.options.onHud(this.snapshot());
   }

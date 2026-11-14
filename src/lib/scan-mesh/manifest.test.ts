@@ -11,8 +11,9 @@ function pano(id: string, over: Record<string, unknown> = {}) {
     id,
     position: { x: 1, y: 2, z: 1.35 },
     rotation: { x: 0, y: 0, z: 0, w: 2 },
-    anchor: { position: { x: 1, y: 2, z: 0 } },
+    anchor: { id: `a-${id}`, position: { x: 1, y: 2, z: 0 }, neighbors: ["a-p2", 7, "a-p9"] },
     skyboxes: [
+      { status: "available", resolution: "low", children: faces("low"), validUntil: "2026-01-01T00:30:00Z" },
       { status: "available", resolution: "high", children: faces("high"), validUntil: "2026-01-01T00:10:00Z" },
       { status: "available", resolution: "2k", children: faces("2k"), validUntil: "2026-01-01T00:09:00Z" },
     ],
@@ -96,6 +97,37 @@ describe("buildManifest", () => {
     expect(first.faces).toEqual(faces("2k"));
   });
 
+  it("relays the lowest-resolution faces as a preview, and the floor spot with its neighbours", () => {
+    const first = buildManifest(model(), { mesh: "50k", faces: "2k" })!.panos[0];
+    expect(first.preview).toEqual(faces("low"));
+    expect(first.anchor).toBe("a-p1");
+    // Only strings survive from the neighbour list.
+    expect(first.neighbours).toEqual(["a-p2", "a-p9"]);
+  });
+
+  it("has no preview when the faces are already the lowest, or one of its links is off the allow-list", () => {
+    expect(buildManifest(model(), { mesh: "50k", faces: "low" })!.panos[0].preview).toBeNull();
+    const bad = faces("low");
+    bad[0] = "https://example.com/models/sky0.jpg";
+    const odd = pano("p1", {
+      skyboxes: [
+        { status: "available", resolution: "low", children: bad },
+        { status: "available", resolution: "2k", children: faces("2k") },
+      ],
+    });
+    const manifest = buildManifest(model({ panoLocations: [odd] }), { mesh: "50k", faces: "2k" });
+    expect(manifest!.panos[0].preview).toBeNull();
+    expect(manifest!.panos[0].faces).toEqual(faces("2k"));
+  });
+
+  it("has no floor spot or neighbours when the scan gives none", () => {
+    const loose = pano("p1", { anchor: null });
+    const first = buildManifest(model({ panoLocations: [loose] }), { mesh: "50k", faces: "2k" })!.panos[0];
+    expect(first.anchor).toBeNull();
+    expect(first.neighbours).toEqual([]);
+    expect(first.floor).toBeNull();
+  });
+
   it("reports the earliest expiry of what it relays", () => {
     expect(buildManifest(model(), { mesh: "50k", faces: "2k" })?.validUntil).toBe("2026-01-01T00:08:00Z");
     // The 500k mesh and the high faces are not relayed, so their times don't count.
@@ -141,7 +173,17 @@ describe("buildManifest", () => {
   it("relays nothing but what the page needs", () => {
     const manifest = buildManifest({ ...model(), name: "Somewhere", secret: "x" }, { mesh: "50k", faces: "2k" });
     expect(Object.keys(manifest!).sort()).toEqual(["mesh", "panos", "validUntil"]);
-    expect(Object.keys(manifest!.panos[0]).sort()).toEqual(["faces", "floor", "id", "position", "resolution", "rotation"]);
+    expect(Object.keys(manifest!.panos[0]).sort()).toEqual([
+      "anchor",
+      "faces",
+      "floor",
+      "id",
+      "neighbours",
+      "position",
+      "preview",
+      "resolution",
+      "rotation",
+    ]);
   });
 });
 

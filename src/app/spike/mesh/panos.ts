@@ -1,19 +1,23 @@
-// The panoramas around the player, in GPU memory (issue 118). Loads the
-// nearest few lazily, keeps a small least-recently-used set, and each frame
-// says which four the mesh's material should blend and by how much.
+// The scan's panoramas, held for the whole visit (issue 118), so that no
+// picture has to arrive while the player walks.
 //
-// A panorama is two cube maps: its six photos, and a depth cube rendered once
-// from its position, which says how far it could see in every direction.
-// Faces are fetched with `cache: "no-store"` and decoded straight to bitmaps:
-// they live in memory only, and are closed as soon as the GPU has them.
+// Three layers, all in this tab's memory and nowhere else (no HTTP cache, no
+// Cache API, no IndexedDB; fetches are `cache: "no-store"`):
+//   - the bytes: every panorama's face files are fetched once, as they came
+//     off the wire, nearest the player first. Once they are held no later
+//     request is needed, so the signed links' few minutes stop mattering.
+//   - the low layer: a small cube of every panorama, and a depth cube rendered
+//     from its position (how far it could see in every direction), all on the
+//     GPU for good. Any point of the building has a picture at once.
+//   - the sharp layer: full-size cubes for the few panoramas the player is at
+//     or heading for (lib/scan-mesh/pano-plan.ts), decoded from the held
+//     bytes. A slot shows the small cube and fades to the sharp one.
 //
-// A 2k panorama is 100 MB of texels. Handing all six faces to the GPU in one
-// go stalls the frame for a third of a second or more, which is a hitch every
-// few steps of a run. So the photo cube is filled by hand, one face a frame,
-// and its smaller copies are made on the frame after: no frame carries more
-// than one face. Making the texture is the slowest step of all (the GPU clears
-// all of it), so the cubes are made once, up front, and handed from one
-// panorama to the next: a panorama that is dropped gives its cube back.
+// The GPU gets its work in slices: a full-size face is decoded to plain pixels
+// in a worker (decode-worker.ts) and goes up a strip a frame, and a frame
+// stops handing work over once it has spent its few milliseconds. The
+// sharp cubes themselves are made once, at the start (making one is slow: the
+// GPU clears it), and passed from a dropped panorama to the next.
 import {
   BackSide,
   BoxGeometry,
@@ -24,6 +28,7 @@ import {
   Mesh,
   NoColorSpace,
   PerspectiveCamera,
+  RedFormat,
   RGBAFormat,
   Scene,
   Vector3,
@@ -32,56 +37,105 @@ import {
   type ShaderMaterial,
   type WebGLRenderer,
 } from "three";
-import { conjugate, quatToMat3 } from "@/lib/scan-mesh/coords";
+import { conjugate, quatToMat3, type Vec3 } from "@/lib/scan-mesh/coords";
 import { isAllowedAssetUrl, type ScanPano } from "@/lib/scan-mesh/manifest";
+import { nearestFirst, planSharp, sharpOrder } from "@/lib/scan-mesh/pano-plan";
 import { alignToCube, CUBE_LOOKUP_FLIP, panoDistance, panoWeights } from "@/lib/scan-mesh/skybox";
+import type { DecodeReply, DecodeRequest } from "./decode-worker";
 import { createDistanceMaterial, SLOTS } from "./projection";
 
-/** Panoramas loaded ahead of need, nearest first. */
-const LOAD_AHEAD = 4;
 /** Panoramas blended for one standpoint. */
 const KEEP = 3;
-/** Fetches of whole panoramas at once. */
-const CONCURRENT = 2;
+/** Panoramas whose small faces, and whose full-size faces, are being fetched at once. */
+const LOW_FETCHES = 6;
+const SHARP_FETCHES = 3;
 /** How quickly a panorama's share follows its target, per second. */
 const SHARE_RATE = 7;
-const DEPTH_SIZE = 512;
+/** How quickly a slot fades between its small cube and its sharp one, per second. */
+const SHARP_RATE = 3.5;
+/** How far ahead of the player the sharp cubes look, seconds. */
+const HORIZON = 1.2;
+/** The small cube's face when it has to be made from the full-size bytes, pixels. */
+const LOW_SIZE = 512;
+const DEPTH_SIZE = 384;
+/** Strips a full-size face goes to the GPU in. */
+const STRIPS = 8;
+/** A frame hands the GPU no new work once it has spent this long on it, ms. */
+const BUDGET = 4;
+/** After a refused fetch, none starts for this long (new links are on their way), ms. */
+const BACK_OFF = 1500;
+const TRIES = 3;
 
-type Status = "idle" | "loading" | "ready" | "failed";
+const BITMAP: ImageBitmapOptions = { premultiplyAlpha: "none", colorSpaceConversion: "none" };
+
+type Bytes = "idle" | "loading" | "held" | "failed";
+type Sharp = "none" | "working" | "ready" | "leaving";
 
 interface Entry {
   pano: ScanPano;
   index: number;
-  status: Status;
-  cube: CubeTexture | null;
-  /** The GPU texture behind `cube`: made and filled here, not by three.js. */
-  raw: WebGLTexture | null;
-  depth: WebGLCubeRenderTarget | null;
   origin: Vector3;
   toPano: Matrix3;
+  /** The small faces' bytes (only when the scan has a preview) and the full-size faces'. */
+  lowBytes: Blob[] | null;
+  lowState: Bytes;
+  sharpBytes: Blob[] | null;
+  sharpState: Bytes;
+  tries: number;
+  /** The small cube: made and filled here, not by three.js. */
+  low: WebGLTexture | null;
+  lowCube: CubeTexture | null;
+  lowStarted: boolean;
+  depth: WebGLCubeRenderTarget | null;
+  sharp: WebGLTexture | null;
+  sharpCube: CubeTexture | null;
+  sharpStage: Sharp;
+  /** 0 shows the small cube, 1 the sharp one. */
+  sharpMix: number;
   share: number;
-  lastWanted: number;
-  attempts: number;
 }
 
-/** A panorama's photos on their way into the GPU, a face a frame. */
-interface Upload {
+/** A small cube on its way to the GPU: one image per cube slot. */
+interface LowJob {
   entry: Entry;
-  /** Null until its turn comes and it takes a cube from the pool. */
+  images: ImageBitmap[];
   raw: WebGLTexture | null;
-  /** The faces' width in pixels. */
-  size: number;
-  /** One image per GPU cube slot. */
-  images: (ImageBitmap | HTMLCanvasElement)[];
-  bitmaps: ImageBitmap[];
-  /** The next slot to fill; 6 once only the smaller copies are left to make. */
   next: number;
+}
+
+/**
+ * A sharp cube on its way to the GPU. Per cube slot, either its pixels (from
+ * the worker) or, where there is no worker, its strips as images, top down.
+ */
+interface SharpJob {
+  entry: Entry;
+  size: number;
+  pixels: Uint8Array[] | null;
+  strips: ImageBitmap[][];
+  raw: WebGLTexture | null;
+  slot: number;
+  strip: number;
 }
 
 export interface PanoUse {
   /** The panorama's place in the scan's list. */
   index: number;
   share: number;
+}
+
+export interface PanoCounts {
+  /** Panoramas that have faces at all. */
+  total: number;
+  /** Panoramas whose every byte is held. */
+  held: number;
+  /** Bytes held, all panoramas. */
+  bytes: number;
+  low: number;
+  sharp: number;
+  sharpLoading: number;
+  failed: number;
+  /** A rough count of GPU memory in use by the cubes, bytes. */
+  gpu: number;
 }
 
 /** The camera for each GPU cube face, +x -x +y -y +z -z: where it looks and its up. */
@@ -109,16 +163,30 @@ export function blankCube(): CubeTexture {
 
 export class PanoStore {
   private entries: Entry[] = [];
-  private loading = 0;
+  /** The entries that have faces, and their positions, in step. */
+  private shown: Entry[] = [];
+  private positions: Vec3[] = [];
+  private byAnchor = new Map<string, number[]>();
   private disposed = false;
   private readonly align = alignToCube();
-  private uploads: Upload[] = [];
-  /** Cubes made and not in use, all `poolSize` across; `warming` more are still to be made. */
+  private lowFetches = 0;
+  private sharpFetches = 0;
+  private blockedUntil = 0;
+  private lowJobs: LowJob[] = [];
+  private depthQueue: Entry[] = [];
+  private sharpJob: SharpJob | null = null;
+  private sharpBusy = false;
+  /** Sharp cubes made and not in use, all `sharpSize` across; `warming` more are still to be made. */
   private pool: WebGLTexture[] = [];
-  private poolSize = 0;
-  private warming = 0;
+  private warming: number;
   private readonly sizes = new Map<WebGLTexture, number>();
-  private decoding: Promise<unknown> = Promise.resolve();
+  private lowTexels = 0;
+  private decodingSharp: Promise<unknown> = Promise.resolve();
+  /** The worker that decodes full-size faces to pixels; null where it can't be started. */
+  private worker: Worker | null = null;
+  private asked = 0;
+  private readonly waiting = new Map<number, (reply: DecodeReply) => void>();
+  private decodingLow: Promise<unknown> = Promise.resolve();
   private readonly depthScene = new Scene();
   private readonly depthMaterial = createDistanceMaterial();
   private readonly depthCamera = new PerspectiveCamera(90, 1, 0.05, 4000);
@@ -126,80 +194,143 @@ export class PanoStore {
   private readonly abort = new AbortController();
   /** Called when a face link is refused: the engine fetches new links. */
   onStale: (() => void) | null = null;
-  /** Set by `update` when a panorama is waiting to load and the links have run out. */
+  /** Set by `update` when bytes are still wanted and the links have run out. */
   needsLinks = false;
 
+  /**
+   * `capacity` sharp cubes, `sharpSize` pixels across, are made at once and
+   * kept: that is the sharp layer's whole share of GPU memory.
+   */
   constructor(
     private readonly renderer: WebGLRenderer,
     geometry: BufferGeometry,
     private readonly capacity: number,
+    private readonly sharpSize: number,
   ) {
+    this.warming = capacity;
     this.depthScene.add(new Mesh(geometry, this.depthMaterial));
     // What a panorama sees through a hole in the mesh is far away, not nothing.
     const farMaterial = createDistanceMaterial();
     farMaterial.side = BackSide;
     this.far = new Mesh(new BoxGeometry(2000, 2000, 2000), farMaterial);
     this.depthScene.add(this.far);
+    try {
+      this.worker = new Worker(new URL("./decode-worker.ts", import.meta.url), { type: "module" });
+      this.worker.onmessage = (event: MessageEvent<DecodeReply>) => {
+        const done = this.waiting.get(event.data.id);
+        this.waiting.delete(event.data.id);
+        done?.(event.data);
+      };
+      this.worker.onerror = () => this.dropWorker();
+    } catch {
+      this.worker = null;
+    }
+  }
+
+  /** The worker has failed: answer everything it owed, and decode on the main thread from here on. */
+  private dropWorker(): void {
+    this.worker?.terminate();
+    this.worker = null;
+    for (const [id, done] of this.waiting) done({ id, failed: true });
+    this.waiting.clear();
+  }
+
+  /** Cube slot `slot`'s face as plain pixels, turned the way the slot wants it. */
+  private pixelsOf(blob: Blob, slot: number): Promise<{ size: number; pixels: Uint8Array }> {
+    return new Promise((resolve, reject) => {
+      const worker = this.worker;
+      if (!worker) return reject(new Error("no worker"));
+      const id = ++this.asked;
+      this.waiting.set(id, (reply) => {
+        if ("failed" in reply) reject(new Error("decode failed"));
+        else resolve({ size: reply.size, pixels: new Uint8Array(reply.pixels) });
+      });
+      const { identity, transform } = this.align.layout[slot];
+      const request: DecodeRequest = { id, blob, transform: identity ? null : transform };
+      worker.postMessage(request);
+    });
   }
 
   setPanos(panos: readonly ScanPano[]): void {
-    if (this.entries.length === 0) {
-      this.entries = panos.map((pano, index) => {
-        // World to the panorama's own frame, then the turn that lines the scan's
-        // faces up with the GPU's, then the lookup's flip.
-        const own = quatToMat3(conjugate(pano.rotation));
-        const { rotation } = this.align;
-        const elements: number[] = [];
-        for (let col = 0; col < 3; col++) {
-          const [x, y, z] = [own[col * 3], own[col * 3 + 1], own[col * 3 + 2]];
-          for (let row = 0; row < 3; row++) {
-            const r = rotation[row];
-            elements.push((r[0] * x + r[1] * y + r[2] * z) * CUBE_LOOKUP_FLIP[row]);
-          }
-        }
-        const toPano = new Matrix3().fromArray(elements);
-        return {
-          pano,
-          index,
-          status: "idle" as Status,
-          cube: null,
-          raw: null,
-          depth: null,
-          origin: new Vector3(...pano.position),
-          toPano,
-          share: 0,
-          lastWanted: 0,
-          attempts: 0,
-        };
-      });
+    if (this.entries.length > 0) {
+      // Fresh links for the same scan: keep everything held, swap the links.
+      const byId = new Map(panos.map((p) => [p.id, p]));
+      for (const entry of this.entries) {
+        const fresh = byId.get(entry.pano.id);
+        if (!fresh) continue;
+        entry.pano = { ...entry.pano, faces: fresh.faces, preview: fresh.preview, resolution: fresh.resolution };
+      }
       return;
     }
-    // Fresh links for the same scan: keep what is loaded, swap the links.
-    const byId = new Map(panos.map((p) => [p.id, p]));
-    for (const entry of this.entries) {
-      const fresh = byId.get(entry.pano.id);
-      if (!fresh) continue;
-      entry.pano = { ...entry.pano, faces: fresh.faces, resolution: fresh.resolution };
-      if (entry.status === "failed" && entry.attempts < 3) entry.status = "idle";
-    }
+    this.entries = panos.map((pano, index) => {
+      // World to the panorama's own frame, then the turn that lines the scan's
+      // faces up with the GPU's, then the lookup's flip.
+      const own = quatToMat3(conjugate(pano.rotation));
+      const { rotation } = this.align;
+      const elements: number[] = [];
+      for (let col = 0; col < 3; col++) {
+        const [x, y, z] = [own[col * 3], own[col * 3 + 1], own[col * 3 + 2]];
+        for (let row = 0; row < 3; row++) {
+          const r = rotation[row];
+          elements.push((r[0] * x + r[1] * y + r[2] * z) * CUBE_LOOKUP_FLIP[row]);
+        }
+      }
+      return {
+        pano,
+        index,
+        origin: new Vector3(...pano.position),
+        toPano: new Matrix3().fromArray(elements),
+        lowBytes: null,
+        lowState: "idle" as Bytes,
+        sharpBytes: null,
+        sharpState: "idle" as Bytes,
+        tries: 0,
+        low: null,
+        lowCube: null,
+        lowStarted: false,
+        depth: null,
+        sharp: null,
+        sharpCube: null,
+        sharpStage: "none" as Sharp,
+        sharpMix: 0,
+        share: 0,
+      };
+    });
+    this.shown = this.entries.filter((e) => e.pano.faces !== null);
+    this.positions = this.shown.map((e) => e.pano.position);
+    this.shown.forEach((e, at) => {
+      if (e.pano.anchor === null) return;
+      const list = this.byAnchor.get(e.pano.anchor) ?? [];
+      list.push(at);
+      this.byAnchor.set(e.pano.anchor, list);
+    });
   }
 
   get count(): number {
     return this.entries.length;
   }
 
-  counts(): { ready: number; loading: number; failed: number } {
-    let ready = 0;
-    let failed = 0;
-    for (const e of this.entries) {
-      if (e.status === "ready") ready++;
-      if (e.status === "failed") failed++;
+  counts(): PanoCounts {
+    const out: PanoCounts = { total: this.shown.length, held: 0, bytes: 0, low: 0, sharp: 0, sharpLoading: 0, failed: 0, gpu: 0 };
+    for (const e of this.shown) {
+      const lowDone = e.pano.preview === null || e.lowState === "held";
+      if (lowDone && e.sharpState === "held") out.held++;
+      if (e.sharpState === "failed" || e.lowState === "failed") out.failed++;
+      for (const blob of e.lowBytes ?? []) out.bytes += blob.size;
+      for (const blob of e.sharpBytes ?? []) out.bytes += blob.size;
+      if (e.lowCube && e.depth) out.low++;
+      if (e.sharpStage === "ready" || e.sharpStage === "leaving") out.sharp++;
+      if (e.sharpStage === "working") out.sharpLoading++;
+      if (e.depth) out.gpu += DEPTH_SIZE * DEPTH_SIZE * 8;
     }
-    return { ready, loading: this.loading, failed };
+    out.gpu += this.lowTexels * 4;
+    // Every sharp cube made so far, in use or pooled, with its smaller copies.
+    for (const size of this.sizes.values()) out.gpu += size * size * 6 * 4 * (4 / 3);
+    return out;
   }
 
   /** The panorama nearest `eye`, by index, or -1. */
-  nearest(eye: readonly [number, number, number]): number {
+  nearest(eye: Vec3): number {
     let best = -1;
     let least = Infinity;
     for (const e of this.entries) {
@@ -213,62 +344,76 @@ export class PanoStore {
   }
 
   /**
-   * One frame: start what should be loading, move the shares toward their
-   * targets, and write the four strongest panoramas into `materials`.
-   * `linksUsable` is false once the links have run out; `needsLinks` then says
-   * whether anything is waiting on new ones. Returns what is in use, strongest
-   * first.
+   * Whether the player can be let loose at `eye`: the sharp cubes are made
+   * (the slow step is behind us) and the few panoramas nearest have their
+   * small cubes, so there is a picture to walk into. True for a scan with no
+   * panoramas, and once nothing more can load.
+   */
+  settled(eye: Vec3): boolean {
+    if (this.shown.length === 0) return true;
+    if (this.warming > 0) return false;
+    const near = nearestFirst(this.positions, eye).slice(0, KEEP);
+    return near.every((at) => {
+      const e = this.shown[at];
+      return (e.lowCube !== null && e.depth !== null) || e.sharpState === "failed" || e.lowState === "failed";
+    });
+  }
+
+  /**
+   * One frame: start what should be fetching, hand the GPU a slice of work,
+   * choose the sharp cubes, move the shares toward their targets, and write
+   * the four strongest panoramas into `materials`. `linksUsable` is false once
+   * the links have run out; `needsLinks` then says whether anything is waiting
+   * on new ones. Returns what is in use, strongest first.
    */
   update(
-    eye: readonly [number, number, number],
+    eye: Vec3,
+    velocity: readonly [number, number],
     dt: number,
-    now: number,
     materials: readonly ShaderMaterial[],
     blank: CubeTexture,
     linksUsable: boolean,
   ): PanoUse[] {
-    const entries = this.entries;
-    if (entries.length === 0) return [];
+    const shown = this.shown;
+    if (shown.length === 0) return [];
+    const near = nearestFirst(this.positions, eye);
+    this.fetchMore(near, linksUsable);
     this.pump();
-    const ranked = entries
-      .filter((e) => e.pano.faces !== null)
-      .map((e) => ({ e, d: panoDistance(eye, e.pano.position) }))
-      .sort((a, b) => a.d - b.d);
+    this.chooseSharp(near, eye, velocity);
 
-    this.needsLinks = false;
-    for (const { e } of ranked.slice(0, LOAD_AHEAD)) {
-      e.lastWanted = now;
-      if (e.status !== "idle") continue;
-      if (!linksUsable) this.needsLinks = true;
-      else if (this.loading < CONCURRENT && this.makeRoom(now)) void this.load(e);
-    }
-
-    const ready = ranked.filter(({ e }) => e.status === "ready");
+    const ready = near.map((at) => shown[at]).filter((e) => e.lowCube !== null && e.depth !== null);
     const targets = panoWeights(
-      ready.map(({ d }) => d),
+      ready.map((e) => panoDistance(eye, e.pano.position)),
       KEEP,
     );
-    const blend = 1 - Math.exp(-SHARE_RATE * dt);
     const target = new Map<Entry, number>();
-    ready.forEach(({ e }, i) => target.set(e, targets[i]));
-    for (const e of entries) {
-      if (e.status !== "ready") continue;
-      e.share += ((target.get(e) ?? 0) - e.share) * blend;
-      if (e.share < 1e-4 && (target.get(e) ?? 0) === 0) e.share = 0;
-      if (e.share > 0) e.lastWanted = now;
+    ready.forEach((e, i) => target.set(e, targets[i]));
+    const blend = 1 - Math.exp(-SHARE_RATE * dt);
+    const fade = SHARP_RATE * dt;
+    for (const e of shown) {
+      const goal = target.get(e) ?? 0;
+      e.share += (goal - e.share) * blend;
+      if (e.share < 1e-4 && goal === 0) e.share = 0;
+      if (e.sharpStage === "ready") e.sharpMix = Math.min(1, e.sharpMix + fade);
+      else if (e.sharpStage === "leaving") {
+        e.sharpMix = Math.max(0, e.sharpMix - fade);
+        if (e.sharpMix === 0) this.releaseSharp(e);
+      }
     }
 
-    const used = entries
-      .filter((e) => e.status === "ready" && e.share > 0)
+    const used = ready
+      .filter((e) => e.share > 0)
       .sort((a, b) => b.share - a.share)
       .slice(0, SLOTS);
     for (const material of materials) {
       const u = material.uniforms;
       for (let slot = 0; slot < SLOTS; slot++) {
         const e = used[slot];
-        u[`uPano${slot}`].value = e?.cube ?? blank;
+        u[`uPano${slot}`].value = e?.sharpCube ?? blank;
+        u[`uLow${slot}`].value = e?.lowCube ?? blank;
         u[`uDepth${slot}`].value = e?.depth?.texture ?? blank;
         (u.uPanoShare.value as number[])[slot] = e ? e.share : 0;
+        (u.uPanoSharp.value as number[])[slot] = e?.sharpCube ? e.sharpMix : 0;
         if (e) {
           (u.uPanoPos.value as Vector3[])[slot].copy(e.origin);
           (u.uPanoInv.value as Matrix3[])[slot].copy(e.toPano);
@@ -278,51 +423,43 @@ export class PanoStore {
     return used.map((e) => ({ index: e.index, share: e.share }));
   }
 
-  /**
-   * Whether one more panorama may start loading: true when fewer than
-   * `capacity` are loaded or loading, or once the one wanted longest ago, and
-   * no longer shown, has been dropped to make room.
-   */
-  private makeRoom(now: number): boolean {
-    const held = this.entries.filter((e) => e.status === "ready" || e.status === "loading");
-    if (held.length < this.capacity) return true;
-    let oldest: Entry | null = null;
-    for (const e of held) {
-      if (e.status !== "ready" || e.share > 0 || e.lastWanted >= now) continue;
-      if (!oldest || e.lastWanted < oldest.lastWanted) oldest = e;
+  // ---- the bytes ----
+
+  /** Start fetching the nearest panoramas that have no bytes yet, a few at a time. */
+  private fetchMore(near: readonly number[], linksUsable: boolean): void {
+    this.needsLinks = false;
+    if (performance.now() < this.blockedUntil) return;
+    for (const at of near) {
+      if (this.lowFetches >= LOW_FETCHES && this.sharpFetches >= SHARP_FETCHES) break;
+      const e = this.shown[at];
+      const wantsLow = e.pano.preview !== null && e.lowState === "idle";
+      const wantsSharp = e.sharpState === "idle";
+      if (!wantsLow && !wantsSharp) continue;
+      if (!linksUsable) {
+        this.needsLinks = true;
+        return;
+      }
+      if (wantsLow && this.lowFetches < LOW_FETCHES) void this.fetchFaces(e, "low");
+      if (wantsSharp && this.sharpFetches < SHARP_FETCHES) void this.fetchFaces(e, "sharp");
     }
-    if (!oldest) return false;
-    this.release(oldest);
-    oldest.status = "idle";
-    return true;
   }
 
-  private release(e: Entry): void {
-    if (e.cube) this.renderer.properties.remove(e.cube);
-    if (e.raw) {
-      if (this.sizes.get(e.raw) === this.poolSize) this.pool.push(e.raw);
-      else this.discard(e.raw);
-    }
-    e.depth?.dispose();
-    e.cube = null;
-    e.raw = null;
-    e.depth = null;
-    e.share = 0;
-  }
-
-  private async load(e: Entry): Promise<void> {
-    const faces = e.pano.faces;
-    if (!faces || !faces.every(isAllowedAssetUrl)) {
-      e.status = "failed";
+  private async fetchFaces(e: Entry, layer: "low" | "sharp"): Promise<void> {
+    const urls = layer === "low" ? e.pano.preview : e.pano.faces;
+    const set = (state: Bytes) => {
+      if (layer === "low") e.lowState = state;
+      else e.sharpState = state;
+    };
+    if (!urls || !urls.every(isAllowedAssetUrl)) {
+      set("failed");
       return;
     }
-    e.status = "loading";
-    e.attempts++;
-    this.loading++;
-    let bitmaps: ImageBitmap[] = [];
+    set("loading");
+    if (layer === "low") this.lowFetches++;
+    else this.sharpFetches++;
     try {
-      bitmaps = await Promise.all(
-        faces.map(async (url) => {
+      const blobs = await Promise.all(
+        urls.map(async (url) => {
           const response = await fetch(url, {
             cache: "no-store",
             credentials: "omit",
@@ -330,75 +467,196 @@ export class PanoStore {
             signal: this.abort.signal,
           });
           if (!response.ok) throw new Error(`face ${response.status}`);
-          return this.decode(await response.blob());
+          return response.blob();
         }),
       );
-      if (this.disposed) throw new Error("gone");
-      const size = bitmaps[0].width;
-      if (!bitmaps.every((b) => b.width === size && b.height === size)) throw new Error("faces differ in size");
-      const images = this.align.layout.map((slot) => {
-        const source = bitmaps[slot.face];
-        if (slot.identity) return source;
-        const canvas = document.createElement("canvas");
-        canvas.width = size;
-        canvas.height = size;
-        const context = canvas.getContext("2d");
-        if (!context) throw new Error("no 2d canvas");
-        const [a, b, c, d] = slot.transform;
-        context.setTransform(a, b, c, d, size / 2, size / 2);
-        context.drawImage(source, -size / 2, -size / 2);
-        return canvas;
-      });
-      if (this.poolSize === 0) {
-        // The first panorama says how big the cubes are: make them all now,
-        // while the player is still reading the hints.
-        this.poolSize = size;
-        this.warming = this.capacity;
-      }
-      this.uploads.push({ entry: e, raw: null, size, images, bitmaps, next: 0 });
-    } catch {
-      for (const bitmap of bitmaps) bitmap.close();
-      this.loading--;
       if (this.disposed) return;
-      // Most likely a link that ran out: ask for new ones and try again.
-      e.status = "failed";
+      if (layer === "low") e.lowBytes = blobs;
+      else e.sharpBytes = blobs;
+      set("held");
+      // The small cube comes from the preview where there is one, else from the full-size faces.
+      if (layer === "low") void this.decodeLow(e, blobs, false);
+      else if (e.pano.preview === null || e.lowState === "failed") void this.decodeLow(e, blobs, true);
+    } catch {
+      if (this.disposed) return;
+      // Most likely a link that ran out: ask for new ones, wait a moment, try again.
+      e.tries++;
+      set(e.tries >= TRIES ? "failed" : "idle");
+      // No preview after all: the small cube is made from the full-size faces instead.
+      if (layer === "low" && e.lowState === "failed" && e.sharpBytes) void this.decodeLow(e, e.sharpBytes, true);
+      this.blockedUntil = performance.now() + BACK_OFF;
       this.onStale?.();
+    } finally {
+      if (layer === "low") this.lowFetches--;
+      else this.sharpFetches--;
     }
   }
 
-  /**
-   * A face as a bitmap, decoded off the main thread and in the form the GPU
-   * takes as it is. One at a time, across every panorama loading: a dozen
-   * decodes at once starve the frame of processor time.
-   */
-  private decode(blob: Blob): Promise<ImageBitmap> {
-    const next = this.decoding.then(() => createImageBitmap(blob, { premultiplyAlpha: "none", colorSpaceConversion: "none" }));
-    this.decoding = next.catch(() => undefined);
+  // ---- decoding, off the main thread, one image at a time per layer ----
+
+  private decode(blob: Blob, chain: "low" | "sharp", options: ImageBitmapOptions): Promise<ImageBitmap> {
+    const before = chain === "low" ? this.decodingLow : this.decodingSharp;
+    const next = before.then(() => createImageBitmap(blob, options));
+    const settled = next.catch(() => undefined);
+    if (chain === "low") this.decodingLow = settled;
+    else this.decodingSharp = settled;
     return next;
   }
 
-  /** A new, empty cube `size` across, with its smaller copies' room. Slow: the GPU clears it. */
-  private allocate(size: number): WebGLTexture {
+  /** `image` as cube slot `slot` wants it: as it is for the scan's own layout, else redrawn turned. */
+  private async oriented(image: ImageBitmap, slot: number): Promise<ImageBitmap> {
+    const { identity, transform } = this.align.layout[slot];
+    if (identity) return image;
+    const size = image.width;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("no 2d canvas");
+    const [a, b, c, d] = transform;
+    context.setTransform(a, b, c, d, size / 2, size / 2);
+    context.drawImage(image, -size / 2, -size / 2);
+    image.close();
+    return createImageBitmap(canvas, BITMAP);
+  }
+
+  private async decodeLow(e: Entry, blobs: Blob[], shrink: boolean): Promise<void> {
+    if (e.lowStarted) return;
+    e.lowStarted = true;
+    const options: ImageBitmapOptions = shrink
+      ? { ...BITMAP, resizeWidth: LOW_SIZE, resizeHeight: LOW_SIZE, resizeQuality: "medium" }
+      : BITMAP;
+    const images: ImageBitmap[] = [];
+    try {
+      for (let slot = 0; slot < 6; slot++) {
+        const image = await this.decode(blobs[this.align.layout[slot].face], "low", options);
+        images.push(await this.oriented(image, slot));
+        if (this.disposed) throw new Error("gone");
+      }
+      const size = images[0].width;
+      if (!images.every((i) => i.width === size && i.height === size)) throw new Error("faces differ in size");
+      this.lowJobs.push({ entry: e, images, raw: null, next: 0 });
+    } catch {
+      for (const image of images) image.close();
+      if (!this.disposed) e.lowState = "failed";
+    }
+  }
+
+  private async decodeSharp(e: Entry): Promise<void> {
+    const blobs = e.sharpBytes;
+    if (!blobs) return;
+    this.sharpBusy = true;
+    e.sharpStage = "working";
+    if (this.worker) {
+      try {
+        const pixels: Uint8Array[] = [];
+        let size = 0;
+        for (let slot = 0; slot < 6; slot++) {
+          // One face at a time: six at once would starve the frame of processor time.
+          const face = await this.pixelsOf(blobs[this.align.layout[slot].face], slot);
+          if (slot === 0) size = face.size;
+          if (face.size !== size || size % STRIPS !== 0) throw new Error("faces differ in size");
+          pixels.push(face.pixels);
+          if (this.disposed) return;
+        }
+        this.sharpJob = { entry: e, size, pixels, strips: [], raw: null, slot: 0, strip: 0 };
+        return;
+      } catch {
+        if (this.disposed) return;
+        // Fall through to the main thread: the worker may be what failed, not the bytes.
+      }
+    }
+    const strips: ImageBitmap[][] = [];
+    try {
+      let size = 0;
+      for (let slot = 0; slot < 6; slot++) {
+        const decoded = await this.decode(blobs[this.align.layout[slot].face], "sharp", BITMAP);
+        const face = await this.oriented(decoded, slot);
+        if (slot === 0) size = face.width;
+        if (face.width !== size || face.height !== size || size % STRIPS !== 0) {
+          face.close();
+          throw new Error("faces differ in size");
+        }
+        const rows = size / STRIPS;
+        const cut: ImageBitmap[] = [];
+        strips.push(cut);
+        for (let k = 0; k < STRIPS; k++) cut.push(await createImageBitmap(face, 0, k * rows, size, rows, BITMAP));
+        face.close();
+        if (this.disposed) throw new Error("gone");
+      }
+      this.sharpJob = { entry: e, size, pixels: null, strips, raw: null, slot: 0, strip: 0 };
+    } catch {
+      for (const cut of strips) for (const strip of cut) strip.close();
+      e.sharpStage = "none";
+      this.sharpBusy = false;
+      // Bytes that won't decode are no use: don't choose this panorama again.
+      if (!this.disposed) e.sharpState = "failed";
+    }
+  }
+
+  // ---- the sharp layer's choice ----
+
+  private chooseSharp(near: readonly number[], eye: Vec3, velocity: readonly [number, number]): void {
+    if (this.warming > 0) return;
+    const shown = this.shown;
+    const here = shown[near[0]];
+    const neighbours = here.pano.neighbours.flatMap((anchor) => this.byAnchor.get(anchor) ?? []);
+    const order = sharpOrder({ positions: this.positions, eye, velocity, neighbours, horizon: HORIZON });
+    const have = new Set<number>();
+    shown.forEach((e, at) => {
+      if (e.sharpStage !== "none") have.add(at);
+    });
+    const plan = planSharp(order, have, (at) => shown[at].sharpState === "held", this.capacity, this.capacity - 1);
+    if (plan.drop !== null) {
+      // One being filled finishes first; one already fading out is on its way.
+      const e = shown[plan.drop];
+      if (e.sharpStage === "ready") e.sharpStage = "leaving";
+    }
+    if (plan.start !== null && !this.sharpBusy) void this.decodeSharp(shown[plan.start]);
+  }
+
+  private releaseSharp(e: Entry): void {
+    if (e.sharpCube) this.renderer.properties.remove(e.sharpCube);
+    if (e.sharp) {
+      if (this.sizes.get(e.sharp) === this.sharpSize) this.pool.push(e.sharp);
+      else this.discard(e.sharp);
+    }
+    e.sharp = null;
+    e.sharpCube = null;
+    e.sharpStage = "none";
+    e.sharpMix = 0;
+  }
+
+  // ---- the GPU, a slice a frame ----
+
+  /** A new, empty cube `size` across, with or without room for its smaller copies. Slow for a big one: the GPU clears it. */
+  private allocate(size: number, mipmaps: boolean): WebGLTexture {
     const gl = this.renderer.getContext() as WebGL2RenderingContext;
     const state = this.renderer.state;
     const raw = gl.createTexture();
     state.bindTexture(gl.TEXTURE_CUBE_MAP, raw);
-    gl.texStorage2D(gl.TEXTURE_CUBE_MAP, Math.floor(Math.log2(size)) + 1, gl.RGBA8, size, size);
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texStorage2D(gl.TEXTURE_CUBE_MAP, mipmaps ? Math.floor(Math.log2(size)) + 1 : 1, gl.RGBA8, size, size);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, mipmaps ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    // One texel a face: the driver puts off making the texture until it is
-    // written to, and this is the moment to pay for that.
-    const texel = new Uint8Array(4);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    for (let face = 0; face < 6; face++) {
-      gl.texSubImage2D(gl.TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, 0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, texel);
+    if (mipmaps) {
+      // One texel a face: the driver puts off making the texture until it is
+      // written to, and this is the moment to pay for that.
+      const texel = new Uint8Array(4);
+      this.unpack(gl);
+      for (let face = 0; face < 6; face++) {
+        gl.texSubImage2D(gl.TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, 0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, texel);
+      }
     }
     state.unbindTexture();
-    this.sizes.set(raw, size);
     return raw;
+  }
+
+  private unpack(gl: WebGL2RenderingContext): void {
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
   }
 
   private discard(raw: WebGLTexture): void {
@@ -406,66 +664,120 @@ export class PanoStore {
     this.sizes.delete(raw);
   }
 
-  /**
-   * One step of work for the GPU, and no more, each frame: a cube made for the
-   * pool, or the next face of the upload at the head of the queue, or its
-   * smaller copies and depth cube.
-   */
-  private pump(): void {
-    if (this.warming > 0) {
-      this.pool.push(this.allocate(this.poolSize));
-      this.warming--;
-      return;
-    }
-    const job = this.uploads[0];
-    if (!job) return;
-    if (!job.raw) {
-      job.raw = (job.size === this.poolSize ? this.pool.pop() : undefined) ?? this.allocate(job.size);
-      return;
-    }
-    const gl = this.renderer.getContext() as WebGL2RenderingContext;
-    const state = this.renderer.state;
-    state.bindTexture(gl.TEXTURE_CUBE_MAP, job.raw);
-    if (job.next < 6) {
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-      gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
-      gl.texSubImage2D(gl.TEXTURE_CUBE_MAP_POSITIVE_X + job.next, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, job.images[job.next]);
-      state.unbindTexture();
-      job.next++;
-      return;
-    }
-    gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
-    state.unbindTexture();
-    this.uploads.shift();
-    for (const bitmap of job.bitmaps) bitmap.close();
-    this.loading--;
-
-    // three.js binds this texture and never uploads to it: it has no version.
-    const e = job.entry;
+  /** A three.js texture that binds `raw` and never uploads to it: it has no version. */
+  private wrap(raw: WebGLTexture): CubeTexture {
     const cube = new CubeTexture();
     cube.colorSpace = NoColorSpace;
     const properties = this.renderer.properties.get(cube) as { __webglTexture?: WebGLTexture; __webglInit?: boolean };
-    properties.__webglTexture = job.raw;
+    properties.__webglTexture = raw;
     properties.__webglInit = true;
-    e.cube = cube;
-    e.raw = job.raw;
-    e.depth = this.renderDepth(e.origin);
-    e.share = 0;
-    e.status = "ready";
+    return cube;
+  }
+
+  /** Hand the GPU work, a piece at a time, until this frame's few milliseconds are spent. */
+  private pump(): void {
+    const start = performance.now();
+    if (this.warming > 0) {
+      // Slow, and nothing else this frame; the player is not moving yet.
+      const raw = this.allocate(this.sharpSize, true);
+      this.sizes.set(raw, this.sharpSize);
+      this.pool.push(raw);
+      this.warming--;
+      return;
+    }
+    // Small cubes and depth cubes are cheap: several a frame. A sharp cube's
+    // strip is real work for the GPU however quick the call returns: one a frame.
+    while (this.lowJobs.length + this.depthQueue.length > 0 && performance.now() - start < BUDGET) this.step();
+    if (performance.now() - start < BUDGET) this.step();
+  }
+
+  /** One piece of work; false when there is none. Small cubes first: they are what fills the building. */
+  private step(): boolean {
+    const gl = this.renderer.getContext() as WebGL2RenderingContext;
+    const state = this.renderer.state;
+
+    const low = this.lowJobs[0];
+    if (low) {
+      const size = low.images[0].width;
+      if (!low.raw) {
+        low.raw = this.allocate(size, false);
+        this.lowTexels += size * size * 6;
+      }
+      state.bindTexture(gl.TEXTURE_CUBE_MAP, low.raw);
+      this.unpack(gl);
+      gl.texSubImage2D(gl.TEXTURE_CUBE_MAP_POSITIVE_X + low.next, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, low.images[low.next]);
+      state.unbindTexture();
+      low.images[low.next].close();
+      low.next++;
+      if (low.next === 6) {
+        this.lowJobs.shift();
+        low.entry.low = low.raw;
+        low.entry.lowCube = this.wrap(low.raw);
+        this.depthQueue.push(low.entry);
+      }
+      return true;
+    }
+
+    const seen = this.depthQueue.shift();
+    if (seen) {
+      seen.depth = this.renderDepth(seen.origin);
+      return true;
+    }
+
+    const job = this.sharpJob;
+    if (!job) return false;
+    if (!job.raw) {
+      const pooled = job.size === this.sharpSize ? this.pool.pop() : undefined;
+      job.raw = pooled ?? this.allocate(job.size, true);
+      this.sizes.set(job.raw, job.size);
+      return true;
+    }
+    state.bindTexture(gl.TEXTURE_CUBE_MAP, job.raw);
+    if (job.slot < 6) {
+      const target = gl.TEXTURE_CUBE_MAP_POSITIVE_X + job.slot;
+      const rows = job.size / STRIPS;
+      const top = job.strip * rows;
+      this.unpack(gl);
+      if (job.pixels) {
+        gl.texSubImage2D(target, 0, 0, top, job.size, rows, gl.RGBA, gl.UNSIGNED_BYTE, job.pixels[job.slot], top * job.size * 4);
+      } else {
+        const strip = job.strips[job.slot][job.strip];
+        gl.texSubImage2D(target, 0, 0, top, gl.RGBA, gl.UNSIGNED_BYTE, strip);
+        strip.close();
+      }
+      state.unbindTexture();
+      job.strip++;
+      if (job.strip === STRIPS) {
+        job.strip = 0;
+        job.slot++;
+      }
+      return true;
+    }
+    gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
+    state.unbindTexture();
+    const e = job.entry;
+    e.sharp = job.raw;
+    e.sharpCube = this.wrap(job.raw);
+    e.sharpMix = 0;
+    e.sharpStage = "ready";
+    this.sharpJob = null;
+    this.sharpBusy = false;
+    return true;
   }
 
   /** How far the mesh is from `origin` in every direction, as a cube map. */
   private renderDepth(origin: Vector3): WebGLCubeRenderTarget {
+    const renderer = this.renderer;
+    // One channel is all it needs, where the GPU can render to one.
+    const single = renderer.extensions.has("EXT_color_buffer_float");
     const target = new WebGLCubeRenderTarget(DEPTH_SIZE, {
       type: HalfFloatType,
-      format: RGBAFormat,
+      format: single ? RedFormat : RGBAFormat,
       minFilter: LinearFilter,
       magFilter: LinearFilter,
       generateMipmaps: false,
       depthBuffer: true,
     });
-    const renderer = this.renderer;
     const before = renderer.getRenderTarget();
     const face = renderer.getActiveCubeFace();
     const level = renderer.getActiveMipmapLevel();
@@ -490,14 +802,33 @@ export class PanoStore {
   dispose(): void {
     this.disposed = true;
     this.abort.abort();
-    for (const job of this.uploads) {
-      if (job.raw) this.discard(job.raw);
-      for (const bitmap of job.bitmaps) bitmap.close();
+    this.dropWorker();
+    const gl = this.renderer.getContext();
+    for (const job of this.lowJobs) {
+      if (job.raw) gl.deleteTexture(job.raw);
+      for (const image of job.images.slice(job.next)) image.close();
     }
-    this.uploads = [];
-    // Releasing an entry hands its cube to the pool, so the pool goes last.
-    for (const e of this.entries) this.release(e);
+    this.lowJobs = [];
+    if (this.sharpJob) {
+      if (this.sharpJob.raw) this.discard(this.sharpJob.raw);
+      this.sharpJob.strips.forEach((cut, slot) =>
+        cut.forEach((strip, k) => {
+          if (slot > this.sharpJob!.slot || (slot === this.sharpJob!.slot && k >= this.sharpJob!.strip)) strip.close();
+        }),
+      );
+      this.sharpJob = null;
+    }
+    for (const e of this.entries) {
+      if (e.sharpCube) this.renderer.properties.remove(e.sharpCube);
+      if (e.sharp) this.discard(e.sharp);
+      if (e.lowCube) this.renderer.properties.remove(e.lowCube);
+      if (e.low) gl.deleteTexture(e.low);
+      e.depth?.dispose();
+      e.lowBytes = null;
+      e.sharpBytes = null;
+    }
     this.entries = [];
+    this.shown = [];
     for (const raw of this.pool) this.discard(raw);
     this.pool = [];
     this.depthMaterial.dispose();

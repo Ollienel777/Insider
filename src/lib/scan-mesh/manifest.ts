@@ -35,6 +35,16 @@ export interface ScanPano {
   faces: string[] | null;
   /** The resolution `faces` are at. */
   resolution: PanoResolution | null;
+  /**
+   * Signed links to the same six faces at the scan's lowest resolution, small
+   * enough to keep every panorama's on the GPU at once; null when there are
+   * none, or when `faces` already are the lowest.
+   */
+  preview: string[] | null;
+  /** The floor spot this panorama stands on (several panoramas can share one); null when unknown. */
+  anchor: string | null;
+  /** The floor spots the scan recommends walking to from here. */
+  neighbours: string[];
 }
 
 export interface ScanManifest {
@@ -53,7 +63,7 @@ export const MANIFEST_QUERY = `query ScanManifest($id: ID!, $faces: [String!]) {
       id
       position { x y z }
       rotation { x y z w }
-      anchor { position { x y z } }
+      anchor { id position { x y z } neighbors }
       skyboxes(resolutions: $faces) { status resolution children validUntil }
     }
   }
@@ -164,7 +174,29 @@ export function buildManifest(
       break;
     }
     if (resolution !== null && !isPanoResolution(resolution)) continue;
-    panos.push({ id: e.id, position, floor: point(record(e.anchor)?.position), rotation, faces, resolution });
+
+    let preview: string[] | null = null;
+    if (resolution !== null && resolution !== "low") {
+      const box = boxes.find((b) => b && b.status === "available" && b.resolution === "low");
+      const children = list(box?.children);
+      if (box && children.length === 6 && children.every(isAllowedAssetUrl)) {
+        preview = children as string[];
+        expires(box.validUntil);
+      }
+    }
+
+    const anchor = record(e.anchor);
+    panos.push({
+      id: e.id,
+      position,
+      floor: point(anchor?.position),
+      rotation,
+      faces,
+      resolution,
+      preview,
+      anchor: typeof anchor?.id === "string" ? anchor.id : null,
+      neighbours: list(anchor?.neighbors).filter((n): n is string => typeof n === "string"),
+    });
   }
 
   expiries.sort((a, b) => Date.parse(a) - Date.parse(b));

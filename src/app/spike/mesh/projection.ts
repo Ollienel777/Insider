@@ -11,7 +11,11 @@
 //     could see in every direction, and a fragment farther than that is
 //     behind something.
 // A fragment no panorama saw keeps a trace of each (a wrong picture in the
-// right colours reads better than a hole). With no panorama loaded, or with
+// right colours reads better than a hole).
+//
+// Every panorama has a small cube that is always on the GPU, and the nearest
+// few have a full-size one as well: a slot shows the small one, and fades to
+// the sharp one (`uPanoSharp`) once it has arrived. With no panorama loaded, or with
 // projection switched off, the mesh shows bare: shaded from its face normals,
 // since the scan's mesh carries no texture coordinates.
 //
@@ -39,6 +43,11 @@ uniform samplerCube uPano0;
 uniform samplerCube uPano1;
 uniform samplerCube uPano2;
 uniform samplerCube uPano3;
+uniform samplerCube uLow0;
+uniform samplerCube uLow1;
+uniform samplerCube uLow2;
+uniform samplerCube uLow3;
+uniform float uPanoSharp[${SLOTS}];
 uniform samplerCube uDepth0;
 uniform samplerCube uDepth1;
 uniform samplerCube uDepth2;
@@ -47,7 +56,7 @@ uniform float uProjection;
 uniform float uDebug;
 varying vec3 vWorld;
 
-vec4 fromPano(samplerCube pano, samplerCube depth, vec3 origin, mat3 toPano, float share, vec3 normal, vec3 sight) {
+vec4 fromPano(samplerCube pano, samplerCube low, float sharp, samplerCube depth, vec3 origin, mat3 toPano, float share, vec3 normal, vec3 sight) {
   if (share <= 0.0) return vec4(0.0);
 #ifdef BACKDROP
   vec3 ray = sight;
@@ -64,7 +73,11 @@ vec4 fromPano(samplerCube pano, samplerCube depth, vec3 origin, mat3 toPano, flo
   float weight = share * (0.03 + pow(aligned, 4.0)) * (0.1 + 0.9 * facing) * (seen + 0.003);
   if (uDebug > 0.5) return vec4(vec3(abs(seenTo - reach) * 2.0, seen, 0.0) * share, share);
 #endif
-  return vec4(textureCube(pano, toPano * ray).rgb * weight, weight);
+  vec3 lookup = toPano * ray;
+  vec3 colour = sharp >= 1.0 ? textureCube(pano, lookup).rgb
+    : sharp <= 0.0 ? textureCube(low, lookup).rgb
+    : mix(textureCube(low, lookup).rgb, textureCube(pano, lookup).rgb, sharp);
+  return vec4(colour * weight, weight);
 }
 
 void main() {
@@ -82,10 +95,10 @@ void main() {
   vec3 bare = mix(clay, vec3(0.09, 0.115, 0.15), haze);
 #endif
   vec4 sum = vec4(0.0);
-  sum += fromPano(uPano0, uDepth0, uPanoPos[0], uPanoInv[0], uPanoShare[0], normal, sight);
-  sum += fromPano(uPano1, uDepth1, uPanoPos[1], uPanoInv[1], uPanoShare[1], normal, sight);
-  sum += fromPano(uPano2, uDepth2, uPanoPos[2], uPanoInv[2], uPanoShare[2], normal, sight);
-  sum += fromPano(uPano3, uDepth3, uPanoPos[3], uPanoInv[3], uPanoShare[3], normal, sight);
+  sum += fromPano(uPano0, uLow0, uPanoSharp[0], uDepth0, uPanoPos[0], uPanoInv[0], uPanoShare[0], normal, sight);
+  sum += fromPano(uPano1, uLow1, uPanoSharp[1], uDepth1, uPanoPos[1], uPanoInv[1], uPanoShare[1], normal, sight);
+  sum += fromPano(uPano2, uLow2, uPanoSharp[2], uDepth2, uPanoPos[2], uPanoInv[2], uPanoShare[2], normal, sight);
+  sum += fromPano(uPano3, uLow3, uPanoSharp[3], uDepth3, uPanoPos[3], uPanoInv[3], uPanoShare[3], normal, sight);
   float shares = min(1.0, uPanoShare[0] + uPanoShare[1] + uPanoShare[2] + uPanoShare[3]);
   float cover = sum.a > 0.0 ? uProjection * shares : 0.0;
   vec3 projected = sum.a > 0.0 ? sum.rgb / sum.a : bare;
@@ -103,11 +116,13 @@ export function createScanMaterial(blank: CubeTexture, backdrop = false): Shader
     uPanoPos: { value: Array.from({ length: SLOTS }, () => new Vector3()) },
     uPanoInv: { value: Array.from({ length: SLOTS }, () => new Matrix3()) },
     uPanoShare: { value: new Array<number>(SLOTS).fill(0) },
+    uPanoSharp: { value: new Array<number>(SLOTS).fill(0) },
     uProjection: { value: 1 },
     uDebug: { value: 0 },
   };
   for (let i = 0; i < SLOTS; i++) {
     uniforms[`uPano${i}`] = { value: blank };
+    uniforms[`uLow${i}`] = { value: blank };
     uniforms[`uDepth${i}`] = { value: blank };
   }
   return new ShaderMaterial({

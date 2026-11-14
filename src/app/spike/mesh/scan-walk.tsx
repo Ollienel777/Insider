@@ -130,9 +130,17 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, debug }: Props) {
               ? hud.panos.map((p) => `${p.index + 1}: ${Math.round(p.share * 100)}%`).join(" · ")
               : "none yet"}
           </Row>
-          <Row label="Loaded">
-            {hud ? `${hud.panosReady} of ${hud.panoCount}${hud.panosLoading > 0 ? ` · ${hud.panosLoading} loading` : ""}` : "…"}
+          <Row label="Held">
+            {hud ? `${hud.building.held} of ${hud.building.total} · ${hud.panosReady} sharp` : "…"}
           </Row>
+          {debug && hud && (
+            <>
+              <Row label="Bytes">{`${hud.building.megabytes.toFixed(0)} MB held · GPU ≈ ${hud.building.gpuMegabytes.toFixed(0)} MB`}</Row>
+              <Row label="Cubes">{`${hud.building.low} low · ${hud.building.sharp} sharp${hud.panosLoading > 0 ? " · 1 arriving" : ""}`}</Row>
+              <Row label="Worst">{`${hud.building.worstFrame.toFixed(0)} ms frame in 5 s`}</Row>
+              <Row label="Times">{`sharp ${seconds(hud.building.firstSharp)} · all ${seconds(hud.building.allHeld)}`}</Row>
+            </>
+          )}
         </dl>
       </aside>
 
@@ -154,6 +162,28 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, debug }: Props) {
         <div className={`pointer-events-none absolute inset-0 grid justify-items-center ${hud?.lockRefused ? "items-start pt-4" : "items-center"}`}>
           <p data-testid="scan-walk-look-hint" className="rounded-md border border-border-strong bg-surface-1/90 px-5 py-3 text-sm text-text-1 shadow-e-2 backdrop-blur-sm">
             {hud?.lockRefused ? "Hold the mouse button and drag to look around" : "Click to look around, or hold and drag"}
+          </p>
+        </div>
+      )}
+
+      {ready && hud && hud.building.total > 0 && hud.building.held < hud.building.total && (
+        <div
+          role="status"
+          data-testid="scan-walk-progress"
+          className="pointer-events-none absolute top-4 right-4 w-64 rounded-md border border-border bg-surface-1/85 p-3 backdrop-blur-sm"
+        >
+          <p className="text-sm text-text-1">
+            Loading the building: <span className="font-mono tabular-nums">{hud.building.held}</span> of{" "}
+            <span className="font-mono tabular-nums">{hud.building.total}</span>
+          </p>
+          <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-3">
+            <div
+              className="h-full bg-accent transition-[width] duration-base ease-out"
+              style={{ width: `${(100 * hud.building.held) / hud.building.total}%` }}
+            />
+          </div>
+          <p className="mt-2 text-xs text-text-2">
+            {hud.canMove ? "You can walk already; it sharpens as it arrives." : "Look around; walking starts in a moment."}
           </p>
         </div>
       )}
