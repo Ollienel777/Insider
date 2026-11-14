@@ -13,9 +13,10 @@ import { act, createRun, type Action, type RunState } from "@/engine";
 import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.json";
 import { actionForKey, cameraMount, choices as choicesOf } from "./board";
-import { DISC, fixedLabels, movingLabels, standingOf, type GhostPlan } from "./board-view";
+import { DISC, fixedLabels, fixedLensMarks, movingLabels, standingOf, type GhostPlan } from "./board-view";
 import { project } from "./iso";
 import { box, MARK_FONT, PIECE_FONT, quadsOverlap, textBox, type Quad } from "./labels";
+import { lensElements } from "./lens";
 import { RUN_SEED } from "./run-screen";
 
 const manifest = LevelManifest.parse(structuredClone(cached));
@@ -110,6 +111,32 @@ describe("the board's labels (#68)", () => {
     const ghost: GhostPlan = ghostOf(validatePlan(placed, demo));
     expect(ghost.marks.map((m) => m.label)).toEqual(expect.arrayContaining(["C2 · T12", "WAIT · T12"]));
     expect(collisions(drawn(createRun(placed.level), ghost))).toEqual([]);
+  });
+
+  it("keeps the rooms' names clear of the Layer lens's marks on the cameras, locks and entries (PR #83 R1-M1)", () => {
+    const marks = fixedLensMarks(placed, createRun(placed.level).board.cameras);
+    // C1, C2 (CoStar), both locks (CoStar), the dock and the roof (Vexcel).
+    expect(marks).toHaveLength(6);
+    // Each guard's marks too, where the board places them (`movingLabels` with the lens on).
+    const layers = lensElements(placed, placed.level.lockedDoors);
+    const count = (id: string) => layers.find((e) => e.key === `guard:${id}`)?.layers.length ?? 0;
+    const guardMarks = (run: RunState) => {
+      const standing = standingOf(run, at(run));
+      const moving = movingLabels(fixedLabels(placed, run.board.cameras), at(run), choicesOf(run), standing, null, count);
+      return standing.flatMap((s) => {
+        const spot = moving.marks.get(s.id);
+        return spot ? [{ name: `${s.id} lens marks`, quad: box(s.p.x + spot.x, s.p.y + spot.y, s.p.x + spot.x + 14 * count(s.id) + 3 * (count(s.id) - 1), s.p.y + spot.y + 14) }] : [];
+      });
+    };
+    const lensed = (run: RunState) => [
+      ...drawn(run),
+      ...marks.map((quad, i) => ({ name: `lens mark ${i}`, quad })),
+      ...guardMarks(run),
+    ];
+    expect(guardMarks(createRun(placed.level))).toHaveLength(4);
+    expect(collisions(lensed(createRun(placed.level)))).toEqual([]);
+    const wow = play(createRun(placed.level), [{ kind: "move", to: "fl-lobby" }, { kind: "move", to: "dc-west" }]);
+    expect(collisions(lensed(wow))).toEqual([]);
   });
 
   it("keeps every label clear of every other at the wow beat, and on every turn of the quiet route", () => {

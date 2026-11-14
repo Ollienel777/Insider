@@ -90,3 +90,30 @@ test("beat 5: no label on the Run board covers another, at the start and at the 
   await settled(page, "run-board");
   expect(await collisions(page, "run-board")).toEqual([]);
 });
+
+test("with the Layer lens on, no label or lens mark covers another on Plan and Run (PR #83 R1-M1)", async ({ page }) => {
+  // The lens marks are <text> on the board (a layer's letter), so the same check covers them.
+  await page.goto("/b/F1/plan");
+  await expect(page.getByTestId("plan-board")).toBeVisible();
+  await page.keyboard.press("l");
+  await expect(page.getByTestId("lens-mark").first()).toBeVisible();
+  expect(await collisions(page, "plan-board")).toEqual([]);
+
+  await page.goto("/b/F1/run");
+  const board = page.getByTestId("run-board");
+  await expect(board).toBeVisible();
+  await page.keyboard.press("l");
+  await expect(page.getByTestId("lens-mark").first()).toBeVisible();
+  expect(await page.getByTestId("lens-mark").count()).toBeGreaterThan(6);
+  await settled(page, "run-board");
+  expect(await collisions(page, "run-board")).toEqual([]);
+
+  for (const [node, turn] of [["fl-lobby", 1], ["dc-west", 2]] as const) {
+    const key = await page.locator(`[data-testid="choice"][data-node="${node}"]`).getAttribute("data-key");
+    await page.keyboard.press(key!);
+    await expect(board).toHaveAttribute("data-turn", String(turn));
+  }
+  await expect(page.getByTestId("chief-order")).toHaveCount(4, { timeout: 4_000 });
+  await settled(page, "run-board");
+  expect(await collisions(page, "run-board")).toEqual([]);
+});

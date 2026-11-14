@@ -10,13 +10,16 @@ import {
   addCamera,
   addNode,
   addPawn,
+  box,
   MARK_FONT,
   PAWN_SPOTS,
   PIECE_FONT,
   placeLabel,
+  quadsOverlap,
   placeRoomLabels,
   textBox,
   type LabelSpot,
+  type Quad,
   type RoomLabel,
   type Taken,
 } from "./labels";
@@ -228,7 +231,9 @@ export function BoardView({
   // Labels (#68). The rooms' names and everything that never moves first, once per level; then each
   // guard's id beside its pawn, and the plan's marks, each in the first spot clear of the rest.
   const fixed = useMemo(() => fixedLabels(placed, run.board.cameras), [placed, run.board.cameras]);
-  const { pawns: pawnLabels, ghost: ghostLabels } = movingLabels(fixed, at, choices, standing, ghost);
+  // With the lens on, each guard's lens marks are placed too, clear of the labels (#37).
+  const guardMarks = lensed ? (id: string) => layersOf(whyKey.guard(id))?.length ?? 0 : undefined;
+  const { pawns: pawnLabels, ghost: ghostLabels, marks: pawnMarks } = movingLabels(fixed, at, choices, standing, ghost, guardMarks);
 
   // Where the selected element stands, in board units: the thread starts there.
   const anchor = ((): Point | null => {
@@ -462,7 +467,7 @@ export function BoardView({
                     <LayerRings layers={layers} rx={DISC.rx + 5} ry={DISC.ry + 3} />
                     <LayerMarks
                       layers={layers}
-                      at={{ x: -DISC.rx - 10 - marksWidth(layers.length), y: -MARK.h / 2 }}
+                      at={ENTRY_MARKS}
                     />
                   </g>
                 ) : null}
@@ -491,7 +496,7 @@ export function BoardView({
               {layers ? (
                 <g transform={`translate(${round(m.x)}, ${round(m.y)})`}>
                   <LayerRings layers={layers} rx={13} ry={13} />
-                  <LayerMarks layers={layers} at={{ x: -marksWidth(layers.length) / 2, y: 18 }} />
+                  <LayerMarks layers={layers} at={lockMarksAt(layers.length)} />
                 </g>
               ) : null}
               <line
@@ -544,6 +549,7 @@ export function BoardView({
                 selected={piece.kind === "guard" && why === whyKey.guard(piece.id)}
                 layers={piece.kind === "guard" ? layersOf(whyKey.guard(piece.id)) : undefined}
                 labelAt={pawnLabels.get(piece.id)}
+                marksAt={pawnMarks.get(piece.id)}
               />
             ),
           )}
@@ -840,7 +846,9 @@ export function movingLabels(
   choices: readonly Choice[],
   standing: readonly { kind: "guard" | "cleaner" | "player"; id: string; p: Point }[],
   ghost: GhostPlan | null,
-): { pawns: Map<string, LabelSpot>; ghost: LabelSpot[]; taken: Taken } {
+  /** With the lens on: how many lens marks each guard carries; its marks are placed after the ids. */
+  markCount?: (guardId: string) => number,
+): { pawns: Map<string, LabelSpot>; ghost: LabelSpot[]; marks: Map<string, Point>; taken: Taken } {
   const taken: Taken = { text: [...fixed.taken.text], marks: [...fixed.taken.marks] };
   for (const c of choices) {
     const p = at(c.nodeId);
@@ -853,16 +861,21 @@ export function movingLabels(
       .filter((piece) => piece.kind !== "player")
       .map((piece) => [piece.id, placeLabel(piece.p, PAWN_SPOTS, piece.id.length, PIECE_FONT, taken)] as const),
   );
+  const lensMarks = new Map<string, Point>();
+  for (const piece of standing) {
+    const n = piece.kind === "guard" && markCount ? markCount(piece.id) : 0;
+    if (n > 0) lensMarks.set(piece.id, placeMarks(piece.p, n, taken));
+  }
   const marks = ghost
     ? ghost.marks.map((mark) => placeLabel(at(mark.nodeId), ghostSpots(mark.kind), mark.label.length, MARK_FONT, taken))
     : [];
-  return { pawns, ghost: marks, taken };
+  return { pawns, ghost: marks, marks: lensMarks, taken };
 }
 
 /**
  * The labels that never move on a placed level: each room's name, placed clear
  * of the nodes, the entry and files labels, the cameras and the PICK labels
- * (any door's far node can carry one); and those boxes, for the labels that
+ * (either end of a lockable door can carry one), the lens marks; and those boxes, for the labels that
  * move to keep clear of.
  */
 export function fixedLabels(placed: PlacedLevel, cameras: RunState["board"]["cameras"]): FixedLabels {
@@ -873,7 +886,8 @@ export function fixedLabels(placed: PlacedLevel, cameras: RunState["board"]["cam
   };
   const entryLabel = new Map(placed.entries.map((e) => [e.nodeId, e.label]));
   const named = [objective, ...exits.filter((id) => id !== objective)];
-  const doorNodes = new Set(floor.edges.filter((e) => e.door).flatMap((e) => [e.a, e.b]));
+  // Only a lockable door is ever picked, so only its ends can carry a PICK label.
+  const doorNodes = new Set(floor.edges.filter((e) => e.door?.lockable).flatMap((e) => [e.a, e.b]));
   // Without the nodes: the labels that move keep clear only of the ones a choice stands on.
   const taken: Taken = { text: [], marks: [] };
   for (const id of named) {
@@ -889,16 +903,90 @@ export function fixedLabels(placed: PlacedLevel, cameras: RunState["board"]["cam
     const p = point(id);
     taken.text.push(textBox(p.x + 16, p.y - 14, PICK_CHARS, MARK_FONT));
   }
-  // The rooms' names keep clear of every node, and of a pawn standing on it, where they can: a
-  // numbered choice or a piece can stand on any of them.
-  const forRooms: Taken = { text: [...taken.text], marks: [...taken.marks] };
+  // The Layer lens's letter marks on the elements that never move (#83 R1-M1): the rooms' names
+  // never cover them, and the labels that move avoid them where there is room. Kept with the lens
+  // off too, so no label jumps when the lens is toggled.
+  const lensMarks = fixedLensMarks(placed, cameras);
+  taken.marks.push(...lensMarks);
+  // The rooms' names keep clear of every node, and of a pawn standing on it with its lens marks,
+  // where they can: a numbered choice or a piece can stand on any of them.
+  const forRooms: Taken = { text: [...taken.text, ...lensMarks], marks: [...taken.marks] };
   for (const n of floor.nodes) {
     const p = project(n.x, n.y);
     addNode(forRooms, p);
     addPawn(forRooms, p);
+    forRooms.marks.push(markRow(p.x + PAWN_MARKS.x, p.y + PAWN_MARKS.y, LENS_LAYERS.length - 1));
   }
   const rooms = placeRoomLabels(floor, (label) => shortLabel(label).toUpperCase(), forRooms);
   return { rooms, taken: { text: [...taken.text, ...rooms.map((r) => r.quad)], marks: taken.marks } };
+}
+
+/** Where a guard's lens marks start beside its pawn (see `Pawn`), unless the board places them elsewhere. */
+const PAWN_MARKS: Point = { x: 14, y: -28 };
+
+/**
+ * Where a guard's row of `count` lens marks goes: right of its head by default, then left of it,
+ * then beside its body, then above it; the first clear of every label `taken`, else the one
+ * covering the fewest. Its box is added to `taken`.
+ */
+function placeMarks(p: Point, count: number, taken: Taken): Point {
+  const w = marksWidth(count);
+  const spots: Point[] = [PAWN_MARKS, { x: -14 - w, y: -28 }, { x: 14, y: -10 }, { x: -14 - w, y: -10 }, { x: -w / 2, y: -62 }];
+  const boxOf = (s: Point) => markRow(p.x + s.x, p.y + s.y, count);
+  const hits = (s: Point) => taken.text.filter((t) => quadsOverlap(boxOf(s), t)).length;
+  const spot = spots.find((s) => hits(s) === 0) ?? spots.reduce((best, s) => (hits(s) < hits(best) ? s : best));
+  taken.text.push(boxOf(spot));
+  return spot;
+}
+
+/** Where a lock's lens marks start, from the middle of its door: above its bar, clear of the room's name and the PICK label. */
+function lockMarksAt(count: number): Point {
+  return { x: -marksWidth(count) / 2, y: -18 - MARK.h };
+}
+
+/** Where an entry's lens marks start, from its node: right of its rings, clear of the stair's name. */
+const ENTRY_MARKS: Point = { x: DISC.rx + 10, y: -MARK.h / 2 };
+
+/** The box a row of `count` lens marks fills from its top-left (`LayerMarks`). */
+function markRow(x: number, y: number, count: number): Quad {
+  return box(x, y, x + marksWidth(count), y + MARK.h);
+}
+
+/**
+ * The lens marks of the cameras, the locks and the entries, where the board draws them with the
+ * lens on (`CameraPiece`, the locked doors and the nodes in `BoardView`): one box per element.
+ */
+export function fixedLensMarks(placed: PlacedLevel, cameras: RunState["board"]["cameras"]): Quad[] {
+  const { floor } = placed.level;
+  const elements = lensElements(placed, placed.level.lockedDoors);
+  const count = (key: string) => elements.find((e) => e.key === key)?.layers.length ?? 0;
+  const point = (id: string): Point => {
+    const n = floor.nodes.find((node) => node.id === id)!;
+    return project(n.x, n.y);
+  };
+  const boxes: Quad[] = [];
+  for (const camera of cameras) {
+    const n = count(whyKey.camera(camera.id));
+    if (n === 0) continue;
+    const m = cameraMount(floor, camera.parts.flat());
+    const p = project(m.x, m.y);
+    boxes.push(markRow(p.x + 24 + (n - 1) * 4, p.y - 28, n));
+  }
+  for (const edge of floor.edges) {
+    const n = edge.door ? count(whyKey.lock(edge.door.id)) : 0;
+    if (n === 0) continue;
+    const a = point(edge.a);
+    const b = point(edge.b);
+    const at = lockMarksAt(n);
+    boxes.push(markRow((a.x + b.x) / 2 + at.x, (a.y + b.y) / 2 + at.y, n));
+  }
+  for (const entry of placed.entries) {
+    const n = count(lensKey.entry(entry.entryId));
+    if (n === 0) continue;
+    const p = point(entry.nodeId);
+    boxes.push(markRow(p.x + ENTRY_MARKS.x, p.y + ENTRY_MARKS.y, n));
+  }
+  return boxes;
 }
 
 /** How far above its mount a camera's lens sits, in board units (see `CameraPiece`). */
@@ -945,11 +1033,19 @@ function ConeShape({ cone, at, sighting }: { cone: Cone; at: (id: string) => Poi
         />
       ) : null}
       {seen.length > 0 ? (
+        // On the trip the whole cone turns `--danger` and flashes (DESIGN.md the wow beat, step 2).
         <polygon
+          data-testid={sighting ? "cone-tripped" : undefined}
+          className={sighting ? "cone-flash" : undefined}
           points={pointsAttr(shape)}
-          style={{ fill: camera ? "var(--n-400)" : "var(--n-500)", stroke: camera ? "var(--n-400)" : "none" }}
-          fillOpacity={camera ? 0.24 : 0.2}
-          strokeOpacity="0.5"
+          style={
+            sighting
+              ? { fill: "var(--danger)", stroke: "var(--danger)" }
+              : { fill: camera ? "var(--n-400)" : "var(--n-500)", stroke: camera ? "var(--n-400)" : "none" }
+          }
+          fillOpacity={sighting ? 0.3 : camera ? 0.24 : 0.2}
+          strokeOpacity={sighting ? 0.9 : 0.5}
+          strokeWidth={sighting ? 2 : undefined}
           strokeLinejoin="round"
         />
       ) : null}
@@ -995,6 +1091,7 @@ export function Pawn({
   selected = false,
   layers,
   labelAt,
+  marksAt,
 }: {
   testId: string;
   label: string;
@@ -1009,6 +1106,8 @@ export function Pawn({
   layers?: readonly LensLayer[];
   /** Where its id stands beside its head, clear of the board's other labels (`placeLabels`); right of it by default. */
   labelAt?: LabelSpot;
+  /** Where its lens marks start, clear of the board's labels (`movingLabels`); right of its head by default. */
+  marksAt?: Point;
 }) {
   const body = tone === "player" ? "var(--accent)" : tone === "guard" ? "var(--n-200)" : "var(--n-400)";
   const shade = tone === "player" ? "var(--accent-active)" : tone === "guard" ? "var(--n-400)" : "var(--n-500)";
@@ -1066,7 +1165,7 @@ export function Pawn({
         </text>
       ) : null}
       {layers && layers.length > 0 ? (
-        <LayerMarks layers={layers} at={{ x: 14, y: -28 }} />
+        <LayerMarks layers={layers} at={marksAt ?? PAWN_MARKS} />
       ) : null}
     </g>
   );
@@ -1205,9 +1304,9 @@ function ChoiceHint({
       >
         {choice.key}
       </text>
-      {/* With its label, the badge's whole box is its hit area: a click anywhere on it picks and never
-          reaches the lock below (R3-M1). */}
-      {choice.kind === "pick" ? <rect x="-20" y="-26" width="100" height="46" fill="transparent" /> : null}
+      {/* With its label and the label's halo, the badge's whole box is its hit area: a click anywhere on
+          it picks and never reaches the lock below (R3-M1). */}
+      {choice.kind === "pick" ? <rect x="-20" y="-30" width="100" height="50" fill="transparent" /> : null}
       {choice.kind === "pick" ? (
         <text
           x="16"
@@ -1215,7 +1314,11 @@ function ChoiceHint({
           className="font-mono"
           fontSize="11"
           letterSpacing="0.06em"
-          style={{ fill: "var(--text-1)" }}
+          // A dark halo, so the lock's bar it sits beside never strikes through it.
+          paintOrder="stroke"
+          strokeWidth="4"
+          strokeLinejoin="round"
+          style={{ fill: "var(--text-1)", stroke: "var(--n-950)" }}
         >
           {`PICK ${choice.progress!.done}/${choice.progress!.of}`}
         </text>
