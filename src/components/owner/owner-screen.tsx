@@ -8,6 +8,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Building, FloorGraph, LevelManifest } from "@/domain";
 import { BATCH_SEEDS } from "@/engine";
+import { buildingHref } from "@/lib/building-href";
 import { cn } from "@/lib/utils";
 import { OwnerReady } from "./owner-ready";
 
@@ -49,7 +50,7 @@ export function OwnerScreen({
 }) {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
-  const debriefHref = `/b/${encodeURIComponent(building.id)}/debrief${mission ? `?m=${encodeURIComponent(mission)}` : ""}`;
+  const debriefHref = buildingHref(building.id, "debrief", mission ?? null);
 
   useEffect(() => {
     if (!manifest || !fixture) return;

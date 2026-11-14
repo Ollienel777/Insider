@@ -174,6 +174,7 @@ describe("all five fixture buildings", () => {
       d.zones.forEach((z) => Zone.parse(z));
       const manifest = {
         buildingId: b.id,
+        missionId: "test-mission",
         securityProfile: d.securityProfile,
         zones: d.zones,
         entries: d.entries,
@@ -186,7 +187,7 @@ describe("all five fixture buildings", () => {
           inspiredBy: null,
           objective: "Take the files",
           exitCondition: "Leave",
-          briefing: "A test briefing.",
+          briefing: "A test briefing. The security is game fiction.",
         },
       };
       expect(LevelManifest.safeParse(manifest).success).toBe(true);

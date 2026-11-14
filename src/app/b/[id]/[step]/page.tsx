@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BuildingScreen } from "@/components/shell/building-screen";
 import { findBuilding } from "@/lib/building";
+import { buildingHref } from "@/lib/building-href";
+import { missionParam, type SearchParams } from "@/lib/mission-param";
 import { cityName } from "@/lib/cities";
 import { isStepSegment, nextStep, STEPS } from "@/components/shell/steps";
 import { buttonVariants } from "@/components/ui/button";
@@ -18,10 +20,17 @@ const PRIMARY_ACTION: Record<string, string> = {
   run: "See the debrief",
 };
 
-export default async function StepPlaceholder({ params }: { params: Promise<{ id: string; step: string }> }) {
+export default async function StepPlaceholder({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string; step: string }>;
+  searchParams: SearchParams;
+}) {
   const { id, step } = await params;
   const building = await findBuilding(id);
   if (!building || !isStepSegment(step)) notFound();
+  const missionId = await missionParam(building.id, step, searchParams);
   const label = STEPS.find((s) => s.segment === step)!.label;
   const next = nextStep(step);
   const action = PRIMARY_ACTION[step];
@@ -57,7 +66,7 @@ export default async function StepPlaceholder({ params }: { params: Promise<{ id
       }
       action={
         next && action ? (
-          <Link href={`/b/${building.id}/${next.segment}`} className={buttonVariants({ variant: "primary" })}>
+          <Link href={buildingHref(building.id, next.segment, missionId)} className={buttonVariants({ variant: "primary" })}>
             {action}
           </Link>
         ) : null

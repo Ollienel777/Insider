@@ -152,7 +152,7 @@ export function validateOwnerSetup(setup: OwnerSetup, floor: FloorGraph): OwnerS
 /** The rule every element the setup places carries: the Why card's line for it. */
 export const OWNER_RULE = "Placed by the owner's setup";
 
-/** Picks to open a locked door, by what locks it. A key lock is SPEC §4.3's 2; a badge reader, a card-era reader's 3. */
+/** Picks to open a locked door, by what locks it. A key lock is SPEC §4.3's 2; a badge reader's 3 is Owner Mode's own (§4.3 gives readers no pick time). */
 export const OWNER_PICK_TURNS: Readonly<Record<Exclude<OwnerDoorLock, "open">, number>> = { key: 2, badge: 3 };
 
 /** The owner's kind for each engine kind the rules table places. */

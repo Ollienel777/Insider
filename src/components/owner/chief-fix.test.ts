@@ -6,7 +6,7 @@ import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { ChiefFix, FixSummary, LevelManifest, type Strategy } from "@/domain";
 import { summariseBatch } from "@/engine";
 import { placeLevel } from "@/level/placer";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import fixRecording from "../../../fixtures/llm/fix-F1.json";
 import recording from "../../../fixtures/llm/strategies-F1.json";
 import { askFix, fixSummaryOf, playFix, toEngineFix } from "./chief-fix";

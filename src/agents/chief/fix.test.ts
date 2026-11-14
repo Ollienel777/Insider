@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { ScriptedChatModel } from "@/adapters/llm";
 import { ChiefFix, LevelManifest, type FixSummary } from "@/domain";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import { POST } from "../../app/api/chief/fix/route";
 import { clampFix, FIX_PROMPT_HEAD, fixMessages, fixRoster, fixTemplate, loadFixRecording, suggestFix } from "./index";
 

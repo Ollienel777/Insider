@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { BuildingScreen } from "@/components/shell/building-screen";
+import { buildingHref } from "@/lib/building-href";
+import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,6 +39,7 @@ export function ScoutScreen({ building }: { building: ScoutBuilding }) {
   const [attempt, setAttempt] = useState(0);
   const [view, setView] = useState<ViewDir>("N");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const missionId = useMissionId();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -151,7 +154,7 @@ export function ScoutScreen({ building }: { building: ScoutBuilding }) {
         />
       }
       action={
-        <Link href={`/b/${encodeURIComponent(building.id)}/dossier`} className={buttonVariants({ variant: "primary" })}>
+        <Link href={buildingHref(building.id, "dossier", missionId)} className={buttonVariants({ variant: "primary" })}>
           Plan the job
         </Link>
       }

@@ -11,6 +11,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { readCachedLevel } from "@/agents/builder/cache";
+import { defaultMissionId } from "@/agents/builder/missions";
 import { structuredCall, type StructuredCallOptions } from "@/adapters/llm";
 import {
   ChiefFix,
@@ -50,6 +51,8 @@ export interface FixOptions {
   timeoutMs?: number;
   fixturesDir?: string;
   levelsDir?: string;
+  /** The mission whose level to read (#119); the building's own mission by default. */
+  missionId?: string;
 }
 
 /** The ids the Chief may name: the profile's roster and every element the batch saw. */
@@ -203,9 +206,10 @@ export async function loadFixRecording(buildingId: string, dir: string = CHIEF_F
   return FixRecording.parse(JSON.parse(raw));
 }
 
-/** The Chief's one suggested change for a batch. Null when the building has no cached level. */
+/** The Chief's one suggested change for a batch. Null when there is no cached level for the mission. */
 export async function suggestFix(request: FixRequest, options: FixOptions = {}): Promise<FixAnswer | null> {
-  const cached = await readCachedLevel(request.buildingId, options.levelsDir);
+  const missionId = options.missionId ?? defaultMissionId(request.buildingId);
+  const cached = missionId ? await readCachedLevel(request.buildingId, missionId, options.levelsDir) : null;
   if (!cached) return null;
   const { manifest } = cached;
   const { summary } = request;
