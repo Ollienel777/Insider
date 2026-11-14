@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { BuildingScreen } from "@/components/shell/building-screen";
+import { FACTS_ONLY_NOTE, isFactsOnly } from "@/components/shell/steps";
 import { buildingHref } from "@/lib/building-href";
 import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
@@ -29,13 +30,15 @@ import { MassingSvg } from "./massing-view";
 export type ScoutBuilding = Pick<
   Building,
   "id" | "name" | "city" | "neighbourhood" | "yearBuilt" | "buildingClass" | "stories"
->;
+> &
+  Partial<Pick<Building, "source">>;
 
 export type Load =
   | { status: "loading" }
   /** `failed`: the live views whose photo didn't load in the browser. */
   | { status: "ready"; aerial: Aerial; live: boolean; failed?: readonly ViewDir[] }
-  | { status: "error"; message: string };
+  /** `missing`: Vexcel has no aerial for this building (a CoStar kit building, #93), not a failure. */
+  | { status: "error"; message: string; missing?: boolean };
 
 /** What a live photo's alt text calls each view. */
 const PHOTO_ALT: Record<ViewDir, string> = {
@@ -68,7 +71,16 @@ const DRAG_STEP = 72;
  * in as markers; the panel holds the CoStar facts, the entries and the
  * selected entry's note, and "Plan the job".
  */
-export function ScoutScreen({ building, initialLoad }: { building: ScoutBuilding; initialLoad?: Load }) {
+export function ScoutScreen({
+  building,
+  initialLoad,
+  hasLevel = false,
+}: {
+  building: ScoutBuilding;
+  initialLoad?: Load;
+  /** A kit building whose level is built for this mission (#93): it plans like a fixture. */
+  hasLevel?: boolean;
+}) {
   // `initialLoad` is for tests: the state the screen renders before any fetch.
   const [load, setLoad] = useState<Load>(initialLoad ?? { status: "loading" });
   const [attempt, setAttempt] = useState(0);
@@ -162,7 +174,7 @@ export function ScoutScreen({ building, initialLoad }: { building: ScoutBuilding
             {load.status === "loading" ? (
               <Skeleton data-testid="aerial-skeleton" className="absolute inset-0 rounded-md bg-surface-1" />
             ) : load.status === "error" ? (
-              <AerialError message={load.message} onRetry={retry} />
+              load.missing ? <NoAerial /> : <AerialError message={load.message} onRetry={retry} />
             ) : (
               <AerialCanvas
                 views={views!}
@@ -206,9 +218,22 @@ export function ScoutScreen({ building, initialLoad }: { building: ScoutBuilding
         />
       }
       action={
-        <Link href={buildingHref(building.id, "dossier", missionId)} className={buttonVariants({ variant: "primary" })}>
-          Plan the job
-        </Link>
+        isFactsOnly(building.source) && !hasLevel ? (
+          // A kit building's level is built on demand from its Dossier (#93); until then Plan, Run, Debrief and Drill would 404.
+          <div className="flex items-center gap-3">
+            <p data-testid="facts-only" className="text-sm text-text-2">
+              {FACTS_ONLY_NOTE}
+            </p>
+            {/* A full load, not a client link: the layout's step rail reads which levels are built (#93). */}
+            <a href={buildingHref(building.id, "dossier", missionId)} className={buttonVariants({ variant: "primary" })}>
+              Open the level
+            </a>
+          </div>
+        ) : (
+          <Link href={buildingHref(building.id, "dossier", missionId)} className={buttonVariants({ variant: "primary" })}>
+            Plan the job
+          </Link>
+        )
       }
     />
   );
@@ -220,7 +245,8 @@ export async function fetchAerial(id: string, signal: AbortSignal): Promise<Load
   const body = (await response.json().catch(() => null)) as { mode?: string; aerial?: unknown; error?: string } | null;
   if (body) noteResponse(body);
   if (!response.ok || !body) {
-    return { status: "error", message: body?.error ?? `The aerial service answered ${response.status}.` };
+    const message = body?.error ?? `The aerial service answered ${response.status}.`;
+    return response.status === 404 ? { status: "error", message, missing: true } : { status: "error", message };
   }
   const parsed = Aerial.safeParse(body.aerial);
   if (!parsed.success) return { status: "error", message: "The aerial came back in a shape the Scout can't draw." };
@@ -507,6 +533,20 @@ function Kbd({ children }: { children: ReactNode }) {
   );
 }
 
+/** A building Vexcel has no aerial for: a CoStar kit building (#93). Not an error, so no retry. */
+function NoAerial() {
+  return (
+    <div
+      data-testid="aerial-missing"
+      className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-md border border-border bg-surface-1 p-6 text-center"
+    >
+      <p className="label-caps text-text-3">No aerial</p>
+      <p className="text-lg font-semibold text-text-1">Vexcel has no imagery for this building yet.</p>
+      <p className="max-w-md text-sm text-text-2">Its CoStar facts are on the right, and its inside comes from the Matterport scan at Plan and Run.</p>
+    </div>
+  );
+}
+
 function AerialError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div
@@ -587,7 +627,7 @@ export function ScoutPanel({ building, load, selected, onPick, onRetry }: PanelP
           </h2>
           <span className="flex items-center gap-1.5 label-caps text-text-3">
             <LayerDot layer="vexcel" decorative />
-            {aerial ? `${aerial.entries.length} tagged` : load.status === "error" ? "Not loaded" : "Tagging"}
+            {aerial ? `${aerial.entries.length} tagged` : load.status === "error" ? (load.missing ? "No aerial" : "Not loaded") : "Tagging"}
           </span>
         </div>
         {load.status === "loading" ? (
@@ -600,6 +640,10 @@ export function ScoutPanel({ building, load, selected, onPick, onRetry }: PanelP
               </li>
             ))}
           </ul>
+        ) : load.status === "error" && load.missing ? (
+          <p data-testid="entries-from-rules" className="text-sm text-text-2">
+            With no aerial to tag them, the level offers the roof hatch and the street lobby, which every office building has.
+          </p>
         ) : load.status === "error" ? (
           <div data-testid="entries-error" className="flex flex-col items-start gap-3 rounded-md border border-border bg-surface-2 p-4">
             <p className="text-sm text-text-2">The entries come with the aerial. Retry it to tag them.</p>

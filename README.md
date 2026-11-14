@@ -4,7 +4,8 @@
 data: CoStar's record sets the security era, the guard force and the quiet
 zones, Vexcel's aerial sets the ways in, and Matterport's scan is the board.
 Click any guard to see which data put it there. Then the same engine, on the
-same floor, runs the fire drill.**
+same floor, runs the fire drill, and Owner Mode lets a building's security
+lead put in their own security and watch an AI crew try 50 ways in.**
 
 Built at HackPrinceton Fall 2026. Main track: Entertainment. Special tracks:
 CoStar "AI for the Built World", LangChain "Best use of deepagents", Amazon
@@ -49,6 +50,19 @@ Then the same engine runs on the same floor as an **evacuation drill**:
 occupants placed from CoStar's occupied area, one stair blocked as the
 scenario, a time to clear, the queue, and where to post wardens.
 
+**Break into any building for fun. Or put in your real security and watch an
+AI crew try 50 ways in.** From the Debrief, **Owner Mode** opens the same board
+as a setup editor: move guards and draw their rounds, place cameras, set each
+door to key, badge or open, and mark staffed desks. The editor starts from the
+level's own security, so it is never empty, and names any broken round before
+it lets you run. **Run 50 attempts** asks the crew for a handful of strategies
+once, then the engine plays each across many seeds in the browser, with no
+further model calls. On F1 in fake mode, 17 of 50 attempts get out, 14 of them
+the same way, through the dock. The guard or camera that spotted the crew
+first most often is ringed on the board. **Ask the Chief for a fix** suggests
+one change ("C2 now covers the dock corridor"), and **Apply and rerun** puts
+before and after side by side: 17 of 50 to 0 of 50.
+
 **Who it is for.**
 
 - **The player**: someone who wants a story-driven heist set in a real kind of
@@ -57,14 +71,32 @@ scenario, a time to clear, the queue, and where to post wardens.
   high-rise evacuation drills. Drill Mode turns data CoStar already holds
   into a drill scenario with no site visit and no headset. It is a planning aid, not a
   life-safety calculation, and the screen says so.
+- **The building's security lead**: Owner Mode does the first pass of a
+  physical security review, the "how would someone get to the records room?"
+  walk that today takes a consultant and a site visit, on data CoStar already
+  holds. The weak spot the crew keeps using is the one to fix first, and the
+  Chief's suggested change can be checked by rerunning before anyone moves a
+  camera. It is a first pass, not a security assessment, and it doesn't
+  replace one.
 
-**Taste rules we hold to.** No tenant data: the CoStar adapter never requests
-a tenant field ([`REQUESTED_FIELDS` and
-`REQUESTED_SPACE_FIELDS`](src/adapters/costar/mapping.ts)).
+**Taste rules we hold to.** No tenant data: the CoStar adapter reads only the
+kit's property and listing files, never its tenant files
+([`KIT_FILES`](src/adapters/costar/mapping.ts), and a test that proves it).
 Missions are drawn from documented, non-violent corporate history, or are
 fiction and say so ([`fixtures/missions.json`](fixtures/missions.json)). The
 security on the board is game fiction derived from class and era, never a
-claim about a real building.
+claim about a real building. Owner Mode is the one exception, and it is the
+owner's own: the public game only ever shows the generated security, an
+owner's setup stays in that browser's storage
+([`owner-setup-store`](src/components/run/owner-setup-store.ts)), and no
+node, coordinate or route of the floor reaches a model: the crew's strategies
+are asked for by building id, and the Chief's fix gets the building id and a
+summary of counts and element ids
+([`/api/chief/fix`](src/app/api/chief/fix/route.ts)). In this demo the editor opens
+only on fixture buildings, with "Made-up setup on a fixture building. Real
+setups stay on this device." always on screen. A shipped version would unlock
+it only for verified owners of the building, which CoStar's ownership records
+already make possible.
 
 | | |
 |---|---|
@@ -72,6 +104,8 @@ claim about a real building.
 | **Dossier.** The Level Builder's run replays as a checklist of todos, subagent tasks and tool calls, and the Data → Level table fills in. | **Scout.** The aerial's tagged ways in, on a massing drawn from the footprint and height. Scout draws the massing in every mode; it shows no aerial photos yet. |
 | ![Drill Mode: West Stair blocked, 54 s to clear, warden posts and the narrator's recommendations](docs/screenshots/drill.png) | ![The Layer lens on the Run board: guards, cameras, locks and zones tinted CoStar, entries Vexcel, rooms Matterport, with a legend counting each](docs/screenshots/33-run-lens-on-1440.png) |
 | **Drill.** Same floor, Stair B blocked: time to clear, the queue, warden posts. | **Layer lens.** Every element tinted and lettered C, V or M by its source, with a legend counting each layer. |
+| ![Owner Mode's batch: 17 of 50 attempts out, one row per crew strategy, the most common way out drawn on the board](docs/screenshots/128-owner-batch.png) | ![Owner Mode before and after the Chief's fix: 17 of 50 out before, 0 of 50 after, with what changed](docs/screenshots/128-owner-before-after.png) |
+| **Owner Mode.** 50 attempts against the setup: the count, each strategy, and the way out the crew used most. | **Before and after.** The Chief's one change, rerun: 17 of 50 to 0 of 50. |
 
 ## How it works
 
@@ -220,11 +254,12 @@ keys.** The only live path run against the real service is Anthropic, for
 the crew, the Security Chief and the Level Builder (see their rows below). Each live
 adapter's request shape is our best guess pending the event toolkit's
 documentation, kept in one `mapping.ts` per service, and is unit-tested on a
-stubbed `fetch` or SDK.
+stubbed `fetch` or SDK. CoStar has no request: it reads a local data kit,
+mapped from the kit's field documentation and unit-tested on a fictional kit.
 
 | technology | what it does in the product | code | fake (what you see today) | live |
 |---|---|---|---|---|
-| **CoStar** building data | Year built, class, stories, floor area and available suites become the security era, guard force, staged floor, quiet and crowded zones, and the drill headcount | [`src/adapters/costar/`](src/adapters/costar/index.ts): `getCoStar`, `selectCoStar`; [`live.ts`](src/adapters/costar/live.ts) `createLiveCoStar`; [`mapping.ts`](src/adapters/costar/mapping.ts) `toBuilding`, `REQUESTED_FIELDS`. The record is read by [`src/level/rules.ts`](src/level/rules.ts) and [`src/drill/occupancy.ts`](src/drill/occupancy.ts) | Five invented buildings at plausible LA and Houston blocks, [`fixtures/costar/buildings.json`](fixtures/costar/buildings.json) | `COSTAR_MODE=live` with `COSTAR_API_BASE` and `COSTAR_API_KEY`. Not run |
+| **CoStar** building data | Year built, class, stories, floor area and available suites become the security era, guard force, staged floor, quiet and crowded zones, and the drill headcount | [`src/adapters/costar/`](src/adapters/costar/index.ts): `getCoStar`, `selectCoStar`; [`live.ts`](src/adapters/costar/live.ts) `createLiveCoStar`; [`mapping.ts`](src/adapters/costar/mapping.ts) `toKitProperty`, `KIT_FILES`; the kit reader [`kit.ts`](src/adapters/costar/kit.ts) `loadKitIndex`. The record is read by [`src/level/rules.ts`](src/level/rules.ts) and [`src/drill/occupancy.ts`](src/drill/occupancy.ts) | Five invented buildings at plausible LA and Houston blocks, [`fixtures/costar/buildings.json`](fixtures/costar/buildings.json) | `COSTAR_MODE=live` with `COSTAR_KIT_DIR`, the unpacked CoStar data kit (never committed). Not run on the real kit: tested on a fictional kit, [`test-kit.ts`](src/adapters/costar/test-kit.ts) |
 | **Vexcel** aerial imagery | Tagged entries (dock, garage, lobby, roof, service) become the level's ways in and out, and the Scout screen | [`src/adapters/vexcel/`](src/adapters/vexcel/index.ts): `getVexcel`, `selectVexcel`; [`live.ts`](src/adapters/vexcel/live.ts) `createLiveVexcel`; [`mapping.ts`](src/adapters/vexcel/mapping.ts) `toAerial`. Served by [`/api/buildings/[id]/aerial`](src/app/api/buildings/[id]/aerial/route.ts) | A massing drawn as SVG from each building's footprint and height, with hand-placed entry tags, [`fixtures/vexcel/`](fixtures/vexcel/) | `VEXCEL_MODE=live` with `VEXCEL_API_BASE` and `VEXCEL_API_KEY`. The adapter reads the entry tags and passes Vexcel's image URLs through in the aerial response; nothing is stored, and Scout still draws the massing. Not run |
 | **Matterport** 3D scans | Sweeps and rooms become the board: nodes, edges, doors and sightlines | [`src/adapters/matterport/`](src/adapters/matterport/index.ts) (browser only): `getMatterport`, `withFixtureFloor`; [`live.ts`](src/adapters/matterport/live.ts) `createLiveMatterport`; [`mapping.ts`](src/adapters/matterport/mapping.ts) `toFloorGraph` from Showcase SDK `Sweep.data` and `Room.data` | A hand-authored floor for the demo building, [`fixtures/floors/F1.json`](fixtures/floors/F1.json). It is fiction: no Matterport content is in the repo | `NEXT_PUBLIC_MATTERPORT_MODE=live` with `NEXT_PUBLIC_MATTERPORT_SDK_KEY`. Not run |
 | **LangChain `deepagents`** | The Level Builder: `createDeepAgent` with a todo list, two subagents (`data-analyst`, `game-master`) and six tools (`get_building`, `get_available_space`, `get_aerial_entries`, `derive_security_profile`, `get_mission`, `write_manifest`); it builds one level per building and mission | [`src/agents/builder/builder.ts`](src/agents/builder/builder.ts) `buildLevel`; tools in [`tools.ts`](src/agents/builder/tools.ts); prompts in [`prompts.ts`](src/agents/builder/prompts.ts); trace in [`trace.ts`](src/agents/builder/trace.ts); run by [`scripts/build-levels.mts`](scripts/build-levels.mts) | The real deep agent runs, graph, todos, subagent dispatch and tools included, against the fake adapters. Only the model's turns are replayed, by [`ScriptedChatModel`](src/adapters/llm/scripted.ts) from [`fixtures/llm/scripts/builder-F1-romaine-1974.json`](fixtures/llm/scripts/builder-F1-romaine-1974.json). The output is [`data/levels/F1.romaine-1974.json`](data/levels/F1.romaine-1974.json) and its trace | The same agent on Claude through `@langchain/anthropic`. Run live twice on F1 (fixture data only) with `claude-sonnet-4-6`: 13 and 14 model calls, no failed tool calls, both manifests valid and the same as the scripted one but for the objective room's name and rule and the briefing. `npm run record:builds -- F1` saved the second run, now in [`fixtures/llm/recorded/pre-119/`](fixtures/llm/recorded/pre-119/). That run predates the mission input (#119): its game master calls the removed `list_missions`, and its briefing breaks the rules `write_manifest` now enforces, so **it no longer replays**; a test keeps it as the case the rules catch. Re-record with `npm run record:builds -- F1:romaine-1974` (needs `ANTHROPIC_API_KEY`), which replaces it. The Dossier replays the hand-written script |
@@ -284,6 +319,9 @@ run logs live in `localStorage`.
   disabled: the printable plan is not built yet.
 - **A Chief that learns.** Let the Security Chief read a summary of the
   player's earlier runs and change its posture between them.
+- **Owner Mode, finished.** Make night cleaners editable in the setup editor
+  (they already play in the 50 attempts), and gate real setups behind
+  verified ownership.
 - **Rebuild from the UI.** Run the Level Builder live from the Dossier instead
   of ahead of time.
 

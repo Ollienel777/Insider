@@ -5,6 +5,7 @@
 // a model.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { FIXTURE_BUILDINGS } from "@/adapters/costar/fake";
 import { briefingProblems, BuildTrace, LevelManifest } from "@/domain";
 
 export const LEVELS_DIR = path.join(process.cwd(), "data", "levels");
@@ -51,10 +52,21 @@ export async function readCachedLevel(
   return { manifest, trace: BuildTrace.parse(JSON.parse(raw[1])) };
 }
 
+/**
+ * Whether a level may be written for `buildingId`: only for a fixture
+ * building. Every directory a level is written to is tracked, and a level
+ * built from a CoStar kit building is derived from a kit record, which never
+ * enters the repository.
+ */
+export const isFixtureBuilding = (buildingId: string): boolean => FIXTURE_BUILDINGS.some((b) => b.id === buildingId);
+
 /** Writes a level's manifest and trace under its building and mission; returns the two paths. */
 export async function writeCachedLevel(level: CachedLevel, dir: string = LEVELS_DIR): Promise<string[]> {
   const { buildingId, missionId } = level.manifest;
   if (!isLevelId(buildingId)) throw new Error(`invalid building id "${buildingId}"`);
+  if (!isFixtureBuilding(buildingId)) {
+    throw new Error(`not writing ${buildingId}: only fixture buildings get a cached level; a CoStar kit building's level would be kit-derived data`);
+  }
   if (!isLevelId(missionId)) throw new Error(`invalid mission id "${missionId}"`);
   // The briefing rules hold on write; reading stays tolerant, so an older level never breaks a page.
   const problems = briefingProblems(level.manifest.mission.briefing);

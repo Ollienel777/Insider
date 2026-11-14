@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { connection } from "next/server";
 import { getCoStar } from "@/adapters/costar";
 import { getVexcel } from "@/adapters/vexcel";
+import { builtMissions } from "@/agents/builder/live-levels";
 import { demoEpochScript, syncDemoEpoch } from "@/lib/demo-epoch";
 import type { Fallback } from "@/lib/fallback";
 import { forcedServices } from "@/lib/forced-server";
@@ -10,12 +11,13 @@ import type { Building } from "@/domain";
 import type { ServerStatus } from "@/lib/demo-status";
 import { DemoSafety } from "./demo-safety";
 import { StepRail } from "./step-rail";
+import { isFactsOnly } from "./steps";
 import { TopBar } from "./top-bar";
 
 interface AppShellProps {
   children: ReactNode;
   /** On building screens: the building, which also turns the step rail on. */
-  building?: Pick<Building, "id" | "name" | "city">;
+  building?: Pick<Building, "id" | "name" | "city"> & Partial<Pick<Building, "source">>;
 }
 
 /**
@@ -43,7 +45,11 @@ export async function AppShell({ children, building }: AppShellProps) {
     <div className="flex min-h-dvh flex-col lg:h-dvh">
       {epoch ? <script dangerouslySetInnerHTML={{ __html: demoEpochScript(epoch) }} /> : null}
       <TopBar status={status} building={building} />
-      {building ? <StepRail buildingId={building.id} /> : null}
+      {building ? <StepRail
+          buildingId={building.id}
+          factsOnly={isFactsOnly(building.source)}
+          builtMissions={isFactsOnly(building.source) ? builtMissions(building.id) : undefined}
+        /> : null}
       <main className="flex min-h-0 flex-1 flex-col">{children}</main>
       <DemoSafety status={status} />
     </div>

@@ -1,4 +1,4 @@
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -43,6 +43,14 @@ describe("GET /api/levels/[id]?m=", () => {
       expect(response.status, `${id}${query}`).toBe(404);
     }
   });
+  it("never tells a kit building to run build:levels", async () => {
+    const response = await get("900001", "?m=romaine-1974");
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'no level for building "900001" and mission "romaine-1974" yet: build it from its Dossier' });
+    expect(await (await get("F1", "?m=sunset-1986")).json()).toEqual({
+      error: 'no cached level for building "F1" and mission "sunset-1986"; run npm run build:levels',
+    });
+  });
 });
 
 describe("readCachedLevel, keyed by building and mission", () => {
@@ -65,6 +73,14 @@ describe("readCachedLevel, keyed by building and mission", () => {
     await expect(writeCachedLevel(long, dir)).rejects.toThrow("not writing F1.romaine-1974: the briefing must say its security is game fiction");
     writeFileSync(path.join(dir, "F1.romaine-1974.json"), JSON.stringify(long.manifest));
     expect((await readCachedLevel("F1", "romaine-1974", dir))?.manifest.mission.briefing).toBe("In by the dock.");
+  });
+
+  it("never writes a level for a building that is not a fixture: a kit building's level is kit-derived (#2)", async () => {
+    const level = (await readCachedLevel("F1", "romaine-1974"))!;
+    // A fictional kit id, not a CoStar record.
+    const kit = { ...level, manifest: { ...level.manifest, buildingId: "900001" } };
+    await expect(writeCachedLevel(kit, dir)).rejects.toThrow("not writing 900001: only fixture buildings get a cached level");
+    expect(existsSync(path.join(dir, "900001.romaine-1974.json"))).toBe(false);
   });
 
   it("refuses a file that holds another pair", async () => {
