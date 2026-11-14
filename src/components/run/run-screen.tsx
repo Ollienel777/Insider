@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { Building, FloorGraph, LateChief, LevelManifest } from "@/domain";
 import { act, applyChiefOrders, createRun, type Action, type RunState } from "@/engine";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
+import { objectiveNoun } from "@/lib/objective-noun";
 import { cn } from "@/lib/utils";
 import { AlarmBanner } from "./alarm-banner";
 import {
@@ -615,7 +616,8 @@ function RunPanel({
   );
 }
 
-function Outcome({ placed, run }: { placed: PlacedLevel; run: RunState }) {
+/** The run's outcome line: the win names the mission's objective (#70). Exported for its test. */
+export function Outcome({ placed, run }: { placed: PlacedLevel; run: RunState }) {
   const won = run.status === "won";
   return (
     <section
@@ -625,7 +627,7 @@ function Outcome({ placed, run }: { placed: PlacedLevel; run: RunState }) {
     >
       <p className={cn("label-caps", won ? "text-success" : "text-danger")}>{won ? "Clean exit" : "Caught"}</p>
       <p className="mt-1 text-lg font-semibold text-text-1">
-        {won ? "Out with the files." : `Caught in the ${roomName(placed.level.floor, run.playerNode)}.`}
+        {won ? `Out with the ${objectiveNoun(placed.level.missionId)}.` : `Caught in the ${roomName(placed.level.floor, run.playerNode)}.`}
       </p>
       <p className="mt-1 text-sm text-text-2">
         {run.turn} turns, {run.alarmEvents.filter((e) => e.cause.kind !== "decay").length} alarm raises. The debrief has
