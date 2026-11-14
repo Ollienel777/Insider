@@ -112,6 +112,15 @@ const LIFT = /\b(elevator|lift)/i;
  */
 export const SIGHT_M = 10;
 
+/**
+ * The longest hop a position keeps for being one of its nearest, in metres
+ * (`dropLongHops`). 6 m and `SCAN_HOPS_KEPT` are first choices from 15 real
+ * scans (issue 110), whose median hop was 3.3 to 6.9 m.
+ */
+export const SCAN_HOP_METRES = 6;
+/** How many of its shortest hops a position keeps (`dropLongHops`). */
+export const SCAN_HOPS_KEPT = 4;
+
 function roomTags(label: string): NodeTag[] {
   const tags: NodeTag[] = [];
   if (STAIR.test(label)) tags.push("stair");
@@ -241,8 +250,20 @@ function largestComponent(nodes: string[], edges: { a: string; b: string }[]): S
  *   the Vexcel tags (SPEC §4.3).
  * - A room the scan left unlabelled gets a game-fiction name by its size, and
  *   repeated names are numbered.
+ * - Of the scan's hops, a position keeps only its nearest (`dropLongHops`).
+ *   That is done last: everything above is worked out from every hop the scan
+ *   lists (`toFullFloorGraph`), so only `edges` is shorter for it.
  */
 export function toFloorGraph(sweepCollection: Record<string, unknown>, roomCollection: Record<string, unknown>): FloorGraph {
+  return dropLongHops(toFullFloorGraph(sweepCollection, roomCollection));
+}
+
+/**
+ * `toFloorGraph` before any hop is dropped: the board with every hop the scan
+ * lists. Its nodes, tags, rooms and sightlines are the board's; its edges are
+ * too many to play on (see `dropLongHops`).
+ */
+export function toFullFloorGraph(sweepCollection: Record<string, unknown>, roomCollection: Record<string, unknown>): FloorGraph {
   const all = Object.values(sweepCollection).map((s) => RawSweep.parse(s));
   const enabled = all.filter((s) => s.enabled !== false);
   const floor = busiestFloor(enabled);
@@ -338,6 +359,57 @@ export function toFloorGraph(sweepCollection: Record<string, unknown>, roomColle
   }
 
   return FloorGraph.parse({ nodes, edges, rooms, sightlines, source: "matterport" });
+}
+
+/**
+ * `floor` with only each position's nearest hops (issue 110). A scan's
+ * neighbour lists read more like "can see" than "one step away": a position
+ * can list dozens, many of them across the room, so the board built from all
+ * of them is nearly fully connected, and every hop between two rooms is one
+ * more door. An edge is kept when either holds:
+ *
+ * 1. It is on the minimum spanning tree of the board's edges by length, so
+ *    the board stays exactly as connected as it was.
+ * 2. It is at most `SCAN_HOP_METRES` long, and among the `SCAN_HOPS_KEPT`
+ *    shortest edges at one of its two ends.
+ *
+ * Length is the distance on the board. Edges of the same length are ordered
+ * by the ids of their ends, so the same scan always gives the same board.
+ * Only `edges` changes: the kept ones stay as they were, in their order, each
+ * with its door.
+ */
+export function dropLongHops(floor: FloorGraph): FloorGraph {
+  const at = new Map(floor.nodes.map((n) => [n.id, n]));
+  const hops = floor.edges.map((edge) => {
+    const [lo, hi] = edge.a < edge.b ? [edge.a, edge.b] : [edge.b, edge.a];
+    const [p, q] = [at.get(lo)!, at.get(hi)!];
+    return { edge, lo, hi, metres: Math.hypot(p.x - q.x, p.y - q.y) };
+  });
+  const byId = (p: string, q: string) => (p < q ? -1 : p > q ? 1 : 0);
+  hops.sort((p, q) => p.metres - q.metres || byId(p.lo, q.lo) || byId(p.hi, q.hi));
+
+  const kept = new Set<FloorEdge>();
+  // Rule 1 (Kruskal): shortest first, an edge is on the tree when its ends are not joined yet.
+  const joinedTo = new Map(floor.nodes.map((n) => [n.id, n.id]));
+  const part = (id: string): string => {
+    let root = id;
+    while (joinedTo.get(root) !== root) root = joinedTo.get(root)!;
+    return root;
+  };
+  // Rule 2: shortest first, an edge's place at one end is how many of that end's edges came before it.
+  const before = new Map<string, number>();
+  for (const { edge, lo, hi, metres } of hops) {
+    const [p, q] = [part(lo), part(hi)];
+    if (p !== q) {
+      joinedTo.set(p, q);
+      kept.add(edge);
+    }
+    const [atLo, atHi] = [before.get(lo) ?? 0, before.get(hi) ?? 0];
+    before.set(lo, atLo + 1);
+    before.set(hi, atHi + 1);
+    if (metres <= SCAN_HOP_METRES && Math.min(atLo, atHi) < SCAN_HOPS_KEPT) kept.add(edge);
+  }
+  return { ...floor, edges: floor.edges.filter((edge) => kept.has(edge)) };
 }
 
 /**
