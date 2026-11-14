@@ -1,0 +1,8 @@
+{
+  "buildingId": "F1",
+  "note": "The Security Chief's recorded fix for Halvorsen Tower's batch (Owner Mode, issue 127): src/agents/chief/fix.ts answers with it in fake mode and when a live call fails. Ids are the ones the batch debrief sends for the F1 fixture floor: cameras by the profile's roster, zones as chiefZones gives them. On the recorded strategies it takes the batch from 17 of 50 out to none.",
+  "fix": {
+    "change": { "kind": "move-camera", "elementId": "C2", "to": "dock-corridor" },
+    "rationale": "C2 sweeps only the west half of the dock corridor, and most of the crews that got out walked past it. Widen C2 to the whole corridor."
+  }
+}
