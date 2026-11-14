@@ -3,6 +3,7 @@
 // (kit.ts); every call after that answers from memory. A failed load rejects
 // that call (the breaker in index.ts then serves fixtures) and is retried on
 // the next adapter, after `npm run demo:reset`.
+import { BASEMAPS } from "@/components/map/basemap";
 import type { Building, City } from "@/domain";
 import { loadKitIndex, type KitIndex } from "./kit";
 import { mapSelection } from "./mapping";
@@ -56,9 +57,11 @@ export function createLiveCoStar(config: LiveCoStarConfig): LiveCoStar {
   return {
     async listBuildings(city: City) {
       const kit = await index();
+      // Only where the map can draw a pin: the city's basemap.
       return mapSelection(
         [...kit.properties.values()].map((p) => p.building),
         city,
+        BASEMAPS[city].bounds,
       ).map(copy);
     },
     async getBuilding(id: string) {

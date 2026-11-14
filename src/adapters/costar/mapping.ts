@@ -267,11 +267,20 @@ export function toKitProperty(record: unknown, join: KitJoin): KitProperty | Ski
 /**
  * Live pins per city on the map. The kit stages a few hundred buildings per
  * city; the map pins the ones a heist can use, bounded so the fixtures stay
- * readable: buildings with a Matterport scan and a floor on the market now,
- * largest vacant floor first (ties by id), at most this many per city.
- * Every staged kit building still opens by id.
+ * readable: buildings inside the city's basemap (the area the map draws),
+ * with a Matterport scan and a floor on the market now, largest vacant floor
+ * first (ties by id), at most this many per city. Every staged kit building
+ * still opens by id.
  */
 export const MAP_LIMIT_PER_CITY = 20;
+
+/** A lat/lng box: the basemap's bounds. */
+export interface MapArea {
+  west: number;
+  east: number;
+  south: number;
+  north: number;
+}
 
 /** The largest floor's available area, summed over its suites. */
 export function largestVacantFloorSf(building: Pick<Building, "availableSpace">): number {
@@ -280,9 +289,10 @@ export function largestVacantFloorSf(building: Pick<Building, "availableSpace">)
   return Math.max(0, ...perFloor.values());
 }
 
-export function mapSelection(buildings: Iterable<Building>, city: City, limit = MAP_LIMIT_PER_CITY): Building[] {
+export function mapSelection(buildings: Iterable<Building>, city: City, area?: MapArea, limit = MAP_LIMIT_PER_CITY): Building[] {
+  const inside = (b: Building) => !area || (b.lat >= area.south && b.lat <= area.north && b.lng >= area.west && b.lng <= area.east);
   return [...buildings]
-    .filter((b) => b.city === city && b.layers.matterport && b.availableSpace.length > 0)
+    .filter((b) => b.city === city && b.layers.matterport && b.availableSpace.length > 0 && inside(b))
     .map((b) => ({ b, sf: largestVacantFloorSf(b) }))
     .sort((x, y) => y.sf - x.sf || x.b.id.localeCompare(y.b.id, "en", { numeric: true }))
     .slice(0, limit)
