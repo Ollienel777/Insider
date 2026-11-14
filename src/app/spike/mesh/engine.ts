@@ -41,6 +41,8 @@ export interface WalkHud {
   panosLoading: number;
   faces: PanoResolution;
   locked: boolean;
+  /** The browser refused to lock the mouse: the page says to drag instead. */
+  lockRefused: boolean;
   fps: number;
   /** Seconds each loading step took, and the mesh file's size. */
   timings: { manifest: number | null; download: number | null; megabytes: number | null; build: number | null };
@@ -63,6 +65,8 @@ const HUD_EVERY = 0.2;
 const LINK_MARGIN = 20_000;
 /** A mouse report longer than this, in counts, is a glitch, not a flick. */
 const MOUSE_JUMP = 600;
+/** A drag with the button held turns the view this much faster than a locked mouse, pixel for pixel. */
+const DRAG_GAIN = 1.8;
 /** Radians per second of turning on the arrow keys. */
 const KEY_TURN = 2.2;
 
@@ -105,6 +109,8 @@ export class ScanWalk {
   private sensitivity = 1;
   private projectionShown = 1;
   private locked = false;
+  /** Where a drag last was, while the button is held and the mouse is not locked. */
+  private drag: [number, number] | null = null;
   private disposed = false;
   private frame = 0;
   private last = 0;
@@ -144,6 +150,7 @@ export class ScanWalk {
       panosLoading: 0,
       faces: options.faces,
       locked: false,
+      lockRefused: false,
       fps: 0,
       timings: { manifest: null, download: null, megabytes: null, build: null },
     };
@@ -156,6 +163,12 @@ export class ScanWalk {
     document.addEventListener("pointerlockchange", this.lockChange, listen);
     document.addEventListener("mousemove", this.mouseMove, listen);
     canvas.addEventListener("click", this.requestLock, listen);
+    document.addEventListener("pointerlockerror", this.lockRefused, listen);
+    // Drag to look: the way to turn the view wherever the lock is refused (an embedded pane, a remote session).
+    canvas.addEventListener("pointerdown", this.dragStart, listen);
+    canvas.addEventListener("pointermove", this.dragMove, listen);
+    canvas.addEventListener("pointerup", this.dragEnd, listen);
+    canvas.addEventListener("pointercancel", this.dragEnd, listen);
     this.resize();
 
     if (options.debug) (window as unknown as { __scanWalk?: ScanWalk }).__scanWalk = this;
@@ -317,14 +330,56 @@ export class ScanWalk {
   private readonly requestLock = (): void => {
     if (this.locked || this.hud.phase !== "ready") return;
     // Raw mouse input where the browser has it: no pointer acceleration.
-    const raw = this.canvas.requestPointerLock({ unadjustedMovement: true }) as unknown as Promise<void> | undefined;
-    raw?.catch?.(() => this.canvas.requestPointerLock());
+    try {
+      const raw = this.canvas.requestPointerLock({ unadjustedMovement: true }) as unknown as Promise<void> | undefined;
+      raw?.catch?.(() => {
+        try {
+          const plain = this.canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+          plain?.catch?.(() => this.lockRefused());
+        } catch {
+          this.lockRefused();
+        }
+      });
+    } catch {
+      this.lockRefused();
+    }
+  };
+
+  private readonly lockRefused = (): void => {
+    if (this.hud.lockRefused) return;
+    this.hud.lockRefused = true;
+    this.push();
+  };
+
+  private readonly dragStart = (event: PointerEvent): void => {
+    if (this.locked || event.button !== 0 || this.hud.phase !== "ready") return;
+    this.drag = [event.clientX, event.clientY];
+    try {
+      this.canvas.setPointerCapture(event.pointerId);
+    } catch {
+      // No capture: the drag still works while the pointer stays over the view.
+    }
+  };
+
+  private readonly dragMove = (event: PointerEvent): void => {
+    if (this.locked || !this.drag) return;
+    const [x, y] = this.drag;
+    this.drag = [event.clientX, event.clientY];
+    const look = applyLook(this.yaw, this.pitch, (event.clientX - x) * DRAG_GAIN, (event.clientY - y) * DRAG_GAIN, TUNING.lookSpeed * this.sensitivity);
+    this.yaw = look.yaw;
+    this.pitch = look.pitch;
+  };
+
+  private readonly dragEnd = (): void => {
+    this.drag = null;
   };
 
   private readonly lockChange = (): void => {
     this.locked = document.pointerLockElement === this.canvas;
     if (!this.locked) this.keys.clear();
+    this.drag = null;
     this.hud.locked = this.locked;
+    if (this.locked) this.hud.lockRefused = false;
     this.push();
   };
 

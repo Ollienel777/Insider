@@ -151,9 +151,9 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, debug }: Props) {
       )}
 
       {ready && !hud?.locked && (
-        <div className="pointer-events-none absolute inset-0 grid place-items-center">
-          <p className="rounded-md border border-border-strong bg-surface-1/90 px-5 py-3 text-sm text-text-1 shadow-e-2 backdrop-blur-sm">
-            Click to look around
+        <div className={`pointer-events-none absolute inset-0 grid justify-items-center ${hud?.lockRefused ? "items-start pt-4" : "items-center"}`}>
+          <p data-testid="scan-walk-look-hint" className="rounded-md border border-border-strong bg-surface-1/90 px-5 py-3 text-sm text-text-1 shadow-e-2 backdrop-blur-sm">
+            {hud?.lockRefused ? "Hold the mouse button and drag to look around" : "Click to look around, or hold and drag"}
           </p>
         </div>
       )}
