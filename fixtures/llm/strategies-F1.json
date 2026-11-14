@@ -1,0 +1,61 @@
+{
+  "buildingId": "F1",
+  "note": "The crew's recorded strategies for Halvorsen Tower (Owner Mode, #126): src/agents/crew/strategies.ts answers with these in fake mode and when a live call fails. Entry and zone ids are the cached manifest's (data/levels/F1.json).",
+  "strategies": [
+    {
+      "id": "dock-patient",
+      "name": "Dock, after the round",
+      "entryId": "dock-N",
+      "exitId": "dock-N",
+      "timing": "wait-for-round",
+      "route": "shortest",
+      "via": [],
+      "risk": "low",
+      "rationale": "Freight lift up, hold until the round passes, then straight down the dock corridor and back."
+    },
+    {
+      "id": "dock-fast",
+      "name": "Dock, straight in",
+      "entryId": "dock-N",
+      "exitId": "dock-N",
+      "timing": "immediate",
+      "route": "shortest",
+      "via": [],
+      "risk": "high",
+      "rationale": "Shortest way to the files. Sprint past the corridor camera instead of waiting it out."
+    },
+    {
+      "id": "roof-quiet",
+      "name": "Roof, through the vacant suites",
+      "entryId": "roof",
+      "exitId": "roof",
+      "timing": "wait-for-round",
+      "route": "quiet-zones",
+      "via": [],
+      "risk": "low",
+      "rationale": "Down the east stair and keep to the dark, empty suites where nobody patrols."
+    },
+    {
+      "id": "suite-detour",
+      "name": "Dock, by way of Suite 2206",
+      "entryId": "dock-N",
+      "exitId": "dock-N",
+      "timing": "immediate",
+      "route": "quiet-zones",
+      "via": ["quiet-2206"],
+      "risk": "medium",
+      "rationale": "Stage in the vacant Suite 2206 first, then come at the records room from the main corridor."
+    },
+    {
+      "id": "dock-in-roof-out",
+      "name": "Dock in, roof out",
+      "entryId": "dock-N",
+      "exitId": "roof",
+      "timing": "immediate",
+      "route": "avoid-cameras",
+      "via": [],
+      "risk": "medium",
+      "rationale": "In by the dock, out over the roof so nobody waiting at the dock sees us leave."
+    }
+  ]
+}
