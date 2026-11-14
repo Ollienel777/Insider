@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { checkUnique, type City, Mission } from "@/domain";
 import finalists from "../../../fixtures/inventory-finalists.json";
+import { showcaseMission } from "@/lib/showcase";
 import raw from "../../../fixtures/missions.json";
 
 const Library = z.array(Mission).superRefine((missions, ctx) =>
@@ -34,9 +35,13 @@ export function findMission(id: string, library: readonly Mission[] = MISSIONS):
  * carries it as a field. The one place that records it is
  * fixtures/inventory-finalists.json, the finalists each mission's funnel ends
  * with, so this reads it there: the mission that casts this building first.
- * Null for any other building (an inventory property, a live id).
+ * A showcase kit building (`SHOWCASE_LEVELS`, #93) stages its paired
+ * mission. Null for any other building (an inventory property, a live id).
  */
 export function defaultMissionId(buildingId: string): string | null {
   const entry = Object.entries(finalists as Record<string, string[]>).find(([, ids]) => ids[0] === buildingId);
-  return entry && findMission(entry[0]) ? entry[0] : null;
+  if (entry && findMission(entry[0])) return entry[0];
+  // A showcase kit building stages the mission it is paired with (#93).
+  const paired = showcaseMission(buildingId);
+  return paired && findMission(paired) ? paired : null;
 }

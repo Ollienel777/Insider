@@ -156,6 +156,9 @@ describe("applyFix", () => {
       [{ kind: "retime-guard", elementId: "G1", byTurns: 0 }, "retime-guard needs a whole, non-zero byTurns"],
       [{ kind: "retime-guard", elementId: "G1", byTurns: 9 }, "a round moves at most 6 turns either way"],
       [{ kind: "retime-guard", elementId: "G3", byTurns: 1 }, 'guard "G3" holds a post and walks no round'],
+      // G1 walks a round of 4 on F1: a whole round (or two back) leaves it where it was.
+      [{ kind: "retime-guard", elementId: "G1", byTurns: 4 }, 'guard "G1" walks a round of 4 turns, so 4 turns changes nothing'],
+      [{ kind: "retime-guard", elementId: "G1", byTurns: -4 }, 'guard "G1" walks a round of 4 turns, so -4 turns changes nothing'],
       [{ kind: "lock-door", elementId: "objective" }, 'zone "objective" has no unlocked door that locks'],
       [{ kind: "add-guard", elementId: "G1", to: "dock-corridor" }, '"G1" is already on the floor'],
     ] as const;
