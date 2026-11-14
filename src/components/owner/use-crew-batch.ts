@@ -1,6 +1,6 @@
-// A hook for Owner Mode's "Run 50 attempts" (#126): fetches the crew's
+// A hook for Owner Mode's "Run 50 attempts" (issue 126): fetches the crew's
 // strategies and plays the batch in the browser. The button and the batch
-// view that call it land in #127.
+// view that call it land in issue 127.
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
