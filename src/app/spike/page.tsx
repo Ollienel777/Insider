@@ -3,16 +3,27 @@
 // product: it exists to tune how looking and walking feel before the scan view
 // is built into the Run screen. See README.md beside this file.
 //
-// Open /spike?m=<a Matterport model id from the kit>. Drag to look, hold W to
-// walk toward the blue ring, N toggles the night filter. One guard walks the
-// scan on a one-second clock. Nothing is stored and nothing leaves the page.
+// Open /spike?m=<a Matterport model id from the kit>. Click to lock the mouse
+// and look, hold W to walk toward the blue ring, S, A and D step back and to
+// the sides, N toggles the night filter. The keys in TUNE_KEYS change the feel
+// while it runs. One guard walks the scan on a one-second clock. Nothing is
+// stored and nothing leaves the page.
 import { useEffect, useRef } from "react";
-import { attachScanControls, pickTarget, stepMs, type Vec3 } from "./controls";
+import { attachScanControls, bearingOf, DEFAULT_TUNING, pickTarget, stepMs, TUNING, type Tuning, type Vec3, type WalkIntent } from "./controls";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const TURN_MS = 1000; // the guard's clock
 const HOP_METRES = 8; // hops longer than this are pruned
 const NIGHT = "brightness(.42) contrast(1.3) saturate(.45) hue-rotate(185deg)";
+/** Keys that change the feel while the sandbox runs: [key down, key up, the value, the step]. The HUD shows the values. */
+const TUNE_KEYS: readonly (readonly [string, string, keyof Tuning, number])[] = [
+  ["[", "]", "walkMetresPerSecond", 0.5],
+  ["-", "=", "lookDegreesPerPixel", 0.02],
+  [",", ".", "steerShare", 0.1],
+  [";", "'", "bobPixels", 1],
+];
+/** `?speed=`, `?look=`, `?steer=` and `?bob=` set the same four values from the address. */
+const TUNE_PARAMS: Record<string, keyof Tuning> = { speed: "walkMetresPerSecond", look: "lookDegreesPerPixel", steer: "steerShare", bob: "bobPixels" };
 const GUARD_SVG =
   "<svg viewBox='0 0 40 100' width='100%' height='100%' preserveAspectRatio='none'>" +
   "<circle cx='20' cy='9' r='8' fill='#0b0f14' stroke='#ff5a4d' stroke-width='1.5'/>" +
@@ -84,10 +95,21 @@ export default function Spike() {
         });
 
         // ---- looking and walking: all of it is in controls.ts
-        const target = () =>
-          state.pose && state.sweeps && state.at
-            ? pickTarget({ sdk, pose: state.pose, size: size(), hops: hops(state.at), floorPoint })
-            : null;
+        // With no intent this is the position W would walk to, which the blue ring marks.
+        const target = (intent?: WalkIntent) => {
+          if (!state.pose || !state.sweeps || !state.at) return null;
+          const picked = pickTarget({
+            pose: state.pose,
+            hops: hops(state.at),
+            floorPoint,
+            heading: intent?.heading ?? 0,
+            chained: intent?.chained ?? false,
+            cameFrom: state.cameFrom ? floorPoint(state.cameFrom) : null,
+            sticky: (intent?.heading ?? 0) === 0 ? state.aimed : null,
+          });
+          if ((intent?.heading ?? 0) === 0) state.aimed = picked;
+          return picked;
+        };
         const controls = attachScanControls({
           sdk,
           layer,
@@ -95,12 +117,34 @@ export default function Spike() {
           // In the game this plays the engine's move and the camera follows. Here it flies the camera.
           step: async (sid) => {
             const metres = flat(state.sweeps[state.at].position, state.sweeps[sid].position);
-            await sdk.Sweep.moveTo(sid, { transition: sdk.Sweep.Transition.FLY, transitionTime: stepMs(metres) });
+            const ms = stepMs(metres);
+            const started = performance.now();
+            await sdk.Sweep.moveTo(sid, { transition: sdk.Sweep.Transition.FLY, transitionTime: ms });
+            state.hopLog.push({ metres: +metres.toFixed(2), asked: ms, took: Math.round(performance.now() - started), t: now() });
+            if (state.hopLog.length > 60) state.hopLog.shift();
+            state.cameFrom = state.at;
             state.at = sid;
+            state.aimed = null;
+          },
+          bearingTo: (sid) => (state.pose ? bearingOf(state.pose, floorPoint(sid)) : null),
+          bob: layer.parentElement,
+          onState: (s) => {
+            state.controls = s;
+            layer.style.cursor = s.locked ? "none" : "pointer";
           },
         });
+        state.hopLog = [];
+        for (const [name, key] of Object.entries(TUNE_PARAMS)) {
+          const value = Number(new URLSearchParams(location.search).get(name));
+          if (Number.isFinite(value) && value > 0) (TUNING[key] as number) = value;
+        }
         window.addEventListener("keydown", (e) => {
           if (e.key === "n" || e.key === "N") iframe.style.filter = iframe.style.filter ? "" : NIGHT;
+          if (e.key === "0") Object.assign(TUNING, DEFAULT_TUNING);
+          for (const [less, more, key, by] of TUNE_KEYS) {
+            if (e.key !== less && e.key !== more) continue;
+            (TUNING[key] as number) = Math.max(0, +((TUNING[key] as number) + (e.key === more ? by : -by)).toFixed(2));
+          }
         });
 
         // ---- one guard on a clock
@@ -175,7 +219,10 @@ export default function Spike() {
               guardEl.style.top = `${hi.y}px`;
             } else guardEl.style.display = "none";
           }
-          hud.textContent = `Drag: look | hold W: walk to the blue ring | N: night | ${Object.keys(state.sweeps).length} positions, ${legal.size} hops from here${aimed ? "" : " | turn until a ring is blue"} | the guard is not hidden by walls yet`;
+          const look = controls.locked ? "Mouse: look (Esc lets go)" : "Click: lock the mouse to look (or drag)";
+          const hint = controls.blocked ? " | nothing that way: turn until a ring is blue" : aimed ? "" : " | turn until a ring is blue";
+          const tune = TUNE_KEYS.map(([less, more, key]) => `${less}${more} ${key} ${TUNING[key]}`).join(" | ");
+          hud.textContent = `${look} | W: walk to the blue ring | S A D: step back, left, right | Q E: turn | N: night${hint}\n${tune} | 0: reset | ${Object.keys(state.sweeps).length} positions, ${legal.size} hops from here | the guard is not hidden by walls yet`;
         };
         iframe.style.filter = NIGHT;
         requestAnimationFrame(draw);
@@ -187,9 +234,12 @@ export default function Spike() {
   }, []);
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "black" }}>
-      <iframe ref={frameRef} id="spike-frame" title="scan" allow="xr-spatial-tracking; fullscreen" tabIndex={-1} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }} />
-      <div ref={layerRef} id="spike-overlay" style={{ position: "absolute", inset: 0, cursor: "grab", userSelect: "none", touchAction: "none" }} />
-      <div ref={hudRef} style={{ position: "absolute", left: 16, top: 12, right: 16, font: "600 13px system-ui", color: "white", pointerEvents: "none", textShadow: "0 1px 3px black" }} />
+      {/* The player and the layer over it share one box, so the footstep dip moves both and the overlay stays on the scan. */}
+      <div style={{ position: "absolute", inset: 0 }}>
+        <iframe ref={frameRef} id="spike-frame" title="scan" allow="xr-spatial-tracking; fullscreen" tabIndex={-1} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }} />
+        <div ref={layerRef} id="spike-overlay" style={{ position: "absolute", inset: 0, cursor: "pointer", userSelect: "none", touchAction: "none" }} />
+      </div>
+      <div ref={hudRef} style={{ position: "absolute", left: 16, top: 12, right: 16, font: "600 13px system-ui", color: "white", pointerEvents: "none", textShadow: "0 1px 3px black", whiteSpace: "pre-line" }} />
     </div>
   );
 }
