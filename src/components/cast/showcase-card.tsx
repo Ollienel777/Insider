@@ -2,9 +2,10 @@ import { Check, Minus, X } from "lucide-react";
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { LAYERS, LayerDot, type Layer } from "@/components/shell/layer-dot";
+import { MODEL_FIXTURES_NOTE, MODEL_FORCED_NOTE } from "@/components/shell/steps";
 import { buildingHref } from "@/lib/building-href";
 import { cityName } from "@/lib/cities";
-import type { CastReason, ReasonStatus, ShowcaseCast } from "@/lib/showcase-cast";
+import type { CastReason, ReasonStatus, ShowcaseCast, ShowcaseLevel } from "@/lib/showcase-cast";
 import { cn } from "@/lib/utils";
 
 const LAYER_ORDER = Object.keys(LAYERS) as Layer[];
@@ -26,10 +27,20 @@ const STATUS: Record<ReasonStatus, { word: string; Icon: typeof Check }> = {
 /** How a row joins the value to the need: "Class B · needs Class A". */
 const CONNECTOR: Record<ReasonStatus, string> = { match: "fits", miss: "needs", unknown: "can't check" };
 
-/** "Matches 5 of 7 of the mission's needs". */
+/** "fits 5 of 7 of the mission's needs". */
 export function matchLine(reasons: readonly CastReason[]): string {
-  return `Matches ${reasons.filter((r) => r.status === "match").length} of ${reasons.length} of the mission's needs`;
+  return `fits ${reasons.filter((r) => r.status === "match").length} of ${reasons.length} of the mission's needs`;
 }
+
+/** Where the building's level stands, in the Dossier's words where it has them. */
+export const LEVEL_LINE: Record<ShowcaseLevel, string> = {
+  built: "Its level is built: Plan and Run are ready.",
+  building: "Its level is being built now. This takes a minute or two.",
+  failed: "The last build of its level failed. Its Dossier says why and can try again.",
+  none: "No level yet: its Dossier builds one before Plan and Run.",
+  "model-forced": MODEL_FORCED_NOTE,
+  "model-fixtures": MODEL_FIXTURES_NOTE,
+};
 
 interface ShowcaseCardProps {
   showcase: ShowcaseCast;
@@ -41,8 +52,8 @@ interface ShowcaseCardProps {
 /**
  * The showcase building the mission is cast onto (issue 103): a real CoStar kit
  * building from the server's showcase list, not a pick of the replayed
- * funnel. It says why it fits, need by need from its CoStar fields, and where
- * it does not, then links to its Scout, Dossier, Plan and Run on this
+ * funnel. It says so, then how it fits, need by need from its CoStar fields,
+ * and where it does not, then links to its Scout, Dossier, Plan and Run on this
  * mission. Its heading picks it for "Scout it", like a finalist's.
  */
 export function ShowcaseCard({ showcase: s, missionId, selected, onSelect }: ShowcaseCardProps) {
@@ -109,13 +120,13 @@ export function ShowcaseCard({ showcase: s, missionId, selected, onSelect }: Sho
             ))}
           </ul>
           <p data-testid="showcase-level" className="mt-2 text-sm text-text-2">
-            {s.levelReady ? "Its level is built: Plan and Run are ready." : "No level yet: its Dossier builds one before Plan and Run."}
+            {LEVEL_LINE[s.level]}
           </p>
         </nav>
       </div>
       <section aria-labelledby={`showcase-${s.id}-because`} className="min-w-0">
         <h3 id={`showcase-${s.id}-because`} className="label-caps text-text-3">
-          Because · {matchLine(s.reasons)}
+          Picked from the showcase list · {matchLine(s.reasons)}
         </h3>
         <ul data-testid="showcase-reasons" className="mt-2 flex flex-col gap-1 text-sm">
           {s.reasons.map((r) => {

@@ -6,15 +6,18 @@
 // where it does not, from the building's own CoStar fields.
 //
 // Without a list entry, in fake mode, with CoStar forced to fixtures or after
-// a live failure, there is no showcase cast and the screen is unchanged.
+// a live failure, there is no showcase cast and the screen is unchanged. Nor
+// is there when the list pairs the building with a mission staged in another
+// city: no level can be built for that pair, so it is skipped with a warning.
 // What leaves here is picked field by field from `Building`, which carries no
 // contact of any kind, so no broker or agent name reaches a screen.
 import { getCoStar } from "@/adapters/costar";
-import { buildState } from "@/agents/builder/live-levels";
+import { buildState, canBuildFor } from "@/agents/builder/live-levels";
 import type { Building, BuildingClass, Layers, Mission, PropertyType } from "@/domain";
 import { largestVacantFloor } from "./cast-because";
 import { cityName } from "./cities";
-import { showcaseBuilding } from "./showcase";
+import { configuredModes } from "./mode";
+import { showcase, showcaseBuilding } from "./showcase";
 
 type Env = Record<string, string | undefined>;
 
@@ -30,6 +33,16 @@ export interface CastReason {
   status: ReasonStatus;
 }
 
+/**
+ * Where the showcase building's level stands for the mission: `built` (Plan
+ * and Run open on it), `building` (the startup build or a visitor's is
+ * running), `failed` (the last build failed; the Dossier can retry), `none`
+ * (not built yet; the Dossier builds it), or no build can run because the
+ * model is on fixtures: `model-forced` in the demo settings, `model-fixtures`
+ * as configured.
+ */
+export type ShowcaseLevel = "built" | "building" | "failed" | "none" | "model-forced" | "model-fixtures";
+
 /** What the cast screen shows of a showcase building. */
 export interface ShowcaseCast {
   id: string;
@@ -42,8 +55,8 @@ export interface ShowcaseCast {
   layers: Layers;
   /** One per casting filter of the mission, in the mission's order. */
   reasons: CastReason[];
-  /** Its level is built in memory, so Plan and Run open on it. */
-  levelReady: boolean;
+  /** Where its level stands for the mission. */
+  level: ShowcaseLevel;
 }
 
 const SF = new Intl.NumberFormat("en-US");
@@ -89,14 +102,29 @@ export function castReasons(building: Building, propertyType: PropertyType | nul
 }
 
 /**
+ * Where a showcase level stands. A level built or building stands whatever
+ * the model; otherwise no build can run while the model is on fixtures, in
+ * the order the Dossier checks.
+ */
+function levelState(buildingId: string, missionId: string, modelForced: boolean, env: Env): ShowcaseLevel {
+  const state = buildState(buildingId, missionId);
+  if (state.status === "built" || state.status === "building") return state.status;
+  if (modelForced) return "model-forced";
+  if (configuredModes(env).llm !== "live") return "model-fixtures";
+  return state.status;
+}
+
+/**
  * The showcase building `mission` is cast onto, or null when there is none:
- * no list entry, CoStar not live (fake, forced, or fallen back), or the
- * building not found. Never throws: a failure is logged and the cast screen
- * carries on without it.
+ * no list entry, CoStar not live (fake, forced, or fallen back), the building
+ * not found, or a pair whose building is in a city the mission is not staged
+ * in (warned). `modelForced`: the model is forced to fixtures in the demo
+ * settings. Never throws: a failure is logged and the cast screen carries on
+ * without it.
  */
 export async function showcaseCast(
   mission: Pick<Mission, "id" | "casting">,
-  options: { forced?: boolean; env?: Env } = {},
+  options: { forced?: boolean; modelForced?: boolean; env?: Env } = {},
 ): Promise<ShowcaseCast | null> {
   const buildingId = showcaseBuilding(mission.id, options.env);
   if (!buildingId) return null;
@@ -105,11 +133,16 @@ export async function showcaseCast(
     if (costar.mode !== "live") return null;
     const building = await costar.adapter.getBuilding(buildingId);
     if (!building || building.source !== "costar") return null;
+    if (!canBuildFor(building, mission.id)) {
+      const position = showcase(options.env).findIndex((e) => e.missionId === mission.id) + 1;
+      console.warn(`SHOWCASE_LEVELS: pair ${position} names ${mission.id}, which is not staged in its building's city; casting ${mission.id} without it`);
+      return null;
+    }
     const { id, name, neighbourhood, city, yearBuilt, buildingClass, stories, layers } = building;
     return {
       ...{ id, name, neighbourhood, city, yearBuilt, buildingClass, stories, layers },
       reasons: castReasons(building, costar.propertyType?.(id) ?? null, mission),
-      levelReady: buildState(id, mission.id).status === "built",
+      level: levelState(id, mission.id, options.modelForced ?? false, options.env ?? process.env),
     };
   } catch (error) {
     console.error(`showcase cast for ${mission.id}: ${error instanceof Error ? error.message : String(error)}`);

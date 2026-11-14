@@ -84,10 +84,18 @@ describe("showcaseCast", () => {
     resetCoStar();
   }
 
+  /** The model live, as the build route needs it; a placeholder key, never a real one. */
+  function modelLive() {
+    vi.stubEnv("LLM_MODE", "live");
+    vi.stubEnv("LLM_PROVIDER", "anthropic");
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-placeholder");
+  }
+
   it("casts a mission onto its showcase building, with its kit record's reasons", async () => {
     live("900001:romaine-1974");
+    modelLive();
     const cast = await showcaseCast(romaine);
-    expect(cast).toMatchObject({ id: "900001", name: "Testwood Tower 900001", city: "LA", yearBuilt: 1981, buildingClass: "B", levelReady: false });
+    expect(cast).toMatchObject({ id: "900001", name: "Testwood Tower 900001", city: "LA", yearBuilt: 1981, buildingClass: "B", level: "none" });
     // The property type comes from the kit record, which `Building` does not carry.
     expect(cast?.reasons.find((r) => r.need === "office")).toEqual({ need: "office", value: "office", status: "match" });
     expect(cast?.reasons.find((r) => r.need === "built 1974 or earlier")?.status).toBe("miss");
@@ -105,10 +113,53 @@ describe("showcaseCast", () => {
     expect(json).not.toMatch(/Brokerly|Agently|555-0100|contact/i);
   });
 
-  it("says the level is ready once it is built in memory", async () => {
+  it("says the level is ready once it is built in memory, whatever the model", async () => {
     live("900001:romaine-1974");
     store.set(levelKey("900001", "romaine-1974"), { status: "built", level: {} as never });
-    expect((await showcaseCast(romaine))?.levelReady).toBe(true);
+    expect((await showcaseCast(romaine))?.level).toBe("built");
+    expect((await showcaseCast(romaine, { modelForced: true }))?.level).toBe("built");
+  });
+
+  it("says the level is building while a build runs, whatever the model", async () => {
+    live("900001:romaine-1974");
+    store.set(levelKey("900001", "romaine-1974"), { status: "building", promise: new Promise(() => {}) });
+    expect((await showcaseCast(romaine))?.level).toBe("building");
+    expect((await showcaseCast(romaine, { modelForced: true }))?.level).toBe("building");
+  });
+
+  it("says the last build failed, with the model live", async () => {
+    live("900001:romaine-1974");
+    modelLive();
+    store.set(levelKey("900001", "romaine-1974"), { status: "failed", error: "the model timed out", at: 0 });
+    const cast = await showcaseCast(romaine);
+    expect(cast?.level).toBe("failed");
+    // The card says the Dossier has why; the error itself stays on the server.
+    expect(JSON.stringify(cast)).not.toContain("timed out");
+  });
+
+  it("says no build can run while the model is on fixtures, configured or forced", async () => {
+    live("900001:romaine-1974");
+    vi.stubEnv("LLM_MODE", "fake");
+    expect((await showcaseCast(romaine))?.level).toBe("model-fixtures");
+    // Asked live but missing its key: still fixtures.
+    vi.stubEnv("LLM_MODE", "live");
+    vi.stubEnv("LLM_PROVIDER", "anthropic");
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    expect((await showcaseCast(romaine))?.level).toBe("model-fixtures");
+    modelLive();
+    expect((await showcaseCast(romaine, { modelForced: true }))?.level).toBe("model-forced");
+    // A failed build reads the same: the Dossier can't retry it either.
+    store.set(levelKey("900001", "romaine-1974"), { status: "failed", error: "x", at: 0 });
+    expect((await showcaseCast(romaine, { modelForced: true }))?.level).toBe("model-forced");
+  });
+
+  it("is null, with a warning naming the pair's position, when the list pairs the building with another city's mission", async () => {
+    live("900002:romaine-1974,900001:paper-trail-2001");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await showcaseCast(findMission("paper-trail-2001")!)).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toMatch(/pair 2 names paper-trail-2001, which is not staged/);
+    expect(warn.mock.calls[0][0]).not.toContain("900001");
   });
 
   it("is null for a mission with no showcase building, or a listed building the kit lacks", async () => {

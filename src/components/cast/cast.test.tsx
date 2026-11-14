@@ -257,7 +257,7 @@ describe("CastScreen with a showcase building", () => {
     ...{ id: b.id, name: b.name, neighbourhood: b.neighbourhood, city: b.city, yearBuilt: b.yearBuilt },
     ...{ buildingClass: b.buildingClass, stories: b.stories, layers: b.layers },
     reasons: castReasons(b, mapped.propertyType, mission("night-desk")),
-    levelReady: false,
+    level: "none",
   };
   const screen = (startComplete: boolean, cast = showcase) =>
     renderToStaticMarkup(
@@ -279,7 +279,18 @@ describe("CastScreen with a showcase building", () => {
       ["scout", "dossier", "plan", "run"].map((s) => `/b/900001/${s}?m=night-desk`),
     );
     expect(textOf(card)).toContain("No level yet: its Dossier builds one before Plan and Run.");
-    expect(textOf(screen(true, { ...showcase, levelReady: true }))).toContain("Its level is built: Plan and Run are ready.");
+  });
+
+  it.each([
+    ["built", "Its level is built: Plan and Run are ready."],
+    ["building", "Its level is being built now. This takes a minute or two."],
+    ["failed", "The last build of its level failed. Its Dossier says why and can try again."],
+    ["model-forced", "The model is forced to fixtures in the demo settings, so the Level Builder can't build this level. Turn the model back on there to build it."],
+    ["model-fixtures", "The model is on fixtures, so the Level Builder can't build this level here. It needs the live model."],
+  ] as const)("words a level that is %s truthfully", (level, line) => {
+    const text = textOf(screen(true, { ...showcase, level }));
+    expect(text).toContain(line);
+    expect(text).not.toContain("its Dossier builds one");
   });
 
   it("says why it fits, and that a Class B building misses a mission that needs Class A", () => {
@@ -288,7 +299,9 @@ describe("CastScreen with a showcase building", () => {
     expect(text).toContain("Doesn't match: Class B · needs Class A");
     expect(text).toContain("Matches: office · fits office");
     expect(text).toContain("Not on the record: no aerial on record · can't check a dock on the aerial");
-    expect(text).toMatch(/Because · Matches \d of 7 of the mission's needs/);
+    // Picked from the list, not by the rules: the fit is a second fact.
+    expect(text).toMatch(/Picked from the showcase list · fits \d of 7 of the mission's needs/);
+    expect(text).not.toContain("Because");
     expect(card.match(/data-testid="showcase-reason" data-status="miss"/g)?.length).toBeGreaterThan(0);
   });
 

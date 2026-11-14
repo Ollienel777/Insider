@@ -6,6 +6,7 @@ import { dataToLevelRows } from "@/components/dossier/data-to-level";
 import { DossierScreen } from "@/components/dossier/dossier-screen";
 import { DossierUnavailable } from "@/components/dossier/dossier-unavailable";
 import { dossierFacts } from "@/components/dossier/facts";
+import { MODEL_FIXTURES_NOTE, MODEL_FORCED_NOTE } from "@/components/shell/steps";
 import { findBuilding } from "@/lib/building";
 import { configuredModes } from "@/lib/mode";
 import { forcedServices } from "@/lib/forced-server";
@@ -44,9 +45,9 @@ export default async function DossierPage({
         ? !canBuildFor(building, missionId)
           ? "That mission is not staged in this building's city. Pick one below."
           : modelForced
-            ? "The model is forced to fixtures in the demo settings, so the Level Builder can't build this level. Turn the model back on there to build it."
+            ? MODEL_FORCED_NOTE
             : !modelLive
-              ? "The model is on fixtures, so the Level Builder can't build this level here. It needs the live model."
+              ? MODEL_FIXTURES_NOTE
               : undefined
         : undefined,
     buildError: state?.status === "failed" ? state.error : undefined,

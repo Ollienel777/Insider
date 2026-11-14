@@ -191,6 +191,20 @@ describe("GET /api/cast/[missionId] with a showcase building", () => {
     });
     expect(await forced.json()).not.toHaveProperty("showcase");
   });
+
+  it("says the level can't be built while the model is forced to fixtures", async () => {
+    mode("live");
+    vi.stubEnv("LLM_MODE", "live");
+    vi.stubEnv("LLM_PROVIDER", "anthropic");
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-placeholder");
+    const forced = await GET(new Request("http://localhost/api/cast/romaine-1974", { headers: { cookie: `${FORCE_COOKIE}=llm` } }), {
+      params: Promise.resolve({ missionId: "romaine-1974" }),
+    });
+    expect((await forced.json()).showcase.level).toBe("model-forced");
+    expect((await (await get("romaine-1974")).json()).showcase.level).toBe("none");
+    vi.stubEnv("LLM_MODE", "fake");
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+  });
 });
 
 describe("readCachedCasting", () => {

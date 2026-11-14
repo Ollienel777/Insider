@@ -41,7 +41,8 @@ export async function GET(request: Request, context: { params: Promise<{ mission
   if (!parsed.success) return Response.json({ error: "invalid mission id" }, { status: 400 });
   const missionId = parsed.data;
 
-  const forced = forcedFromRequest(request).has("costar");
+  const forcedSet = forcedFromRequest(request);
+  const forced = forcedSet.has("costar");
   try {
     const result =
       (getCoStar({ forced }).mode === "live" ? await readLive(missionId) : null) ??
@@ -50,7 +51,7 @@ export async function GET(request: Request, context: { params: Promise<{ mission
       return Response.json({ error: "no cached shortlist for this mission; run npm run cast" }, { status: 404 });
     }
     const mission = findMission(missionId);
-    const showcase = mission ? await showcaseCast(mission, { forced }) : null;
+    const showcase = mission ? await showcaseCast(mission, { forced, modelForced: forcedSet.has("llm") }) : null;
     return Response.json(showcase ? { ...result, showcase } : result);
   } catch (error) {
     console.error(`GET /api/cast/${missionId}: ${error instanceof Error ? error.message : String(error)}`);
