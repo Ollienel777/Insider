@@ -39,9 +39,9 @@ const VIEWS: readonly { view: RunView; label: string; hint: string; icon: Lucide
 /**
  * The view switch: two buttons, one pressed. It sits over the top of the
  * board's area, towards the right, clear of the board's top bar, which is
- * full at 1280 px. The corners are spoken for: the mute button (#104) has
+ * full at 1280 px. The corners are spoken for: the mute button (PR 104) has
  * the top right one (`top-2 right-8`, about 70 px wide), the play mode switch
- * and the turn timer (#105) the bottom two, so this stands 128 px in from the
+ * and the turn timer (PR 105) the bottom two, so this stands 128 px in from the
  * right edge, on the mute button's line. Nothing shows on a floor from a live
  * scan, or on a phone showing the board: first person needs a keyboard.
  */

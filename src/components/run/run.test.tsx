@@ -338,7 +338,9 @@ describe("choices and keys", () => {
       }
     }
     expect(checked).toBeGreaterThan(0);
-  });
+    // It draws the board once for every node of the floor, twice over: about 4 s on its own on a
+    // laptop, and past the default 5 s when the whole suite runs beside it. The budget is for that.
+  }, 30_000);
 
   it("make S sprint, S again walk, and S with nowhere to sprint stay walking and say why", () => {
     expect(toggleSprint(start(), "walk")).toEqual({ mode: "sprint", status: SPRINT_STATUS });
