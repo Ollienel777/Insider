@@ -64,11 +64,11 @@ const CASES: Case[] = [
       ["exit-S", "ws-landing"],
     ],
     exitNames: [
-      ["the garage", "garage-N"],
-      ["the plaza stair", "exit-S"],
-      ["the helipad", "roof"],
-      ["the Figueroa lobby", "lobby-E"],
-      ["the loading dock", "dock-W"],
+      ["garage", "garage-N"],
+      ["plaza stair", "exit-S"],
+      ["helipad", "roof"],
+      ["Figueroa lobby", "lobby-E"],
+      ["loading dock", "dock-W"],
       ["freight lift from the loading dock", "dock-W"],
       ["garage shuttle lift", "garage-N"],
     ],
@@ -394,6 +394,10 @@ describe.each(OPENINGS)("$id's crew replies and exit line", (c) => {
       expect(exitLine).toMatch(/\bany entry\b/);
       expect(named(exitLine)).toEqual([]);
     }
+    // A line that counts the exits ("any of the five ways out") counts them right.
+    const WORDS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+    const counted = WORDS.findIndex((w) => new RegExp(`\\b${w}\\b`, "i").test(exitLine));
+    if (counted >= 0) expect(counted + 1, exitLine).toBe(exits.length);
     // Nor any entry that is not an exit, by its label or its kind ("the service lift" is the dock's).
     for (const entry of manifest().entries.filter((e) => !exits.includes(e.id))) {
       expect(exitLine.toLowerCase(), entry.id).not.toContain(entry.label.toLowerCase());

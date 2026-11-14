@@ -7,6 +7,7 @@ import type { FloorGraph, GuardIntent } from "@/domain";
 import {
   moveGuards,
   neighbours,
+  picksToOpen,
   plannedPath,
   visibleFrom,
   watched,
@@ -15,6 +16,7 @@ import {
   type RunState,
 } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
+import { objectiveNoun } from "@/lib/objective-noun";
 import { project } from "./iso";
 
 // ---- cones ------------------------------------------------------------------
@@ -154,7 +156,7 @@ export function choices(run: RunState, mode: Mode = "walk"): Choice[] {
         action: { kind: "pick", doorId },
         kind: "pick",
         doorId,
-        progress: { done, of: board.level.pickTurns },
+        progress: { done, of: picksToOpen(board.level, doorId) },
       };
     });
 }
@@ -262,7 +264,7 @@ export function planSteps(placed: PlacedLevel, run: RunState, objective: string)
   ];
   if (lock) {
     steps.push({
-      label: `Pick the ${objectiveName.toLowerCase()} door, ${level.pickTurns} turns`,
+      label: `Pick the ${objectiveName.toLowerCase()} door, ${picksToOpen(level, lock.doorId)} turns`,
       done: !run.locked.includes(lock.doorId) || run.carrying,
     });
   }
@@ -369,17 +371,17 @@ export function describeTurn(placed: PlacedLevel, before: RunState, after: RunSt
   const { floor } = placed.level;
   const where = roomName(floor, after.playerNode);
   if (after.status === "caught") return `Caught in the ${where}.`;
-  if (after.status === "won") return `Out with the files in ${after.turn} turns.`;
+  if (after.status === "won") return `Out with the ${objectiveNoun(placed.level.missionId)} in ${after.turn} turns.`;
   const raised = after.alarmEvents.slice(before.alarmEvents.length).find((e) => e.cause.kind !== "decay");
   if (raised) {
     const by = raised.cause.id ?? "Someone";
     if (raised.cause.kind === "noise") return `${by} heard you in the ${where}.`;
     return `${by} saw you in the ${where}. The guards are converging.`;
   }
-  if (!before.carrying && after.carrying) return "You have the files. Get out.";
+  if (!before.carrying && after.carrying) return `You have the ${objectiveNoun(placed.level.missionId)}. Get out.`;
   const opened = before.locked.find((d) => !after.locked.includes(d));
   if (opened) return "The door is open.";
-  if (after.picking) return `Picking the lock, ${after.picking.progress} of ${placed.level.pickTurns}.`;
+  if (after.picking) return `Picking the lock, ${after.picking.progress} of ${picksToOpen(placed.level, after.picking.doorId)}.`;
   if (after.playerNode === before.playerNode) return `You wait in the ${where}.`;
   if (after.turns.at(-1)?.player.kind === "sprint") return `You sprint to the ${where}.`;
   return `You move to the ${where}.`;

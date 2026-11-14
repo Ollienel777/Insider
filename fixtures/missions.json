@@ -69,7 +69,7 @@
       "sourceUrl": "https://lareviewofbooks.org/short-takes/l-four-locations-bank-robbery-capital-world"
     },
     "objective": "Open the vault room from below and take the safe-deposit boxes",
-    "exitCondition": "Leave by the garage, the plaza stair, the helipad, the Figueroa lobby or the loading dock with the boxes before the alarm reaches Lockdown",
+    "exitCondition": "Leave by any of the five ways out (garage, plaza stair, helipad, Figueroa lobby, loading dock) with the boxes before the alarm reaches Lockdown",
     "casting": [
       {
         "kind": "city",

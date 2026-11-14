@@ -10,9 +10,10 @@
 "use client";
 
 import type { CrewPlan, FloorGraph } from "@/domain";
-import { act, createRun, shortestPath, type Action, type AlarmEvent, type RunState } from "@/engine";
+import { act, createRun, picksToOpen, shortestPath, type Action, type AlarmEvent, type RunState } from "@/engine";
 import type { PlacedLevel } from "./placer";
 import { quietRoute } from "./quiet-route";
+import { objectiveNoun } from "@/lib/objective-noun";
 
 /** A step of the crew's plan that the board could place, with the turns it covers. */
 export interface CheckedStep {
@@ -235,7 +236,7 @@ function expand(placed: PlacedLevel, plan: CrewPlan) {
     for (let h = 1; h < route.length; h++) {
       const door = board.adjacency.get(route[h - 1])!.find((e) => e.to === route[h])?.doorId;
       if (door && locked.has(door)) {
-        for (let p = 0; p < level.pickTurns; p++) actions.push({ kind: "pick", doorId: door });
+        for (let p = 0; p < picksToOpen(level, door); p++) actions.push({ kind: "pick", doorId: door });
         locked.delete(door);
       }
       actions.push({ kind: "move", to: route[h] });
@@ -349,8 +350,8 @@ export function validatePlan(placed: PlacedLevel, plan: CrewPlan): CheckedPlan {
       room,
       outbound: played.run.carrying,
       text: played.run.carrying
-        ? `The plan ends in the ${room} with the files, short of an exit.`
-        : `The plan never takes the files: it ends in the ${room}.`,
+        ? `The plan ends in the ${room} with the ${objectiveNoun(placed.level.missionId)}, short of an exit.`
+        : `The plan never takes the ${objectiveNoun(placed.level.missionId)}: it ends in the ${room}.`,
     });
   }
 
