@@ -8,7 +8,20 @@ import type { CoStarAdapter } from "./types";
 
 export const FIXTURE_BUILDINGS: readonly Building[] = Object.freeze(z.array(Building).parse(raw));
 
-export function createFakeCoStar(buildings: readonly Building[] = FIXTURE_BUILDINGS): CoStarAdapter {
+export interface FakeCoStarOptions {
+  /**
+   * Tests only: every call rejects with this message, so the map's error
+   * state can be rendered (#154). Ignored unless NODE_ENV is `test`: a Next.js
+   * build inlines `production`, and nothing a request carries reaches it.
+   */
+  failWith?: string;
+}
+
+export function createFakeCoStar(
+  buildings: readonly Building[] = FIXTURE_BUILDINGS,
+  { failWith }: FakeCoStarOptions = {},
+): CoStarAdapter {
+  if (failWith && process.env.NODE_ENV === "test") return failingCoStar(failWith);
   const byId = new Map(buildings.map((b) => [b.id, b]));
   // Callers get copies, so nothing they do can change the fixtures.
   const copy = <T>(value: T): T => structuredClone(value);
@@ -29,4 +42,11 @@ export function createFakeCoStar(buildings: readonly Building[] = FIXTURE_BUILDI
       return building ? copy(building.availableSpace) : null;
     },
   };
+}
+
+function failingCoStar(message: string): CoStarAdapter {
+  const fail = async (): Promise<never> => {
+    throw new Error(message);
+  };
+  return { listBuildings: fail, getBuilding: fail, getAvailableSpace: fail };
 }
