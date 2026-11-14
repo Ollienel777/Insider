@@ -21,6 +21,9 @@ test("the map lists Halvorsen Tower and its Scout route opens from it", async ({
 
 test("LA shows three pins and rows; the Houston tab shows two", async ({ page }) => {
   await page.goto("/");
+  // The buildings stream in a hidden copy before React swaps them for the
+  // skeleton, and a count also matches that copy: count once the swap is done.
+  await expect(page.getByTestId("map-skeleton")).toHaveCount(0);
   await expect(page.getByTestId("map-pin")).toHaveCount(3);
   await expect(page.getByTestId("building-row")).toHaveCount(3);
 

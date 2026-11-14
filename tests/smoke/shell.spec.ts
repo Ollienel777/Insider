@@ -65,9 +65,35 @@ async function tabThrough(page: Page) {
   return seen;
 }
 
-for (const route of ["/", "/b/F1/scout"]) {
+// Each route's controls are all on screen only once its data has arrived, so
+// the walk waits for that outcome before it starts.
+//
+// "/" streams the map: the skeleton comes first, then the buildings in a
+// hidden <div>, which React's reveal script swaps in on a later animation
+// frame. The load event can fire before that frame, and under load the walk
+// used to tab past the skeleton (no controls) to the end of the page after
+// two stops. A count of pins or rows does not wait for the swap, since it
+// also matches the hidden copy; the skeleton leaving does, and the rows must
+// then be visible.
+//
+// The Scout screen fetches its aerial after hydration; its entry markers are
+// controls too.
+const loaded: Record<string, (page: Page) => Promise<void>> = {
+  "/": async (page) => {
+    await expect(page.getByTestId("map-skeleton")).toHaveCount(0);
+    const rows = page.getByTestId("building-row");
+    await expect(rows).toHaveCount(3);
+    for (const row of await rows.all()) await expect(row).toBeVisible();
+  },
+  "/b/F1/scout": async (page) => {
+    await expect(page.getByTestId("aerial-canvas")).toBeVisible();
+  },
+};
+
+for (const [route, waitForData] of Object.entries(loaded)) {
   test(`every control on ${route} shows a focus ring and is at least 40px tall`, async ({ page }) => {
     await page.goto(route);
+    await waitForData(page);
     const controls = await tabThrough(page);
     expect(controls.length).toBeGreaterThan(3);
     for (const control of controls) {
