@@ -395,9 +395,9 @@ export interface InsideView {
    * Every call reads the scan afresh and keeps nothing: the map is the
    * caller's own, so ask once and hold on to it. It resolves once the
    * positions have stopped arriving (they can come over a few callbacks), or
-   * after `FLOOR_POINTS_MS` with what has arrived by then, which is an empty
-   * map if the scan sent nothing. Once the view is disconnected it resolves
-   * empty.
+   * after `FLOOR_POINTS_MS` (15 s) with what has arrived by then, which is
+   * an empty map if the scan sent nothing. Once the view is disconnected it
+   * resolves empty.
    */
   floorPoints(): Promise<ReadonlyMap<string, ScanPoint>>;
   /**
