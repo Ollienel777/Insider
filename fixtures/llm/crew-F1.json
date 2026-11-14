@@ -26,7 +26,7 @@
           { "zoneId": "objective", "action": "Down the dock corridor, pick the records room door and take the files" },
           { "zoneId": "roof", "action": "Out by the east stair to the roof hatch" }
         ],
-        "pushback": "The run starts at the dock, so the roof hatch is your way out, not in. And it's the long way round with the files: through office 2210 to the east stair, past the main corridor, where G2 walks its round.",
+        "pushback": "The run starts at the dock, so the roof hatch is your way out, not in. And it's the long way round with the files: through office 2210 and along the main corridor to the east stair, and G2's round sees you in 2210.",
         "confidence": 0.4
       }
     },
@@ -39,7 +39,7 @@
           { "zoneId": "objective", "action": "Pick the records room door and take the files" },
           { "zoneId": "lobby-S", "action": "Out through the main lobby" }
         ],
-        "pushback": "The run starts at the dock, so the lobby is only a way out, past a desk guard who's there all night. On the way in, camera C2 covers the dock corridor every other turn.",
+        "pushback": "The run starts at the dock, so the lobby is only a way out, and I don't know that its lifts stop on 22 at night. On the way in, camera C2 covers the dock corridor every other turn.",
         "confidence": 0.3
       }
     },

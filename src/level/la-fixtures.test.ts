@@ -369,9 +369,11 @@ describe.each(OPENINGS)("$id's crew replies and exit line", (c) => {
       // The board walks every plan from the start, so a plan that opens anywhere else is not the one played.
       expect(first.zoneId).toBe(start.entryId);
       expect(named(first.action), first.action).toEqual([start.entryId]);
-      // A later step to an entry names no other entry ("Back out the way you came" names none).
+      // A later step to an entry names that entry and no other. Only a way back to the start may name
+      // none ("Back out the way you came").
       for (const step of rest.filter((s) => entryIds.has(s.zoneId))) {
-        expect(named(step.action).filter((id) => id !== step.zoneId), step.action).toEqual([]);
+        const back = step.zoneId === start.entryId && named(step.action).length === 0;
+        if (!back) expect(named(step.action), step.action).toEqual([step.zoneId]);
       }
       // A reply the board catches warns about the camera or guard that does it, not another.
       const caughtBy = validatePlan(placed, plan).warnings[0]?.text.match(/\b[CG]\d+\b/)?.[0];
