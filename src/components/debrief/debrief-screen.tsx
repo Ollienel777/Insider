@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { getMatterport } from "@/adapters/matterport";
@@ -248,13 +249,13 @@ function DebriefReady({
                 className="h-10 w-full cursor-pointer accent-n-200"
               />
               {/* A tick under each turn the Chief re-planned on. */}
-              <div aria-hidden className="pointer-events-none absolute inset-x-2 bottom-0 h-1.5">
+              <div aria-hidden className="pointer-events-none absolute inset-x-2 top-1/2 mt-2 h-2">
                 {ticks.map(([turn, late]) => (
                   <span
                     key={turn}
                     data-testid="replay-chief-tick"
                     data-late={late ? "true" : undefined}
-                    className={cn("absolute top-0 h-1.5 w-0.5 -translate-x-1/2", late ? "bg-text-3" : "bg-danger")}
+                    className={cn("absolute top-0 h-2 w-0.5 -translate-x-1/2", late ? "bg-text-3" : "bg-danger")}
                     style={{ left: `${last === 0 ? 0 : (turn / last) * 100}%` }}
                   />
                 ))}
@@ -271,26 +272,29 @@ function DebriefReady({
       action={
         <div className="flex flex-col gap-3">
           {debrief.outcome === "playing" ? null : (
-            <>
-              <p data-testid="try-again-line" className="text-sm text-text-2">
-                {tryAgainLine(debrief)}
-              </p>
+            <p data-testid="try-again-line" className="text-sm text-text-2">
+              {tryAgainLine(debrief)}
+            </p>
+          )}
+          {/* One row: the panel above keeps the height for the Chief's timeline. */}
+          <div className="flex gap-2">
+            {debrief.outcome === "playing" ? null : (
               <Link
                 href={runHref}
                 data-testid="debrief-try-again"
-                className={cn(buttonVariants({ variant: "primary" }), "w-full")}
+                className={cn(buttonVariants({ variant: "primary" }), "min-w-0 flex-1")}
               >
                 Try again
               </Link>
-            </>
-          )}
-          <Link
-            href="/"
-            data-testid="debrief-to-map"
-            className={cn(buttonVariants({ variant: "ghost" }), "w-full")}
-          >
-            Pick another building
-          </Link>
+            )}
+            <Link
+              href="/"
+              data-testid="debrief-to-map"
+              className={cn(buttonVariants({ variant: "ghost" }), debrief.outcome === "playing" ? "flex-1" : "")}
+            >
+              Pick another building
+            </Link>
+          </div>
         </div>
       }
     />
@@ -509,29 +513,70 @@ function DecisionItem({
             </span>
           ) : null}
         </div>
-        <p data-testid="chief-decision-rationale" className={cn("text-base", decision.late ? "text-text-2" : "text-text-1")}>
-          {decision.rationale}
-        </p>
         {decision.late ? (
-          <p data-testid="chief-decision-late" className="text-sm text-text-2">
-            {LATE_NOTE}
-          </p>
-        ) : null}
-        {decision.orders.length + decision.locks.length + decision.dropped.length > 0 ? (
-          <ul aria-label="Orders" className="flex flex-col">
-            {decision.orders.map((o, i) => (
-              <OrderRow key={`o-${i}`} guard={o.guardId} intent={o.intent} zone={o.zone} late={decision.late} />
-            ))}
-            {decision.locks.map((zone) => (
-              <OrderRow key={`l-${zone}`} guard="" intent="lock" zone={zone} late={decision.late} />
-            ))}
-            {decision.dropped.map((d, i) => (
-              <OrderRow key={`d-${i}`} guard={d.guardId} intent={d.intent} zone={`Dropped: ${d.reason}`} dropped />
-            ))}
-          </ul>
-        ) : null}
+          <LateDecision decision={decision} />
+        ) : (
+          <>
+            <Rationale decision={decision} />
+            {decision.orders.length + decision.locks.length + decision.dropped.length > 0 ? <Orders decision={decision} /> : null}
+          </>
+        )}
       </div>
     </li>
+  );
+}
+
+function Orders({ decision }: { decision: Decision }) {
+  return (
+    <ul aria-label="Orders" className="flex flex-col">
+      {decision.orders.map((o, i) => (
+        <OrderRow key={`o-${i}`} guard={o.guardId} intent={o.intent} zone={o.zone} late={decision.late} />
+      ))}
+      {decision.locks.map((zone) => (
+        <OrderRow key={`l-${zone}`} guard="" intent="lock" zone={zone} late={decision.late} />
+      ))}
+      {decision.dropped.map((d, i) => (
+        <OrderRow key={`d-${i}`} guard={d.guardId} intent={d.intent} zone={`Dropped: ${d.reason}`} dropped />
+      ))}
+    </ul>
+  );
+}
+
+function Rationale({ decision }: { decision: Decision }) {
+  return (
+    <p data-testid="chief-decision-rationale" className={cn("text-base", decision.late ? "text-text-2" : "text-text-1")}>
+      {decision.rationale}
+    </p>
+  );
+}
+
+/**
+ * A decision that arrived after the run ended moved no guard, so its body
+ * stays folded under the note that says so. The decisions that did something
+ * stay in view at 1440×900, and what the late one said is one click away.
+ */
+function LateDecision({ decision }: { decision: Decision }) {
+  const orders = decision.orders.length + decision.locks.length + decision.dropped.length;
+  return (
+    <details data-testid="chief-decision-late-body" className="group">
+      <summary
+        title={orders > 0 ? "Show what it ordered" : "Show what it said"}
+        className="-ml-2 flex min-h-10 cursor-pointer list-none items-start gap-1 rounded-sm px-2 text-sm text-text-2 hover:bg-surface-3 hover:text-text-1 [&::-webkit-details-marker]:hidden"
+      >
+        <ChevronRight
+          aria-hidden
+          className="mt-0.5 size-4 shrink-0 stroke-[1.5] text-text-1 transition-transform duration-fast ease-out group-open:rotate-90"
+        />
+        <span>
+          <span data-testid="chief-decision-late">{LATE_NOTE}</span>
+          <span className="sr-only"> {orders > 0 ? "Show what it ordered." : "Show what it said."}</span>
+        </span>
+      </summary>
+      <div className="flex flex-col gap-1.5 pt-1.5">
+        <Rationale decision={decision} />
+        {orders > 0 ? <Orders decision={decision} /> : null}
+      </div>
+    </details>
   );
 }
 

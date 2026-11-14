@@ -168,6 +168,18 @@ test("beat 5 to 6: caught after the wow beat, the debrief says so, with the Chie
   await expect(late.getByTestId("chief-decision-source")).toHaveText("Recorded");
   expect(log.lateChief!.chiefSource).toBe("recorded");
 
+  // At 1440×900 the whole debrief fits without scrolling the panel: the late answer moved no guard,
+  // so its rationale and rows stay folded under its note, and open on a click.
+  const panelBody = page.locator("aside > div").first();
+  expect(await panelBody.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(0);
+  await expect(late.getByTestId("chief-decision-late")).toBeInViewport();
+  await expect(late.getByTestId("chief-decision-rationale")).toBeHidden();
+  await expect(late.getByTestId("chief-decision-order").first()).toBeHidden();
+  await late.getByTestId("chief-decision-late").click();
+  await expect(late.getByTestId("chief-decision-rationale")).toBeVisible();
+  await expect(late.getByTestId("chief-decision-order").first()).toBeVisible();
+  for (const row of await late.getByTestId("chief-decision-order").all()) await expect(row.locator(".text-danger")).toHaveCount(0);
+
   // The replay opens on the catch; scrubbing moves every piece to that turn's positions.
   await expect(page.getByTestId("replay-board")).toHaveAttribute("data-frame", String(log.turns.length));
   await expectPiecesAt(page, log, log.turns.length);
