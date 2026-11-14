@@ -95,10 +95,13 @@ export async function askChief(
   const body = (await response.json().catch(() => null)) as (Partial<ChiefAnswer> & { error?: string }) | null;
   if (!response.ok || !body) throw new Error(body?.error ?? `the Chief didn't answer (HTTP ${response.status})`);
   noteResponse(body);
+  // Only an answer that says the model wrote it reads as live. A missing or unknown source reads as recorded:
+  // a wrong "Recorded" note is less harmful than a wrong "Live orders" one.
+  const source = body.source === "model" || body.source === "template" ? body.source : "recorded";
   return {
     orders: ChiefOrders.parse(body.orders),
-    recorded: body.recorded === true,
-    source: body.source === "recorded" || body.source === "template" ? body.source : "model",
+    recorded: body.recorded === true || source !== "model",
+    source,
     ...(body.reason && { reason: body.reason }),
     ...(body.recording && { recording: body.recording }),
   };

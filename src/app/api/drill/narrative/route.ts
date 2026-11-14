@@ -6,7 +6,7 @@
 // scan's `door:<sweep>:<sweep>` ids if sent, so that guarantee is the
 // screen's. Answers `NarrativeAnswer`.
 import { narrateDrill, NarratorUnavailableError, NoNarrativeError } from "@/agents/drill";
-import { forcedChatModelSelection } from "@/adapters/llm";
+import { forcedChatModelSelection, safeErrorMessage } from "@/adapters/llm";
 import { DrillFacts } from "@/drill";
 import { withLlmFallback } from "@/lib/fallback";
 import { forcedFromRequest } from "@/lib/mode";
@@ -30,7 +30,7 @@ export async function POST(request: Request): Promise<Response> {
     if (error instanceof NoNarrativeError) return Response.json({ error: error.message }, { status: 404 });
     // A failed live call is worth a retry (503); anything else is a bug, logged here and not echoed to the browser.
     if (error instanceof NarratorUnavailableError) return Response.json({ error: error.message }, { status: 503 });
-    console.error("POST /api/drill/narrative:", error);
+    console.error(`POST /api/drill/narrative: ${safeErrorMessage(error)}`);
     return Response.json({ error: "the narrator could not answer" }, { status: 500 });
   }
 }

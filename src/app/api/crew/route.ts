@@ -2,7 +2,7 @@
 // `{buildingId, order}` and nothing else: the server reads the zones and the
 // guard roster from its own cached manifest, so no floor data can arrive
 // here or travel on to a model (SPEC §4.5). Answers `CrewAnswer`.
-import { forcedChatModelSelection } from "@/adapters/llm";
+import { forcedChatModelSelection, safeErrorMessage } from "@/adapters/llm";
 import { briefCrew, CrewRequestError, NoRecordingError } from "@/agents/crew";
 import { withLlmFallback } from "@/lib/fallback";
 import { forcedFromRequest } from "@/lib/mode";
@@ -26,7 +26,6 @@ export async function POST(request: Request): Promise<Response> {
   } catch (error) {
     if (error instanceof CrewRequestError) return Response.json({ error: error.message }, { status: 400 });
     if (error instanceof NoRecordingError) return Response.json({ error: error.message }, { status: 503 });
-    const message = error instanceof Error ? error.message : String(error);
-    return Response.json({ error: `the crew could not answer: ${message}` }, { status: 500 });
+    return Response.json({ error: `the crew could not answer: ${safeErrorMessage(error)}` }, { status: 500 });
   }
 }

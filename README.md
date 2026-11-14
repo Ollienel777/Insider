@@ -21,8 +21,11 @@ are no AWS credentials here.
 > **Everything in this repo runs with no API keys.** Every screenshot here is
 > fake mode: fixture buildings, a hand-authored floor and recorded model
 > turns. The live CoStar, Vexcel, Matterport and Anthropic paths are written
-> and unit-tested against stubs, but **none has been run against the real
-> service**. The top bar's
+> and unit-tested against stubs. **Only Anthropic has been run against the
+> real service, and only for the crew and the Security Chief** (29 calls on
+> F1; [latency below](#sponsor-technology-and-where-it-lives)). CoStar,
+> Vexcel, Matterport, the Level Builder on Claude and Amazon Bedrock have
+> never been run live. The top bar's
 > `FIXTURES` chip says so on every screen. [What runs on what](#sponsor-technology-and-where-it-lives).
 
 ## The story
@@ -158,7 +161,11 @@ during the demo.
    - [`/api/crew`](src/app/api/crew/route.ts) reads only the building id and
      the order the player typed
      ([`crew-request.ts`](src/components/plan/crew-request.ts)). The server
-     reads the zones and the guard roster from its own cached manifest.
+     reads the zones and the guard roster from its own cached manifest, and
+     from the same manifest the security profile's era, camera kind, camera
+     count and lock kind ([`crewContext`](src/agents/crew/prompt.ts)): values
+     such as `analog`, `analog-sweep`, `2` and `key`, set from CoStar's
+     building facts. No camera's position goes with them.
    - [`/api/chief`](src/app/api/chief/route.ts) takes a
      [`ChiefRequest`](src/agents/chief/request.ts) and refuses any field
      outside it: the building id; the alarm transition (turn, from and to,
@@ -209,7 +216,8 @@ a recording, or for the Chief by its template; the drill narrator's
 recordings cover only the drills they were recorded for.
 
 **Status in this repo: built against recorded fixtures; live mode needs
-keys.** No live path has been run against the real service. Each live
+keys.** The only live path run against the real service is Anthropic, for
+the crew and the Security Chief (see its row below). Each live
 adapter's request shape is our best guess pending the event toolkit's
 documentation, kept in one `mapping.ts` per service, and is unit-tested on a
 stubbed `fetch` or SDK.
@@ -220,7 +228,7 @@ stubbed `fetch` or SDK.
 | **Vexcel** aerial imagery | Tagged entries (dock, garage, lobby, roof, service) become the level's ways in and out, and the Scout screen | [`src/adapters/vexcel/`](src/adapters/vexcel/index.ts): `getVexcel`, `selectVexcel`; [`live.ts`](src/adapters/vexcel/live.ts) `createLiveVexcel`; [`mapping.ts`](src/adapters/vexcel/mapping.ts) `toAerial`. Served by [`/api/buildings/[id]/aerial`](src/app/api/buildings/[id]/aerial/route.ts) | A massing drawn as SVG from each building's footprint and height, with hand-placed entry tags, [`fixtures/vexcel/`](fixtures/vexcel/) | `VEXCEL_MODE=live` with `VEXCEL_API_BASE` and `VEXCEL_API_KEY`. The adapter reads the entry tags and passes Vexcel's image URLs through in the aerial response; nothing is stored, and Scout still draws the massing. Not run |
 | **Matterport** 3D scans | Sweeps and rooms become the board: nodes, edges, doors and sightlines | [`src/adapters/matterport/`](src/adapters/matterport/index.ts) (browser only): `getMatterport`, `withFixtureFloor`; [`live.ts`](src/adapters/matterport/live.ts) `createLiveMatterport`; [`mapping.ts`](src/adapters/matterport/mapping.ts) `toFloorGraph` from Showcase SDK `Sweep.data` and `Room.data` | A hand-authored floor for the demo building, [`fixtures/floors/F1.json`](fixtures/floors/F1.json). It is fiction: no Matterport content is in the repo | `NEXT_PUBLIC_MATTERPORT_MODE=live` with `NEXT_PUBLIC_MATTERPORT_SDK_KEY`. Not run |
 | **LangChain `deepagents`** | The Level Builder: `createDeepAgent` with a todo list, two subagents (`data-analyst`, `game-master`) and six tools (`get_building`, `get_available_space`, `get_aerial_entries`, `derive_security_profile`, `list_missions`, `write_manifest`) | [`src/agents/builder/builder.ts`](src/agents/builder/builder.ts) `buildLevel`; tools in [`tools.ts`](src/agents/builder/tools.ts); prompts in [`prompts.ts`](src/agents/builder/prompts.ts); trace in [`trace.ts`](src/agents/builder/trace.ts); run by [`scripts/build-levels.mts`](scripts/build-levels.mts) | The real deep agent runs, graph, todos, subagent dispatch and tools included, against the fake adapters. Only the model's turns are replayed, by [`ScriptedChatModel`](src/adapters/llm/scripted.ts) from [`fixtures/llm/scripts/builder-F1.json`](fixtures/llm/scripts/builder-F1.json). The output is [`data/levels/F1.json`](data/levels/F1.json) and its trace | The same agent on Claude through `@langchain/anthropic`. Not run |
-| **Anthropic Claude** | The model for every agent: the Level Builder, and one structured call each for the Crew, the Security Chief and the drill narrator | [`src/adapters/llm/`](src/adapters/llm/index.ts): `selectChatModel` in [`select.ts`](src/adapters/llm/select.ts), `createAnthropicModel` in [`anthropic.ts`](src/adapters/llm/anthropic.ts), `structuredCall` in [`structured.ts`](src/adapters/llm/structured.ts). Agents: [`crew`](src/agents/crew/crew.ts) `briefCrew`, [`chief`](src/agents/chief/chief.ts) `replanChief`, [`drill`](src/agents/drill/narrator.ts) `narrateDrill` | Recorded replies: keyword-routed for the Crew ([`fixtures/llm/crew-F1.json`](fixtures/llm/crew-F1.json)), per alarm transition then a deterministic [template](src/agents/chief/template.ts) for the Chief ([`chief-F1.json`](fixtures/llm/chief-F1.json)), per drill for the narrator ([`drill-F1.json`](fixtures/llm/drill-F1.json)). The UI labels each answer recorded or rule-based | `LLM_MODE=live` with `ANTHROPIC_API_KEY`; default model `claude-sonnet-4-6`; on a 4 s timeout or a bad answer the recording answers instead. Not run |
+| **Anthropic Claude** | The model for every agent: the Level Builder, and one structured call each for the Crew, the Security Chief and the drill narrator | [`src/adapters/llm/`](src/adapters/llm/index.ts): `selectChatModel` in [`select.ts`](src/adapters/llm/select.ts), `createAnthropicModel` in [`anthropic.ts`](src/adapters/llm/anthropic.ts), `structuredCall` in [`structured.ts`](src/adapters/llm/structured.ts). Agents: [`crew`](src/agents/crew/crew.ts) `briefCrew`, [`chief`](src/agents/chief/chief.ts) `replanChief`, [`drill`](src/agents/drill/narrator.ts) `narrateDrill` | Recorded replies: keyword-routed for the Crew ([`fixtures/llm/crew-F1.json`](fixtures/llm/crew-F1.json)), per alarm transition then a deterministic [template](src/agents/chief/template.ts) for the Chief ([`chief-F1.json`](fixtures/llm/chief-F1.json)), per drill for the narrator ([`drill-F1.json`](fixtures/llm/drill-F1.json)). The UI labels each answer recorded or rule-based | `LLM_MODE=live` with `ANTHROPIC_API_KEY`; default model `claude-sonnet-4-6`; on a 4 s timeout or a bad answer the recording answers instead. Run live for the crew and the Chief only: 29 calls on F1, with ten timed calls each. Crew median 3565 ms, p90 3747 ms (misses its 3 s median target); Chief median 2977 ms, p90 3303 ms. A cold first call can pass 4 s and fall back. 20 of 20 timed replies fit their schema. The Level Builder and the drill narrator have not been run on Claude |
 | **Amazon Bedrock** | An alternative model provider | [`src/adapters/llm/bedrock.ts`](src/adapters/llm/bedrock.ts) `createBedrockModel` (`ChatBedrockConverse` from `@langchain/aws`) | Not used | `LLM_PROVIDER=bedrock` and refused unless `BEDROCK_ENABLED=1`. Not run |
 
 ## Run it

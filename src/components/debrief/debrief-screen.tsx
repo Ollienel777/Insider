@@ -420,8 +420,10 @@ function Stat({ id, term, value, note }: { id: string; term: string; value: numb
 
 const SOURCE_CHIP: Record<NonNullable<Decision["source"]>, { label: string; note: string } | null> = {
   model: null,
-  recorded: { label: "Recorded", note: "Recorded orders: no model was called." },
-  template: { label: "Rule-based", note: "Rule-based orders: no model was called." },
+  // The run keeps where orders came from, not why: a live call that failed
+  // also lands here, so the note says only that the model did not write them.
+  recorded: { label: "Recorded", note: "Recorded orders: not written by the model." },
+  template: { label: "Rule-based", note: "Rule-based orders: not written by the model." },
 };
 
 function DecisionItem({
