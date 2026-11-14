@@ -39,8 +39,11 @@ export function boardCaption(summary: BatchSummary, side: Side | null): string {
 }
 
 /** The setup as the batch keys it: the generated level while untouched, else everything but the name. */
+/** The key of the untouched starting point. */
+export const GENERATED_KEY = "generated";
+
 export const setupKey = (draft: Pick<Draft, "setup" | "pristine">) =>
-  draft.pristine ? "generated" : JSON.stringify({ ...draft.setup, name: "" });
+  draft.pristine ? GENERATED_KEY : JSON.stringify({ ...draft.setup, name: "" });
 
 export function OwnerReady({
   building,
@@ -70,12 +73,17 @@ export function OwnerReady({
 
   // The board: the setup as it stands (its problems left off), or the batch's, before or after the fix.
   const editBoard = useMemo<PlacedLevel>(
-    () => (draft.pristine ? generated : (boardOf(manifest, floor, playable(draft.setup, floor), OWNER_SEED) ?? generated)),
+    () => boardOf(manifest, floor, playable(draft.setup, floor), OWNER_SEED) ?? generated,
     [draft, generated, manifest, floor],
   );
+  // The batch's setup on the board: its Why rows are the data's for what is still generated.
+  const batchBefore = useMemo<PlacedLevel | null>(
+    () => (batch.status === "done" ? (boardOf(manifest, floor, batch.setup, OWNER_SEED) ?? generated) : null),
+    [batch, manifest, floor, generated],
+  );
   const batchBoard = useMemo<PlacedLevel | null>(() => {
-    if (batch.status !== "done") return null;
-    const before = boardOf(manifest, floor, batch.setup, OWNER_SEED) ?? generated;
+    if (!batchBefore) return null;
+    const before = batchBefore;
     if (fix.status !== "applied" || side === "before" || fix.rerun.dropped) return before;
     const engineFix = toEngineFix(fix.answer.fix, ownerZones(manifest, floor));
     const applied = applyFix(before.level, engineFix.change);
@@ -85,7 +93,7 @@ export function OwnerReady({
       return spec ? { ...c, cover: spec.cover } : c;
     });
     return { ...before, level: applied.level, cameras };
-  }, [batch, fix, side, manifest, floor, generated]);
+  }, [batchBefore, fix, side, manifest, floor]);
 
   const edit = (next: OwnerSetup) => setDraft({ setup: next, pristine: false, state: "editing" });
 
@@ -110,7 +118,7 @@ export function OwnerReady({
     setTool("select");
   };
   const runBatch = () => {
-    run(draft.pristine ? null : draft.setup, key);
+    run(draft.setup, key);
     setSide("after");
     setFixedSaved(null);
     setView("results");
@@ -118,7 +126,7 @@ export function OwnerReady({
 
   const saveFixed = () => {
     if (batch.status !== "done" || fix.status !== "applied") return;
-    const base = batch.setup ?? setupFromPlaced(generated);
+    const base = batch.setup;
     const engineFix = toEngineFix(fix.answer.fix, ownerZones(manifest, floor));
     const name = `${base.name}, after the fix`.slice(0, 80);
     const fixed = setupWithFix(base, engineFix, generated.level, name);
@@ -277,8 +285,8 @@ export function OwnerReady({
               batch={batch}
               fix={fix}
               zones={ownerZones(manifest, floor)}
-              generated={generated}
-              setupName={batch.status === "done" ? (batch.setup?.name ?? null) : null}
+              generated={batchBefore ?? generated}
+              setupName={batch.status === "done" && batch.key !== GENERATED_KEY ? batch.setup.name : null}
               stale={batch.status === "done" && !fresh}
               fixedSaved={fixedSaved}
               onEdit={() => setView("setup")}

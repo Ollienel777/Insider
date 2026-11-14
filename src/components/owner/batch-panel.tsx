@@ -60,9 +60,9 @@ export function BatchPanel({
   batch: OwnerBatch;
   fix: OwnerFix;
   zones: ChiefZones;
-  /** The building's generated level: its Why rows explain an element while the setup is untouched. */
+  /** The batch's setup on the board: its Why rows explain each element still as generated. */
   generated: PlacedLevel;
-  /** The batch's setup, null for the generated starting point. */
+  /** The batch's setup's name, null for the untouched starting point. */
   setupName: string | null;
   stale: boolean;
   fixedSaved: { ok: boolean; setup: OwnerSetup } | null;
@@ -180,7 +180,7 @@ export function BatchPanel({
         )}
       </section>
 
-      {top ? <DetectorCard finding={top} total={summary.total} generated={setupName ? null : generated} setupName={setupName} /> : null}
+      {top ? <DetectorCard finding={top} total={summary.total} generated={generated} setupName={setupName} /> : null}
 
       <ChiefSection
         fix={fix}

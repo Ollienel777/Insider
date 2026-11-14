@@ -1,47 +1,51 @@
 // The Owner screen's setup, as the editor works it (Owner Mode, SPEC §13,
 // issues 125 and 128). Pure: every edit returns a new setup and never mutates
 // the last. The setup starts from the building's generated security, turned
-// into the owner's terms, so the editor is never empty; while it is untouched
-// the batch plays the generated level itself, so the screen's first count is
-// the batch debrief's (issue 127). Everything here stays in the browser.
+// into the owner's terms, so the editor is never empty. The batch always plays
+// the setup applied (`applyOwnerSetup`), and the conversion is exact: the
+// untouched setup plays the generated level, so the screen's first count is
+// the batch debrief's (issue 127), and an edit changes the count only by what
+// it changes. Everything here stays in the browser.
 "use client";
 
-import type { CameraKind, ChiefFix, FloorGraph, LevelManifest } from "@/domain";
+import type { ChiefFix, FloorGraph, LevelManifest, Provenance } from "@/domain";
 import {
   OWNER_SETUP_VERSION,
   type Compass,
   type OwnerCamera,
   type OwnerCameraKind,
   type OwnerDoorLock,
+  type OwnerGenerated,
   type OwnerGuard,
+  type OwnerProvenance,
   type OwnerSetup,
 } from "@/domain/owner-setup";
 import { compileBoard, zoneTarget, type Level } from "@/engine";
 import { roundOf } from "@/engine/autoplay";
-import { applyOwnerSetup, cameraCover, validateOwnerSetup, type OwnerSetupError } from "@/level/owner-setup";
-import { placeLevel, type PlacedLevel } from "@/level/placer";
+import {
+  applyOwnerSetup,
+  cameraCover,
+  OWNER_KIND_OF,
+  OWNER_PICK_TURNS,
+  validateOwnerSetup,
+  type OwnerSetupError,
+} from "@/level/owner-setup";
+import type { PlacedLevel } from "@/level/placer";
 
 export const COMPASS: readonly Compass[] = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
 export const CAMERA_KINDS: readonly OwnerCameraKind[] = ["sweeping", "ptz", "fixed"];
 export const DOOR_LOCKS: readonly OwnerDoorLock[] = ["key", "badge", "open"];
 
-/** The owner's kind for each engine kind the rules table places. */
-const KIND_OF: Readonly<Record<CameraKind, OwnerCameraKind>> = {
-  "analog-sweep": "sweeping",
-  ptz: "ptz",
-  "fixed-ip": "fixed",
-  "ip-analytics": "fixed",
-};
-
 /** The name the starting setup carries. */
 export const STARTING_NAME = "Generated security";
 
 /**
- * The placed level's security as an owner's setup: each guard's round as the
- * node loop it walks, each camera on the node and facing whose view comes
- * nearest its generated cover, every locked door a key lock. The rules
- * table's night cleaners walk, and a setup has only staffed desks, so they
- * are left out.
+ * The placed level's security as an owner's setup: each guard's and night
+ * cleaner's round as the node loop it walks, each camera on the node and
+ * facing whose view comes nearest its generated cover and keeping that cover
+ * exactly, every locked door a key lock or a badge reader by its pick turns.
+ * Every element is listed as generated, so `applyOwnerSetup` plays it as the
+ * rules table placed it, data provenance and all, until it is edited.
  */
 export function setupFromPlaced(placed: PlacedLevel, name: string = STARTING_NAME): OwnerSetup {
   const { level } = placed;
@@ -56,9 +60,20 @@ export function setupFromPlaced(placed: PlacedLevel, name: string = STARTING_NAM
       tempo: level.guardTempo?.[g.id] ?? level.patrolTempo,
     };
   });
-  const cameras: OwnerCamera[] = (level.cameras ?? []).map((c) => nearestCamera(floor, c.id, c.cover, KIND_OF[c.kind]));
-  const doors = Object.fromEntries([...level.lockedDoors].sort().map((id) => [id, "key" as const]));
-  return { version: OWNER_SETUP_VERSION, name, buildingId: level.buildingId, guards, cameras, doors, desks: [] };
+  const cameras: OwnerCamera[] = (level.cameras ?? []).map((c) => ({
+    ...nearestCamera(floor, c.id, c.cover, OWNER_KIND_OF[c.kind]),
+    cover: [...c.cover],
+  }));
+  const lock = level.pickTurns === OWNER_PICK_TURNS.key ? ("key" as const) : ("badge" as const);
+  const doors = Object.fromEntries([...level.lockedDoors].sort().map((id) => [id, lock]));
+  const cleaners = (level.cleaners ?? []).map((c) => ({ id: c.id, round: roundOf(board, c.patrol) }));
+  const generated: OwnerGenerated = {
+    guards: guards.map((g) => g.id),
+    cameras: cameras.map((c) => c.id),
+    cleaners: cleaners.map((c) => c.id),
+    doors: Object.keys(doors),
+  };
+  return { version: OWNER_SETUP_VERSION, name, buildingId: level.buildingId, guards, cameras, doors, desks: [], cleaners, generated };
 }
 
 function nearestCamera(floor: FloorGraph, id: string, cover: readonly string[], kind: OwnerCameraKind): OwnerCamera {
@@ -75,30 +90,47 @@ function nearestCamera(floor: FloorGraph, id: string, cover: readonly string[], 
   return { id, node: best?.node ?? cover[0], kind, facing: best?.facing ?? "n" };
 }
 
-/**
- * The level a batch plays on `seed`: the generated one while the setup is
- * untouched (`setup` null), else the owner's, applied over the placer's
- * entries and zones. Null when the setup has a problem.
- */
-export function levelForSetup(manifest: LevelManifest, floor: FloorGraph, setup: OwnerSetup | null, seed: number): Level | null {
-  if (!setup) return placeLevel(manifest, floor, seed).level;
+/** The level a batch plays on `seed`: the setup applied over the placer's entries and zones. Null when the setup has a problem. */
+export function levelForSetup(manifest: LevelManifest, floor: FloorGraph, setup: OwnerSetup, seed: number): Level | null {
   const applied = applyOwnerSetup(manifest, floor, setup, seed);
   return applied.ok ? applied.placed.level : null;
 }
 
-/** The board's picture of a setup: the placer's level, with the owner's security on it, and no data-layer provenance. */
-export function boardOf(manifest: LevelManifest, floor: FloorGraph, setup: OwnerSetup | null, seed: number): PlacedLevel | null {
-  const base = placeLevel(manifest, floor, seed);
-  if (!setup) return base;
+/** Only the data's rows: an element the owner placed has none, so its Why card says the owner placed it. */
+const dataRows = (rows: readonly (OwnerProvenance | Provenance)[]): Provenance[] =>
+  rows.filter((row): row is Provenance => row.layer !== "owner");
+
+/**
+ * The board's picture of a setup: the placer's level with the setup's
+ * security on it. Elements still as generated keep their data provenance, so
+ * the Why card shows its rows; the owner's carry none.
+ */
+export function boardOf(manifest: LevelManifest, floor: FloorGraph, setup: OwnerSetup, seed: number): PlacedLevel | null {
   const applied = applyOwnerSetup(manifest, floor, setup, seed);
   if (!applied.ok) return null;
   const { placed } = applied;
   return {
-    ...base,
     level: placed.level,
-    guards: placed.guards.map((g) => ({ id: g.id, roomId: g.roomId, patrol: g.patrol, provenance: [] })),
-    cameras: placed.cameras.map((c) => ({ id: c.id, kind: c.kind, cover: c.cover, phase: c.phase, approach: c.approach, provenance: [] })),
-    locks: placed.locks.map((l) => ({ doorId: l.doorId, zoneId: l.zoneId ?? "", provenance: [] })),
+    entries: placed.entries,
+    zones: placed.zones,
+    objective: placed.objective,
+    unplaced: placed.unplaced,
+    guards: placed.guards.map((g) => ({
+      id: g.id,
+      roomId: g.roomId,
+      patrol: g.patrol,
+      ...(g.post && { post: g.post }),
+      provenance: dataRows(g.provenance),
+    })),
+    cameras: placed.cameras.map((c) => ({
+      id: c.id,
+      kind: c.kind,
+      cover: c.cover,
+      phase: c.phase,
+      approach: c.approach,
+      provenance: dataRows(c.provenance),
+    })),
+    locks: placed.locks.map((l) => ({ doorId: l.doorId, zoneId: l.zoneId ?? "", provenance: dataRows(l.provenance) })),
   };
 }
 
@@ -113,6 +145,18 @@ export function nextId(prefix: string, taken: readonly string[]): string {
 
 const takenIds = (setup: OwnerSetup) => [...setup.guards.map((g) => g.id), ...setup.cameras.map((c) => c.id)];
 
+/** The setup with the element taken off the generated list: an edited element is the owner's. */
+export function touched(setup: OwnerSetup, list: keyof OwnerGenerated, id: string): OwnerSetup {
+  const ids = setup.generated?.[list];
+  if (!ids?.includes(id)) return setup;
+  return { ...setup, generated: { ...setup.generated, [list]: ids.filter((x) => x !== id) } };
+}
+
+const guardEdit = (setup: OwnerSetup, id: string, edit: (g: OwnerGuard) => OwnerGuard): OwnerSetup => {
+  const out = touched(setup, "guards", id);
+  return { ...out, guards: out.guards.map((g) => (g.id === id ? edit(g) : g)) };
+};
+
 export function addGuard(setup: OwnerSetup, node: string, tempo = 1): { setup: OwnerSetup; id: string } {
   const id = nextId("G", takenIds(setup));
   return { setup: { ...setup, guards: [...setup.guards, { id, post: node, round: [], tempo }] }, id };
@@ -120,41 +164,35 @@ export function addGuard(setup: OwnerSetup, node: string, tempo = 1): { setup: O
 
 /** Moves the guard's post; a round that no longer passes the post is walked from the new post instead (it stands there). */
 export function moveGuard(setup: OwnerSetup, id: string, node: string): OwnerSetup {
-  return {
-    ...setup,
-    guards: setup.guards.map((g) => (g.id === id ? { ...g, post: node, round: g.round.includes(node) ? g.round : [] } : g)),
-  };
+  return guardEdit(setup, id, (g) => ({ ...g, post: node, round: g.round.includes(node) ? g.round : [] }));
 }
 
 export function removeGuard(setup: OwnerSetup, id: string): OwnerSetup {
-  return { ...setup, guards: setup.guards.filter((g) => g.id !== id) };
+  const out = touched(setup, "guards", id);
+  return { ...out, guards: out.guards.filter((g) => g.id !== id) };
 }
 
 /** Starts drawing a round: the post alone, so each next click adds a node. */
 export function startRound(setup: OwnerSetup, id: string): OwnerSetup {
-  return { ...setup, guards: setup.guards.map((g) => (g.id === id ? { ...g, round: [g.post] } : g)) };
+  return guardEdit(setup, id, (g) => ({ ...g, round: [g.post] }));
 }
 
 /** Adds `node` to the end of the round being drawn; the last node again takes it off. */
 export function extendRound(setup: OwnerSetup, id: string, node: string): OwnerSetup {
-  return {
-    ...setup,
-    guards: setup.guards.map((g) => {
-      if (g.id !== id) return g;
-      const round = g.round.length === 0 ? [g.post] : g.round;
-      if (round[round.length - 1] === node && round.length > 1) return { ...g, round: round.slice(0, -1) };
-      return { ...g, round: [...round, node] };
-    }),
-  };
+  return guardEdit(setup, id, (g) => {
+    const round = g.round.length === 0 ? [g.post] : g.round;
+    if (round[round.length - 1] === node && round.length > 1) return { ...g, round: round.slice(0, -1) };
+    return { ...g, round: [...round, node] };
+  });
 }
 
 /** The guard stands its post: no round. */
 export function clearRound(setup: OwnerSetup, id: string): OwnerSetup {
-  return { ...setup, guards: setup.guards.map((g) => (g.id === id ? { ...g, round: [] } : g)) };
+  return guardEdit(setup, id, (g) => ({ ...g, round: [] }));
 }
 
 export function setTempo(setup: OwnerSetup, id: string, tempo: number): OwnerSetup {
-  return { ...setup, guards: setup.guards.map((g) => (g.id === id ? { ...g, tempo: Math.max(1, Math.round(tempo)) } : g)) };
+  return guardEdit(setup, id, (g) => ({ ...g, tempo: Math.max(1, Math.round(tempo)) }));
 }
 
 export function addCamera(setup: OwnerSetup, node: string, kind: OwnerCameraKind = "sweeping", facing: Compass = "n"): { setup: OwnerSetup; id: string } {
@@ -162,19 +200,34 @@ export function addCamera(setup: OwnerSetup, node: string, kind: OwnerCameraKind
   return { setup: { ...setup, cameras: [...setup.cameras, { id, node, kind, facing }] }, id };
 }
 
-export function updateCamera(setup: OwnerSetup, id: string, change: Partial<Omit<OwnerCamera, "id">>): OwnerSetup {
-  return { ...setup, cameras: setup.cameras.map((c) => (c.id === id ? { ...c, ...change } : c)) };
+/** Changes a camera. Moved, turned or of another kind, it covers what it now sees: a kept cover goes. */
+export function updateCamera(setup: OwnerSetup, id: string, change: Partial<Omit<OwnerCamera, "id" | "cover">>): OwnerSetup {
+  const out = touched(setup, "cameras", id);
+  return {
+    ...out,
+    cameras: out.cameras.map((c) => {
+      if (c.id !== id) return c;
+      const next = { ...c, ...change };
+      const moved = next.node !== c.node || next.facing !== c.facing || next.kind !== c.kind;
+      if (!moved) return next;
+      const recomputed: OwnerCamera = { ...next };
+      delete recomputed.cover;
+      return recomputed;
+    }),
+  };
 }
 
 export function removeCamera(setup: OwnerSetup, id: string): OwnerSetup {
-  return { ...setup, cameras: setup.cameras.filter((c) => c.id !== id) };
+  const out = touched(setup, "cameras", id);
+  return { ...out, cameras: out.cameras.filter((c) => c.id !== id) };
 }
 
 export function setDoor(setup: OwnerSetup, doorId: string, lock: OwnerDoorLock): OwnerSetup {
-  const doors = { ...setup.doors };
+  const out = touched(setup, "doors", doorId);
+  const doors = { ...out.doors };
   if (lock === "open") delete doors[doorId];
   else doors[doorId] = lock;
-  return { ...setup, doors };
+  return { ...out, doors };
 }
 
 export function toggleDesk(setup: OwnerSetup, node: string): OwnerSetup {
@@ -205,13 +258,30 @@ export function playable(setup: OwnerSetup, floor: FloorGraph): OwnerSetup {
   const once = (ids: readonly string[]) => ids.filter((id, i) => ids.indexOf(id) === i && ids.lastIndexOf(id) === i);
   const guardIds = new Set(once(out.guards.map((g) => g.id)));
   const cameraIds = new Set(once(out.cameras.map((c) => c.id)));
+  const cleanerIds = new Set(once((out.cleaners ?? []).map((c) => c.id)));
   out = {
     ...out,
     guards: out.guards.filter((g) => guardIds.has(g.id) && !bad.has(`guard:${g.id}`)),
     cameras: out.cameras.filter((c) => cameraIds.has(c.id) && !bad.has(`camera:${c.id}`)),
     doors: Object.fromEntries(Object.entries(out.doors).filter(([id]) => !bad.has(`door:${id}`))),
     desks: [...new Set(out.desks)].filter((d) => !bad.has(`desk:${d}`)),
+    ...(out.cleaners && { cleaners: out.cleaners.filter((c) => cleanerIds.has(c.id) && !bad.has(`cleaner:${c.id}`)) }),
   };
+  // The generated list keeps only what is left.
+  if (out.generated) {
+    const left = {
+      guards: new Set(out.guards.map((g) => g.id)),
+      cameras: new Set(out.cameras.map((c) => c.id)),
+      cleaners: new Set((out.cleaners ?? []).map((c) => c.id)),
+      doors: new Set(Object.keys(out.doors).filter((id) => out.doors[id] !== "open")),
+    };
+    const generated: OwnerGenerated = {};
+    for (const list of ["guards", "cameras", "cleaners", "doors"] as const) {
+      const ids = out.generated[list];
+      if (ids) generated[list] = ids.filter((id) => left[list].has(id));
+    }
+    out = { ...out, generated };
+  }
   return out;
 }
 
@@ -237,19 +307,18 @@ export function setupWithFix(setup: OwnerSetup, fix: ChiefFix, level: Level, nam
       const camera = setup.cameras.find((c) => c.id === change.elementId);
       if (!nodes || !camera) return named;
       const placed = nearestCamera(floor, camera.id, nodes, camera.kind);
-      return { ...named, cameras: setup.cameras.map((c) => (c.id === camera.id ? placed : c)) };
+      const out = touched(named, "cameras", camera.id);
+      return { ...out, cameras: out.cameras.map((c) => (c.id === camera.id ? placed : c)) };
     }
     case "retime-guard": {
       const by = change.byTurns ?? 0;
-      return {
-        ...named,
-        guards: setup.guards.map((g) => {
-          if (g.id !== change.elementId || g.round.length < 2) return g;
-          const at = g.round.indexOf(g.post);
-          const n = g.round.length;
-          return { ...g, post: g.round[(((at - by) % n) + n) % n] };
-        }),
-      };
+      const guard = setup.guards.find((g) => g.id === change.elementId);
+      if (!guard || guard.round.length < 2) return named;
+      return guardEdit(named, guard.id, (g) => {
+        const at = g.round.indexOf(g.post);
+        const n = g.round.length;
+        return { ...g, post: g.round[(((at - by) % n) + n) % n] };
+      });
     }
     case "lock-door": {
       const nodes = zoneNodes(change.elementId);

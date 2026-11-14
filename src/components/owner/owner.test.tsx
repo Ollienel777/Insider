@@ -1,13 +1,14 @@
 // The Owner screen (issue 128) on the cached F1 level and the F1 fixture floor:
-// the setup made from the generated security, the editor's states and inline
-// reasons, and the before and after of the Chief's recorded fix, 17 of 50 out
-// before and none after, as PR 148 has it.
+// the setup made from the generated security and its exact round trip, the
+// editor's states and inline reasons, and the before and after of the Chief's
+// recorded fix, 17 of 50 out before and none after, as PR 148 has it.
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { ChiefFix, LevelManifest, type Strategy } from "@/domain";
-import { summariseBatch as sum } from "@/engine";
-import { validateOwnerSetup } from "@/level/owner-setup";
+import { OwnerSetup } from "@/domain/owner-setup";
+import { runBatch, summariseBatch as sum, varyLevel, type Level } from "@/engine";
+import { applyOwnerSetup, validateOwnerSetup } from "@/level/owner-setup";
 import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.json";
 import fixRecording from "../../../fixtures/llm/fix-F1.json";
@@ -16,7 +17,17 @@ import { BatchPanel } from "./batch-panel";
 import { toEngineFix } from "./chief-fix";
 import { ownerZones, playOwnerBatch, rerunOwner } from "./owner-batch";
 import { boardCaption, setupKey } from "./owner-ready";
-import { extendRound, playable, problemsOf, setupFromPlaced, setupWithFix, startRound } from "./owner-edit";
+import {
+  boardOf,
+  extendRound,
+  moveGuard,
+  playable,
+  problemsOf,
+  setupFromPlaced,
+  setupWithFix,
+  startRound,
+  updateCamera,
+} from "./owner-edit";
 import type { Selection } from "./owner-board";
 import { SetupPanel, type Draft, type Tool } from "./setup-panel";
 import type { OwnerBatch, OwnerFix } from "./use-owner-batch";
@@ -109,9 +120,122 @@ describe("the editor's states", () => {
   });
 });
 
+/** The batch on the generated level itself, with `change` made to each seed's level: what the batch debrief plays. */
+const generatedBatch = (m: LevelManifest = manifest, change: (level: Level) => Level = (l) => l) =>
+  runBatch({ buildingId: m.buildingId, strategies, levelFor: (seed) => change(placeLevel(m, floor, seed).level) });
+
+/** The security a batch meets on one seed, as the engine plays it. */
+const security = (level: Level) => {
+  const varied = varyLevel(level);
+  return {
+    guards: varied.guards,
+    tempo: varied.guards.map((g) => varied.guardTempo?.[g.id] ?? varied.patrolTempo),
+    cameras: varied.cameras,
+    cleaners: varied.cleaners ?? [],
+    locked: [...varied.lockedDoors].sort(),
+    pickTurns: varied.lockedDoors.map((d) => varied.doorPickTurns?.[d] ?? varied.pickTurns),
+  };
+};
+
+describe("the round trip", () => {
+  const applied = (setup: OwnerSetup, seed: number, m: LevelManifest = manifest) => {
+    const out = applyOwnerSetup(m, floor, setup, seed);
+    if (!out.ok) throw new Error(out.errors.map((e) => e.reason).join("; "));
+    return out.placed;
+  };
+
+  it("the generated security as a setup plays the generated level: the same security on every seed, the same batch, 17 of 50", () => {
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+      expect(security(applied(starting, seed).level)).toEqual(security(placeLevel(manifest, floor, seed).level));
+    }
+    const owner = playOwnerBatch(manifest, floor, starting, answer);
+    expect(owner).toEqual(generatedBatch());
+    expect(owner.summary.escaped).toBe(17);
+  });
+
+  it("survives a save: the stored setup parses and plays the same batch", () => {
+    const stored = OwnerSetup.parse(JSON.parse(JSON.stringify(starting)));
+    expect(playOwnerBatch(manifest, floor, stored, answer)).toEqual(generatedBatch());
+  });
+
+  it("keeps the night cleaners walking their rounds, with the zone's provenance", () => {
+    // Without the vacant Open Office 2210 the office is occupied, so the rules table puts a cleaner there.
+    const busy = { ...manifest, zones: manifest.zones.filter((z) => z.id !== "quiet-2210") };
+    const placed = placeLevel(busy, floor, 1);
+    expect(placed.level.cleaners?.length).toBeGreaterThan(0);
+    const setup = setupFromPlaced(placed);
+    expect(setup.cleaners?.map((c) => c.id)).toEqual(placed.level.cleaners?.map((c) => c.id));
+    expect(validateOwnerSetup(setup, floor)).toEqual([]);
+    for (const seed of [1, 2, 3]) {
+      expect(security(applied(setup, seed, busy).level)).toEqual(security(placeLevel(busy, floor, seed).level));
+    }
+    const crowded = placed.zones.find((z) => z.role === "crowded")!;
+    expect(applied(setup, 1, busy).cleaners[0].provenance).toBe(crowded.provenance);
+    const batch = runBatch({ buildingId: "F1", strategies, levelFor: (seed) => applied(setup, seed, busy).level });
+    expect(batch).toEqual(generatedBatch(busy));
+  });
+
+  it("moving one guard changes the batch by that move alone: 17 to 19", () => {
+    const moved = moveGuard(starting, "G3", "o-east");
+    const owner = playOwnerBatch(manifest, floor, moved, answer);
+    const expected = generatedBatch(manifest, (level) => ({
+      ...level,
+      guards: level.guards.map((g) => (g.id === "G3" ? { ...g, patrol: ["o-east"] } : g)),
+    }));
+    expect(owner).toEqual(expected);
+    expect(owner.summary.escaped).toBe(19);
+  });
+
+  it("keeps the data's provenance on what is still generated, and the owner's on what was edited", () => {
+    const board = boardOf(manifest, floor, starting, 1)!;
+    expect(board.guards.map((g) => g.provenance)).toEqual(generated.guards.map((g) => g.provenance));
+    expect(board.cameras.map((c) => c.provenance)).toEqual(generated.cameras.map((c) => c.provenance));
+    expect(board.locks.map((l) => l.provenance)).toEqual(
+      [...generated.locks].sort((a, b) => a.doorId.localeCompare(b.doorId)).map((l) => l.provenance),
+    );
+    expect(board.guards.flatMap((g) => g.provenance).some((p) => p.layer === "costar")).toBe(true);
+
+    const moved = moveGuard(starting, "G1", "mc-1");
+    expect(moved.generated?.guards).toEqual(["G2", "G3", "G4"]);
+    const after = applied(moved, 1);
+    expect(after.guards.find((g) => g.id === "G1")!.provenance[0]).toMatchObject({ layer: "owner" });
+    expect(after.guards.find((g) => g.id === "G2")!.provenance).toEqual(generated.guards.find((g) => g.id === "G2")!.provenance);
+    expect(boardOf(manifest, floor, moved, 1)!.guards.find((g) => g.id === "G1")!.provenance).toEqual([]);
+  });
+
+  it("keeps a camera's generated cover until it is moved, turned or changed", () => {
+    const c2 = starting.cameras.find((c) => c.id === "C2")!;
+    expect(c2.cover).toEqual(generated.cameras.find((c) => c.id === "C2")!.cover);
+    expect(updateCamera(starting, "C2", { facing: c2.facing }).cameras.find((c) => c.id === "C2")!.cover).toEqual(c2.cover);
+    const turned = updateCamera(starting, "C2", { facing: c2.facing === "n" ? "s" : "n" });
+    expect(turned.cameras.find((c) => c.id === "C2")!.cover).toBeUndefined();
+    expect(turned.generated?.cameras).toEqual(["C1"]);
+  });
+
+  it("plays a setup saved before cleaners, covers and the generated list as it did: every camera's cover from its facing, all the owner's", () => {
+    // As a setup was stored before them: no cleaners, no kept covers, no generated list.
+    const older = OwnerSetup.parse({
+      version: 1,
+      name: starting.name,
+      buildingId: starting.buildingId,
+      guards: starting.guards,
+      cameras: starting.cameras.map((c) => ({ id: c.id, node: c.node, kind: c.kind, facing: c.facing })),
+      doors: starting.doors,
+      desks: starting.desks,
+    });
+    // What the screen counted for it before the round trip was exact.
+    expect(playOwnerBatch(manifest, floor, older, answer).summary.escaped).toBe(24);
+    const placed = applied(older, 1);
+    expect(placed.cameras.find((c) => c.id === "C2")!.cover).not.toEqual(generated.cameras.find((c) => c.id === "C2")!.cover);
+    for (const element of [...placed.guards, ...placed.cameras, ...placed.locks]) {
+      expect(element.provenance[0]).toMatchObject({ layer: "owner" });
+    }
+  });
+});
+
 describe("50 attempts, the fix, and the rerun", () => {
-  const before = playOwnerBatch(manifest, floor, null, answer);
-  const rerun = rerunOwner(manifest, floor, null, before, recordedFix);
+  const before = playOwnerBatch(manifest, floor, starting, answer);
+  const rerun = rerunOwner(manifest, floor, starting, before, recordedFix);
 
   it("the untouched setup plays the generated level: 17 of 50 out, then none with the recorded fix", () => {
     expect(before.summary).toMatchObject({ runs: 50, escaped: 17 });
@@ -131,7 +255,7 @@ describe("50 attempts, the fix, and the rerun", () => {
     const batch: OwnerBatch = {
       status: "done",
       key: "generated",
-      setup: null,
+      setup: starting,
       result: before,
       summary: sum(before),
       recorded: true,

@@ -2,8 +2,9 @@
 // the owner's setup, the Chief's one change, and the same batch again with it
 // made. The setup and the floor stay in the browser: the crew is asked by the
 // building's id alone, and the Chief reads the batch's `FixSummary` (zone and
-// element ids, SPEC §4.5). A null setup is the untouched starting point: the
-// building's generated level, as the batch debrief plays it (issue 127).
+// element ids, SPEC §4.5). It always plays the setup applied: the untouched
+// starting point plays the generated level exactly, as the batch debrief
+// plays it (issue 127).
 "use client";
 
 import type { BatchResult, ChiefFix, FloorGraph, LevelManifest } from "@/domain";
@@ -19,7 +20,7 @@ import { levelForSetup } from "./owner-edit";
 export function ownerBatchInput(
   manifest: LevelManifest,
   floor: FloorGraph,
-  setup: OwnerSetup | null,
+  setup: OwnerSetup,
   strategies: BatchInput["strategies"],
   seeds: readonly number[] = BATCH_SEEDS,
 ): BatchInput {
@@ -29,7 +30,7 @@ export function ownerBatchInput(
     seeds,
     levelFor: (seed) => {
       const level = levelForSetup(manifest, floor, setup, seed);
-      if (!level) throw new Error(`the setup "${setup?.name}" does not fit this floor`);
+      if (!level) throw new Error(`the setup "${setup.name}" does not fit this floor`);
       return level;
     },
   };
@@ -39,7 +40,7 @@ export function ownerBatchInput(
 export function playOwnerBatch(
   manifest: LevelManifest,
   floor: FloorGraph,
-  setup: OwnerSetup | null,
+  setup: OwnerSetup,
   answer: Pick<StrategiesAnswer, "strategies" | "dropped">,
   seeds: readonly number[] = BATCH_SEEDS,
 ): BatchResult {
@@ -56,7 +57,7 @@ export function ownerZones(manifest: LevelManifest, floor: FloorGraph, seed: num
 export function rerunOwner(
   manifest: LevelManifest,
   floor: FloorGraph,
-  setup: OwnerSetup | null,
+  setup: OwnerSetup,
   before: BatchResult,
   fix: ChiefFix,
 ): Rerun {

@@ -20,8 +20,8 @@ export type OwnerBatch =
   | {
       status: "done";
       key: string;
-      /** The setup it was played on; null for the generated starting point. */
-      setup: OwnerSetup | null;
+      /** The setup it was played on. */
+      setup: OwnerSetup;
       result: BatchResult;
       summary: BatchSummary;
       recorded: boolean;
@@ -52,9 +52,9 @@ export function useOwnerBatch(manifest: LevelManifest | null, floor: FloorGraph 
     return controller;
   };
 
-  /** Plays the batch on `setup` (null: the generated level); `key` names the setup as it stands. */
+  /** Plays the batch on `setup`; `key` names the setup as it stands. */
   const run = useCallback(
-    (setup: OwnerSetup | null, key: string) => {
+    (setup: OwnerSetup, key: string) => {
       if (!manifest || !floor) return;
       const controller = start();
       setBatch({ status: "planning" });
