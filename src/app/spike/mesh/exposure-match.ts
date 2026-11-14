@@ -4,7 +4,7 @@
 // in memory, a panorama at a time between frames, so the walk doesn't stutter.
 import { DoubleSide, Ray, Vector3 } from "three";
 import { conjugate, rotate, type Quat, type Vec3 } from "@/lib/scan-mesh/coords";
-import { pairRatio, solveGains, type PairRatio, type Rgb } from "@/lib/scan-mesh/exposure";
+import { pairMismatch, pairRatio, solveGains, type PairRatio, type Rgb } from "@/lib/scan-mesh/exposure";
 import { faceLookup, SCAN_FACES } from "@/lib/scan-mesh/skybox";
 import type { MeshWorld } from "./collider";
 
@@ -74,10 +74,10 @@ export async function matchExposure(
   sources: readonly ExposureSource[],
   world: MeshWorld,
   signal: AbortSignal,
-): Promise<{ gains: Map<number, Rgb>; pairs: number }> {
+): Promise<{ gains: Map<number, Rgb>; pairs: number; before: number; after: number }> {
   const faces = new Map<number, Faces>();
   for (const s of sources) {
-    if (signal.aborted) return { gains: new Map(), pairs: 0 };
+    if (signal.aborted) return { gains: new Map(), pairs: 0, before: 0, after: 0 };
     try {
       faces.set(s.index, await Promise.all(s.faces.map(tiny)));
     } catch {
@@ -98,7 +98,7 @@ export async function matchExposure(
   const directions = sphere(DIRECTIONS);
   const ratios: PairRatio[] = [];
   for (const a of sources) {
-    if (signal.aborted) return { gains: new Map(), pairs: 0 };
+    if (signal.aborted) return { gains: new Map(), pairs: 0, before: 0, after: 0 };
     const facesA = faces.get(a.index);
     if (!facesA) continue;
     const neighbours = sources
@@ -138,5 +138,5 @@ export async function matchExposure(
   const solved = solveGains(count, ratios);
   const gains = new Map<number, Rgb>();
   for (const i of indices) gains.set(i, solved[i]);
-  return { gains, pairs: ratios.length };
+  return { gains, pairs: ratios.length, before: pairMismatch(ratios, []), after: pairMismatch(ratios, solved) };
 }

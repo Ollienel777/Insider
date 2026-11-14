@@ -62,6 +62,27 @@ export function pairRatio(observation: PairObservation): PairRatio | null {
 }
 
 /**
+ * How far apart neighbours' colours are, typically, as a fraction (0.1 is
+ * 10%): the root mean square over pairs and channels of the log ratio left
+ * once `gains` are applied (none given means all ones: "before").
+ */
+export function pairMismatch(ratios: readonly PairRatio[], gains: readonly Rgb[]): number {
+  let sum = 0;
+  let n = 0;
+  for (const r of ratios) {
+    const ga = gains[r.a] ?? [1, 1, 1];
+    const gb = gains[r.b] ?? [1, 1, 1];
+    for (let c = 0; c < 3; c++) {
+      // gain a · colour a against gain b · colour b
+      const left = r.logRatio[c] + Math.log(gb[c]) - Math.log(ga[c]);
+      sum += left * left;
+      n++;
+    }
+  }
+  return n > 0 ? Math.expm1(Math.sqrt(sum / n)) : 0;
+}
+
+/**
  * One gain per panorama and channel, multiplying its colours, so that
  * gain[a] · colour in a ≈ gain[b] · colour in b over every pair: the least
  * squares answer in log space, pulled a little toward 1 (`pull`) so a

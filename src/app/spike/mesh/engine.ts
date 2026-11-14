@@ -61,7 +61,7 @@ export interface WalkHud {
   /** The detailed mesh from the scan's Matterpak, which takes over the picture once in. */
   detail: { state: "none" | "loading" | "ready" | "failed" | "off"; triangles: number; megabytes: number; seconds: number; reason?: string };
   /** The exposure match: pairs of panoramas compared, the gains' range, and whether they are applied; null until solved. */
-  exposure: { pairs: number; low: number; high: number; on: boolean } | null;
+  exposure: { pairs: number; low: number; high: number; on: boolean; before: number; after: number } | null;
   faces: PanoResolution;
   locked: boolean;
   /** The browser refused to lock the mouse: the page says to drag instead. */
@@ -616,11 +616,11 @@ export class ScanWalk {
     const counts = panos.counts();
     if (counts.total === 0 || counts.low < counts.total) return;
     this.exposureStarted = true;
-    void matchExposure(panos.exposureSources(), world, this.abort.signal).then(({ gains, pairs }) => {
+    void matchExposure(panos.exposureSources(), world, this.abort.signal).then(({ gains, pairs, before, after }) => {
       if (this.disposed || gains.size === 0) return;
       panos.setGains(gains);
       const all = [...gains.values()].flat();
-      this.hud.exposure = { pairs, low: Math.min(...all), high: Math.max(...all), on: panos.useGains };
+      this.hud.exposure = { pairs, low: Math.min(...all), high: Math.max(...all), on: panos.useGains, before, after };
       this.push();
     });
   }
