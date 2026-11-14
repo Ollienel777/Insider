@@ -377,9 +377,11 @@ describe("placeLevel on a floor from a live scan (no entry tags, no named record
     const kinds = new Map(p.entries.map((e) => [e.kind, e.nodeId]));
     expect(f.nodes.find((n) => n.id === kinds.get("dock"))?.tags).toContain("lift");
     expect(f.nodes.find((n) => n.id === kinds.get("roof"))?.tags).toContain("stair");
-    // Only the stairs and lifts count as ways in, so the guards still find rounds clear of them.
-    expect(p.guards).toHaveLength(placeF1().guards.length);
-    expect(p.unplaced.filter((u) => u.elementRole.startsWith("guard:"))).toEqual([]);
+    // Only the stairs and lifts count as ways in, so guards still find rounds clear of them; on a
+    // scan no two start on one node, so a round with one start takes one guard.
+    expect(p.guards.length).toBeGreaterThan(0);
+    expect(new Set(p.guards.map((g) => g.patrol[0])).size).toBe(p.guards.length);
+    expect(p.unplaced.filter((u) => u.elementRole.startsWith("guard:") && !/start on its round/.test(u.reason))).toEqual([]);
   });
 
   it("offers the edge of the plate when there are no stairs or lifts either, farthest from the centre first", () => {
@@ -458,5 +460,75 @@ describe("placeLevel on a floor from a live scan (no entry tags, no named record
     const p = placeF1();
     expect(p.entries.map((e) => e.nodeId)).toEqual([F1_DEMO.dockEntry, F1_DEMO.roofEntry]);
     expect(p.level.objective).toBe(F1_DEMO.objective);
+  });
+});
+
+describe("placeLevel on an open-plan scan (second review)", () => {
+  // An n×n open floor, an office off its east side and a meeting room off its south side, no tags.
+  // Sightlines are the whole room, as a scan's are.
+  function openPlan(n = 4): FloorGraph {
+    const nodes: FloorGraph["nodes"] = [];
+    const edges: FloorGraph["edges"] = [];
+    const add = (id: string, x: number, y: number, roomId: string) => nodes.push({ id, x, y, roomId, tags: [] });
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) add(`n${r}${c}`, c * 3, r * 3, "open");
+    for (let r = 0; r < n; r++)
+      for (let c = 0; c < n; c++) {
+        if (c < n - 1) edges.push({ a: `n${r}${c}`, b: `n${r}${c + 1}` });
+        if (r < n - 1) edges.push({ a: `n${r}${c}`, b: `n${r + 1}${c}` });
+      }
+    add("o1", n * 3, 3, "office");
+    add("o2", n * 3 + 3, 3, "office");
+    edges.push({ a: `n1${n - 1}`, b: "o1", door: { id: "door:o", lockable: false } }, { a: "o1", b: "o2" });
+    add("m1", 3, n * 3, "meeting");
+    add("m2", 6, n * 3, "meeting");
+    add("m3", 9, n * 3, "meeting");
+    edges.push({ a: `n${n - 1}1`, b: "m1", door: { id: "door:m", lockable: false } }, { a: "m1", b: "m2" }, { a: "m2", b: "m3" });
+    const room = new Map(nodes.map((n) => [n.id, n.roomId]));
+    return {
+      nodes,
+      edges,
+      rooms: [
+        { id: "open", label: "Open Floor", rect: { x: 0, y: 0, w: (n - 1) * 3, h: (n - 1) * 3 } },
+        { id: "office", label: "Office", rect: { x: n * 3, y: 3, w: 3, h: 1 } },
+        { id: "meeting", label: "Meeting Room", rect: { x: 3, y: n * 3, w: 6, h: 1 } },
+      ],
+      sightlines: Object.fromEntries(nodes.map((n) => [n.id, nodes.filter((m) => m.id !== n.id && room.get(m.id) === n.roomId).map((m) => m.id)])),
+      source: "matterport",
+    };
+  }
+
+  it("lets the player take a first step without being seen, even starting in the open room", () => {
+    const f = openPlan(6);
+    for (const seed of [0, 1, 2, 7, 11]) {
+      // The dock in the open room's corner: every node of that room sees the start.
+      const p = placeLevel(manifest(), structuredClone(f), seed, { entries: { dock: "n00" } });
+      expect(p.entries[0].nodeId).toBe("n00");
+      const run = createRun(p.level);
+      const start = run.playerNode;
+      const steps = f.edges.flatMap((e) => (e.a === start ? [e.b] : e.b === start ? [e.a] : []));
+      expect(steps.length).toBeGreaterThan(0);
+      for (const to of steps) {
+        const result = act(run, { kind: "move", to });
+        expect(result.ok, `${seed}: ${to}`).toBe(true);
+        if (result.ok) expect(result.run.alarm, `seed ${seed}, first step to ${to}`).toBe(run.alarm);
+      }
+    }
+  });
+
+  it("starts no two guards on the same node", () => {
+    const f = openPlan();
+    for (const seed of [0, 1, 2, 7, 11]) {
+      const p = placeLevel(manifest(), structuredClone(f), seed, {});
+      const starts = p.guards.map((g) => g.patrol[0]);
+      expect(new Set(starts).size, `seed ${seed}: ${starts.join(" ")}`).toBe(starts.length);
+    }
+  });
+
+  it("never puts the objective on a way in", () => {
+    const f = openPlan();
+    for (const seed of [0, 1, 2, 7, 11]) {
+      const p = placeLevel(manifest(), structuredClone(f), seed, {});
+      expect(p.entries.map((e) => e.nodeId)).not.toContain(p.level.objective);
+    }
   });
 });

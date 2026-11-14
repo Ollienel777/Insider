@@ -666,3 +666,20 @@ describe("review fixes: a number never repeats a name another room already has",
     ]);
   });
 });
+
+describe("second review: an Inside view that opened is the panel's to close", () => {
+  it("does not abort the player once it is open, so close disconnects it once, in order", async () => {
+    let inner: AbortSignal | undefined;
+    const disconnect = vi.fn();
+    const connect = vi.fn<InsideConnect>(async (_p, _m, _k, signal) => {
+      inner = signal;
+      return { Sweep: { moveTo: vi.fn(async () => undefined) }, disconnect };
+    });
+    const stop = new AbortController();
+    const view = await connectInsideView({} as HTMLElement, "m", "k", connect, 20_000, stop.signal);
+    stop.abort();
+    expect(inner?.aborted).toBe(false);
+    view.disconnect();
+    expect(disconnect).toHaveBeenCalledTimes(1);
+  });
+});

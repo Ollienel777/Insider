@@ -64,26 +64,34 @@ export function within<T>(
   const abort = new AbortController();
   return new Promise((resolve, reject) => {
     let late = false;
-    const giveUp = (error: Error) => {
-      if (late) return;
-      late = true;
+    let settled = false;
+    const onOuter = () => giveUp(new Error(`Matterport: ${what} was given up on`));
+    const finish = () => {
+      settled = true;
       clearTimeout(timer);
+      outer?.removeEventListener("abort", onOuter);
+    };
+    const giveUp = (error: Error) => {
+      if (late || settled) return;
+      late = true;
+      finish();
       abort.abort();
       reject(error);
     };
     const timer = setTimeout(() => giveUp(new MatterportTimeoutError(what, ms)), ms);
-    // The caller stopped waiting (the panel closed): give up now, as at the deadline.
-    if (outer?.aborted) giveUp(new Error(`Matterport: ${what} was given up on`));
-    else outer?.addEventListener("abort", () => giveUp(new Error(`Matterport: ${what} was given up on`)), { once: true });
+    // The caller stopped waiting (the panel closed): give up now, as at the deadline. Once the
+    // start has settled, an abort no longer reaches it: what it opened is the caller's to close.
+    if (outer?.aborted) onOuter();
+    else outer?.addEventListener("abort", onOuter, { once: true });
     start(abort.signal).then(
       (value) => {
         if (late) return release(value);
-        clearTimeout(timer);
+        finish();
         resolve(value);
       },
       (error: unknown) => {
         if (late) return;
-        clearTimeout(timer);
+        finish();
         reject(error);
       },
     );

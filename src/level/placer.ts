@@ -419,10 +419,14 @@ export function placeLevel(
   // The objective: the anchored node, or the objective room's node farthest from the start.
   const objectiveZone = byRole("objective")[0];
   if (!objectiveZone) throw new PlacementError("no room on the floor fits the objective zone");
+  // Never on a way in when the room has another node: the files are not taken standing on an exit.
+  const objectivePool = objectiveZone.nodes.some((id) => !wayIn.has(id))
+    ? objectiveZone.nodes.filter((id) => !wayIn.has(id))
+    : objectiveZone.nodes;
   const objectiveNode =
     anchors.objective && objectiveZone.nodes.includes(anchors.objective)
       ? anchors.objective
-      : [...objectiveZone.nodes].sort(
+      : [...objectivePool].sort(
           (a, b) => (fromStart.get(b) ?? -1) - (fromStart.get(a) ?? -1) || a.localeCompare(b),
         )[0];
   const objective = { nodeId: objectiveNode, zoneId: objectiveZone.zoneId, provenance: objectiveZone.provenance };
@@ -554,6 +558,8 @@ export function placeLevel(
   // A floor that tags its entries leaves out a whole room that comes near the start or the
   // locks. A scanned floor has a few large rooms, so there only those nodes are left out.
   const tooClose = (id: string) => nearStart.has(id) || earshot.has(id);
+  // Sightlines on a scan are the whole room: a round there never walks where it sees the start.
+  const seesStart = (id: string) => (floor.sightlines[id] ?? []).includes(start);
   let chains = floor.rooms
     .filter((r) => !lockedRooms.has(r.id))
     .filter((r) => !tagsEntries || !(roomNodes.get(r.id) ?? []).some(tooClose))
@@ -562,7 +568,7 @@ export function placeLevel(
       chain: chainOf(
         adj,
         (roomNodes.get(r.id) ?? []).filter(
-          (id) => !quietNodes.has(id) && !isEntry(id) && id !== post?.node && (tagsEntries || !tooClose(id)),
+          (id) => !quietNodes.has(id) && !isEntry(id) && id !== post?.node && (tagsEntries || !tooClose(id) && !seesStart(id)),
         ),
         fromStart,
       ),
@@ -590,6 +596,8 @@ export function placeLevel(
     .sort((a, b) => b.chain.length - a.chain.length || a.chain[0].localeCompare(b.chain[0]));
   const guards: PlacedGuard[] = [];
   const tempo = profileProvenance("patrolTempo");
+  // On a scan a short round can have fewer starts than guards sharing it: no two start on one node.
+  const startedOn = new Set<string>();
   for (let g = 0; g < roundCount; g++) {
     const id = `G${g + 1}`;
     if (routes.length === 0) {
@@ -601,7 +609,16 @@ export function placeLevel(
     const nth = Math.floor(g / routes.length);
     const { chain, starts } = route;
     const turn = hash(seed, chain[0]) % starts.length;
-    const at = starts[(turn + Math.floor((nth * starts.length) / sharing)) % starts.length];
+    let at = starts[(turn + Math.floor((nth * starts.length) / sharing)) % starts.length];
+    if (!tagsEntries && startedOn.has(chain[at])) {
+      const free = starts.find((i) => !startedOn.has(chain[i]));
+      if (free === undefined) {
+        unplaced.push({ elementRole: `guard:${id}`, reason: "every start on its round is taken" });
+        continue;
+      }
+      at = free;
+    }
+    startedOn.add(chain[at]);
     const last = chain.length - 1;
     const patrol =
       last === 0
