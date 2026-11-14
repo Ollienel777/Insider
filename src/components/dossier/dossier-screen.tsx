@@ -5,11 +5,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { BuildingScreen } from "@/components/shell/building-screen";
+import { buildingHref } from "@/lib/building-href";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { BriefedMission, BuildTrace } from "@/domain";
 import type { DataToLevelRow } from "./data-to-level";
 import { ProvenanceRow } from "./provenance-row";
-import { recordedRunHeader, replaySchedule, traceView } from "./replay";
+import { recordedRunHeader, replaySchedule, traceBanner, traceView } from "./replay";
 import { Reveal } from "./reveal";
 import { TraceList } from "./trace-list";
 
@@ -75,14 +76,17 @@ export function DossierScreen(props: DossierScreenProps) {
     frame.current = null;
     setElapsed(Number.POSITIVE_INFINITY);
   }, []);
+  // Replay starts the reading column again from its top, so the header and
+  // the CoStar record replay in view rather than under the scrolled briefing.
+  const column = useRef<HTMLDivElement>(null);
   const replay = useCallback(() => {
+    column.current?.scrollTo?.({ top: 0, behavior: "auto" });
     setElapsed(0);
     setRunId((n) => n + 1);
   }, []);
 
   // As the briefing fills, bring it into view: at 1440×900 the column runs
   // past the fold, and the table stays on screen above it.
-  const column = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = column.current;
     if (!briefingShown || !el || (startComplete && runId === 0)) return;
@@ -208,9 +212,17 @@ export function DossierScreen(props: DossierScreenProps) {
           </article>
         </div>
       }
-      panel={<TraceList view={view} header={recordedRunHeader(trace)} control={control} />}
+      panel={
+        <TraceList
+          view={view}
+          header={recordedRunHeader(trace)}
+          control={control}
+          banner={traceBanner(trace)}
+          subagents={trace.subagents}
+        />
+      }
       action={
-        <Link href={`/b/${buildingId}/plan`} className={buttonVariants({ variant: "primary" })}>
+        <Link href={buildingHref(buildingId, "plan", mission.id)} className={buttonVariants({ variant: "primary" })}>
           Brief the crew
         </Link>
       }

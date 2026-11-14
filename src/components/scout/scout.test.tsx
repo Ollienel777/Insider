@@ -4,7 +4,7 @@ import { FIXTURE_BUILDINGS } from "@/adapters/costar/fake";
 import { FIXTURE_AERIALS } from "@/adapters/vexcel/fake";
 import { buildMassing, entryFace, FRAME, LABEL_GAP, layoutLabels, stepView, VIEW_ORDER } from "./massing";
 import { MassingSvg } from "./massing-view";
-import { ScoutScreen } from "./scout-screen";
+import { ScoutPanel, ScoutScreen } from "./scout-screen";
 
 const storiesOf = (id: string) => FIXTURE_BUILDINGS.find((b) => b.id === id)!.stories;
 const all = [...FIXTURE_AERIALS].map(([id, aerial]) => ({ id, aerial, views: buildMassing(aerial, storiesOf(id)) }));
@@ -146,5 +146,23 @@ describe("the render", () => {
     expect(html).toContain("Halvorsen Tower");
     expect(html).toContain("1974");
     expect(html).toMatch(/<a[^>]*href="\/b\/F1\/dossier"[^>]*>Plan the job<\/a>/);
+  });
+
+  it("after a failed aerial load, the panel says so with Retry and keeps no skeleton", () => {
+    const f1 = FIXTURE_BUILDINGS.find((b) => b.id === "F1")!;
+    const panel = (load: Parameters<typeof ScoutPanel>[0]["load"]) =>
+      renderToStaticMarkup(
+        <ScoutPanel building={f1} load={load} selected={null} onPick={() => {}} onRetry={() => {}} />,
+      );
+    // While it loads, the height and the entries shimmer.
+    expect(panel({ status: "loading" })).toContain('data-testid="height-skeleton"');
+
+    const html = panel({ status: "error", message: "upstream timed out" });
+    expect(html).not.toContain("animate-pulse");
+    expect(html).not.toContain("skeleton");
+    expect(html).toContain('data-testid="height-unavailable"');
+    expect(html).toContain("Not loaded");
+    expect(html).not.toContain("Tagging");
+    expect(html).toMatch(/data-testid="entries-error"[\s\S]*<button[^>]*>Retry<\/button>/);
   });
 });
