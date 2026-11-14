@@ -15,6 +15,8 @@ interface Walk {
   /** The map row's facts line. */
   facts: string;
   era: { year: string; label: string };
+  /** The start of the Casting Director's reason, recorded in data/casting/ (#71: F2 is Class B there too). */
+  cast: string;
   guards: string;
   /** The crew order Plan sends, the warning it shows, and the steps of the reply. */
   order: string;
@@ -44,6 +46,7 @@ const WALKS: Walk[] = [
     title: "Hole in the Ground",
     facts: "Financial District · 1989 · Class B · 52 stories",
     era: { year: "1989", label: "Card and coax era" },
+    cast: "A late-1980s Class B tower",
     guards: "3 guards",
     order: "Go in through the dock and take the vault.",
     warning: /Camera C2 sees you in the West Corridor on turn 1\.$/,
@@ -64,6 +67,7 @@ const WALKS: Walk[] = [
     title: "The Night Desk",
     facts: "Westlake · 2017 · Class A · 30 stories",
     era: { year: "2017", label: "Smart era" },
+    cast: "A 2017 Class A tower",
     guards: "4 guards",
     order: "Go in through the dock and get the prototype.",
     warning: /Camera C1 sees you in the North Hall on turn 1\.$/,
@@ -122,7 +126,7 @@ for (const w of WALKS) {
     await expect(page.getByTestId("dossier")).toHaveAttribute("data-done", "true", { timeout: 10_000 });
     const table = page.getByTestId("data-to-level");
     await expect(table.getByTestId("provenance-row").first()).toHaveAttribute("data-rule", "cast");
-    await expect(table.locator('[data-rule="cast"]')).toContainText(`built ${w.era.year}`);
+    await expect(table.locator('[data-rule="cast"]')).toContainText(`Cast because: ${w.cast}`);
     const era = table.locator('[data-rule="era"]');
     await expect(era).toContainText(w.era.year);
     await expect(era).toContainText(w.era.label);
