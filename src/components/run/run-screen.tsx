@@ -495,7 +495,15 @@ export function RunScreen({
       }
       board={
           <div className="relative min-h-0 flex-1">
-            {run && placed ? <ViewSwitch state={runView} floor={placed.level.floor} scanModelId={scanModel} /> : null}
+            {run && placed ? (
+              <ViewSwitch
+                state={runView}
+                floor={placed.level.floor}
+                scanModelId={scanModel}
+                // On a live scan the stage's header is the switch's line: it stands under it, over the board's corner.
+                className={openInside && !firstPerson ? "md:top-[60px] md:right-auto md:left-7" : undefined}
+              />
+            ) : null}
             {load.status === "loading" ? (
               <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
             ) : load.status === "no-floor" ? (
