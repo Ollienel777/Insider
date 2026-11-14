@@ -357,3 +357,78 @@ export function describeFix(fix: ChiefFix, zoneName: (id: string) => string): st
       return `Add ${change.elementId} on a round of the ${zoneName(change.to ?? "")}`;
   }
 }
+
+// ---- what changed between two setups --------------------------------------------------
+
+const LOCK_WORDS: Record<OwnerDoorLock, string> = { key: "a key lock", badge: "a badge reader", open: "open" };
+const KIND_WORDS: Record<OwnerCameraKind, string> = { sweeping: "sweeping", ptz: "a PTZ cycle", fixed: "fixed" };
+
+/**
+ * What changed from setup `a` to setup `b`, one line per element, in the
+ * order guards, cameras, doors, desks, cleaners: "C2 moved from the Freight
+ * Lift Lobby to the Dock Corridor". Rooms are the floor's labels; a move
+ * inside one room names the nodes. Empty when both set the same security
+ * (the names and the generated lists aside).
+ */
+export function setupChanges(a: OwnerSetup, b: OwnerSetup, floor: FloorGraph): string[] {
+  const room = (nodeId: string) => {
+    const node = floor.nodes.find((n) => n.id === nodeId);
+    return floor.rooms.find((r) => r.id === node?.roomId)?.label ?? nodeId;
+  };
+  const where = (from: string, to: string) =>
+    room(from) === room(to) ? `from ${from} to ${to} in the ${room(to)}` : `from the ${room(from)} to the ${room(to)}`;
+  const same = (x: readonly string[], y: readonly string[]) => x.length === y.length && x.every((v, i) => v === y[i]);
+  const lines: string[] = [];
+
+  const guardsA = new Map(a.guards.map((g) => [g.id, g]));
+  const guardsB = new Set(b.guards.map((g) => g.id));
+  for (const g of a.guards) if (!guardsB.has(g.id)) lines.push(`${g.id} removed`);
+  for (const g of b.guards) {
+    const was = guardsA.get(g.id);
+    if (!was) {
+      lines.push(`${g.id} added, ${g.round.length > 1 ? "on a round from" : "posted in"} the ${room(g.post)}`);
+      continue;
+    }
+    const parts: string[] = [];
+    if (was.post !== g.post) parts.push(`moved ${where(was.post, g.post)}`);
+    if (!same(was.round, g.round)) parts.push(g.round.length > 1 ? `walks a new round of ${g.round.length} nodes` : "stands its post");
+    if (was.tempo !== g.tempo) parts.push(`takes ${g.tempo} ${g.tempo === 1 ? "turn" : "turns"} per hop (was ${was.tempo})`);
+    if (parts.length > 0) lines.push(`${g.id} ${parts.join(", ")}`);
+  }
+
+  const camerasA = new Map(a.cameras.map((c) => [c.id, c]));
+  const camerasB = new Set(b.cameras.map((c) => c.id));
+  for (const c of a.cameras) if (!camerasB.has(c.id)) lines.push(`${c.id} removed`);
+  for (const c of b.cameras) {
+    const was = camerasA.get(c.id);
+    if (!was) {
+      lines.push(`${c.id} added over the ${room(c.node)}, facing ${c.facing.toUpperCase()}`);
+      continue;
+    }
+    const parts: string[] = [];
+    if (was.node !== c.node) parts.push(`moved ${where(was.node, c.node)}`);
+    if (was.facing !== c.facing) parts.push(`turned to face ${c.facing.toUpperCase()} (was ${was.facing.toUpperCase()})`);
+    if (was.kind !== c.kind) parts.push(`is now ${KIND_WORDS[c.kind]} (was ${KIND_WORDS[was.kind]})`);
+    if (parts.length === 0 && !same(was.cover ?? [], c.cover ?? [])) parts.push("watches a different view");
+    if (parts.length > 0) lines.push(`${c.id} ${parts.join(", ")}`);
+  }
+
+  for (const id of [...new Set([...Object.keys(a.doors), ...Object.keys(b.doors)])].sort()) {
+    const was = a.doors[id] ?? "open";
+    const now = b.doors[id] ?? "open";
+    if (was !== now) lines.push(`Door ${id} is ${now === "open" ? "left open" : `now ${LOCK_WORDS[now]}`} (was ${LOCK_WORDS[was]})`);
+  }
+
+  for (const d of a.desks) if (!b.desks.includes(d)) lines.push(`No desk in the ${room(d)}`);
+  for (const d of b.desks) if (!a.desks.includes(d)) lines.push(`A staffed desk in the ${room(d)}`);
+
+  const cleanersA = new Map((a.cleaners ?? []).map((c) => [c.id, c]));
+  const cleanersB = new Set((b.cleaners ?? []).map((c) => c.id));
+  for (const c of a.cleaners ?? []) if (!cleanersB.has(c.id)) lines.push(`Cleaner ${c.id} removed`);
+  for (const c of b.cleaners ?? []) {
+    const was = cleanersA.get(c.id);
+    if (!was) lines.push(`Cleaner ${c.id} added in the ${room(c.round[0])}`);
+    else if (!same(was.round, c.round)) lines.push(`Cleaner ${c.id} walks a new round`);
+  }
+  return lines;
+}

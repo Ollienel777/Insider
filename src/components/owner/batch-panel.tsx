@@ -14,6 +14,20 @@ import type { OwnerBatch, OwnerFix } from "./use-owner-batch";
 
 export type Side = "before" | "after";
 
+/**
+ * The side the board shows: after the fix only once the fix is applied and
+ * made (not dropped), else the batch itself, before any fix.
+ */
+export function shownSide(fix: OwnerFix, side: Side): Side | null {
+  if (fix.status !== "applied" || fix.rerun.dropped) return null;
+  return side;
+}
+
+/** The summary of the side the board shows: the route it draws and the detector it rings come from it. */
+export function shownSummary(summary: BatchSummary, fix: OwnerFix, side: Side): BatchSummary {
+  return fix.status === "applied" && shownSide(fix, side) === "after" ? fix.rerun.after : summary;
+}
+
 const OUTCOME_CELL: Record<OutcomeCell["outcome"], string> = {
   escaped: "bg-danger",
   caught: "bg-n-600",
@@ -53,12 +67,15 @@ export function BatchPanel({
   setupName,
   stale,
   fixedSaved,
+  side = "after",
   onEdit,
   onRetry,
   onOpenFixed,
 }: {
   batch: OwnerBatch;
   fix: OwnerFix;
+  /** The side the board shows once a fix is applied: the route and detector follow it. */
+  side?: Side;
   zones: ChiefZones;
   /** The batch's setup on the board: its Why rows explain each element still as generated. */
   generated: PlacedLevel;
@@ -103,7 +120,10 @@ export function BatchPanel({
   const { summary, result } = batch;
   const nameOf = (id: string) => result.strategies.find((s) => s.id === id)?.name ?? id;
   const zoneName = (id: string) => zones.zones.find((z) => z.id === id)?.name.toLowerCase() ?? id;
-  const top = summary.detectors[0] ?? null;
+  const which = shownSide(fix, side);
+  const shown = shownSummary(summary, fix, side);
+  const top = shown.detectors[0] ?? null;
+  const sideNote = which === "after" ? ", after the fix" : which === "before" ? ", before the fix" : "";
 
   return (
     <div className="flex flex-col gap-6" data-testid="owner-batch" data-state="done">
@@ -164,23 +184,29 @@ export function BatchPanel({
 
       <section aria-labelledby="owner-route-label" className="flex flex-col gap-2">
         <h2 id="owner-route-label" className="label-caps text-text-3">
-          The way most got out
+          The way most got out{sideNote}
         </h2>
-        {summary.topRoute ? (
-          <p data-testid="owner-route" data-count={summary.topRoute.count} className="text-sm text-text-1">
+        {shown.topRoute ? (
+          <p data-testid="owner-route" data-side={which ?? ""} data-count={shown.topRoute.count} className="text-sm text-text-1">
             <span className="font-mono tabular-nums">
-              {summary.topRoute.count} of {summary.escaped}
+              {shown.topRoute.count} of {shown.escaped}
             </span>{" "}
-            went {routeRooms(summary.topRoute.nodes, generated).join(" → ")}. It is drawn on the board.
+            went {routeRooms(shown.topRoute.nodes, generated).join(" → ")}. It is drawn on the board.
           </p>
         ) : (
-          <p data-testid="owner-route" data-count={0} className="text-sm text-text-2">
-            No crew got out, so there is no way out to draw.
+          <p data-testid="owner-route" data-side={which ?? ""} data-count={0} className="text-sm text-text-2">
+            No crew got out{which === "after" ? " after the fix" : ""}, so there is no way out to draw.
           </p>
         )}
       </section>
 
-      {top ? <DetectorCard finding={top} total={summary.total} generated={generated} setupName={setupName} /> : null}
+      {top ? (
+        <DetectorCard finding={top} total={shown.total} generated={generated} setupName={setupName} sideNote={sideNote} side={which} />
+      ) : which === "after" ? (
+        <p data-testid="owner-detector-none" className="text-sm text-text-2">
+          After the fix, nothing noticed the crew.
+        </p>
+      ) : null}
 
       <ChiefSection
         fix={fix}
@@ -206,14 +232,14 @@ function Count({ summary, testId, big = false }: { summary: BatchSummary; testId
   );
 }
 
-function Strip({ summary, testId, small = false }: { summary: BatchSummary; testId: string; small?: boolean }) {
+export function Strip({ summary, testId, small = false }: { summary: BatchSummary; testId: string; small?: boolean }) {
   return (
     <div
       data-testid={testId}
       data-escaped={summary.strip.filter((c) => c.outcome === "escaped").length}
       role="img"
       aria-label={`${summary.escaped} of ${summary.total} attempts got out`}
-      className={cn("grid gap-0.5", small ? "grid-cols-[repeat(25,minmax(0,1fr))]" : "grid-cols-[repeat(25,minmax(0,1fr))]")}
+      className="grid grid-cols-[repeat(25,minmax(0,1fr))] gap-0.5"
     >
       {summary.strip.map((cell) => (
         <span
@@ -232,11 +258,16 @@ function DetectorCard({
   total,
   generated,
   setupName,
+  sideNote = "",
+  side = null,
 }: {
   finding: DetectorFinding;
   total: number;
   generated: PlacedLevel | null;
   setupName: string | null;
+  /** ", after the fix" when the board shows a side of the Chief's rerun. */
+  sideNote?: string;
+  side?: Side | null;
 }) {
   const target = generated && finding.id ? whyTargets(generated).find((t) => t.key === `${finding.kind}:${finding.id}`) : undefined;
   const rows = target ? whyRows(target) : [];
@@ -245,12 +276,13 @@ function DetectorCard({
       data-testid="owner-detector"
       data-detector={`${finding.kind}:${finding.id ?? ""}`}
       data-count={finding.count}
+      data-side={side ?? ""}
       aria-labelledby="owner-detector-label"
       className="flex flex-col gap-3 rounded-md border border-border bg-surface-2 p-4 shadow-e1"
     >
       <div className="flex items-baseline gap-2">
         <h2 id="owner-detector-label" className="label-caps text-text-3">
-          Noticed the crew first most often
+          Noticed the crew first most often{sideNote}
         </h2>
       </div>
       <p className="text-base text-text-1">

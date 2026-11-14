@@ -26,7 +26,8 @@ export interface Draft {
   setup: OwnerSetup;
   /** Untouched since it was made from the generated security: the batch plays the generated level itself. */
   pristine: boolean;
-  state: "untouched" | "editing" | "saved" | "save-failed";
+  /** `preset`: a prepared demo setup, made up, loaded as it is. */
+  state: "untouched" | "preset" | "editing" | "saved" | "save-failed";
 }
 
 /** What a click on a node does: select, add, or work the selected guard or camera. */
@@ -34,6 +35,7 @@ export type Tool = "select" | "guard" | "camera" | "desk" | "move" | "round";
 
 const STATE_CHIP: Record<Draft["state"], { label: string; className: string }> = {
   untouched: { label: "Starting point", className: "text-text-2" },
+  preset: { label: "Made up", className: "text-text-2" },
   editing: { label: "Unsaved", className: "text-warning" },
   saved: { label: "Saved", className: "text-success" },
   "save-failed": { label: "Not saved", className: "text-danger" },
@@ -72,6 +74,7 @@ export function SetupPanel({
   onLoad,
   onDelete,
   onReset,
+  extra,
 }: {
   floor: FloorGraph;
   draft: Draft;
@@ -88,6 +91,8 @@ export function SetupPanel({
   onLoad: (name: string) => void;
   onDelete: (name: string) => void;
   onReset: () => void;
+  /** Shown after the saved setups: the prepared demo setups and the compare picker. */
+  extra?: ReactNode;
 }) {
   const { setup } = draft;
   const [pick, setPick] = useState<string>("");
@@ -125,11 +130,13 @@ export function SetupPanel({
         <p data-testid="owner-setup-note" className="text-sm text-text-2">
           {draft.state === "untouched"
             ? "This is the building's generated security in your terms. Change it to match what you really have."
-            : draft.state === "saved"
-              ? "Saved on this device. It never leaves this browser."
-              : draft.state === "save-failed"
-                ? "This browser didn't keep it: site data is blocked or full. The setup still runs here."
-                : "Changed since it was last saved."}
+            : draft.state === "preset"
+              ? "A made-up setup prepared for the demo, not any real building's. Save it to keep a copy on this device."
+              : draft.state === "saved"
+                ? "Saved on this device. It never leaves this browser."
+                : draft.state === "save-failed"
+                  ? "This browser didn't keep it: site data is blocked or full. The setup still runs here."
+                  : "Changed since it was last saved."}
         </p>
         <div className="flex gap-2">
           <Button variant="secondary" data-testid="owner-save" onClick={onSave} disabled={nameMissing || problems.all.length > 0}>
@@ -176,6 +183,8 @@ export function SetupPanel({
           </div>
         )}
       </section>
+
+      {extra}
 
       <section aria-labelledby="owner-tools-label" className="flex flex-col gap-2">
         <h2 id="owner-tools-label" className="label-caps text-text-3">
