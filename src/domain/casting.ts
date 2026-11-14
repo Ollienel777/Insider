@@ -172,3 +172,33 @@ export const CastingResult = z
     }
   });
 export type CastingResult = z.infer<typeof CastingResult>;
+
+/** How many candidates each step of an inventory search shows. */
+export const SEARCH_TOP = 5;
+
+/**
+ * A candidate as the inventory search returns it: the finalist card's
+ * summary and vacant floor, before the agent writes its fit and reason.
+ * `vacantFloor` is the floor with the most available area, or `null` when
+ * nothing in the building is on the market.
+ */
+export const SearchCandidate = Candidate.omit({ fit: true, reason: true }).extend({
+  vacantFloor: VacantFloor.nullable(),
+});
+export type SearchCandidate = z.infer<typeof SearchCandidate>;
+
+/** One step of a search: a funnel row, plus the best `SEARCH_TOP` properties still in. */
+export const SearchStep = FunnelStep.extend({ top: z.array(SearchCandidate).max(SEARCH_TOP) });
+export type SearchStep = z.infer<typeof SearchStep>;
+
+/**
+ * What `searchInventory(filters)` returns: `steps[0]` is the whole inventory,
+ * then one step per filter in the order given, so counts never rise.
+ * `source` says which inventory answered: `"fixture"` whenever the fixture
+ * inventory did, live mode included, until the kit reader exists (#27).
+ */
+export const InventorySearch = z.strictObject({
+  steps: z.array(SearchStep).min(1),
+  source: Building.shape.source,
+});
+export type InventorySearch = z.infer<typeof InventorySearch>;
