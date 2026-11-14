@@ -60,6 +60,9 @@ export type OwnerRerun = Rerun & { fixed: OwnerSetup | null };
 /** The name the fixed setup is saved under. */
 export const fixedName = (setup: OwnerSetup) => `${setup.name}, after the fix`.slice(0, 80);
 
+/** The name when the change let no fewer out: it is the Chief's change, but not a fix. */
+export const changedName = (setup: OwnerSetup) => `${setup.name}, with the Chief's change`.slice(0, 80);
+
 /**
  * The batch again on its strategies and seeds, on the setup with the Chief's
  * change (in its own ids) made in the owner's terms (`setupWithFix`). The
@@ -75,7 +78,7 @@ export function rerunOwner(
   setup: OwnerSetup,
   before: BatchResult,
   fix: ChiefFix,
-  name: string = fixedName(setup),
+  name?: string,
 ): OwnerRerun {
   const engineFix = toEngineFix(fix, ownerZones(manifest, floor, before.seeds[0]));
   const summary = summariseBatch(before);
@@ -92,9 +95,12 @@ export function rerunOwner(
   if (!first) return drop(`the setup "${setup.name}" does not fit this floor`);
   const fits = applyFix(first, engineFix.change);
   if (!fits.ok) return drop(fits.reason);
-  const fixed = setupWithFix(setup, engineFix, first, name);
-  const problems = validateOwnerSetup(fixed, floor);
+  const changed = setupWithFix(setup, engineFix, first, name ?? fixedName(setup));
+  const problems = validateOwnerSetup(changed, floor);
   if (problems.length > 0) return drop(problems[0].reason);
-  const afterResult = runBatch(ownerBatchInput(manifest, floor, fixed, before.strategies, before.seeds));
-  return { fix: engineFix, dropped: null, before: summary, after: summariseBatch(afterResult), beforeResult: before, afterResult, fixed };
+  const afterResult = runBatch(ownerBatchInput(manifest, floor, changed, before.strategies, before.seeds));
+  const after = summariseBatch(afterResult);
+  // A change that let no fewer out is not called a fix (the name plays no part in the batch).
+  const fixed = name === undefined && after.escaped >= summary.escaped ? { ...changed, name: changedName(setup) } : changed;
+  return { fix: engineFix, dropped: null, before: summary, after, beforeResult: before, afterResult, fixed };
 }

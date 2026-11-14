@@ -316,8 +316,8 @@ export function playable(setup: OwnerSetup, floor: FloorGraph): OwnerSetup {
  * fix itself is a change to the engine's level). The Owner screen's After
  * batch plays this setup (`rerunOwner`), so its count is this setup's. A
  * moved camera goes on the zone's node and facing that see most of it and
- * covers the zone's nodes; a retimed guard starts its
- * round further back; a locked zone's doors get key locks; a new guard walks
+ * covers the zone's nodes; a retimed guard carries the retime as a start
+ * offset, so it plays the engine's retime on every seed; a locked zone's doors get key locks; a new guard walks
  * the zone. `level` is a level of this building, for the zones' nodes and the
  * doors. The fix is in the engine's zone ids (`toEngineFix`).
  */
@@ -341,11 +341,19 @@ export function setupWithFix(setup: OwnerSetup, fix: ChiefFix, level: Level, nam
       const by = change.byTurns ?? 0;
       const guard = setup.guards.find((g) => g.id === change.elementId);
       if (!guard || guard.round.length < 2) return named;
-      return guardEdit(named, guard.id, (g) => {
-        const at = g.round.indexOf(g.post);
-        const n = g.round.length;
-        return { ...g, post: g.round[(((at - by) % n) + n) % n] };
-      });
+      // A start offset on the guard, not a new post: a round that passes a node twice, or a generated
+      // guard that starts somewhere else each night, would otherwise start from the wrong place. It
+      // stays on the generated list, so it keeps each night's start and is retimed from there.
+      const retime = (guard.retime ?? 0) + by;
+      return {
+        ...named,
+        guards: named.guards.map((g) => {
+          if (g.id !== guard.id) return g;
+          const next = { ...g, retime };
+          if (retime === 0) delete next.retime;
+          return next;
+        }),
+      };
     }
     case "lock-door": {
       const nodes = zoneNodes(change.elementId);

@@ -142,6 +142,18 @@ export function BatchPanel({
   const shownLevel = shownSide === "after" ? (board ?? generated) : generated;
   const lead = shownSide === "after" ? "After the fix: " : shownSide === "before" ? "Before the fix: " : "";
   const top = shown.detectors[0] ?? null;
+  // Who placed an element with no data rows. On the After side that is the Chief's fix for the element it
+  // changed, and the fixed setup for the rest: never the rules table, whose elements carry their rows.
+  const placedBy = (finding: DetectorFinding): string => {
+    if (shownSide === "after" && fix.status === "applied") {
+      const { change } = fix.rerun.fix;
+      if (change.kind !== "lock-door" && finding.id === change.elementId) {
+        return `Placed by the Security Chief's fix: ${describeFix(fix.answer.fix, zoneName)}.`;
+      }
+      if (fix.rerun.fixed) return `Placed by the fixed setup "${fix.rerun.fixed.name}".`;
+    }
+    return setupName ? `Placed by the owner's setup "${setupName}".` : "Placed by the rules table.";
+  };
 
   return (
     <div className="flex flex-col gap-6" data-testid="owner-batch" data-state="done">
@@ -218,7 +230,9 @@ export function BatchPanel({
         )}
       </section>
 
-      {top ? <DetectorCard finding={top} total={shown.total} generated={shownLevel} setupName={setupName} lead={lead} /> : null}
+      {top ? (
+        <DetectorCard finding={top} total={shown.total} generated={shownLevel} placedBy={placedBy(top)} lead={lead} />
+      ) : null}
 
       <ChiefSection
         fix={fix}
@@ -269,13 +283,14 @@ function DetectorCard({
   finding,
   total,
   generated,
-  setupName,
+  placedBy,
   lead,
 }: {
   finding: DetectorFinding;
   total: number;
   generated: PlacedLevel | null;
-  setupName: string | null;
+  /** The line shown when the element has no data rows: who placed it. */
+  placedBy: string;
   lead: string;
 }) {
   const target = generated && finding.id ? whyTargets(generated).find((t) => t.key === `${finding.kind}:${finding.id}`) : undefined;
@@ -311,7 +326,7 @@ function DetectorCard({
         </div>
       ) : (
         <p className="border-t border-border pt-3 text-sm text-text-2">
-          {setupName ? `Placed by the owner's setup "${setupName}".` : "Placed by the rules table."}
+          {placedBy}
         </p>
       )}
     </section>

@@ -291,7 +291,8 @@ function hopsFrom(floor: FloorGraph, from: string): Map<string, number> {
  * not fit the floor or names another building. The seed varies only what it
  * varies in a generated run: the engine's tie-breaks, and where a walker still
  * listed as generated starts its round (where the rules table starts it). The
- * owner's own guards start on their posts.
+ * owner's own guards start on their posts. A guard's `retime` then starts it
+ * that many nodes further back, on every seed, as the engine's retime does.
  */
 export function applyOwnerSetup(manifest: LevelManifest, floor: FloorGraph, setup: OwnerSetup, seed: number): OwnerSetupResult {
   const errors = validateOwnerSetup(setup, floor);
@@ -320,6 +321,17 @@ export function applyOwnerSetup(manifest: LevelManifest, floor: FloorGraph, setu
   /** The rules table's walk for a walker listed as generated, when it walks the same loop as the setup's. */
   const asGenerated = (patrol: readonly string[] | undefined, round: readonly string[]) =>
     patrol && sameLoop(roundOf(baseBoard, patrol), round) ? patrol : null;
+  /**
+   * The patrol `by` turns later, exactly as the engine's retime (`applyFix`)
+   * makes it: the round as it walks it from this night's start, begun `by`
+   * nodes further back. Null when there is nothing to retime.
+   */
+  const retime = (patrol: readonly string[], by: number): string[] | null => {
+    const walked = roundOf(baseBoard, patrol);
+    if (by === 0 || walked.length < 2 || by % walked.length === 0) return null;
+    const at = ((-by % walked.length) + walked.length) % walked.length;
+    return [...walked.slice(at), ...walked.slice(0, at)];
+  };
 
   const guards: OwnerPlacedGuard[] = setup.guards.map((g) => {
     // The guard starts on its post and walks the round on from there.
@@ -327,13 +339,16 @@ export function applyOwnerSetup(manifest: LevelManifest, floor: FloorGraph, setu
     const round = at < 0 ? [g.post] : [...g.round.slice(at), ...g.round.slice(0, at)];
     const from = generated.guards.has(g.id) ? base.guards.find((b) => b.id === g.id) : undefined;
     const kept = from && asGenerated(from.patrol, round) ? from : null;
+    const walk = kept ? kept.patrol : round;
+    const retimed = retime(walk, g.retime ?? 0);
     return {
       id: g.id,
       roomId: kept ? kept.roomId : roomOf.get(g.post)!,
-      patrol: kept ? kept.patrol : round,
+      patrol: retimed ?? walk,
       ...(kept?.post && { post: kept.post }),
       tempo: g.tempo,
-      provenance: kept ? kept.provenance : owner(`guard:${g.id}`, `guards.${g.id}`),
+      // A retime is the setup's, not the data's: even a generated guard's timing is then the owner's.
+      provenance: kept && !retimed ? kept.provenance : owner(`guard:${g.id}`, `guards.${g.id}`),
     };
   });
 

@@ -7,9 +7,9 @@ import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { ChiefFix, LevelManifest, type Strategy } from "@/domain";
 import { OwnerSetup } from "@/domain/owner-setup";
-import { runBatch, summariseBatch as sum, varyLevel, type Level } from "@/engine";
+import { applyFix, BATCH_SEEDS, rerunWithFix, runBatch, summariseBatch as sum, varyLevel, type Level } from "@/engine";
 import { applyOwnerSetup, validateOwnerSetup } from "@/level/owner-setup";
-import { placeLevel } from "@/level/placer";
+import { placeLevel, type PlacedLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.romaine-1974.json";
 import fixRecording from "../../../fixtures/llm/fix-F1.json";
 import recording from "../../../fixtures/llm/strategies-F1.json";
@@ -20,6 +20,7 @@ import { boardCaption, setupKey } from "./owner-ready";
 import {
   boardOf,
   extendRound,
+  levelForSetup,
   moveGuard,
   playable,
   problemsOf,
@@ -305,7 +306,7 @@ describe("the results panel says what the board shows, and who wrote the fix", (
   const result = playOwnerBatch(manifest, floor, starting, answer);
   const rerun = rerunOwner(manifest, floor, starting, result, recordedFix);
   const batch: OwnerBatch = { status: "done", key: "generated", setup: starting, result, summary: sum(result), recorded: true, ms: 1 };
-  const panel = (props: { batch?: OwnerBatch; fix: OwnerFix; side?: "before" | "after" }) =>
+  const panel = (props: { batch?: OwnerBatch; fix: OwnerFix; side?: "before" | "after"; board?: PlacedLevel }) =>
     renderToStaticMarkup(
       <BatchPanel
         batch={props.batch ?? batch}
@@ -316,6 +317,7 @@ describe("the results panel says what the board shows, and who wrote the fix", (
         stale={false}
         fixedSaved={null}
         side={props.side}
+        board={props.board}
         onEdit={noop}
         onRetry={noop}
         onOpenFixed={noop}
@@ -339,6 +341,16 @@ describe("the results panel says what the board shows, and who wrote the fix", (
     const top = rerun.after.detectors[0];
     if (top) expect(html).toContain(`data-detector="${top.kind}:${top.id ?? ""}"`);
     else expect(html).not.toContain('data-testid="owner-detector"');
+  });
+
+  it("after the fix, the detector card names the Chief's fix as what placed the camera it moved, never the rules table", () => {
+    // The After board as the screen draws it: the setup the After batch played.
+    const board = boardOf(manifest, floor, rerun.fixed!, 1)!;
+    const html = panel({ fix: applied(recordedAnswer), side: "after", board });
+    const top = rerun.after.detectors[0]!;
+    expect(`${top.kind}:${top.id}`).toBe(`camera:${recordedFix.change.elementId}`);
+    expect(html).toContain("Placed by the Security Chief&#x27;s fix: C2 now covers the dock corridor.");
+    expect(html).not.toContain("Placed by the rules table");
   });
 
   it("on the Before side, they describe the batch before the fix", () => {
@@ -421,6 +433,71 @@ describe("the saved fixed setup plays the After count it showed", () => {
     expect(rerun.dropped).toMatch(/C9/);
     expect(rerun.fixed).toBeNull();
     expect(rerun.after.escaped).toBe(rerun.before.escaped);
+  });
+});
+
+describe("a retime plays the engine's retime, on every night", () => {
+  const level1 = levelForSetup(manifest, floor, starting, BATCH_SEEDS[0])!;
+  const patrols = (level: Level, seed: number) => varyLevel(level, seed).guards.map((g) => ({ id: g.id, patrol: g.patrol }));
+  // An owner's own guards: the same rounds, but none still generated, so each starts on its post.
+  const owned: OwnerSetup = { ...starting, name: "Owned", generated: { ...starting.generated, guards: [] } };
+  const retime = (elementId: string, byTurns: number): ChiefFix => ({ change: { kind: "retime-guard", elementId, byTurns }, rationale: "" });
+  const cases = ["G1", "G2"].flatMap((id) => [-3, -2, -1, 1, 2, 3].map((by) => [id, by] as const));
+
+  it("G2's round passes a node twice: the case a new post gets backwards", () => {
+    const g2 = starting.guards.find((g) => g.id === "G2")!;
+    expect(new Set(g2.round).size).toBeLessThan(g2.round.length);
+  });
+
+  for (const [id, by] of cases) {
+    it(`${id} ${by > 0 ? "+" : ""}${by}: the fixed setup's patrol on every seed is applyFix's, for a generated and an owner's guard`, () => {
+      for (const setup of [starting, owned]) {
+        const fixed = setupWithFix(setup, retime(id, by), level1, "fixed");
+        expect(validateOwnerSetup(fixed, floor)).toEqual([]);
+        for (const seed of BATCH_SEEDS) {
+          const level = levelForSetup(manifest, floor, setup, seed)!;
+          const engine = applyFix(level, retime(id, by).change);
+          if (!engine.ok) {
+            // A whole number of rounds: the engine refuses it, and the setup changes nothing either.
+            expect(patrols(levelForSetup(manifest, floor, fixed, seed)!, seed)).toEqual(patrols(level, seed));
+            continue;
+          }
+          expect(patrols(levelForSetup(manifest, floor, fixed, seed)!, seed)).toEqual(patrols(engine.level, seed));
+        }
+      }
+    });
+  }
+
+  it("on F1, the Chief's G2 +1 gives the engine's count: 16 of 50, one fewer than before", () => {
+    const before = playOwnerBatch(manifest, floor, starting, answer);
+    const fix = retime("G2", 1);
+    const owner = rerunOwner(manifest, floor, starting, before, fix);
+    const engine = rerunWithFix(
+      { buildingId: manifest.buildingId, strategies, levelFor: (seed) => placeLevel(manifest, floor, seed).level },
+      fix,
+    );
+    expect(engine.after.escaped).toBe(16);
+    expect(owner.after.escaped).toBe(16);
+    expect(owner.fixed!.guards.find((g) => g.id === "G2")!.retime).toBe(1);
+  });
+
+  it("a retimed generated guard keeps its nights' starts but says the owner's setup placed it", () => {
+    const fixed = setupWithFix(starting, retime("G1", 1), level1, "fixed");
+    expect(fixed.generated?.guards).toContain("G1");
+    const out = applyOwnerSetup(manifest, floor, fixed, 1);
+    if (!out.ok) throw new Error("does not fit");
+    expect(out.placed.guards.find((g) => g.id === "G1")!.provenance.every((p) => p.layer === "owner")).toBe(true);
+  });
+});
+
+describe("a change that let no fewer out is not saved as a fix", () => {
+  it("is named for the Chief's change, not \"after the fix\"", () => {
+    const before = playOwnerBatch(manifest, floor, starting, answer);
+    // G2 one turn earlier lets 19 out against 17.
+    const worse = rerunOwner(manifest, floor, starting, before, { change: { kind: "retime-guard", elementId: "G2", byTurns: -1 }, rationale: "" });
+    expect(worse.dropped).toBeNull();
+    expect([worse.before.escaped, worse.after.escaped]).toEqual([17, 19]);
+    expect(worse.fixed!.name).toBe("Generated security, with the Chief's change");
   });
 });
 

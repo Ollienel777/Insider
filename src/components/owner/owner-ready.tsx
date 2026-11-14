@@ -178,7 +178,11 @@ export function OwnerReady({
       </Button>
     ) : (
       <Button variant="primary" data-testid="owner-save-fixed" onClick={saveFixed} disabled={fixedSaved?.ok === true}>
-        {fixedSaved?.ok ? "Saved on this device" : "Save the fixed setup"}
+        {fixedSaved?.ok
+          ? "Saved on this device"
+          : fix.status === "applied" && fix.rerun.after.escaped < fix.rerun.before.escaped
+            ? "Save the fixed setup"
+            : "Save this setup"}
       </Button>
     );
 
@@ -187,10 +191,13 @@ export function OwnerReady({
       visualLabel="Owner board"
       visual={
         <div className="absolute inset-0 flex flex-col">
-          <div className="flex h-14 shrink-0 items-center gap-3 px-6">
-            <span className="label-caps text-text-2">{view === "setup" ? "Your security" : shownSummary ? `${shownSummary.total} attempts` : "The crew's attempts"}</span>
-            <span aria-hidden className="h-4 w-px bg-border" />
-            <span data-testid="owner-board-caption" className="truncate text-sm text-text-1">
+          <div className="flex h-14 shrink-0 items-center gap-3 px-4 sm:px-6">
+            <span className="hidden label-caps text-text-2 sm:inline">
+              {view === "setup" ? "Your security" : shownSummary ? `${shownSummary.total} attempts` : "The crew's attempts"}
+            </span>
+            <span aria-hidden className="hidden h-4 w-px bg-border sm:block" />
+            {/* On a phone the caption takes two lines, so the count and the side are never cut off. */}
+            <span data-testid="owner-board-caption" className="line-clamp-2 min-w-0 text-xs leading-snug text-text-1 sm:truncate sm:text-sm">
               {view === "setup"
                 ? draft.pristine
                   ? "The building's generated security, as a starting point"
