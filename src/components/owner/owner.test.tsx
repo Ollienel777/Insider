@@ -162,6 +162,22 @@ describe("night cleaners in the editor", () => {
     expect(clearCleanerRound(round, "K1").cleaners![0].round).toEqual(["o-west"]);
   });
 
+  it("closing a cleaner's round on its first node adds nothing, as for a guard (issue 123)", () => {
+    const round = extendCleanerRound(extendCleanerRound(startCleanerRound(withCleaner.setup, "K1"), "K1", "o-north"), "K1", "o-south");
+    // The click that closes the loop: the round already walks back to its start.
+    const closed = extendCleanerRound(round, "K1", "o-west");
+    expect(closed).toBe(round);
+    expect(closed.cleaners![0].round).toEqual(["o-west", "o-north", "o-south"]);
+    expect(validateOwnerSetup(closed, floor)).toEqual([]);
+    // A cleaner standing on one node: a click on that node doesn't double it either.
+    const still = startCleanerRound(withCleaner.setup, "K1");
+    expect(extendCleanerRound(still, "K1", "o-west").cleaners![0].round).toEqual(["o-west"]);
+    // An unknown cleaner leaves the setup alone.
+    expect(extendCleanerRound(round, "K9", "o-north")).toBe(round);
+    // Drawing and staying put are the same edit.
+    expect(startCleanerRound).toBe(clearCleanerRound);
+  });
+
   it("an edited or removed generated cleaner comes off the generated list, and the rest still play as generated", () => {
     const id = busyStart.cleaners![0].id;
     expect(busyStart.generated?.cleaners).toEqual([id]);
