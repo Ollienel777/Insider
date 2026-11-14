@@ -20,9 +20,9 @@ export default async function DossierPage({ params }: { params: Promise<{ id: st
     level = await readCachedLevel(building.id);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return <DossierUnavailable buildingId={building.id} name={building.name} reason="invalid" detail={message} />;
+    return <DossierUnavailable buildingId={building.id} name={building.name} reason="invalid" detail={message} source={building.source} />;
   }
-  if (!level) return <DossierUnavailable buildingId={building.id} name={building.name} reason="missing" facts={dossierFacts(building)} />;
+  if (!level) return <DossierUnavailable buildingId={building.id} name={building.name} reason="missing" facts={dossierFacts(building)} source={building.source} />;
 
   return (
     <DossierScreen

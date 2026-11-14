@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BuildingScreen } from "@/components/shell/building-screen";
 import { buttonVariants } from "@/components/ui/button";
+import type { Building } from "@/domain";
 import type { DossierFact } from "./dossier-screen";
 
 interface DossierUnavailableProps {
@@ -11,10 +12,17 @@ interface DossierUnavailableProps {
   detail?: string;
   /** The building's CoStar facts, shown while its level is not built yet. */
   facts?: DossierFact[];
+  /**
+   * Where the building came from. A kit building (`costar`) gets no build
+   * command: `build:levels` writes into the tracked data/levels/, and nothing
+   * derived from the kit may ever be committed.
+   */
+  source?: Building["source"];
 }
 
 /** The dossier without a cached level: what happened, and the way to fix it or go on. */
-export function DossierUnavailable({ buildingId, name, reason, detail, facts }: DossierUnavailableProps) {
+export function DossierUnavailable({ buildingId, name, reason, detail, facts, source }: DossierUnavailableProps) {
+  const kit = source === "costar";
   const command = `npm run build:levels -- ${buildingId}`;
   return (
     <BuildingScreen
@@ -26,13 +34,17 @@ export function DossierUnavailable({ buildingId, name, reason, detail, facts }: 
             {reason === "missing" ? `${name} has no level built yet` : `${name}'s cached level failed its check`}
           </h1>
           <p className="text-base text-text-2">
-            {reason === "missing"
-              ? "The Level Builder runs ahead of the demo, per building. Build this one, then reload."
-              : "The cached manifest or trace in data/levels/ does not match the schema. Rebuild it, then reload."}
+            {kit
+              ? "This building comes from the CoStar data kit. Its level is not built here: the kit's data stays out of the repository."
+              : reason === "missing"
+                ? "The Level Builder runs ahead of the demo, per building. Build this one, then reload."
+                : "The cached manifest or trace in data/levels/ does not match the schema. Rebuild it, then reload."}
           </p>
-          <code className="w-fit rounded-sm border border-border bg-surface-2 px-3 py-2 font-mono text-sm text-text-1">
-            {command}
-          </code>
+          {kit ? null : (
+            <code className="w-fit rounded-sm border border-border bg-surface-2 px-3 py-2 font-mono text-sm text-text-1">
+              {command}
+            </code>
+          )}
           {detail ? <p className="font-mono text-sm break-words text-text-2">{detail}</p> : null}
           {facts?.length ? (
             <dl data-testid="costar-facts" className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-5">
