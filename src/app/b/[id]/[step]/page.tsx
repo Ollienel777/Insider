@@ -16,7 +16,6 @@ const PRIMARY_ACTION: Record<string, string> = {
   dossier: "Brief the crew",
   plan: "Start the run",
   run: "See the debrief",
-  debrief: "Run the drill",
 };
 
 export default async function StepPlaceholder({ params }: { params: Promise<{ id: string; step: string }> }) {

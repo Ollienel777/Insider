@@ -8,8 +8,8 @@ import { BuildingScreen } from "@/components/shell/building-screen";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Building, LevelManifest } from "@/domain";
-import { act, applyChiefOrders, createRun, toRunLog, type Action, type RunState } from "@/engine";
+import type { Building, LateChief, LevelManifest } from "@/domain";
+import { act, applyChiefOrders, createRun, type Action, type RunState } from "@/engine";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
 import { AlarmBanner } from "./alarm-banner";
@@ -27,8 +27,9 @@ import {
 } from "./board";
 import { BoardView } from "./board-view";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
-import { askChief, chiefRequest, chiefZones, toEngineOrders } from "./chief-request";
+import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
 import { loadCrewPlan, type StoredCrewPlan } from "./crew-plan-store";
+import { clearRunLog, runLogOf, saveRunLog } from "./run-log-store";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -36,7 +37,7 @@ export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 export const RUN_SEED = 7;
 
 /** Where the run's log is kept for the Debrief (SPEC §4.1: run logs live in localStorage). */
-export const runLogKey = (buildingId: string) => `heist:run-log:${buildingId}`;
+export { runLogKey } from "./run-log-store";
 
 type Load =
   | { status: "loading" }
@@ -66,9 +67,40 @@ export function RunScreen({
   const [run, setRun] = useState<RunState | null>(null);
   const [status, setStatus] = useState<string>("");
 
+  // The Security Chief: one call per alarm event, answered between turns.
+  // Nothing waits on it: the engine already has the guards converging.
+  const [chief, setChief] = useState<ChiefState>({ status: "idle" });
+  const latestRun = useRef<RunState | null>(null);
+  const latestSeq = useRef(-1);
+  const pendingChief = useRef<AbortController | null>(null);
+  /** Turn number → where the Chief's orders logged on that turn came from, for the Debrief. */
+  const chiefSources = useRef(new Map<number, ChiefAnswer["source"]>());
+  /** The Chief's answer that landed after the run ended, if one did. */
+  const lateChief = useRef<LateChief | null>(null);
+
+  /**
+   * Puts a fresh run on the board, on opening and on Restart: no Chief call
+   * out, no orders, and its own empty log in storage at once, in place of the
+   * last run's, so the Debrief never shows a run the board has left.
+   */
+  const startRun = useCallback((level: PlacedLevel["level"]) => {
+    pendingChief.current?.abort();
+    pendingChief.current = null;
+    latestSeq.current = -1;
+    chiefSources.current = new Map();
+    lateChief.current = null;
+    setChief({ status: "idle" });
+    const fresh = createRun(level);
+    latestRun.current = fresh;
+    setRun(fresh);
+    saveRunLog(runLogOf(fresh, chiefSources.current));
+  }, []);
+
   useEffect(() => {
     if (!manifest) return;
     let live = true;
+    // Until the board has its fresh run, there is no run on it: the last one's log goes now.
+    clearRunLog(building.id);
     const matterport = getMatterport(heistMode);
     matterport.adapter
       .loadFloor(building)
@@ -78,7 +110,7 @@ export function RunScreen({
           if (!floor) return setLoad({ status: "no-floor" });
           const placed = placeLevel(manifest, floor, RUN_SEED);
           setLoad({ status: "ready", placed, live: floor.source === "matterport" });
-          setRun(createRun(placed.level));
+          startRun(placed.level);
           setStatus(`You're in at the ${placed.entries[0].label.toLowerCase()}. Pick a number to move.`);
         },
         (error: unknown) => {
@@ -91,7 +123,7 @@ export function RunScreen({
     return () => {
       live = false;
     };
-  }, [building, manifest, heistMode, attempt]);
+  }, [building, manifest, heistMode, attempt, startRun]);
 
   const load: Load = manifest ? loaded : { status: "no-floor" };
   const placed = load.status === "ready" ? load.placed : null;
@@ -104,12 +136,6 @@ export function RunScreen({
     return () => clearTimeout(timer);
   }, [building.id]);
 
-  // The Security Chief: one call per alarm event, answered between turns.
-  // Nothing waits on it: the engine already has the guards converging.
-  const [chief, setChief] = useState<ChiefState>({ status: "idle" });
-  const latestRun = useRef<RunState | null>(null);
-  const latestSeq = useRef(-1);
-  const pendingChief = useRef<AbortController | null>(null);
   useEffect(() => {
     latestRun.current = run;
   }, [run]);
@@ -128,9 +154,24 @@ export function RunScreen({
         (answer) => {
           // A newer alarm event has its own call out; this answer is stale.
           if (controller.signal.aborted || latestSeq.current !== seq || !latestRun.current) return;
-          const result = applyChiefOrders(latestRun.current, toEngineOrders(answer.orders, zones));
+          const current = latestRun.current;
+          const orders = toEngineOrders(answer.orders, zones);
+          const result = applyChiefOrders(current, orders);
+          if (current.status !== "playing") {
+            // The run ended before the answer landed (a sighting on the catching turn): the panel
+            // still shows it, marked late, but no guard moves on it. The log keeps it as a late
+            // decision, so the Debrief lists every re-plan the player watched.
+            lateChief.current = { turn: current.turn, chief: orders, chiefSource: answer.source };
+            saveRunLog(runLogOf(current, chiefSources.current, lateChief.current));
+            setChief({ status: "ready", seq, answer, applied: result, late: true });
+            return;
+          }
+          // The next turn's log entry carries these orders, under that turn's number. Until then
+          // the log keeps them as pending, so a Debrief opened between turns lists them.
+          chiefSources.current.set(result.run.turn, answer.source);
           latestRun.current = result.run;
           setRun(result.run);
+          saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current));
           setChief({ status: "ready", seq, answer, applied: result });
         },
         (error: unknown) => {
@@ -154,13 +195,9 @@ export function RunScreen({
       setRun(result.run);
       setStatus(describeTurn(placed, run, result.run));
       if (result.run.alarmEvents.length > run.alarmEvents.length) callChief(result.run, result.run.alarmEvents.length - 1);
-      try {
-        window.localStorage.setItem(runLogKey(building.id), JSON.stringify(toRunLog(result.run)));
-      } catch {
-        // Storage can be full or blocked; the run itself goes on.
-      }
+      saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current));
     },
-    [placed, run, building.id, callChief],
+    [placed, run, callChief],
   );
 
   const retryChief = useCallback(() => {
@@ -170,14 +207,9 @@ export function RunScreen({
 
   const restart = useCallback(() => {
     if (!placed) return;
-    pendingChief.current?.abort();
-    latestSeq.current = -1;
-    setChief({ status: "idle" });
-    const fresh = createRun(placed.level);
-    latestRun.current = fresh;
-    setRun(fresh);
+    startRun(placed.level);
     setStatus("Back at the start. The guards are on their rounds.");
-  }, [placed]);
+  }, [placed, startRun]);
 
   const revealed = useChiefStream(chief);
   const hidden = useMemo(() => hiddenRoutes(chief, revealed), [chief, revealed]);

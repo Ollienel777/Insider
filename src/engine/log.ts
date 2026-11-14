@@ -21,8 +21,15 @@ export function turnEntry(
   };
 }
 
-/** The run so far as a `RunLog`. */
+/** The run so far as a `RunLog`, with how it stands and every alarm transition (the Debrief reads both). */
 export function toRunLog(run: RunState): RunLog {
   const { buildingId, missionId, seed } = run.board.level;
-  return { buildingId, missionId, seed, turns: [...run.turns] };
+  return {
+    buildingId,
+    missionId,
+    seed,
+    turns: [...run.turns],
+    status: run.status,
+    alarmEvents: run.alarmEvents.map((e) => ({ ...e, cause: { ...e.cause } })),
+  };
 }

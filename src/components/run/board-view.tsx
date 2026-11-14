@@ -11,7 +11,7 @@ import { CARD_WIDTH, liveSubtitle, placeCard, threadColour, toScreen, whyKey, wh
 import { WhyCard } from "./why-card";
 
 /** A node disc's radii on the board (a circle seen at the isometric angle). */
-const DISC = { rx: 13, ry: 7.5 };
+export const DISC = { rx: 13, ry: 7.5 };
 /** How far apart, in board units, pieces sharing a node stand. */
 const SHARE_GAP = 36;
 
@@ -645,7 +645,7 @@ function trippedBy(run: RunState): string | null {
 }
 
 /** "West Stair (Stair B)" → "West Stair"; "Suites 2202–2205" stays. */
-function shortLabel(label: string): string {
+export function shortLabel(label: string): string {
   return label.replace(/\s*\(.*\)$/, "");
 }
 
@@ -732,7 +732,7 @@ function ConeShape({ cone, at, sighting }: { cone: Cone; at: (id: string) => Poi
 }
 
 /** A pawn: a base, a body and a head, 32 board units wide and 44 tall, standing on its node. */
-function Pawn({
+export function Pawn({
   testId,
   label,
   at,
@@ -802,17 +802,20 @@ function Pawn({
   );
 }
 
-/** A wall camera: a housing with its lens toward the room, and its id. */
-function CameraPiece({
+/**
+ * A wall camera: a housing with its lens toward the room, and its id. `selected` rings the
+ * housing while its Why card is open; the debrief replay leaves it off.
+ */
+export function CameraPiece({
   id,
   at,
   live,
-  selected,
+  selected = false,
 }: {
   id: string;
   at: Point;
   live: boolean;
-  selected: boolean;
+  selected?: boolean;
 }) {
   return (
     <g

@@ -19,8 +19,13 @@ export type ChiefState =
       answer: ChiefAnswer;
       /** What the engine kept and dropped when it applied the orders. */
       applied: Pick<AppliedOrders, "applied" | "dropped" | "locked">;
+      /** It landed after the run had ended: shown, but no guard got its orders. */
+      late?: boolean;
     }
   | { status: "error"; seq: number; message: string };
+
+/** What a Chief answer that landed after the run ended says in place of its orders taking effect. */
+export const LATE_NOTE = "Arrived after the run ended. None of these orders reached the guards.";
 
 /** Milliseconds between streamed words, and between order rows once the words are in. */
 export const STREAM = { wordMs: 35, rowMs: 160, pauseMs: 150 } as const;
@@ -105,7 +110,9 @@ export function ChiefPanel({
       aria-labelledby="chief-label"
       data-testid="chief-panel"
       data-state={state.status}
+      data-seq={state.status === "idle" ? undefined : state.seq}
       data-source={answer?.source}
+      data-late={state.status === "ready" && state.late ? "true" : undefined}
       className="flex flex-col gap-3"
     >
       <div className="flex items-center gap-2">
@@ -119,6 +126,14 @@ export function ChiefPanel({
             className="rounded-sm border border-border px-1.5 py-0.5 label-caps text-text-2"
           >
             {answer.source === "recorded" ? "Recorded" : "Rule-based"}
+          </span>
+        ) : null}
+        {state.status === "ready" && state.late ? (
+          <span
+            data-testid="chief-late-chip"
+            className="rounded-sm border border-dashed border-border px-1.5 py-0.5 label-caps text-text-2"
+          >
+            After the end
           </span>
         ) : null}
         {state.status === "pending" ? (
@@ -163,8 +178,9 @@ function Ready({
 }) {
   const words = answer.orders.rationale.split(/\s+/);
   const { applied, locked, dropped } = state.applied;
+  const late = state.late === true;
   const rows: { key: string; testId: string; guard?: string; intent: string; zone: string; note?: string }[] = [
-    ...applied.map((o: GuardOrder) => ({ key: `o-${o.guardId}`, testId: "chief-order", guard: o.guardId, intent: o.intent, zone: zoneName(o.zoneId) })),
+    ...applied.map((o: GuardOrder, i) => ({ key: `o-${i}`, testId: "chief-order", guard: o.guardId, intent: o.intent, zone: zoneName(o.zoneId) })),
     ...locked.map((l) => ({ key: `l-${l.zoneId}`, testId: "chief-lock", intent: "lock", zone: zoneName(l.zoneId) })),
     ...dropped.map((d, i) => ({
       key: `d-${i}`,
@@ -182,11 +198,16 @@ function Ready({
         aria-hidden
         data-testid="chief-rationale"
         data-done={revealed.done ? "true" : "false"}
-        className="text-base text-text-1"
+        className={cn("text-base", late ? "text-text-2" : "text-text-1")}
       >
         {words.slice(0, revealed.words).join(" ")}
         {revealed.words < words.length ? <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 bg-text-2" /> : null}
       </p>
+      {late ? (
+        <p data-testid="chief-late" className="text-sm text-text-2">
+          {LATE_NOTE}
+        </p>
+      ) : null}
       {answer.source !== "model" ? (
         <p data-testid="chief-source-note" className="text-sm text-text-2">
           {SOURCE_NOTE[answer.source]}
@@ -200,6 +221,7 @@ function Ready({
               data-testid={row.testId}
               data-guard={row.guard}
               data-intent={row.intent}
+              data-late={late ? "true" : undefined}
               className={cn(
                 "grid grid-cols-[32px_88px_minmax(0,1fr)] items-baseline border-b border-border py-1.5 text-sm last:border-b-0",
                 "animate-in fade-in-0 duration-base",
@@ -208,7 +230,8 @@ function Ready({
               <span className={cn("font-mono", row.note ? "text-text-2 line-through decoration-n-500" : "text-text-1")}>
                 {row.guard ?? ""}
               </span>
-              <span className={cn("font-mono text-xs uppercase", row.note ? "text-text-2" : "text-danger")}>{row.intent}</span>
+              {/* A late order never moved a guard: never in the colour of one that did. */}
+              <span className={cn("font-mono text-xs uppercase", row.note || late ? "text-text-2" : "text-danger")}>{row.intent}</span>
               <span className="min-w-0 truncate text-text-2" title={row.note ?? row.zone}>
                 {row.note ? `Dropped: ${row.note}` : row.zone}
               </span>
@@ -220,8 +243,11 @@ function Ready({
   );
 }
 
-/** The guards whose dashed route waits for its order row: every guard ordered in a ready answer whose row is not shown yet. */
+/**
+ * The guards whose dashed route waits for its order row: every guard ordered in a ready answer whose row is not
+ * shown yet. A late answer orders no guard, so none waits on it.
+ */
 export function hiddenRoutes(state: ChiefState, revealed: Revealed): Set<string> {
-  if (state.status !== "ready") return new Set();
+  if (state.status !== "ready" || state.late) return new Set();
   return new Set(state.applied.applied.slice(revealed.rows).map((o) => o.guardId));
 }

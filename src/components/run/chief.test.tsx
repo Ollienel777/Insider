@@ -14,7 +14,7 @@ import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.json";
 import crewF1 from "../../../fixtures/llm/crew-F1.json";
 import { crewPlanSteps, guardOrders, zoneName } from "./board";
-import { ChiefPanel, hiddenRoutes, type ChiefState, type Revealed } from "./chief-panel";
+import { ChiefPanel, hiddenRoutes, LATE_NOTE, type ChiefState, type Revealed } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
 import { crewPlanKey, loadCrewPlan, saveCrewPlan } from "./crew-plan-store";
 import { RUN_SEED } from "./run-screen";
@@ -202,6 +202,25 @@ describe("the Chief's panel", () => {
     expect(out.split('data-testid="chief-order"').length - 1).toBe(1);
     expect([...hiddenRoutes(state, { words: 99, rows: 1, done: false })]).toEqual(["G4", "G2", "G3"]);
     expect(hiddenRoutes(state, { words: 99, rows: 99, done: true }).size).toBe(0);
+  });
+
+  it("marks an answer that landed after the run ended as late: muted orders, and no guard waits on them", async () => {
+    const { answer, result } = await replan(tripped());
+    const state: ChiefState = { status: "ready", seq: 1, answer, applied: result, late: true };
+    const out = html(state);
+    expect(out).toContain('data-testid="chief-panel" data-state="ready" data-seq="1" data-source="recorded" data-late="true"');
+    expect(out).toContain('data-testid="chief-late-chip"');
+    expect(out).toContain(`data-testid="chief-late" class="text-sm text-text-2">${LATE_NOTE}<`);
+    expect(LATE_NOTE).toBe("Arrived after the run ended. None of these orders reached the guards.");
+    // Every row is still listed, but none in the colour of an order that moved a guard.
+    expect(out.split('data-testid="chief-order"').length - 1).toBe(result.applied.length);
+    expect(out).not.toContain("text-danger");
+    expect(hiddenRoutes(state, { words: 0, rows: 0, done: false }).size).toBe(0);
+
+    const onTime = html({ ...state, late: false });
+    expect(onTime).not.toContain("chief-late");
+    expect(onTime).not.toContain("data-late");
+    expect(onTime).toContain("text-danger");
   });
 
   it("says when the Chief did not answer, and offers a retry", () => {
