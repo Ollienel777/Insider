@@ -285,7 +285,7 @@ function DebriefReady({
             </>
           )}
           <Link
-            href="/"
+            href="/map"
             data-testid="debrief-to-map"
             className={cn(buttonVariants({ variant: "ghost" }), "w-full")}
           >
