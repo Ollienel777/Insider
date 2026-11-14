@@ -1017,7 +1017,7 @@
     "yearBuilt": 1983,
     "buildingClass": "C",
     "stories": 1,
-    "rbaSf": 92160,
+    "rbaSf": 96000,
     "typicalFloorSf": 96000,
     "propertyType": "industrial",
     "availableSpace": [
@@ -1789,7 +1789,7 @@
     "yearBuilt": 1958,
     "buildingClass": "C",
     "stories": 1,
-    "rbaSf": 61440,
+    "rbaSf": 64000,
     "typicalFloorSf": 64000,
     "propertyType": "industrial",
     "availableSpace": [
@@ -1855,7 +1855,7 @@
     "yearBuilt": 1996,
     "buildingClass": "B",
     "stories": 1,
-    "rbaSf": 46080,
+    "rbaSf": 48000,
     "typicalFloorSf": 48000,
     "propertyType": "industrial",
     "availableSpace": [
@@ -1885,7 +1885,7 @@
     "yearBuilt": 2001,
     "buildingClass": "B",
     "stories": 1,
-    "rbaSf": 113280,
+    "rbaSf": 118000,
     "typicalFloorSf": 118000,
     "propertyType": "industrial",
     "availableSpace": [
@@ -1916,7 +1916,7 @@
     "yearBuilt": 1974,
     "buildingClass": "C",
     "stories": 1,
-    "rbaSf": 21120,
+    "rbaSf": 22000,
     "typicalFloorSf": 22000,
     "propertyType": "industrial",
     "availableSpace": [
@@ -2081,7 +2081,7 @@
     "yearBuilt": 2017,
     "buildingClass": "B",
     "stories": 1,
-    "rbaSf": 19776,
+    "rbaSf": 20600,
     "typicalFloorSf": 20600,
     "propertyType": "flex",
     "availableSpace": [
@@ -2111,7 +2111,7 @@
     "yearBuilt": 2022,
     "buildingClass": "A",
     "stories": 1,
-    "rbaSf": 136320,
+    "rbaSf": 142000,
     "typicalFloorSf": 142000,
     "propertyType": "industrial",
     "availableSpace": [
