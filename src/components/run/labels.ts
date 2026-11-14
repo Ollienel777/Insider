@@ -13,7 +13,7 @@
 // disc and choice ring, a pawn's body, a camera's housing) it avoids: of the spots
 // clear of every label, it takes the first that covers the fewest marks.
 import type { FloorGraph } from "@/domain";
-import { LABEL_FONT, roomLabelFit, roomLabelMatrix, type LabelSlot, type Matrix, type Point } from "./iso";
+import { LABEL_FONT, roomLabelFit, roomLabelMatrix, type Frame, type LabelSlot, type Matrix, type Point } from "./iso";
 
 export type Quad = readonly [Point, Point, Point, Point];
 
@@ -194,33 +194,51 @@ export function backEdgeIsOuter(room: Pick<FloorGraph["rooms"][number], "id" | "
 /**
  * Each room's name on its tile, by `choose`: along the back edge where it
  * fits whole (the default), else slid along it, else along the front edge,
- * else smaller. A corridor whose back edge is the floor's outer wall takes its
- * name just outside that edge (#83 R1-N2): on the tile, every spot is under a
- * node or a pawn at some point in the run.
+ * else smaller. Then a corridor whose back edge is the floor's outer wall,
+ * when every spot on its tile covers a node or a pawn (#83 R1-N2: at the wow
+ * beat they all stand on it), takes its name just outside that edge instead,
+ * where nothing ever stands: the first spot there clear of every label in
+ * `outside` and of the names placed so far. Without `outside` no name goes
+ * outside, so the other rooms keep the places they had.
  */
 export function placeRoomLabels(
   floor: Pick<FloorGraph, "rooms">,
   label: (roomLabel: string) => string,
   taken: Taken,
+  outside?: Taken,
+  /** The board's frame (`frameOf`): a name outside its wall must still lie inside it. */
+  frame?: Frame,
 ): RoomLabel[] {
+  const inFrame = (q: Quad) =>
+    !frame || q.every((p) => p.x >= frame.minX && p.x <= frame.minX + frame.width && p.y >= frame.minY && p.y <= frame.minY + frame.height);
+  const names: Quad[] = [];
   return floor.rooms.map((room) => {
     const text = label(room.label);
-    const { edge, em } = roomLabelFit(room.rect, text.length);
-    const slots: LabelSlot[] = [];
-    // A corridor along the floor's outer wall: every spot on its tile is under a node or a pawn
-    // at some point in the run, so its name goes just outside, where nothing ever stands.
+    const candidates = (sides: readonly LabelSlot["side"][]) => {
+      const { edge, em } = roomLabelFit(room.rect, text.length);
+      const slots: LabelSlot[] = [];
+      for (const scale of [1, 0.85]) {
+        const slack = edge - 0.6 - em * scale * text.length * GLYPH.advance;
+        for (const side of sides) {
+          for (let shift = 0; shift <= slack + 1e-9; shift += 0.25) slots.push({ side, shift, scale });
+        }
+      }
+      return slots.map((slot) => {
+        const matrix = roomLabelMatrix(room.rect, text.length, slot);
+        return { roomId: room.id, text, matrix, quad: matrixBox(matrix, text.length, LABEL_FONT) };
+      });
+    };
+    let chosen = choose(candidates(["back", "front"]), taken);
+    const covered = taken.marks.some((m) => quadsOverlap(chosen.quad, m));
     const corridor = Math.min(room.rect.w, room.rect.h) <= CORRIDOR_WIDTH && backEdgeIsOuter(room, floor.rooms);
-    const sides = corridor ? (["outside", "back", "front"] as const) : (["back", "front"] as const);
-    for (const scale of [1, 0.85]) {
-      const slack = edge - 0.6 - em * scale * text.length * GLYPH.advance;
-      for (const side of sides) {
-        for (let shift = 0; shift <= slack + 1e-9; shift += 0.25) slots.push({ side, shift, scale });
+    if (outside && covered && corridor) {
+      const out = candidates(["outside"]).find((c) => inFrame(c.quad) && clearOf(c.quad, outside.text) && clearOf(c.quad, names));
+      if (out) {
+        taken.text[taken.text.lastIndexOf(chosen.quad)] = out.quad;
+        chosen = out;
       }
     }
-    const candidates = slots.map((slot) => {
-      const matrix = roomLabelMatrix(room.rect, text.length, slot);
-      return { roomId: room.id, text, matrix, quad: matrixBox(matrix, text.length, LABEL_FONT) };
-    });
-    return choose(candidates, taken);
+    names.push(chosen.quad);
+    return chosen;
   });
 }

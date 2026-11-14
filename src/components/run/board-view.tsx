@@ -230,7 +230,7 @@ export function BoardView({
 
   // Labels (#68). The rooms' names and everything that never moves first, once per level; then each
   // guard's id beside its pawn, and the plan's marks, each in the first spot clear of the rest.
-  const fixed = useMemo(() => fixedLabels(placed, run.board.cameras), [placed, run.board.cameras]);
+  const fixed = useMemo(() => fixedLabels(placed, run.board.cameras, lens), [placed, run.board.cameras, lens]);
   // With the lens on, each guard's lens marks are placed too, clear of the labels (#37).
   const guardMarks = lensed ? (id: string) => layersOf(whyKey.guard(id))?.length ?? 0 : undefined;
   const { pawns: pawnLabels, ghost: ghostLabels, marks: pawnMarks } = movingLabels(fixed, at, choices, standing, ghost, guardMarks);
@@ -875,10 +875,10 @@ export function movingLabels(
 /**
  * The labels that never move on a placed level: each room's name, placed clear
  * of the nodes, the entry and files labels, the cameras and the PICK labels
- * (either end of a lockable door can carry one), the lens marks; and those boxes, for the labels that
- * move to keep clear of.
+ * (any door's far node can carry one), and with the Layer lens on its marks;
+ * and those boxes, for the labels that move to keep clear of.
  */
-export function fixedLabels(placed: PlacedLevel, cameras: RunState["board"]["cameras"]): FixedLabels {
+export function fixedLabels(placed: PlacedLevel, cameras: RunState["board"]["cameras"], lens = false): FixedLabels {
   const { floor, objective, exits } = placed.level;
   const point = (id: string): Point => {
     const n = floor.nodes.find((node) => node.id === id)!;
@@ -886,8 +886,11 @@ export function fixedLabels(placed: PlacedLevel, cameras: RunState["board"]["cam
   };
   const entryLabel = new Map(placed.entries.map((e) => [e.nodeId, e.label]));
   const named = [objective, ...exits.filter((id) => id !== objective)];
-  // Only a lockable door is ever picked, so only its ends can carry a PICK label.
-  const doorNodes = new Set(floor.edges.filter((e) => e.door?.lockable).flatMap((e) => [e.a, e.b]));
+  const doorNodes = (edges: typeof floor.edges) => new Set(edges.filter((e) => e.door).flatMap((e) => [e.a, e.b]));
+  const pickBox = (id: string) => {
+    const p = point(id);
+    return textBox(p.x + 16, p.y - 14, PICK_CHARS, MARK_FONT);
+  };
   // Without the nodes: the labels that move keep clear only of the ones a choice stands on.
   const taken: Taken = { text: [], marks: [] };
   for (const id of named) {
@@ -899,25 +902,29 @@ export function fixedLabels(placed: PlacedLevel, cameras: RunState["board"]["cam
     const m = cameraMount(floor, camera.parts.flat());
     addCamera(taken, project(m.x, m.y), camera.id);
   }
-  for (const id of doorNodes) {
-    const p = point(id);
-    taken.text.push(textBox(p.x + 16, p.y - 14, PICK_CHARS, MARK_FONT));
-  }
-  // The Layer lens's letter marks on the elements that never move (#83 R1-M1): the rooms' names
-  // never cover them, and the labels that move avoid them where there is room. Kept with the lens
-  // off too, so no label jumps when the lens is toggled.
-  const lensMarks = fixedLensMarks(placed, cameras);
+  const beforePicks = taken.text.length;
+  for (const id of doorNodes(floor.edges)) taken.text.push(pickBox(id));
+  // With the Layer lens on, its letter marks on the elements that never move (#83 R1-M1): the
+  // rooms' names never cover them, and the labels that move avoid them where there is room.
+  // With it off they are not drawn, so nothing keeps clear of them.
+  const lensMarks = lens ? fixedLensMarks(placed, cameras) : [];
   taken.marks.push(...lensMarks);
-  // The rooms' names keep clear of every node, and of a pawn standing on it with its lens marks,
-  // where they can: a numbered choice or a piece can stand on any of them.
+  // The rooms' names keep clear of every node, and of a pawn standing on it (with its lens marks,
+  // while the lens is on), where they can: a numbered choice or a piece can stand on any of them.
   const forRooms: Taken = { text: [...taken.text, ...lensMarks], marks: [...taken.marks] };
   for (const n of floor.nodes) {
     const p = project(n.x, n.y);
     addNode(forRooms, p);
     addPawn(forRooms, p);
-    forRooms.marks.push(markRow(p.x + PAWN_MARKS.x, p.y + PAWN_MARKS.y, LENS_LAYERS.length - 1));
+    if (lens) forRooms.marks.push(markRow(p.x + PAWN_MARKS.x, p.y + PAWN_MARKS.y, LENS_LAYERS.length - 1));
   }
-  const rooms = placeRoomLabels(floor, (label) => shortLabel(label).toUpperCase(), forRooms);
+  // Just outside a corridor's outer wall (R1-N2) only a lockable door's ends can carry a PICK
+  // label: no other door is ever picked.
+  const outside: Taken = {
+    text: [...taken.text.slice(0, beforePicks), ...[...doorNodes(floor.edges.filter((e) => e.door?.lockable))].map(pickBox), ...lensMarks],
+    marks: [],
+  };
+  const rooms = placeRoomLabels(floor, (label) => shortLabel(label).toUpperCase(), forRooms, outside, frameOf(floor));
   return { rooms, taken: { text: [...taken.text, ...rooms.map((r) => r.quad)], marks: taken.marks } };
 }
 
@@ -1033,7 +1040,8 @@ function ConeShape({ cone, at, sighting }: { cone: Cone; at: (id: string) => Poi
         />
       ) : null}
       {seen.length > 0 ? (
-        // On the trip the whole cone turns `--danger` and flashes (DESIGN.md the wow beat, step 2).
+        // On the trip turn the whole cone is `--danger`: it flashes from 70% down to 30% (`.cone-flash`),
+        // then stays `--danger` at 30% until the next turn (DESIGN.md the wow beat, step 2).
         <polygon
           data-testid={sighting ? "cone-tripped" : undefined}
           className={sighting ? "cone-flash" : undefined}
@@ -1238,6 +1246,11 @@ export function CameraPiece({
   );
 }
 
+/** A numbered choice's hit target, from its node. */
+export const CHOICE_HIT = { x: -20, y: -20, width: 40, height: 40 } as const;
+/** A PICK choice's hit target, its badge and its label with the label's halo, from its node. */
+export const PICK_HIT = { x: -20, y: -30, width: 100, height: 50 } as const;
+
 /** A neighbour's number, a 40-unit hit target, that moves the player there (or picks its door). */
 function ChoiceHint({
   choice,
@@ -1274,7 +1287,7 @@ function ChoiceHint({
       onClick={() => onChoose(choice)}
       onKeyDown={onKey}
     >
-      <rect x="-20" y="-20" width="40" height="40" fill="transparent" />
+      <rect {...CHOICE_HIT} fill="transparent" />
       <ellipse
         cx="0"
         cy="0"
@@ -1306,7 +1319,7 @@ function ChoiceHint({
       </text>
       {/* With its label and the label's halo, the badge's whole box is its hit area: a click anywhere on
           it picks and never reaches the lock below (R3-M1). */}
-      {choice.kind === "pick" ? <rect x="-20" y="-30" width="100" height="50" fill="transparent" /> : null}
+      {choice.kind === "pick" ? <rect {...PICK_HIT} fill="transparent" /> : null}
       {choice.kind === "pick" ? (
         <text
           x="16"

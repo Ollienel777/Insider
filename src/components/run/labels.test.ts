@@ -13,7 +13,7 @@ import { act, createRun, type Action, type RunState } from "@/engine";
 import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.json";
 import { actionForKey, cameraMount, choices as choicesOf } from "./board";
-import { DISC, fixedLabels, fixedLensMarks, movingLabels, standingOf, type GhostPlan } from "./board-view";
+import { CHOICE_HIT, DISC, fixedLabels, fixedLensMarks, movingLabels, PICK_HIT, standingOf, type GhostPlan } from "./board-view";
 import { project } from "./iso";
 import { box, MARK_FONT, PIECE_FONT, quadsOverlap, textBox, type Quad } from "./labels";
 import { lensElements } from "./lens";
@@ -35,9 +35,9 @@ function play(run: RunState, actions: readonly Action[]): RunState {
 }
 
 /** Every label the board draws on this frame, by its text, as its glyph box (no padding). */
-function drawn(run: RunState, ghost: GhostPlan | null = null): { name: string; quad: Quad }[] {
+function drawn(run: RunState, ghost: GhostPlan | null = null, lens = false): { name: string; quad: Quad }[] {
   const atNode = at(run);
-  const fixed = fixedLabels(placed, run.board.cameras);
+  const fixed = fixedLabels(placed, run.board.cameras, lens);
   const choices = choicesOf(run);
   const standing = standingOf(run, atNode);
   const moving = movingLabels(fixed, atNode, choices, standing, ghost);
@@ -122,14 +122,14 @@ describe("the board's labels (#68)", () => {
     const count = (id: string) => layers.find((e) => e.key === `guard:${id}`)?.layers.length ?? 0;
     const guardMarks = (run: RunState) => {
       const standing = standingOf(run, at(run));
-      const moving = movingLabels(fixedLabels(placed, run.board.cameras), at(run), choicesOf(run), standing, null, count);
+      const moving = movingLabels(fixedLabels(placed, run.board.cameras, true), at(run), choicesOf(run), standing, null, count);
       return standing.flatMap((s) => {
         const spot = moving.marks.get(s.id);
         return spot ? [{ name: `${s.id} lens marks`, quad: box(s.p.x + spot.x, s.p.y + spot.y, s.p.x + spot.x + 14 * count(s.id) + 3 * (count(s.id) - 1), s.p.y + spot.y + 14) }] : [];
       });
     };
     const lensed = (run: RunState) => [
-      ...drawn(run),
+      ...drawn(run, null, true),
       ...marks.map((quad, i) => ({ name: `lens mark ${i}`, quad })),
       ...guardMarks(run),
     ];
@@ -137,6 +137,33 @@ describe("the board's labels (#68)", () => {
     expect(collisions(lensed(createRun(placed.level)))).toEqual([]);
     const wow = play(createRun(placed.level), [{ kind: "move", to: "fl-lobby" }, { kind: "move", to: "dc-west" }]);
     expect(collisions(lensed(wow))).toEqual([]);
+  });
+
+  it("never lets a PICK badge's hit area reach a move badge's, at the server closet and the records door (#37 S1)", () => {
+    const rect = (p: { x: number; y: number }, r: { x: number; y: number; width: number; height: number }) =>
+      box(p.x + r.x, p.y + r.y, p.x + r.x + r.width, p.y + r.y + r.height);
+    const overlaps = (run: RunState) => {
+      const choices = choicesOf(run);
+      return choices
+        .filter((c) => c.kind === "pick")
+        .flatMap((pick) =>
+          choices
+            .filter((c) => c !== pick)
+            .filter((c) => quadsOverlap(rect(at(run)(pick.nodeId), PICK_HIT), rect(at(run)(c.nodeId), CHOICE_HIT)))
+            .map((c) => `PICK ${pick.nodeId} × ${c.key} ${c.nodeId}`),
+        );
+    };
+    // Every turn of the quiet route (the records door from dc-east), and the server closet's from dc-west.
+    let run = createRun(placed.level);
+    const seen = new Set<string>();
+    const steps = ["fl-lobby", "W", "dc-west", "dc-mid", "dc-east", "rr-door", "rr-door", "rr-door", "rr-files", " ", "rr-door", "dc-east", "W", "dc-mid", "dc-west", "fl-lobby"];
+    for (const step of steps) {
+      for (const c of choicesOf(run)) if (c.kind === "pick") seen.add(c.nodeId);
+      expect(overlaps(run), `turn ${run.turn}`).toEqual([]);
+      const action = step.length === 1 ? actionForKey(step, run) : choicesOf(run).find((c) => c.nodeId === step)?.action;
+      run = play(run, [action!]);
+    }
+    expect([...seen].sort()).toEqual(["rr-door", "sc-rack"]);
   });
 
   it("keeps every label clear of every other at the wow beat, and on every turn of the quiet route", () => {
