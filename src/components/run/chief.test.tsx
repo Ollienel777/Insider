@@ -12,7 +12,7 @@ import { CHIEF_PROMPT_HEAD, replanChief } from "@/agents/chief";
 import { CrewPlan, LevelManifest, type ChiefOrders } from "@/domain";
 import { act, applyChiefOrders, createRun, plannedPath, type Action, type RunState } from "@/engine";
 import { placeLevel } from "@/level/placer";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import crewF1 from "../../../fixtures/llm/crew-F1.json";
 import { crewPlanSteps, guardOrders, zoneName } from "./board";
 import { ChiefPanel, chiefSourceNote, hiddenRoutes, LATE_NOTE, type ChiefState, type Revealed } from "./chief-panel";

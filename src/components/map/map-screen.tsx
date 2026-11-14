@@ -10,6 +10,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { City } from "@/domain";
 import { cityName } from "@/lib/cities";
 import { cn } from "@/lib/utils";
+import { buildingHref } from "@/lib/building-href";
 import { ATTRIBUTION, BASEMAPS, project } from "./basemap";
 import { MapPin } from "./map-pin";
 import type { MapBuilding } from "./types";
@@ -106,7 +107,7 @@ export function MapScreen({ buildings, initialCity }: MapScreenProps) {
             )}
           </p>
           {selected ? (
-            <Link href={`/b/${encodeURIComponent(selected.id)}/scout`} className={buttonVariants({ variant: "primary" })}>
+            <Link href={buildingHref(selected.id, "scout", null /* no mission picked on the map: Scout redirects to its own */)} className={buttonVariants({ variant: "primary" })}>
               Scout this building
             </Link>
           ) : (

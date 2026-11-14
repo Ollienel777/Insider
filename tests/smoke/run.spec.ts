@@ -250,10 +250,10 @@ test("the crew's quiet route plays by keys to a clean exit, then offers the debr
   await expect(page.getByTestId("run-outcome")).toHaveAttribute("data-status", "won");
   await expect(banner(page)).toHaveAttribute("data-state", "calm");
   await expect(page.getByTestId("choice")).toHaveCount(0);
-  const runLog = await page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1") ?? "null"));
+  const runLog = await page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1:romaine-1974") ?? "null"));
   expect(runLog.turns).toHaveLength(17);
   await page.getByRole("link", { name: "See the debrief" }).click();
-  await expect(page).toHaveURL(/\/b\/F1\/debrief$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/b\/F1\/debrief\?m=romaine-1974$/, { timeout: 15_000 });
 });
 
 test("Restart puts the run back at the start", async ({ page }) => {
@@ -344,4 +344,56 @@ test("a building with no level yet says so and offers the map", async ({ page })
   await expect(page.getByTestId("board-empty")).toContainText("This building's level isn't ready yet.");
   await page.getByRole("link", { name: "Back to the map" }).click();
   await expect(page).toHaveURL(/\/$/);
+});
+
+test("S sprints: the numbers mark nodes two hops on, a click sprints there in one turn, and the board walks again (#121)", async ({ page }) => {
+  await open(page);
+  const hint = page.getByTestId("sprint-hint");
+  const choices = page.getByTestId("choice");
+  await expect(hint).not.toHaveAttribute("data-on", /.*/);
+  await expect(choices).toHaveCount(1);
+  await expect(choices.first()).toHaveAttribute("data-kind", "move");
+
+  // S on: the start's only sprint is on through the freight lift lobby to the dock corridor.
+  await page.keyboard.press("s");
+  await expect(hint).toHaveAttribute("data-on", "true");
+  await expect(hint).toContainText("sprinting");
+  await expect(page.getByTestId("run-status")).toContainText("Sprinting");
+  await expect(choices).toHaveCount(1);
+  await expect(choices.first()).toHaveAttribute("data-kind", "sprint");
+  await expect(choices.first()).toHaveAttribute("data-node", "dc-west");
+  await expect(choices.first()).toHaveAttribute("aria-label", /^Sprint to /);
+  await page.screenshot({ path: "test-results/run-sprint/sprint-mode.png" });
+
+  // Esc walks again, and S comes back on.
+  await page.keyboard.press("Escape");
+  await expect(hint).not.toHaveAttribute("data-on", /.*/);
+  await expect(choices.first()).toHaveAttribute("data-node", "fl-lobby");
+  await page.keyboard.press("S");
+  await expect(choices.first()).toHaveAttribute("data-kind", "sprint");
+
+  // A click on the badge sprints: two hops, one turn, and the board is walking again.
+  await choices.first().click();
+  await expect(page.getByTestId("turn")).toHaveText("1");
+  await expect(player(page)).toHaveAttribute("data-node", "dc-west");
+  await expect(page.getByTestId("run-status")).toHaveText("You sprint to the Dock Corridor.");
+  await expect(hint).not.toHaveAttribute("data-on", /.*/);
+  for (const c of await choices.all()) await expect(c).not.toHaveAttribute("data-kind", "sprint");
+  const kind = await page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1:romaine-1974") ?? "null")?.turns?.at(-1)?.player?.kind);
+  expect(kind).toBe("sprint");
+});
+
+test("in sprint mode, Esc with a Why card open closes only the card; the next Esc walks (#121)", async ({ page }) => {
+  await open(page);
+  const hint = page.getByTestId("sprint-hint");
+  await page.keyboard.press("s");
+  await expect(hint).toHaveAttribute("data-on", "true");
+  await page.locator('[data-why-target="guard:G4"]').click();
+  await expect(page.getByTestId("why-card")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("why-card")).toHaveCount(0);
+  await expect(hint).toHaveAttribute("data-on", "true");
+  await expect(page.getByTestId("choice").first()).toHaveAttribute("data-kind", "sprint");
+  await page.keyboard.press("Escape");
+  await expect(hint).not.toHaveAttribute("data-on", /.*/);
 });
