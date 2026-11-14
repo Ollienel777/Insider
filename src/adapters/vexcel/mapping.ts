@@ -136,7 +136,9 @@ const Collections = z.object({
 /**
  * The newest collection's obliques, one per direction. A collection that
  * lacks a direction just has fewer views; directions are never mixed across
- * collections, so every view was flown the same day.
+ * collections, so every oblique comes from the same capture campaign. The
+ * ortho is not pinned to it: `ortho/extract` serves the newest ortho, which
+ * may come from a different capture.
  */
 export function toObliques(body: unknown): Oblique[] {
   const { features } = Collections.parse(body);

@@ -39,15 +39,21 @@ export function selectVexcel(env: Env): VexcelSelection {
       reason: `Vexcel: fixtures (live mode, but ${missing.join(" and ")} not set)`,
     };
   }
+  // Live imagery is fetched at the fixture massing's own block, and the
+  // massing's hand-placed entries are pinned onto it, until the CoStar kit
+  // can say where a real building stands (issue 29).
+  const live = createLiveVexcel({
+    base: env.VEXCEL_API_BASE,
+    key: env.VEXCEL_API_KEY,
+    massing: (id) => fake.getAerial(id),
+  });
   return {
-    // Live imagery is fetched at the fixture massing's own block, and the
-    // massing's hand-placed entries are pinned onto it, until the CoStar kit
-    // can say where a real building stands (issue 29).
-    adapter: createLiveVexcel({
-      base: env.VEXCEL_API_BASE,
-      key: env.VEXCEL_API_KEY,
-      massing: (id) => fake.getAerial(id),
-    }),
+    adapter: {
+      // A building Vexcel has no coverage for gets its massing, and Vexcel
+      // stays live for the rest: no coverage is not a failure.
+      getAerial: async (id) => (await live.getAerial(id)) ?? fake.getAerial(id),
+      getImage: (id, dir) => live.getImage(id, dir),
+    },
     mode: "live",
     reason: "Vexcel: live",
   };

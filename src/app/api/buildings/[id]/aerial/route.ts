@@ -22,7 +22,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     return Response.json({ mode, aerial, ...(fallback && { fallback }) });
   } catch (error) {
     // A schema error would dump field paths and values; none of that is for the browser.
-    console.error(`GET /api/buildings/${id}/aerial failed:`, error);
+    console.error(`GET /api/buildings/${JSON.stringify(id)}/aerial failed:`, error);
     return Response.json({ mode: getVexcel({ forced }).mode, error: AERIAL_FAILED }, { status: 502 });
   }
 }

@@ -3,8 +3,10 @@
 // come from the adapter's memory; nothing here or downstream may keep them:
 // `no-store` keeps the browser and any proxy from caching the image, and the
 // Scout draws it with a plain <img>, not next/image, whose optimiser would
-// write a copy under .next/cache. A massing has no image, so in fake mode,
-// or once a live failure has put Vexcel on fixtures, every view is a 404.
+// write a copy under .next/cache. The adapter serves only images a recent
+// aerial request put in memory and never fetches here, so a miss is a 404.
+// A massing has no image, so in fake mode, or once a live failure has put
+// Vexcel on fixtures, every view is a 404.
 import { getVexcel } from "@/adapters/vexcel";
 import { ViewDir } from "@/domain";
 import { forcedFromRequest } from "@/lib/mode";
@@ -26,7 +28,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       },
     });
   } catch (error) {
-    console.error(`GET /api/buildings/${id}/aerial/${dir.data} failed:`, error);
+    console.error(`GET /api/buildings/${JSON.stringify(id)}/aerial/${dir.data} failed:`, error);
     return Response.json({ error: "The aerial image failed to load." }, { status: 502 });
   }
 }

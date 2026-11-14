@@ -217,8 +217,8 @@ describe("selectVexcel", () => {
     expect(selection.mode).toBe("live");
     expect(selection.reason).toBe("Vexcel: live");
 
-    // A 404 from Vexcel is a failure (the index's breaker turns it into the massing).
-    await expect(selection.adapter.getAerial("F1")).rejects.toThrow("answered 404");
+    // A 404 from Vexcel is no coverage, not a failure: that building gets its massing, nothing throws.
+    expect((await selection.adapter.getAerial("F1"))?.source).toBe("fixture");
     expect(fetch).toHaveBeenCalledOnce();
     const url = new URL(String((fetch.mock.calls[0] as unknown[])[0]));
     expect(url.origin + url.pathname).toBe("https://vexcel.invalid/v1/oriented/collections");

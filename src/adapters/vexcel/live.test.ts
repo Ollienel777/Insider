@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Aerial } from "@/domain";
 import { FIXTURE_AERIALS } from "./fake";
 import { imageSize } from "./image-size";
-import { createLiveVexcel, imageUrl, VexcelNotConfiguredError } from "./live";
+import { createLiveVexcel, imageUrl, MAX_IMAGE_BYTES, VexcelNotConfiguredError } from "./live";
 import {
   centreOf,
   collectionsRequest,
@@ -56,8 +56,22 @@ const COLLECTIONS = {
   })),
 };
 
-/** A fetch that answers like Vexcel, logs every call, and fails what `fail` names. */
-function stub({ fail = {} as Record<string, number>, collections = COLLECTIONS as unknown } = {}) {
+/**
+ * The stub ortho's size. Vexcel's live ortho for F1's frame came back
+ * 1038x651 (aspect 1.5945) on 2026-11-14; the stub keeps the asked-for 16:10.
+ */
+const ORTHO = { width: 1600, height: 1000 };
+
+/**
+ * A fetch that answers like Vexcel, logs every call, and fails what `fail`
+ * names. `oversize` names calls whose answer declares more bytes than allowed.
+ */
+function stub({
+  fail = {} as Record<string, number>,
+  collections = COLLECTIONS as unknown,
+  ortho = ORTHO,
+  oversize = [] as string[],
+} = {}) {
   const calls: { url: URL; init?: RequestInit }[] = [];
   const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -66,8 +80,11 @@ function stub({ fail = {} as Record<string, number>, collections = COLLECTIONS a
     const which = path === "oriented/extract" ? url.searchParams.get("product-type")! : path;
     if (fail[which]) return new Response("{}", { status: fail[which] });
     if (path === "oriented/collections") return Response.json(collections);
-    if (path === "ortho/extract") return new Response(jpeg(1600, 1000), { headers: { "content-type": "image/jpeg" } });
-    return new Response(png(960, 700), { headers: { "content-type": "image/png" } });
+    const headers: Record<string, string> = oversize.includes(which) ? { "content-length": String(MAX_IMAGE_BYTES + 1) } : {};
+    if (path === "ortho/extract") {
+      return new Response(jpeg(ortho.width, ortho.height), { headers: { "content-type": "image/jpeg", ...headers } });
+    }
+    return new Response(png(960, 700), { headers: { "content-type": "image/png", ...headers } });
   });
   return { fetch: fetch as typeof globalThis.fetch, calls, mock: fetch };
 }
@@ -170,6 +187,21 @@ describe("imageSize", () => {
     expect(imageSize(new TextEncoder().encode('{"error":"nope"}'))).toBeNull();
     expect(imageSize(new Uint8Array([0xff, 0xd8, 0x00]))).toBeNull();
   });
+
+  it("walks past 0xFF fill bytes and the markers that carry no length", () => {
+    const frame = jpeg(970, 609).slice(2);
+    const padded = new Uint8Array([
+      0xff, 0xd8,
+      // Fill bytes before a marker, then TEM and a restart marker, neither with a length.
+      0xff, 0xff, 0xff, 0x01,
+      0xff, 0xd3,
+      ...frame.slice(0, 6),
+      0xff, 0xff, ...frame.slice(6),
+    ]);
+    expect(imageSize(padded)).toEqual({ width: 970, height: 609, contentType: "image/jpeg" });
+    // A segment that claims less than its own length field is refused, not looped on.
+    expect(imageSize(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x00, 0xff, 0xc0]))).toBeNull();
+  });
 });
 
 describe("the live Vexcel adapter (stubbed fetch, no key)", () => {
@@ -236,12 +268,39 @@ describe("the live Vexcel adapter (stubbed fetch, no key)", () => {
     expect(warn).toHaveBeenCalledWith(`Vexcel: ${F1.entries.length} entries of F1 dropped (no ortho to place them on)`);
   });
 
-  it("throws, so the massing can answer, when the collections fail or no image comes back", async () => {
+  it("throws, so the breaker serves the massing, when Vexcel fails rather than lacks coverage", async () => {
     await expect(live(stub({ fail: { "oriented/collections": 503 } }).fetch).getAerial("F1")).rejects.toThrow(
       "Vexcel: GET oriented/collections answered 503",
     );
-    const nothing = stub({ fail: { "ortho/extract": 500 }, collections: { features: [] } });
-    await expect(live(nothing.fetch).getAerial("F1")).rejects.toThrow("Vexcel: no imagery for F1");
+    const broken = stub({ fail: { "ortho/extract": 500 }, collections: { features: [] } });
+    await expect(live(broken.fetch).getAerial("F1")).rejects.toThrow("Vexcel: no imagery for F1");
+  });
+
+  it("answers null for a building Vexcel has no coverage for, without throwing", async () => {
+    const warn = vi.fn();
+    expect(await live(stub({ fail: { "oriented/collections": 404 } }).fetch, { warn }).getAerial("F1")).toBeNull();
+    const empty = stub({ fail: { "ortho/extract": 404 }, collections: { features: [] } });
+    expect(await live(empty.fetch, { warn }).getAerial("F1")).toBeNull();
+    expect(warn).toHaveBeenCalledWith("Vexcel: no coverage for F1; it gets the massing");
+  });
+
+  it("drops the entries, logged, when the ortho is not the 16:10 frame asked for", async () => {
+    const warn = vi.fn();
+    const aerial = (await live(stub({ ortho: { width: 1600, height: 900 } }).fetch, { warn }).getAerial("F1"))!;
+    expect(aerial.views.map((v) => v.dir)).toEqual(["N", "E", "S", "W", "ortho"]);
+    expect(aerial.entries).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(`Vexcel: ${F1.entries.length} entries of F1 dropped (the ortho came back 1600×900, not 16:10)`);
+    // Vexcel's own 1038x651 is within the tolerance.
+    const real = (await live(stub({ ortho: { width: 1038, height: 651 } }).fetch).getAerial("F1"))!;
+    expect(real.entries.map((e) => e.id)).toEqual(F1.entries.map((e) => e.id));
+  });
+
+  it("refuses an image that declares more than 8 MB", async () => {
+    const warn = vi.fn();
+    const aerial = (await live(stub({ oversize: ["oblique-north"] }).fetch, { warn }).getAerial("F1"))!;
+    expect(aerial.views.map((v) => v.dir)).toEqual(["N", "E", "W", "ortho"]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("S view of F1 skipped"));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("over the limit"));
   });
 
   it("answers null for a building with no massing, without calling Vexcel", async () => {
@@ -264,15 +323,26 @@ describe("the live Vexcel adapter (stubbed fetch, no key)", () => {
     expect(mock).toHaveBeenCalledTimes(6);
   });
 
-  it("fetches again once the held imagery is stale", async () => {
+  it("serves images only from memory: never a fetch, a miss is null", async () => {
+    const { fetch, mock } = stub();
+    const adapter = live(fetch);
+    expect(await adapter.getImage("F1", "ortho")).toBeNull();
+    expect(mock).not.toHaveBeenCalled();
+  });
+
+  it("keeps a building's images while its aerial is being asked for, and fetches again once it is stale", async () => {
     let clock = 0;
     const { fetch, mock } = stub();
     const adapter = live(fetch, { now: () => clock, cacheMs: 1_000 });
-    await adapter.getImage("F1", "ortho");
-    clock = 999;
     await adapter.getAerial("F1");
+    clock = 999;
+    // Asking for the aerial again refreshes it, so the page's images outlive the first load.
+    await adapter.getAerial("F1");
+    clock = 1_500;
+    expect(await adapter.getImage("F1", "ortho")).not.toBeNull();
     expect(mock).toHaveBeenCalledTimes(6);
-    clock = 1_000;
+    clock = 2_000;
+    expect(await adapter.getImage("F1", "ortho")).toBeNull();
     await adapter.getAerial("F1");
     expect(mock).toHaveBeenCalledTimes(12);
   });
