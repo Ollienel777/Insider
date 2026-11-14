@@ -23,7 +23,7 @@ async function toDebrief(page: Page) {
 test("Debrief to Owner Mode: 50 attempts, the Chief's fix, before and after", async ({ page }) => {
   await toDebrief(page);
   await page.getByTestId("debrief-owner-mode").click();
-  await expect(page).toHaveURL(/\/b\/F1\/owner$/);
+  await expect(page).toHaveURL(/\/b\/F1\/owner\?m=romaine-1974$/);
 
   // The editor opens on the generated setup, never empty, with the made-up line.
   await expect(page.getByTestId("owner-board")).toBeVisible();

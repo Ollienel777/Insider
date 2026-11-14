@@ -10,7 +10,7 @@ import { OwnerSetup } from "@/domain/owner-setup";
 import { runBatch, summariseBatch as sum, varyLevel, type Level } from "@/engine";
 import { applyOwnerSetup, validateOwnerSetup } from "@/level/owner-setup";
 import { placeLevel } from "@/level/placer";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import fixRecording from "../../../fixtures/llm/fix-F1.json";
 import recording from "../../../fixtures/llm/strategies-F1.json";
 import { BatchPanel } from "./batch-panel";

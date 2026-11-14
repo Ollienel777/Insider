@@ -1,22 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { buttonVariants } from "@/components/ui/button";
+import { buildingHref } from "@/lib/building-href";
+import { useMissionId } from "@/lib/use-mission-id";
 import { cn } from "@/lib/utils";
-
-/** The Owner screen's address, carrying the chosen mission (`?m=`) when there is one. */
-export function ownerHref(buildingId: string, mission?: string | null): string {
-  const base = `/b/${encodeURIComponent(buildingId)}/owner`;
-  return mission ? `${base}?m=${encodeURIComponent(mission)}` : base;
-}
 
 /** The Debrief's way into Owner Mode (issue 128): the same building, played against the owner's own security. */
 export function OwnerModeLink({ buildingId, className }: { buildingId: string; className?: string }) {
-  const mission = useSearchParams()?.get("m") ?? null;
+  const missionId = useMissionId();
   return (
     <Link
-      href={ownerHref(buildingId, mission)}
+      href={buildingHref(buildingId, "owner", missionId)}
       data-testid="debrief-owner-mode"
       className={cn(buttonVariants({ variant: "ghost" }), "w-full", className)}
     >

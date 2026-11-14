@@ -1,4 +1,4 @@
-// The owner's setup (#125) on the cached F1 manifest (data/levels/F1.json) and
+// The owner's setup (#125) on the cached F1 manifest (data/levels/F1.romaine-1974.json) and
 // the F1 fixture floor: the validator's reasons, and a valid setup played by
 // the engine in place of the generated security.
 import { describe, expect, it } from "vitest";
@@ -6,7 +6,7 @@ import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { type FloorGraph, LevelManifest } from "@/domain";
 import { OwnerSetup } from "@/domain/owner-setup";
 import { act, type Action, createRun, type RunState } from "@/engine";
-import cached from "../../data/levels/F1.json";
+import cached from "../../data/levels/F1.romaine-1974.json";
 import { applyOwnerSetup, cameraCover, OWNER_RULE, type OwnerPlacedLevel, validateOwnerSetup } from "./owner-setup";
 import { placeLevel } from "./placer";
 

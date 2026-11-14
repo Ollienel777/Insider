@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { readCachedLevel } from "@/agents/builder/cache";
 import { OwnerScreen } from "@/components/owner/owner-screen";
 import { findBuilding } from "@/lib/building";
+import { missionParam, type SearchParams } from "@/lib/mission-param";
 
 // The Owner screen (Owner Mode, SPEC §13, issue 128). The cached manifest comes
 // with the page; the floor loads in the browser, where the owner's setup is
@@ -12,19 +13,19 @@ export default async function OwnerPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ m?: string | string[] }>;
+  searchParams: SearchParams;
 }) {
   const { id } = await params;
-  const { m } = await searchParams;
   const building = await findBuilding(id);
   if (!building) notFound();
-  const cached = await readCachedLevel(building.id);
+  const missionId = await missionParam(building.id, "owner", searchParams);
+  const cached = await readCachedLevel(building.id, missionId);
   return (
     <OwnerScreen
       building={{ id: building.id, name: building.name, matterportModelId: building.matterportModelId }}
       manifest={cached?.manifest ?? null}
       fixture={building.source === "fixture"}
-      mission={typeof m === "string" ? m : null}
+      mission={missionId}
       heistMode={process.env.HEIST_MODE}
     />
   );
