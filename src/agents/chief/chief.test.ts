@@ -89,6 +89,14 @@ describe("the template", () => {
     );
   });
 
+  it("speaks a suite by its number, without the board's (vacant) tag, as on a kit building's floor (issue 140)", () => {
+    const orders = chiefTemplate(manifest, trip({ lastKnownZone: "quiet-2210" }));
+    expect(orders.rationale).toMatch(/^C2 has them in Suite 2210\. /);
+    expect(orders.rationale).not.toMatch(/\(vacant\)|the Suite/);
+    // Names that aren't a numbered suite keep their article.
+    expect(orders.rationale).toContain("blocks the Loading dock.");
+  });
+
   it("sweeps where they were lost on the way down, stands down at Calm, and stays within the rationale's length", () => {
     const down = chiefTemplate(manifest, trip({ transition: { turn: 5, from: "alert", to: "suspicious", cause: { kind: "decay" } } }));
     expect(down.orders.map((o) => [o.guardId, o.intent, o.zoneId])).toEqual([

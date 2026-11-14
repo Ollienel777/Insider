@@ -10,26 +10,36 @@ function together(ids: readonly string[]): string {
   return ids.length <= 1 ? (ids[0] ?? "") : `${ids.slice(0, -1).join(", ")} and ${ids[ids.length - 1]}`;
 }
 
+/**
+ * A zone's name as the Chief says it, after "in" or "lock": without the board's "(vacant)" tag, and
+ * with "the" unless it is a numbered suite or office ("Suite 1400", not "the Suite 1400"). Issue 140:
+ * a kit building's zones are its suites, so this template speaks them on Century Park.
+ */
+export function placeName(name: string): string {
+  const bare = name.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  return /^(suite|office|room|unit)\s+\S*\d/i.test(bare) ? bare : `the ${bare}`;
+}
+
 /** What raised the alarm, in the Chief's words. */
 function contact(request: ChiefRequest, where: string): string {
   const { kind, id } = request.transition.cause;
   switch (kind) {
     case "camera":
-      return `${id ?? "A camera"} has them in the ${where}`;
+      return `${id ?? "A camera"} has them in ${where}`;
     case "guard":
-      return `${id ?? "A guard"} has eyes on them in the ${where}`;
+      return `${id ?? "A guard"} has eyes on them in ${where}`;
     case "cleaner":
-      return `A cleaner saw someone in the ${where}`;
+      return `A cleaner saw someone in ${where}`;
     case "noise":
-      return `${id ?? "A guard"} heard something in the ${where}`;
+      return `${id ?? "A guard"} heard something in ${where}`;
     default:
-      return `Contact in the ${where}`;
+      return `Contact in ${where}`;
   }
 }
 
 export function chiefTemplate(manifest: LevelManifest, request: ChiefRequest): ChiefOrders {
   const zones = new Map(request.zones.map((z) => [z.id, z.name]));
-  const name = (id: string) => zones.get(id) ?? id;
+  const name = (id: string) => placeName(zones.get(id) ?? id);
   const objective = manifest.zones.find((z) => z.role === "objective" && zones.has(z.id))?.id ?? null;
   const exit = manifest.entries.find((e) => zones.has(e.id))?.id ?? null;
   const lastKnown = request.lastKnownZone && zones.has(request.lastKnownZone) ? request.lastKnownZone : null;
@@ -53,15 +63,15 @@ export function chiefTemplate(manifest: LevelManifest, request: ChiefRequest): C
     const [blocker, holder] = rest;
     if (blocker && exit && exit !== lastKnown) {
       orders.push({ guardId: blocker, intent: "block", zoneId: exit });
-      lines.push(`${blocker} blocks the ${name(exit)}.`);
+      lines.push(`${blocker} blocks ${name(exit)}.`);
     }
     if (holder && objective && objective !== lastKnown) {
       orders.push({ guardId: holder, intent: "hold", zoneId: objective });
-      lines.push(`${holder} holds the ${name(objective)}.`);
+      lines.push(`${holder} holds ${name(objective)}.`);
     }
     if (objective && objective !== lastKnown) {
       lockZones = [objective];
-      lines.push(`Lock the ${name(objective)}.`);
+      lines.push(`Lock ${name(objective)}.`);
     }
     if (from === to) lines.unshift("Still in lockdown.");
   } else {
@@ -70,7 +80,7 @@ export function chiefTemplate(manifest: LevelManifest, request: ChiefRequest): C
     const sweepers = roster.slice(0, from === "calm" ? 1 : 2);
     orders = sweepers.map((guardId) => ({ guardId, intent: "sweep", zoneId: lastKnown }));
     lines.push(
-      from === "calm" ? `${contact(request, where)}.` : `Lost them in the ${where}.`,
+      from === "calm" ? `${contact(request, where)}.` : `Lost them in ${where}.`,
       `${together(sweepers)} sweep${sweepers.length === 1 ? "s" : ""} it. The rest stay on rounds.`,
     );
   }
@@ -82,8 +92,8 @@ export function chiefTemplate(manifest: LevelManifest, request: ChiefRequest): C
     const times = request.history!.entries.find((e) => e.zoneId === posted.zoneId)?.count ?? 1;
     const often = times === 1 ? "last time" : times === 2 ? "twice" : `${times} times`;
     const stands = posted.startZone;
-    const where = stands && zones.has(stands) ? `in the ${name(stands)}` : `near the ${name(posted.zoneId)}`;
-    lines.unshift(`They came in by the ${name(posted.zoneId)} ${often}. ${posted.guardId} starts ${where} tonight.`);
+    const where = stands && zones.has(stands) ? `in ${name(stands)}` : `near ${name(posted.zoneId)}`;
+    lines.unshift(`They came in by ${name(posted.zoneId)} ${often}. ${posted.guardId} starts ${where} tonight.`);
   }
 
   let rationale = "";

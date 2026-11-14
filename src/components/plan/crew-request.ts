@@ -41,8 +41,9 @@ export async function askCrew(
     body: JSON.stringify(request),
     signal: options.signal,
   });
-  const body = (await response.json().catch(() => null)) as (Partial<CrewAnswer> & { error?: string }) | null;
-  if (response.status === 503) throw new NoCrewReplyError(body?.error ?? "the crew has no reply for this building");
+  const body = (await response.json().catch(() => null)) as (Partial<CrewAnswer> & { error?: string; code?: string }) | null;
+  // Only the crew route's own "no recording" answer: a 503 from a proxy or the host is an outage, shown as one.
+  if (response.status === 503 && body?.code === "no-recording") throw new NoCrewReplyError(body.error ?? "the crew has no reply for this building");
   if (!response.ok || !body) throw new Error(body?.error ?? `the crew didn't answer (HTTP ${response.status})`);
   noteResponse(body);
   return {

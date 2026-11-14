@@ -1,6 +1,6 @@
 // The crew's fallback plan, worked out from the placed level (issue 140): on
-// the fixture floors, where a quiet route exists, and on an open-plan scan
-// shaped like a kit building's, where it doesn't.
+// the fixture floors, where a quiet route exists and the plan must be it, and
+// on an open-plan scan shaped like a kit building's, where there is none.
 import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { toFloorGraph } from "@/adapters/matterport/mapping";
@@ -15,38 +15,40 @@ import { validatePlan } from "./validate-plan";
 const SEED = 7;
 
 describe.each([
-  ["F1", f1],
-  ["F2", f2],
-  ["F3", f3],
-] as const)("the fallback plan on %s", (id, cached) => {
-  const placed = placeLevel(LevelManifest.parse(structuredClone(cached)), structuredClone(FIXTURE_FLOORS[id]), SEED);
+  ["F1", 1, f1],
+  ["F1", 7, f1],
+  ["F2", 2, f2],
+  ["F2", 7, f2],
+  ["F3", 3, f3],
+  ["F3", 7, f3],
+] as const)("the fallback plan on %s (seed %i)", (id, seed, cached) => {
+  const placed = placeLevel(LevelManifest.parse(structuredClone(cached)), structuredClone(FIXTURE_FLOORS[id]), seed);
   const plan = fallbackPlan(placed);
   const checked = validatePlan(placed, plan);
 
   it("goes in by the run's start, takes the objective and leaves by an exit, every step on the board", () => {
-    expect(plan.steps).toHaveLength(3);
     const start = placed.entries.find((e) => e.nodeId === placed.level.start)!;
     expect(plan.steps[0].zoneId).toBe(start.entryId);
-    expect(plan.steps[1].zoneId).toBe(placed.objective.zoneId);
-    const exit = placed.entries.find((e) => e.entryId === plan.steps[2].zoneId)!;
+    expect(plan.steps.some((s) => s.zoneId === placed.objective.zoneId)).toBe(true);
+    const exit = placed.entries.find((e) => e.entryId === plan.steps.at(-1)!.zoneId)!;
     expect(placed.level.exits).toContain(exit.nodeId);
     expect(checked.dropped).toEqual([]);
     expect(checked.startNote).toBeNull();
   });
 
-  it("pushes back with what the board says: who sees the plan and where, and the quiet way's first wait", () => {
-    expect(plan.pushback.length).toBeGreaterThan(0);
-    if (checked.outcome === "clean") {
-      expect(plan.pushback).toMatch(/^Nothing on this way sees us/);
-      return;
-    }
-    const warning = checked.warnings[0];
-    expect(plan.pushback).toContain(warning.text);
-    if (warning.by) expect(plan.pushback).toMatch(new RegExp(`\\b${warning.by}\\b`));
-    // These floors have a quiet route, so the crew sounds fairly sure and points at it.
-    expect(checked.noQuietRoute).toBe(false);
+  it("is the quiet way: the board plays it clean", () => {
+    expect(checked.outcome).toBe("clean");
+    expect(checked.warnings).toEqual([]);
     expect(plan.confidence).toBe(0.6);
-    expect(plan.pushback).toMatch(/The quiet way|nobody sees you/);
+  });
+
+  it("pushes back with the camera or guard that its waits or its way round get past", () => {
+    const named = /\b([CG]\d+)\b/.exec(plan.pushback)?.[1];
+    expect(named, plan.pushback).toBeDefined();
+    const onBoard = [...placed.cameras.map((c) => c.id), ...placed.guards.map((g) => g.id)];
+    expect(onBoard).toContain(named);
+    // In the crew's voice, never the board's "sees you".
+    expect(plan.pushback).not.toMatch(/\bsees you\b/);
   });
 
   it("is the same plan every time for the same placement", () => {
@@ -95,7 +97,8 @@ describe("the fallback plan on an open-plan scan with no quiet route", () => {
   it("names what catches it, says there is no way through unseen, and sounds unsure", () => {
     const warning = checked.warnings[0];
     expect(warning.by).not.toBeNull();
-    expect(plan.pushback).toContain(warning.text);
+    // The board's warning, in the crew's voice.
+    expect(plan.pushback).toContain(warning.text.replace(/\b(sees|hears|spots) you\b/, "$1 us"));
     expect(plan.pushback).toMatch(new RegExp(`\\b${warning.by}\\b`));
     expect(plan.pushback).toContain("no way through this floor unseen");
     expect(plan.confidence).toBe(0.3);
