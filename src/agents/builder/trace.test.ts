@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TraceRecorder } from "./trace";
+import { TRACE_TEXT_MAX, TraceRecorder, traceText } from "./trace";
 
 /** A clock the test moves by hand. */
 function clock() {
@@ -46,5 +46,26 @@ describe("TraceRecorder", () => {
     recorder.start("tool", "game-master", "list_missions");
     expect(recorder.toTrace("F1").events[0]).toMatchObject({ status: "in_progress" });
     expect(recorder.toTrace("F1").events[0].durationMs).toBeUndefined();
+  });
+
+  it("keeps what a call was given and what it returned, and leaves both off when there was nothing", () => {
+    const recorder = new TraceRecorder({ now: () => 0 });
+    recorder.start("tool", "data-analyst", "get_building", '{"buildingId":"F1"}')(true, '{"id":"F1"}');
+    recorder.start("subagent", "general-purpose", "Look around", "Look around")(false, "Error: it failed");
+    recorder.start("tool", "level-builder", "write_manifest", "")(true);
+    const [tool, task, bare] = recorder.toTrace("F1").events;
+    expect(tool).toMatchObject({ input: '{"buildingId":"F1"}', output: '{"id":"F1"}' });
+    expect(task).toMatchObject({ agent: "general-purpose", status: "failed", output: "Error: it failed" });
+    expect(bare).not.toHaveProperty("input");
+    expect(bare).not.toHaveProperty("output");
+  });
+});
+
+describe("traceText", () => {
+  it("keeps text up to TRACE_TEXT_MAX characters whole, and cuts longer text saying how much it dropped", () => {
+    expect(traceText("short")).toBe("short");
+    expect(traceText("")).toBeUndefined();
+    const long = "x".repeat(TRACE_TEXT_MAX + 25);
+    expect(traceText(long)).toBe(`${"x".repeat(TRACE_TEXT_MAX)}… [25 more characters not recorded]`);
   });
 });

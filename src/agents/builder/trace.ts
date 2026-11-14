@@ -8,11 +8,15 @@
 //   timed from dispatch to that subagent's final answer;
 // - any other tool becomes a `tool` event, timed, `failed` if it threw.
 //
+// Subagent and tool events keep what went in (the task's brief, the tool's
+// arguments as JSON) and what came back (the answer, the tool's result or its
+// error), each cut to TRACE_TEXT_MAX characters, so the dossier can show them.
+//
 // A tool that throws is answered with an error ToolMessage instead of ending
 // the run, so a live model sees what went wrong and can call again.
 import { ToolMessage } from "@langchain/core/messages";
 import { createMiddleware } from "langchain";
-import type { BuilderAgent, BuildTrace, BuildTraceEvent } from "@/domain";
+import { BuilderAgent, type BuildTrace, type BuildTraceEvent } from "@/domain";
 
 interface TodoArg {
   content?: unknown;
@@ -20,6 +24,16 @@ interface TodoArg {
 }
 
 const TODO_STATUSES = new Set(["pending", "in_progress", "completed"]);
+
+/** The most characters of a recorded input or output the trace keeps. */
+export const TRACE_TEXT_MAX = 2000;
+
+/** `text` cut to TRACE_TEXT_MAX characters, saying how many it dropped; undefined if empty. */
+export function traceText(text: string): string | undefined {
+  if (text === "") return undefined;
+  if (text.length <= TRACE_TEXT_MAX) return text;
+  return `${text.slice(0, TRACE_TEXT_MAX)}… [${text.length - TRACE_TEXT_MAX} more characters not recorded]`;
+}
 
 export interface TraceRecorderOptions {
   /** The clock, in milliseconds. Tests pass a fake one. */
@@ -51,14 +65,23 @@ export class TraceRecorder {
     }
   }
 
-  /** Starts a timed event; the returned function ends it. */
-  start(kind: "subagent" | "tool", agent: BuilderAgent, label: string): (ok: boolean) => void {
+  /** Starts a timed event with what went in; the returned function ends it with what came back. */
+  start(
+    kind: "subagent" | "tool",
+    agent: BuilderAgent,
+    label: string,
+    input?: string,
+  ): (ok: boolean, output?: string) => void {
     const startMs = this.now();
     const event: BuildTraceEvent = { atMs: this.elapsed(), kind, agent, label, status: "in_progress" };
+    const recordedInput = input === undefined ? undefined : traceText(input);
+    if (recordedInput !== undefined) event.input = recordedInput;
     this.events.push(event);
-    return (ok) => {
+    return (ok, output) => {
       event.status = ok ? "completed" : "failed";
       event.durationMs = Math.max(0, Math.round(this.now() - startMs));
+      const recordedOutput = output === undefined ? undefined : traceText(output);
+      if (recordedOutput !== undefined) event.output = recordedOutput;
     };
   }
 
@@ -74,16 +97,19 @@ export class TraceRecorder {
         }
         const end =
           name === "task"
-            ? this.start("subagent", subagentName(args), describeTask(args))
-            : this.start("tool", agent, name);
+            ? this.start("subagent", subagentName(args), describeTask(args), describeTask(args))
+            : this.start("tool", agent, name, JSON.stringify(args, null, 2));
         try {
           const result = await handler(request);
-          end(!(ToolMessage.isInstance(result) && result.status === "error"));
+          const message = toolMessageOf(result);
+          end(message?.status !== "error", message ? contentText(message.content) : undefined);
           return result;
         } catch (error) {
-          end(false);
           const message = error instanceof Error ? error.message : String(error);
-          return new ToolMessage({ content: `Error: ${message}`, tool_call_id: id ?? name, name, status: "error" });
+          // A `task` that throws is the subagent's whole run failing, not one tool's error (R1-M1).
+          const content = name === "task" ? `Error: the ${String(args.subagent_type)} subagent's run failed: ${message}` : `Error: ${message}`;
+          end(false, content);
+          return new ToolMessage({ content, tool_call_id: id ?? name, name, status: "error" });
         }
       },
     });
@@ -99,9 +125,22 @@ export class TraceRecorder {
   }
 }
 
+/** The subagent a `task` dispatched; an unknown name falls back to the builder itself. */
 function subagentName(args: Record<string, unknown>): BuilderAgent {
-  const name = args.subagent_type;
-  return name === "data-analyst" || name === "game-master" ? name : "level-builder";
+  const parsed = BuilderAgent.safeParse(args.subagent_type);
+  return parsed.success && parsed.data !== "level-builder" ? parsed.data : "level-builder";
+}
+
+/** The ToolMessage a tool answered with: itself, or the last one in a `task`'s Command update. */
+function toolMessageOf(result: unknown): ToolMessage | undefined {
+  if (ToolMessage.isInstance(result)) return result;
+  const messages = (result as { update?: { messages?: unknown } } | undefined)?.update?.messages;
+  return Array.isArray(messages) ? messages.findLast((m): m is ToolMessage => ToolMessage.isInstance(m)) : undefined;
+}
+
+function contentText(content: unknown): string {
+  if (typeof content === "string") return content;
+  return JSON.stringify(content, null, 2) ?? "";
 }
 
 function describeTask(args: Record<string, unknown>): string {

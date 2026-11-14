@@ -39,7 +39,8 @@ export const DrillReport = z.object({
 });
 export type DrillReport = z.infer<typeof DrillReport>;
 
-export const BuilderAgent = z.enum(["level-builder", "data-analyst", "game-master"]);
+/** The Level Builder, its two subagents, and deepagents' own `general-purpose` subagent (R1-M2). */
+export const BuilderAgent = z.enum(["level-builder", "data-analyst", "game-master", "general-purpose"]);
 export type BuilderAgent = z.infer<typeof BuilderAgent>;
 
 /**
@@ -53,6 +54,10 @@ export const BuildTraceEvent = z.object({
   label: Text,
   status: z.enum(["pending", "in_progress", "completed", "failed"]),
   durationMs: z.number().nonnegative().optional(),
+  /** What went in: a task's brief, or a tool's arguments as JSON. Never on a todo. */
+  input: Text.optional(),
+  /** What came back: a subagent's answer, a tool's result, or its error. */
+  output: Text.optional(),
 });
 export type BuildTraceEvent = z.infer<typeof BuildTraceEvent>;
 
@@ -60,8 +65,9 @@ export type BuildTraceEvent = z.infer<typeof BuildTraceEvent>;
 export const BuildTrace = z.object({
   buildingId: Id,
   /**
-   * When the run was recorded and on which model, for the dossier's
-   * "Recorded run · <timestamp> · <model>" header (#17, R1-M2).
+   * When the run was recorded and what produced its model turns, for the
+   * dossier's "Recorded replay · <timestamp> · model turns: <model>" header
+   * (#17, R1-M2, R1-M5).
    */
   recordedAt: z.iso.datetime().optional(),
   model: Text.optional(),
