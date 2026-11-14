@@ -296,7 +296,7 @@ describe("50 attempts, the fix, and the rerun", () => {
     // The board shows After by default, and the route and detector follow it.
     expect(html).toMatch(/data-testid="owner-route" data-side="after" data-count="0"/);
     expect(html).toContain("The way most got out, after the fix");
-    expect(boardCaption(rerun.after, "after")).toBe("After the fix: 0 of 50 got out. No way out to draw");
+    expect(boardCaption(rerun.after, "after")).toBe("After the fix: 0 of 50 got out. No way out to draw.");
   });
 
   it("the route and the detector card follow the side the board shows", () => {
@@ -516,7 +516,7 @@ describe("the compare", () => {
     expect(a.match(/It is drawn on the board/g)).toHaveLength(1);
     expect(html("b")).toMatch(/data-testid="owner-pair-b" data-selected="true"/);
     expect(pairCaption("b", moved.name, sides[1].summary)).toBe(
-      "B, Demo: night shift, C2 moved: 1 of 50 got out. The way most got out is drawn",
+      "B, Demo: night shift, C2 moved: 1 of 50 got out. The way most got out is drawn.",
     );
   });
 

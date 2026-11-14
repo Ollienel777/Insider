@@ -38,10 +38,10 @@ import { useOwnerCompare } from "./use-owner-compare";
 export function boardCaption(summary: BatchSummary, side: Side | null): string {
   const lead = side === "after" ? "After the fix: " : side === "before" ? "Before: " : "";
   const out = `${summary.escaped} of ${summary.total} got out`;
-  return summary.topRoute ? `${lead}${out}. The way most got out is drawn` : `${lead}${out}. No way out to draw`;
+  return summary.topRoute ? `${lead}${out}. The way most got out is drawn.` : `${lead}${out}. No way out to draw.`;
 }
 
-/** The board's caption over one side of a compare: "A, Demo: night shift: 7 of 50 got out. The way most got out is drawn". */
+/** The board's caption over one side of a compare: "A, Demo: night shift: 7 of 50 got out. The way most got out is drawn.". */
 export function pairCaption(side: PairId, name: string, summary: BatchSummary): string {
   return `${side.toUpperCase()}, ${name}: ${boardCaption(summary, null)}`;
 }

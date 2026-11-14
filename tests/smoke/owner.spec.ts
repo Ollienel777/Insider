@@ -146,13 +146,13 @@ test("the prepared pair: 7 of 50, C2 moved, 1 of 50, then the two side by side",
   await expect(page.getByTestId("owner-pair-a-route")).toHaveAttribute("data-count", "7");
   await expect(page.getByTestId("owner-pair-b-route")).toHaveAttribute("data-count", "1");
   await expect(page.getByTestId("owner-pair-change")).toHaveText(["C2 moved from the Freight Lift Lobby to the Dock Corridor"]);
-  await expect(page.getByTestId("owner-pair-delta")).toContainText("6 fewer got out");
+  await expect(page.getByTestId("owner-pair-delta")).toHaveText("7 → 1 of 50: 6 fewer got out.");
   await expect(page.getByTestId("owner-made-up-chip")).toHaveCount(2);
   await expect(page.getByTestId("owner-pair-recorded")).toBeVisible();
 
   // A on the board: its way out drawn, the desk that noticed the crew most often ringed.
   await expect(page.getByTestId("owner-board-caption")).toHaveText(
-    "A, Demo: night shift: 7 of 50 got out. The way most got out is drawn",
+    "A, Demo: night shift: 7 of 50 got out. The way most got out is drawn.",
   );
   await expect(page.getByTestId("owner-pair-side-a")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("ghost-path")).toBeVisible();
@@ -162,7 +162,7 @@ test("the prepared pair: 7 of 50, C2 moved, 1 of 50, then the two side by side",
   // B on the board: C2 rings now.
   await page.getByTestId("owner-pair-side-b").click();
   await expect(page.getByTestId("owner-board-caption")).toHaveText(
-    "B, Demo: night shift, C2 moved: 1 of 50 got out. The way most got out is drawn",
+    "B, Demo: night shift, C2 moved: 1 of 50 got out. The way most got out is drawn.",
   );
   await expect(page.getByTestId("owner-pair-b")).toHaveAttribute("data-selected", "true");
   await expect(page.getByTestId("owner-detector-ring")).toHaveAttribute("data-detector", "camera:C2");

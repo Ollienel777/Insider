@@ -276,9 +276,9 @@ export function ComparePanel({
         <p data-testid="owner-pair-delta" data-delta={delta} className="text-sm text-text-1">
           <span className="font-mono tabular-nums">
             {a.summary.escaped} → {b.summary.escaped} of {b.summary.total}
+            {": "}
+            {delta > 0 ? `${delta} fewer got out` : delta < 0 ? `${-delta} more got out` : "no change"}.
           </span>
-          :{" "}
-          <span className="font-mono tabular-nums">{delta > 0 ? `${delta} fewer got out` : delta < 0 ? `${-delta} more got out` : "no change"}</span>.
         </p>
       </section>
 
