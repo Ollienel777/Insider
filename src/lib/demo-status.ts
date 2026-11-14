@@ -42,6 +42,8 @@ let state: DemoStatus = EMPTY;
 const listeners = new Set<() => void>();
 /** Fallback ids already toasted, so a repeated `fallback` is one toast. */
 const seen = new Set<string>();
+/** Whether `seen` holds this session's stored ids yet: they are read on first use, whoever comes first. */
+let seenLoaded = false;
 
 function set(next: Partial<DemoStatus>) {
   state = { ...state, ...next };
@@ -69,7 +71,15 @@ export function statusChip(status: Pick<DemoStatus, "configured" | "forced" | "f
   return modeChip(servedModes(status));
 }
 
+/**
+ * Loads the ids toasted earlier this session into `seen`, once. Called on
+ * first use rather than only from `initStatus`: on a full page load a
+ * screen's adapter can report a fallback (Matterport's "no scan") before
+ * `DemoSafety` has run `initStatus`, and that toast would return on every load.
+ */
 function readSeen(): void {
+  if (seenLoaded) return;
+  seenLoaded = true;
   try {
     const raw = sessionStorage.getItem(SEEN_KEY);
     for (const id of raw ? (JSON.parse(raw) as string[]) : []) seen.add(id);
@@ -105,13 +115,14 @@ function cookieForced(): Set<Service> | null {
  * part of the same page failed over.
  */
 export function initStatus(server: { configured: ServiceModes; forced: Iterable<Service>; fallbacks?: readonly Fallback[] }): void {
-  if (!state.ready) readSeen();
+  readSeen();
   set({ ready: true, configured: server.configured, forced: cookieForced() ?? new Set(server.forced) });
   for (const fallback of server.fallbacks ?? []) reportFallback(fallback);
 }
 
 /** A service fell back to fixtures: the chip switches it, and the fallback is toasted once. */
 export function reportFallback(fallback: Fallback): void {
+  readSeen();
   const fellBack = new Set(state.fellBack).add(fallback.service);
   if (seen.has(fallback.id)) {
     if (!state.fellBack.has(fallback.service)) set({ fellBack });
@@ -176,5 +187,6 @@ export function isForced(service: Service): boolean {
 /** Back to the empty state. Tests only. */
 export function resetStatus(): void {
   seen.clear();
+  seenLoaded = false;
   state = EMPTY;
 }

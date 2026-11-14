@@ -195,6 +195,66 @@ test("Space opens the card on a piece Tab put in focus, and Esc hands focus back
   await expect(card(page)).toHaveAttribute("data-why", "guard:G4");
 });
 
+test("Space does one thing: after Tab, Enter and Esc on G4, the quiet route by keys takes the files and leaves the card shut (#68)", async ({
+  page,
+}) => {
+  await open(page, "/b/F1/run", "run-board");
+  const board = page.getByTestId("run-board");
+  const g4 = target(page, "guard:G4");
+  await page.locator("body").focus();
+  for (let i = 0; i < 80 && !(await g4.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press("Tab");
+  await expect(g4).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(card(page)).toHaveAttribute("data-why", "guard:G4");
+  await page.keyboard.press("Escape");
+  await expect(card(page)).toHaveCount(0);
+
+  const keyFor = async (node: string) =>
+    (await page.locator(`[data-testid="choice"][data-node="${node}"]`).getAttribute("data-key"))!;
+  const step = async (key: string, turn: number) => {
+    await page.keyboard.press(key);
+    await expect(board).toHaveAttribute("data-turn", String(turn));
+  };
+  await step(await keyFor("fl-lobby"), 1);
+  await step("w", 2);
+  await step(await keyFor("dc-west"), 3);
+  await step(await keyFor("dc-mid"), 4);
+  await step(await keyFor("dc-east"), 5);
+  await step(await keyFor("rr-door"), 6);
+  await step(await keyFor("rr-door"), 7);
+  await step(await keyFor("rr-door"), 8);
+  await step(await keyFor("rr-files"), 9);
+
+  await page.keyboard.press(" ");
+  await expect(board).toHaveAttribute("data-turn", "10");
+  await expect(page.getByTestId("objective")).toContainText("Taken");
+  // Give a card the time to open, were it going to: it must not.
+  await page.waitForTimeout(300);
+  await expect(card(page)).toHaveCount(0);
+});
+
+test("Space on a piece Tab put in focus opens its card and plays no turn, even where it could take the files (#68)", async ({
+  page,
+}) => {
+  await open(page, "/b/F1/run", "run-board");
+  const board = page.getByTestId("run-board");
+  const keyFor = async (node: string) =>
+    (await page.locator(`[data-testid="choice"][data-node="${node}"]`).getAttribute("data-key"))!;
+  for (const [node, turn] of [["fl-lobby", 1], ["w", 2], ["dc-west", 3], ["dc-mid", 4], ["dc-east", 5], ["rr-door", 6], ["rr-door", 7], ["rr-door", 8], ["rr-files", 9]] as const) {
+    await page.keyboard.press(node === "w" ? "w" : await keyFor(node));
+    await expect(board).toHaveAttribute("data-turn", String(turn));
+  }
+  const g4 = target(page, "guard:G4");
+  await page.locator("body").focus();
+  for (let i = 0; i < 80 && !(await g4.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press("Tab");
+  await expect(g4).toBeFocused();
+  await page.keyboard.press(" ");
+  await expect(card(page)).toHaveAttribute("data-why", "guard:G4");
+  await page.waitForTimeout(300);
+  await expect(board).toHaveAttribute("data-turn", "9");
+  await expect(page.getByTestId("objective")).not.toContainText("Taken");
+});
+
 test("the PICK and move badges beside the records lock win their whole area (R3-M1)", async ({ page }) => {
   await open(page, "/b/F1/run", "run-board");
   const board = page.getByTestId("run-board");

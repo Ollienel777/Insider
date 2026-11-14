@@ -60,17 +60,19 @@ test("pressing a neighbour's number moves the player, and then the guards", asyn
   const before = await guardNodes(page);
   await expect(choice(page, "fl-lobby")).toHaveAttribute("data-key", "1");
 
-  // The player's hop takes --t-base; the guards' hop takes --t-slow and waits for it.
-  const timing = (el: Element) => {
-    const s = getComputedStyle(el);
-    return [s.transitionDuration, s.transitionDelay];
-  };
-  expect(await player(page).evaluate(timing)).toEqual(["0.2s", "0s"]);
-  for (const guard of await page.getByTestId("guard-piece").all()) {
-    expect(await guard.evaluate(timing)).toEqual(["0.3s", "0.2s"]);
-  }
-
   await page.keyboard.press("1");
+  // The player's hop takes --t-base; each guard's hop takes --t-slow and waits for it. Read at once,
+  // while the hops run.
+  const hops = await board(page).evaluate((svg) => {
+    const timing = (el: Element) =>
+      el.getAnimations().map((a) => {
+        const t = a.effect!.getTiming();
+        return `${t.duration}+${t.delay}`;
+      });
+    const pieces = [...svg.querySelectorAll('[data-testid="player-piece"], [data-testid="guard-piece"]')];
+    return Object.fromEntries(pieces.map((el) => [el.getAttribute("data-id"), timing(el).join(" ")]));
+  });
+  expect(hops).toEqual({ You: "200+0", G1: "300+200", G2: "300+200", G3: "", G4: "" });
   await expect(player(page)).toHaveAttribute("data-node", "fl-lobby");
   await expect(page.getByTestId("turn")).toHaveText("1");
   expect(await guardNodes(page)).not.toEqual(before);
@@ -268,6 +270,73 @@ test("Restart puts the run back at the start", async ({ page }) => {
   // The number keys still play with the focus left on Restart.
   await page.keyboard.press("1");
   await expect(player(page)).toHaveAttribute("data-node", "fl-lobby");
+});
+
+test("every guard that moves hops, also when the board redraws its pieces in a new order (#68)", async ({ page }) => {
+  await open(page);
+  // The quiet route: on it the player and the guards pass each other, so the board, which draws
+  // its pieces back to front, puts some of them in a new place in the document.
+  const route = ["fl-lobby", "w", "dc-west", "dc-mid", "dc-east", "rr-door", "rr-door", "rr-door", "rr-files"];
+  let reordered = 0;
+  for (const [i, step] of route.entries()) {
+    const key = step === "w" ? "w" : (await choice(page, step).getAttribute("data-key"))!;
+    const before = await board(page).evaluate((svg) =>
+      [...svg.querySelectorAll('[data-testid="guard-piece"], [data-testid="player-piece"]')].map((el) => `${el.getAttribute("data-id")}@${el.getAttribute("data-node")}`),
+    );
+    await page.keyboard.press(key);
+    // Read at once, while the hops run (a guard's hop is over 500 ms after the key).
+    const after = await board(page).evaluate((svg) => {
+      const hit = (id: string) => svg.querySelector(`[data-why-target="guard:${id}"]`)!;
+      return [...svg.querySelectorAll('[data-testid="guard-piece"], [data-testid="player-piece"]')].map((el) => {
+        const id = el.getAttribute("data-id")!;
+        return {
+          id,
+          at: `${id}@${el.getAttribute("data-node")}`,
+          hopping: el.getAnimations().length > 0,
+          hitHopping: id === "You" ? true : hit(id).getAnimations().length > 0,
+        };
+      });
+    });
+    await expect(board(page)).toHaveAttribute("data-turn", String(i + 1));
+    const order = (list: string[]) => list.map((s) => s.split("@")[0]).join(" ");
+    if (order(before) !== order(after.map((a) => a.at))) reordered += 1;
+    for (const piece of after.filter((a) => !before.includes(a.at))) {
+      expect(piece.hopping, `${piece.id} hops on ${step}`).toBe(true);
+      expect(piece.hitHopping, `${piece.id}'s hit area hops on ${step}`).toBe(true);
+    }
+    await page.waitForTimeout(550);
+  }
+  // The route is a real test of the reorder only if the order changed on it.
+  expect(reordered).toBeGreaterThan(0);
+});
+
+test("after Restart, the Chief's answer streams in from its first word, never shown whole first (#68)", async ({ page }) => {
+  await open(page);
+  const rationale = page.getByTestId("chief-rationale");
+  await pressFor(page, "fl-lobby");
+  await pressFor(page, "dc-west");
+  await expect(rationale).toHaveAttribute("data-done", "true", { timeout: 4_000 });
+  await page.getByRole("button", { name: "Restart" }).click();
+  await expect(page.getByTestId("chief-panel")).toHaveAttribute("data-state", "idle");
+
+  // Every state the rationale is drawn in, as the DOM changes, from here on.
+  await page.getByTestId("chief-panel").evaluate((panel) => {
+    const seen: string[] = [];
+    (window as unknown as { rationaleSeen: string[] }).rationaleSeen = seen;
+    new MutationObserver(() => {
+      const el = panel.querySelector('[data-testid="chief-rationale"]');
+      const state = el ? `${el.getAttribute("data-done")}:${el.textContent!.split(/\s+/).filter(Boolean).length}` : "none";
+      if (seen.at(-1) !== state) seen.push(state);
+    }).observe(panel, { subtree: true, childList: true, attributes: true, characterData: true });
+  });
+  await page.keyboard.press("1");
+  await expect(page.getByTestId("turn")).toHaveText("1");
+  await pressFor(page, "dc-west");
+  await expect(rationale).toHaveAttribute("data-done", "true", { timeout: 4_000 });
+  const seen = await page.evaluate(() => (window as unknown as { rationaleSeen: string[] }).rationaleSeen);
+  const drawn = seen.filter((s) => s !== "none");
+  expect(drawn[0], seen.join(" → ")).toMatch(/^false:/);
+  expect(drawn.findIndex((s) => s.startsWith("true:")), seen.join(" → ")).toBe(drawn.length - 1);
 });
 
 test("a building with no level yet says so and offers the map", async ({ page }) => {

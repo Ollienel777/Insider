@@ -77,21 +77,64 @@ export const LABEL_FONT = 11;
  * onto the board, so the label reads as painted on the tile.
  */
 export function roomLabelTransform(rect: { x: number; y: number; w: number; h: number }, chars: number): string {
+  return matrixAttr(roomLabelMatrix(rect, chars));
+}
+
+/**
+ * Where on its tile a room label lies (`roomLabelMatrix`): along the back
+ * edge (as `roomLabelTransform` puts it) or the front one, `shift` floor
+ * units along that edge, at `scale` times its largest size.
+ */
+export interface LabelSlot {
+  side: "back" | "front";
+  shift: number;
+  scale: number;
+}
+
+/** A 2D affine matrix, as SVG's `matrix(a b c d e f)`. */
+export type Matrix = readonly [number, number, number, number, number, number];
+
+/** How much of its edge a room label can run along, and its largest size there, in floor units per em. */
+export function roomLabelFit(rect: { w: number; h: number }, chars: number): { edge: number; em: number } {
+  const edge = Math.max(rect.w, rect.h);
+  // At most 1.1, so the label fits the edge with 0.3 to spare at each end.
+  return { edge, em: Math.min(1.1, (edge - 0.6) / Math.max(1, chars * 0.66)) };
+}
+
+/** The matrix that maps a room label's text units onto the board, so it reads as painted on the tile. */
+export function roomLabelMatrix(
+  rect: { x: number; y: number; w: number; h: number },
+  chars: number,
+  slot: LabelSlot = { side: "back", shift: 0, scale: 1 },
+): Matrix {
   const alongX = rect.w >= rect.h;
-  const edge = alongX ? rect.w : rect.h;
-  // Floor units per em, at most 1.1, so the label fits the edge with 0.3 to spare at each end.
-  const em = Math.min(1.1, (edge - 0.6) / Math.max(1, chars * 0.66));
+  const em = roomLabelFit(rect, chars).em * slot.scale;
   const k = SCALE * (em / LABEL_FONT);
-  const inset = 0.3 + em * 0.75;
+  // On the back edge the baseline sits a cap height in from it; on the front edge, just in from it.
+  const inset = slot.side === "back" ? 0.3 + em * 0.75 : 0.3;
+  const s = slot.shift;
   // Text runs along u and its baseline's "down" is v, both floor directions.
   const [u, v, at] = alongX
-    ? [{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: rect.x + 0.3, y: rect.y + inset }]
-    : [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: rect.x + inset, y: rect.y + rect.h - 0.3 }];
+    ? [
+        { x: 1, y: 0 },
+        { x: 0, y: 1 },
+        { x: rect.x + 0.3 + s, y: slot.side === "back" ? rect.y + inset : rect.y + rect.h - inset },
+      ]
+    : [
+        { x: 0, y: -1 },
+        { x: 1, y: 0 },
+        { x: slot.side === "back" ? rect.x + inset : rect.x + rect.w - inset, y: rect.y + rect.h - 0.3 - s },
+      ];
   const screen = (d: { x: number; y: number }) => ({ x: (d.x - d.y) * COS * k, y: (d.x + d.y) * SIN * k });
   const a = screen(u);
   const c = screen(v);
   const o = project(at.x, at.y);
-  return `matrix(${[a.x, a.y, c.x, c.y, o.x, o.y].map((n) => Math.round(n * 1000) / 1000).join(" ")})`;
+  return [a.x, a.y, c.x, c.y, o.x, o.y];
+}
+
+/** `m` as an SVG transform attribute. */
+export function matrixAttr(m: Matrix): string {
+  return `matrix(${m.map((n) => Math.round(n * 1000) / 1000).join(" ")})`;
 }
 
 /** The convex hull of `points` (Andrew's monotone chain), counter-clockwise. */

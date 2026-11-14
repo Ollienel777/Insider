@@ -114,6 +114,26 @@ describe("the browser's status store", () => {
     expect(statusChip(getStatus()).onFixtures).toEqual(["CoStar", "Vexcel"]);
   });
 
+  it("never toasts again a fallback this session has seen, even one reported before initStatus runs (#68)", () => {
+    // A full page load: the module is fresh, but the session has toasted Matterport's "no scan" before.
+    // The Run screen's adapter reports it again before DemoSafety's effect calls initStatus.
+    const noScan = { service: "matterport", id: "matterport-no-scan-F1", message: "No scan." } as const;
+    const store = new Map([["heist:seen-fallbacks", JSON.stringify([noScan.id])]]);
+    vi.stubGlobal("sessionStorage", {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    });
+    try {
+      reportFallback(noScan);
+      initStatus({ configured: ALL_LIVE, forced: [], fallbacks: [noScan] });
+      expect(getStatus().toasts).toEqual([]);
+      // The chip still says Matterport is on fixtures: only the toast is not repeated.
+      expect(statusChip(getStatus()).onFixtures).toEqual(["Matterport"]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("keeps at most a few toasts, and dismisses one by id", () => {
     initStatus({ configured: ALL_LIVE, forced: [] });
     const all = Array.from({ length: MAX_TOASTS + 2 }, () => newFallback("llm"));

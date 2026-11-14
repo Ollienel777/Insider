@@ -334,4 +334,11 @@ describe("RunScreen", () => {
     expect(out).toContain('data-testid="board-empty"');
     expect(out).toContain("Back to the map");
   });
+
+  it("pulses nothing when no board is coming: the panel says what would be there (#68)", () => {
+    const out = renderToStaticMarkup(<RunScreen building={{ id: "F2", name: "Figueroa Exchange" }} manifest={null} />);
+    expect(out).not.toContain("animate-pulse");
+    expect(out).not.toContain('data-testid="panel-skeleton"');
+    expect(out).toContain('data-testid="panel-empty"');
+  });
 });

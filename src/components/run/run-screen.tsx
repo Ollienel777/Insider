@@ -220,6 +220,9 @@ export function RunScreen({
     if (!run) return;
     function onKey(event: KeyboardEvent) {
       if (event.altKey || event.ctrlKey || event.metaKey) return;
+      // An element on the page already acted on this key (a Why piece opening its card): it does one
+      // thing. The piece's own check is gone by now: opening the card moved focus off it (#68).
+      if (event.defaultPrevented) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, select, [contenteditable=true]")) return;
       // Space and Enter keep their meaning on a focused button or link, and on a board choice. A Why
@@ -336,6 +339,7 @@ export function RunScreen({
           placed={placed}
           run={run}
           crewPlan={crewPlan}
+          loading={load.status === "loading" || (load.status === "ready" && !run)}
           awaiting={hidden}
           chief={<ChiefPanel state={chief} revealed={revealed} zoneName={(id) => (placed ? zoneName(placed, id) : id)} onRetry={retryChief} />}
         />
@@ -359,6 +363,7 @@ function RunPanel({
   placed,
   run,
   crewPlan,
+  loading,
   awaiting,
   chief,
 }: {
@@ -367,16 +372,32 @@ function RunPanel({
   run: RunState | null;
   /** The plan briefed on the Plan screen; the level's own steps stand in without one. */
   crewPlan: StoredCrewPlan | null;
+  /** The board is still being set up. A board that will not come (no floor, an error) is not loading. */
+  loading: boolean;
   /** Guards whose Chief order is still streaming in: their row waits for it. */
   awaiting: ReadonlySet<string>;
   chief: ReactNode;
 }) {
   if (!manifest || !placed || !run) {
-    return (
+    // A skeleton promises content on its way: only while the board loads. With no board coming
+    // (the board says why, and offers the way out), the panel says what would be here (#68).
+    return loading ? (
       <div className="flex flex-col gap-6" data-testid="panel-skeleton">
         <Skeleton className="h-[112px]" />
         <Skeleton className="h-20" />
         <Skeleton className="h-40" />
+      </div>
+    ) : (
+      <div className="flex flex-col gap-6" data-testid="panel-empty">
+        <section aria-labelledby="run-empty-label" className="flex flex-col gap-2">
+          <h2 id="run-empty-label" className="label-caps text-text-3">
+            No run
+          </h2>
+          <p className="text-sm text-text-2">
+            The alarm, the plan and the guards&apos; orders show here once this building has a board.
+          </p>
+        </section>
+        <p className="text-sm text-text-2">Security shown is game fiction derived from building class and era.</p>
       </div>
     );
   }

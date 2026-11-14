@@ -3,9 +3,23 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 import type { RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
-import { cn } from "@/lib/utils";
-import { cones, coverage, guardOrders, roomName, type Choice, type Cone } from "./board";
-import { frameOf, hull, LABEL_FONT, pointsAttr, project, projectRect, roomLabelTransform, round, TILE_DEPTH, type Point } from "./iso";
+import { cameraMount, cones, coverage, guardOrders, roomName, type Choice, type Cone } from "./board";
+import { useHop } from "./hop";
+import { frameOf, hull, LABEL_FONT, matrixAttr, pointsAttr, project, projectRect, round, TILE_DEPTH, type Point } from "./iso";
+import {
+  addCamera,
+  addNode,
+  addPawn,
+  MARK_FONT,
+  PAWN_SPOTS,
+  PIECE_FONT,
+  placeLabel,
+  placeRoomLabels,
+  textBox,
+  type LabelSpot,
+  type RoomLabel,
+  type Taken,
+} from "./labels";
 import { LayerMarks, LayerRings, LENS_COLOUR, marksWidth, MARK, RoomPattern, roomStyle } from "./layer-lens";
 import { lensElements, lensKey, LENS_LAYERS, type LensLayer } from "./lens";
 import { ProvenanceThread } from "./provenance-thread";
@@ -16,6 +30,8 @@ import { WhyCard } from "./why-card";
 export const DISC = { rx: 13, ry: 7.5 };
 /** How far apart, in board units, pieces sharing a node stand. */
 const SHARE_GAP = 36;
+/** The keys that work a piece in Tab focus (and move the focus), rather than play the game. */
+const WORKS_A_PIECE = new Set(["Tab", "Enter", " ", "Escape", "Shift", "Control", "Alt", "Meta"]);
 
 /** A plan drawn over the board (the Plan screen, #19): its path, and marks on nodes. */
 export interface GhostPlan {
@@ -53,7 +69,7 @@ function lensAttrs(key: string, layers: readonly LensLayer[] | undefined) {
  * tiles, nodes as discs, cones as translucent wedges over the nodes they
  * watch this turn, guards and the player as pawns, cameras on their walls,
  * the player's path in the accent, and a number on each neighbour the player
- * can move to. Pieces hop with a CSS transition: the player in `--t-base`,
+ * can move to. Pieces hop (`useHop`): the player in `--t-base`,
  * the guards in `--t-slow` once the player has landed.
  *
  * Every guard, camera, lock and zone is a button: clicking one draws the
@@ -100,7 +116,14 @@ export function BoardView({
   const [openedByTab, setOpenedByTab] = useState(false);
   useEffect(() => {
     const mark = (input: "tab" | "other") => wrap.current?.setAttribute("data-input", input);
-    const onKey = (event: globalThis.KeyboardEvent) => mark(event.key === "Tab" ? "tab" : "other");
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      mark(event.key === "Tab" ? "tab" : "other");
+      // Any other key (a number, W) is the player back at the game: the piece Tab or Esc left in
+      // focus gives Space back to the run, so at the files Space takes them (#68).
+      if (!WORKS_A_PIECE.has(event.key)) {
+        wrap.current?.querySelectorAll("[data-tabbed]").forEach((el) => el.removeAttribute("data-tabbed"));
+      }
+    };
     const onPointer = () => mark("other");
     document.addEventListener("keydown", onKey, true);
     document.addEventListener("pointerdown", onPointer, true);
@@ -188,20 +211,7 @@ export function BoardView({
   const entryAt = new Map(placed.entries.map((e) => [e.nodeId, e.entryId]));
   const lockedEdges = floor.edges.filter((e) => e.door && run.locked.includes(e.door.id));
 
-  // Pieces are drawn back to front, so a nearer pawn overlaps a farther one.
-  const pieces = [
-    ...run.guards.map((g) => ({ kind: "guard" as const, id: g.id, nodeId: g.nodeId })),
-    ...run.cleaners.map((c) => ({ kind: "cleaner" as const, id: c.id, nodeId: c.nodeId })),
-  ];
-  const standing = [...pieces, { kind: "player" as const, id: "player", nodeId: run.playerNode }]
-    .map((piece, _, all) => {
-      // Pieces sharing a node stand side by side, so each one and its id stay readable.
-      const here = all.filter((other) => other.nodeId === piece.nodeId);
-      const shift = (here.indexOf(piece) - (here.length - 1) / 2) * SHARE_GAP;
-      const p = at(piece.nodeId);
-      return { ...piece, p: { x: p.x + shift, y: p.y } };
-    })
-    .sort((a, b) => a.p.y - b.p.y || a.id.localeCompare(b.id));
+  const standing = standingOf(run, at);
   const cameraAt = (id: string): Point => {
     const cone = allCones.find((c) => c.id === id)!;
     return project(cone.origin.x, cone.origin.y);
@@ -214,6 +224,11 @@ export function BoardView({
     return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   };
   const known = new Set(targets.map((t) => t.key));
+
+  // Labels (#68). The rooms' names and everything that never moves first, once per level; then each
+  // guard's id beside its pawn, and the plan's marks, each in the first spot clear of the rest.
+  const fixed = useMemo(() => fixedLabels(placed, run.board.cameras), [placed, run.board.cameras]);
+  const { pawns: pawnLabels, ghost: ghostLabels } = movingLabels(fixed, at, choices, standing, ghost);
 
   // Where the selected element stands, in board units: the thread starts there.
   const anchor = ((): Point | null => {
@@ -314,14 +329,11 @@ export function BoardView({
           fontSize={LABEL_FONT}
           letterSpacing="0.06em"
         >
-          {floor.rooms.map((room) => {
-            const text = shortLabel(room.label).toUpperCase();
-            return (
-              <text key={room.id} data-testid="room-label" transform={roomLabelTransform(room.rect, text.length)}>
-                {text}
-              </text>
-            );
-          })}
+          {fixed.rooms.map((label) => (
+            <text key={label.roomId} data-testid="room-label" data-label-of={label.roomId} transform={matrixAttr(label.matrix)}>
+              {label.text}
+            </text>
+          ))}
         </g>
 
         {/* Edges, with a tick on every door and a bar on each locked one. */}
@@ -531,12 +543,13 @@ export function BoardView({
                 tone={piece.kind}
                 selected={piece.kind === "guard" && why === whyKey.guard(piece.id)}
                 layers={piece.kind === "guard" ? layersOf(whyKey.guard(piece.id)) : undefined}
+                labelAt={pawnLabels.get(piece.id)}
               />
             ),
           )}
         </g>
 
-        {ghost ? <GhostPath ghost={ghost} at={at} /> : null}
+        {ghost ? <GhostPath ghost={ghost} at={at} spots={ghostLabels} /> : null}
 
         {/* Every lock's hit area, below the numbered neighbours: a lock never stands on a node, so the
             PICK and move badges beside it keep their whole area (R3-M1). */}
@@ -589,15 +602,7 @@ export function BoardView({
           {standing
             .filter((piece) => piece.kind === "guard")
             .map((piece) => (
-              <g
-                key={piece.id}
-                {...inspectable(whyKey.guard(piece.id), `Why is ${piece.id} here?`, inspect)}
-                data-node={piece.nodeId}
-                className="cursor-pointer delay-200 duration-slow ease-out motion-reduce:delay-0"
-                style={{ transform: `translate(${round(piece.p.x)}px, ${round(piece.p.y)}px)`, transitionProperty: "transform" }}
-              >
-                <rect x="-20" y="-46" width="40" height="54" fill="transparent" />
-              </g>
+              <GuardHit key={piece.id} id={piece.id} nodeId={piece.nodeId} at={piece.p} onInspect={inspect} />
             ))}
         </g>
       </svg>
@@ -657,8 +662,45 @@ function inspectable(key: string, label: string, onInspect: (key: string, fromTa
   } as const;
 }
 
+/** A guard's hit area in the board's top layer: it hops with the guard's pawn. */
+function GuardHit({
+  id,
+  nodeId,
+  at,
+  onInspect,
+}: {
+  id: string;
+  nodeId: string;
+  at: Point;
+  onInspect: (key: string, fromTab: boolean) => void;
+}) {
+  const ref = useRef<SVGGElement>(null);
+  const p = { x: round(at.x), y: round(at.y) };
+  useHop(ref, p, { speed: "slow", delayed: true });
+  return (
+    <g
+      ref={ref}
+      {...inspectable(whyKey.guard(id), `Why is ${id} here?`, onInspect)}
+      data-node={nodeId}
+      className="cursor-pointer"
+      style={{ transform: `translate(${p.x}px, ${p.y}px)` }}
+    >
+      <rect x="-20" y="-46" width="40" height="54" fill="transparent" />
+    </g>
+  );
+}
+
 /** The plan's ghost path in the accent at 50%, with a ring where it is seen and one where the advice waits. */
-function GhostPath({ ghost, at }: { ghost: GhostPlan; at: (id: string) => Point }) {
+function GhostPath({
+  ghost,
+  at,
+  spots,
+}: {
+  ghost: GhostPlan;
+  at: (id: string) => Point;
+  /** Where each mark's label stands beside its node, clear of the board's other labels (`placeLabel`). */
+  spots: readonly LabelSpot[];
+}) {
   return (
     <g data-testid="ghost-plan" aria-hidden>
       {ghost.path.length > 1 ? (
@@ -678,6 +720,7 @@ function GhostPath({ ghost, at }: { ghost: GhostPlan; at: (id: string) => Point 
         const p = at(mark.nodeId);
         const sighting = mark.kind === "sighting";
         const colour = sighting ? "var(--warning)" : "var(--n-100)";
+        const spot = spots[i] ?? ghostSpots(mark.kind)[0];
         return (
           <g
             key={`${mark.kind}-${mark.nodeId}-${i}`}
@@ -695,10 +738,12 @@ function GhostPath({ ghost, at }: { ghost: GhostPlan; at: (id: string) => Point 
               strokeDasharray={sighting ? undefined : "3 3"}
             />
             <text
-              x={round(p.x + DISC.rx + 10)}
-              y={round(p.y + (sighting ? -DISC.ry - 6 : DISC.ry + 16))}
+              data-testid="ghost-label"
+              x={round(p.x + spot.x)}
+              y={round(p.y + spot.y)}
+              textAnchor={spot.anchor}
               className="font-mono"
-              fontSize="11"
+              fontSize={MARK_FONT}
               fontWeight="500"
               letterSpacing="0.06em"
               paintOrder="stroke"
@@ -736,6 +781,124 @@ function inset(points: readonly Point[], by: number): Point[] {
 /** "West Stair (Stair B)" → "West Stair"; "Suites 2202–2205" stays. */
 export function shortLabel(label: string): string {
   return label.replace(/\s*\(.*\)$/, "");
+}
+
+/** A pawn's id: right of its head unless the board places it elsewhere. */
+const PAWN_LABEL: LabelSpot = PAWN_SPOTS[0];
+const PAWN_FONT = PIECE_FONT;
+/** "PICK 0/2": the PICK label beside a door's badge (`ChoiceHint`). */
+const PICK_CHARS = 8;
+
+/** A plan mark's label: right of its ring, above it for a sighting and below for a wait, then the other way, then left, then centred. */
+function ghostSpots(kind: GhostPlan["marks"][number]["kind"]): LabelSpot[] {
+  const right = DISC.rx + 10;
+  const above = -DISC.ry - 6;
+  const below = DISC.ry + 16;
+  const [first, second] = kind === "sighting" ? [above, below] : [below, above];
+  return [
+    { x: right, y: first, anchor: "start" },
+    { x: right, y: second, anchor: "start" },
+    { x: -right, y: first, anchor: "end" },
+    { x: -right, y: second, anchor: "end" },
+    { x: 0, y: first < 0 ? first - 6 : first + 6, anchor: "middle" },
+    { x: 0, y: second < 0 ? second - 6 : second + 6, anchor: "middle" },
+  ];
+}
+
+/** Where each piece stands on the board, back to front, so a nearer pawn overlaps a farther one. */
+export function standingOf(run: RunState, at: (nodeId: string) => Point) {
+  const pieces = [
+    ...run.guards.map((g) => ({ kind: "guard" as const, id: g.id, nodeId: g.nodeId })),
+    ...run.cleaners.map((c) => ({ kind: "cleaner" as const, id: c.id, nodeId: c.nodeId })),
+  ];
+  return [...pieces, { kind: "player" as const, id: "player", nodeId: run.playerNode }]
+    .map((piece, _, all) => {
+      // Pieces sharing a node stand side by side, so each one and its id stay readable.
+      const here = all.filter((other) => other.nodeId === piece.nodeId);
+      const shift = (here.indexOf(piece) - (here.length - 1) / 2) * SHARE_GAP;
+      const p = at(piece.nodeId);
+      return { ...piece, p: { x: p.x + shift, y: p.y } };
+    })
+    .sort((a, b) => a.p.y - b.p.y || a.id.localeCompare(b.id));
+}
+
+/** The rooms' names, and what the labels that move keep clear of before any piece is drawn. */
+export interface FixedLabels {
+  rooms: RoomLabel[];
+  taken: Taken;
+}
+
+/**
+ * Where each guard's and cleaner's id, and each plan mark's label, stands this
+ * turn: in the first of its spots clear of the fixed labels, the numbered
+ * choices, the pieces and the labels placed before it. Also returns the glyph
+ * boxes of every label placed, for the tests to check.
+ */
+export function movingLabels(
+  fixed: FixedLabels,
+  at: (nodeId: string) => Point,
+  choices: readonly Choice[],
+  standing: readonly { kind: "guard" | "cleaner" | "player"; id: string; p: Point }[],
+  ghost: GhostPlan | null,
+): { pawns: Map<string, LabelSpot>; ghost: LabelSpot[]; taken: Taken } {
+  const taken: Taken = { text: [...fixed.taken.text], marks: [...fixed.taken.marks] };
+  for (const c of choices) {
+    const p = at(c.nodeId);
+    addNode(taken, p);
+    if (c.kind === "pick") taken.text.push(textBox(p.x + 16, p.y - 14, PICK_CHARS, MARK_FONT));
+  }
+  for (const piece of standing) addPawn(taken, piece.p);
+  const pawns = new Map(
+    standing
+      .filter((piece) => piece.kind !== "player")
+      .map((piece) => [piece.id, placeLabel(piece.p, PAWN_SPOTS, piece.id.length, PIECE_FONT, taken)] as const),
+  );
+  const marks = ghost
+    ? ghost.marks.map((mark) => placeLabel(at(mark.nodeId), ghostSpots(mark.kind), mark.label.length, MARK_FONT, taken))
+    : [];
+  return { pawns, ghost: marks, taken };
+}
+
+/**
+ * The labels that never move on a placed level: each room's name, placed clear
+ * of the nodes, the entry and files labels, the cameras and the PICK labels
+ * (any door's far node can carry one); and those boxes, for the labels that
+ * move to keep clear of.
+ */
+export function fixedLabels(placed: PlacedLevel, cameras: RunState["board"]["cameras"]): FixedLabels {
+  const { floor, objective, exits } = placed.level;
+  const point = (id: string): Point => {
+    const n = floor.nodes.find((node) => node.id === id)!;
+    return project(n.x, n.y);
+  };
+  const entryLabel = new Map(placed.entries.map((e) => [e.nodeId, e.label]));
+  const named = [objective, ...exits.filter((id) => id !== objective)];
+  const doorNodes = new Set(floor.edges.filter((e) => e.door).flatMap((e) => [e.a, e.b]));
+  // Without the nodes: the labels that move keep clear only of the ones a choice stands on.
+  const taken: Taken = { text: [], marks: [] };
+  for (const id of named) {
+    const p = point(id);
+    const text = id === objective ? "FILES" : (entryLabel.get(id) ?? "EXIT");
+    taken.text.push(textBox(p.x, p.y + DISC.ry + 14, text.length, MARK_FONT, "middle"));
+  }
+  for (const camera of cameras) {
+    const m = cameraMount(floor, camera.parts.flat());
+    addCamera(taken, project(m.x, m.y), camera.id);
+  }
+  for (const id of doorNodes) {
+    const p = point(id);
+    taken.text.push(textBox(p.x + 16, p.y - 14, PICK_CHARS, MARK_FONT));
+  }
+  // The rooms' names keep clear of every node, and of a pawn standing on it, where they can: a
+  // numbered choice or a piece can stand on any of them.
+  const forRooms: Taken = { text: [...taken.text], marks: [...taken.marks] };
+  for (const n of floor.nodes) {
+    const p = project(n.x, n.y);
+    addNode(forRooms, p);
+    addPawn(forRooms, p);
+  }
+  const rooms = placeRoomLabels(floor, (label) => shortLabel(label).toUpperCase(), forRooms);
+  return { rooms, taken: { text: [...taken.text, ...rooms.map((r) => r.quad)], marks: taken.marks } };
 }
 
 /** How far above its mount a camera's lens sits, in board units (see `CameraPiece`). */
@@ -831,6 +994,7 @@ export function Pawn({
   caught = false,
   selected = false,
   layers,
+  labelAt,
 }: {
   testId: string;
   label: string;
@@ -843,18 +1007,25 @@ export function Pawn({
   selected?: boolean;
   /** With the Layer lens on (guards only): its layers, as rings round its base and letter marks beside it. */
   layers?: readonly LensLayer[];
+  /** Where its id stands beside its head, clear of the board's other labels (`placeLabels`); right of it by default. */
+  labelAt?: LabelSpot;
 }) {
   const body = tone === "player" ? "var(--accent)" : tone === "guard" ? "var(--n-200)" : "var(--n-400)";
   const shade = tone === "player" ? "var(--accent-active)" : tone === "guard" ? "var(--n-400)" : "var(--n-500)";
   const scale = tone === "cleaner" ? 0.8 : 1;
+  const ref = useRef<SVGGElement>(null);
+  const p = { x: round(at.x), y: round(at.y) };
+  // The player hops in `--t-base`; the guards in `--t-slow`, once the player has landed.
+  useHop(ref, p, tone === "player" ? { speed: "base", delayed: false } : { speed: "slow", delayed: true });
+  const text = labelAt ?? PAWN_LABEL;
   return (
     <g
+      ref={ref}
       data-testid={testId}
       data-node={nodeId}
       data-id={label}
       {...lensAttrs(whyKey.guard(label), layers)}
-      className={cn("ease-out motion-reduce:delay-0", tone === "player" ? "duration-base" : "delay-200 duration-slow")}
-      style={{ transform: `translate(${round(at.x)}px, ${round(at.y)}px)`, transitionProperty: "transform" }}
+      style={{ transform: `translate(${p.x}px, ${p.y}px)` }}
     >
       {layers ? <LayerRings layers={layers} rx={selected ? 25 : 19} ry={selected ? 12.5 : 9.5} /> : null}
       {selected ? (
@@ -882,10 +1053,12 @@ export function Pawn({
       </g>
       {tone !== "player" ? (
         <text
-          x="14"
-          y="-34"
+          data-testid="pawn-label"
+          x={text.x}
+          y={text.y}
+          textAnchor={text.anchor}
           className="font-mono"
-          fontSize="12"
+          fontSize={PAWN_FONT}
           fontWeight="500"
           style={{ fill: tone === "guard" ? "var(--text-1)" : "var(--text-2)" }}
         >

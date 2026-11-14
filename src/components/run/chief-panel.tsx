@@ -44,17 +44,22 @@ const ROW_COUNT = (state: ChiefState) =>
  * Streams a ready answer onto the screen (DESIGN.md, the re-plan): the
  * rationale word by word, then the orders row by row. Under
  * `prefers-reduced-motion` it appears whole. A new answer starts again.
+ *
+ * The stream is keyed by the ready state itself, not by its `seq`: after
+ * Restart the first alarm event is numbered 0 again, and a key by number
+ * would find the last run's finished count and show the new answer whole
+ * for a frame before it restarted (#68).
  */
 export function useChiefStream(state: ChiefState): Revealed {
   const words = state.status === "ready" ? state.answer.orders.rationale.split(/\s+/).length : 0;
   const rows = ROW_COUNT(state);
-  const key = state.status === "ready" ? state.seq : -1;
-  const [shown, setShown] = useState<{ key: number; ticks: number }>({ key: -1, ticks: 0 });
+  const key = state.status === "ready" ? state : null;
+  const [shown, setShown] = useState<{ key: ChiefState | null; ticks: number }>({ key: null, ticks: 0 });
   const total = words + rows;
-  const ticks = shown.key === key ? shown.ticks : 0;
+  const ticks = key !== null && shown.key === key ? shown.ticks : 0;
 
   useEffect(() => {
-    if (key === -1) return;
+    if (key === null) return;
     const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     let timer: ReturnType<typeof setTimeout>;
     if (reduce) {
@@ -71,7 +76,7 @@ export function useChiefStream(state: ChiefState): Revealed {
     return () => clearTimeout(timer);
   }, [key, total, words]);
 
-  return { words: Math.min(ticks, words), rows: Math.max(0, ticks - words), done: key !== -1 && ticks >= total };
+  return { words: Math.min(ticks, words), rows: Math.max(0, ticks - words), done: key !== null && ticks >= total };
 }
 
 const SOURCE_NOTE: Record<ChiefAnswer["source"], string> = {
