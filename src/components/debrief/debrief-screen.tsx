@@ -560,16 +560,16 @@ function LateDecision({ decision }: { decision: Decision }) {
   return (
     <details data-testid="chief-decision-late-body" className="group">
       <summary
-        className="-ml-2 flex min-h-10 cursor-pointer list-none items-start gap-1 rounded-sm px-2 text-sm text-text-2 hover:bg-surface-3 hover:text-text-1 [&::-webkit-details-marker]:hidden"
+        className="group/summary -ml-2 flex min-h-10 cursor-pointer list-none items-start gap-1 rounded-sm px-2 text-sm text-text-2 hover:bg-surface-3 hover:text-text-1 [&::-webkit-details-marker]:hidden"
       >
         <ChevronRight
           aria-hidden
-          className="mt-0.5 size-4 shrink-0 stroke-[1.5] text-text-2 transition-[transform,color] group-hover:text-text-1 duration-fast ease-out group-open:rotate-90"
+          className="mt-0.5 size-4 shrink-0 stroke-[1.5] text-text-2 transition-[transform,color] group-hover/summary:text-text-1 duration-fast ease-out group-open:rotate-90"
         />
-        {/* A native disclosure says whether it is open; the hidden words say what it holds. */}
+        {/* A native disclosure says whether it is open; the hidden words say what it holds, first. */}
         <span>
+          <span className="sr-only">The Chief&apos;s late answer: </span>
           <span data-testid="chief-decision-late">{LATE_NOTE}</span>
-          <span className="sr-only"> The Chief&apos;s late answer.</span>
         </span>
       </summary>
       <div className="flex flex-col gap-1.5 pt-1.5">

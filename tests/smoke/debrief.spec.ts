@@ -171,6 +171,8 @@ test("beat 5 to 6: caught after the wow beat, the debrief says so, with the Chie
   // At 1440×900 the late answer's note and Try again are in view without scrolling the panel: the
   // late answer moved no guard, so its rationale and rows stay folded under its note. Checked by
   // where they sit, not by the panel's exact height, so a font that wraps one line more passes.
+  // Measured once the page's own font is in, so a narrower fallback cannot pass for the real layout.
+  await page.evaluate(() => document.fonts.ready);
   const panelBody = page.getByTestId("panel-body");
   const note = late.getByTestId("chief-decision-late");
   await expect
@@ -192,7 +194,13 @@ test("beat 5 to 6: caught after the wow beat, the debrief says so, with the Chie
   await late.getByTestId("chief-decision-late").click();
   await expect(late.getByTestId("chief-decision-rationale")).toBeVisible();
   await expect(late.getByTestId("chief-decision-order").first()).toBeVisible();
-  for (const row of await late.getByTestId("chief-decision-order").all()) await expect(row.locator(".text-danger")).toHaveCount(0);
+  for (const row of [
+    ...(await late.getByTestId("chief-decision-order").all()),
+    ...(await late.getByTestId("chief-decision-dropped").all()),
+  ]) {
+    await expect(row.locator(".text-danger")).toHaveCount(0);
+    await expect(row).not.toHaveClass(/text-danger/);
+  }
 
   // The replay opens on the catch; scrubbing moves every piece to that turn's positions.
   await expect(page.getByTestId("replay-board")).toHaveAttribute("data-frame", String(log.turns.length));
