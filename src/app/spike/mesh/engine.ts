@@ -14,12 +14,16 @@ import {
   type CubeTexture,
   type ShaderMaterial,
 } from "three";
+import type { BlendMode } from "@/lib/scan-mesh/blend";
+import type { Vec3 } from "@/lib/scan-mesh/coords";
 import { isAllowedAssetUrl, type MeshResolution, type PanoResolution, type ScanManifest } from "@/lib/scan-mesh/manifest";
 import { applyLook, stepMove, TUNING, viewBob, type MoveState } from "@/lib/scan-mesh/movement";
 import { parseObj } from "@/lib/scan-mesh/obj";
 import { MeshWorld } from "./collider";
 import { blankCube, PanoStore, type PanoUse } from "./panos";
 import { createScanMaterial } from "./projection";
+import { RECORD_STEP, WalkRecorder, type RecordOptions } from "./recorder";
+import type { WalkSample } from "@/lib/scan-mesh/walk-stats";
 
 export type WalkPhase = "manifest" | "mesh" | "building" | "ready" | "no-mesh" | "error";
 
@@ -33,6 +37,8 @@ export interface WalkHud {
   grounded: boolean;
   speed: number;
   projection: boolean;
+  /** How the panoramas are weighted (lib/scan-mesh/blend.ts). */
+  blend: BlendMode;
   /** The player's mouse sensitivity, as a multiple of the default. */
   sensitivity: number;
   panos: PanoUse[];
@@ -145,6 +151,8 @@ export class ScanWalk {
   private frames = 0;
   private fps = 0;
   private used: PanoUse[] = [];
+  /** The debug recorder's walk, while one is running. */
+  private recorder: WalkRecorder | null = null;
   private readonly opened = performance.now();
   /** When the scene became walkable, for the wait's time limit. */
   private readyAt = 0;
@@ -176,6 +184,7 @@ export class ScanWalk {
       grounded: false,
       speed: 0,
       projection: true,
+      blend: "view",
       sensitivity: 1,
       panos: [],
       panoCount: 0,
@@ -453,6 +462,7 @@ export class ScanWalk {
     if (event.repeat) return;
     if (event.code === "KeyT") this.setProjection(!this.projection);
     if (event.code === "KeyG") this.toggleWire();
+    if (event.code === "KeyB") this.setBlend(this.hud.blend === "view" ? "nearest" : "view");
     if (event.code === "KeyP" && this.state && this.panos) {
       this.standAt(this.panos.nearest([this.state.x, this.state.y + TUNING.eyeHeight + this.eyeLift, this.state.z]));
     }
@@ -507,6 +517,33 @@ export class ScanWalk {
     this.pitch = pitch;
   }
 
+  /** Switch the rule that weights the panoramas: to judge the difference by eye, or to measure it. */
+  setBlend(mode: BlendMode): void {
+    if (this.panos) this.panos.mode = mode;
+    this.hud.blend = mode;
+    this.push();
+  }
+
+  /**
+   * For the console (`&debug=1`): walk `path` at a constant speed, one fixed
+   * step a frame, and resolve with each frame's numbers (recorder.ts). The
+   * player's keys do nothing meanwhile.
+   */
+  record(options: RecordOptions): Promise<WalkSample[]> {
+    if (!this.options.debug || this.recorder || !this.state || options.path.length < 2) return Promise.resolve([]);
+    return new Promise((resolve) => {
+      this.recorder = new WalkRecorder(options, (samples) => {
+        this.recorder = null;
+        resolve(samples);
+      });
+    });
+  }
+
+  /** The scan positions, y-up, in the scan's order: for choosing a route to record. */
+  panoPositions(): Vec3[] {
+    return (this.manifest?.panos ?? []).map((p) => p.position);
+  }
+
   setDebugView(on: boolean): void {
     this.material.uniforms.uDebug.value = on ? 1 : 0;
   }
@@ -526,6 +563,9 @@ export class ScanWalk {
     this.last = time;
     this.step(dt);
     this.renderer.render(this.scene, this.camera);
+    if (this.recorder && this.world) {
+      this.recorder.capture(this.renderer, this.scene, this.camera, this.world, this.used, this.panos?.mode ?? "view");
+    }
 
     this.frames++;
     this.sinceHud += dt;
@@ -568,13 +608,27 @@ export class ScanWalk {
       right: go * ((keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0)),
       walk: keys.has("ShiftLeft") || keys.has("ShiftRight"),
     };
-    const next: MoveState = stepMove(state, input, this.yaw, dt, world);
+    const recorder = this.recorder;
+    let next: MoveState;
+    if (recorder) {
+      // A recorded walk: a fixed step a frame, straight along the route.
+      dt = RECORD_STEP;
+      const [x, y, z] = recorder.eye();
+      const [vx, vz] = recorder.velocity();
+      next = { x, y: y - TUNING.eyeHeight, z, vx, vz, walked: recorder.walked, grounded: true };
+      this.eyeLift = 0;
+      this.holdLift = false;
+      this.yaw = recorder.yaw;
+      this.pitch = 0;
+    } else {
+      next = stepMove(state, input, this.yaw, dt, world);
+    }
     this.state = next;
     if (input.forward !== 0 || input.right !== 0) this.holdLift = false;
     if (!this.holdLift) this.eyeLift *= Math.exp(-5 * dt);
 
     const speed = Math.hypot(next.vx, next.vz);
-    const bobTarget = viewBob(next.walked, speed, this.options.reducedMotion);
+    const bobTarget = recorder ? 0 : viewBob(next.walked, speed, this.options.reducedMotion);
     this.bob += (bobTarget - this.bob) * (1 - Math.exp(-30 * dt));
     const eyeY = next.y + TUNING.eyeHeight + this.eyeLift;
     this.camera.position.set(next.x, eyeY + this.bob, next.z);

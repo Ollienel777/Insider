@@ -40,19 +40,20 @@ import {
 import { conjugate, quatToMat3, type Vec3 } from "@/lib/scan-mesh/coords";
 import { isAllowedAssetUrl, type ScanPano } from "@/lib/scan-mesh/manifest";
 import { nearestFirst, planSharp, sharpOrder } from "@/lib/scan-mesh/pano-plan";
+import { slotFades, type BlendMode } from "@/lib/scan-mesh/blend";
 import { alignToCube, CUBE_LOOKUP_FLIP, panoDistance, panoWeights } from "@/lib/scan-mesh/skybox";
 import type { DecodeReply, DecodeRequest } from "./decode-worker";
 import { createDistanceMaterial, SLOTS } from "./projection";
 
-/** Panoramas blended for one standpoint. */
+/** Panoramas blended for one standpoint under the nearest rule. */
 const KEEP = 3;
 /** Panoramas whose small faces, and whose full-size faces, are being fetched at once. */
 const LOW_FETCHES = 6;
 const SHARP_FETCHES = 2;
 /** How quickly a panorama's share follows its target, per second. */
 const SHARE_RATE = 7;
-/** How quickly a slot fades between its small cube and its sharp one, per second. */
-const SHARP_RATE = 3.5;
+/** How quickly a slot fades between its small cube and its sharp one, per second: slow enough not to read as a swap. */
+const SHARP_RATE = 0.9;
 /** How far ahead of the player the sharp cubes look, seconds. */
 const HORIZON = 1.2;
 /** The small cube's face when it has to be made from the full-size bytes, pixels. */
@@ -121,6 +122,8 @@ export interface PanoUse {
   /** The panorama's place in the scan's list. */
   index: number;
   share: number;
+  /** Where it was taken, y-up. */
+  origin: Vec3;
 }
 
 export interface PanoCounts {
@@ -196,6 +199,10 @@ export class PanoStore {
   onStale: (() => void) | null = null;
   /** Set by `update` when bytes are still wanted and the links have run out. */
   needsLinks = false;
+  /** How the slots are weighted (lib/scan-mesh/blend.ts). */
+  mode: BlendMode = "view";
+  /** Each panorama's colour gain, by index in the scan's list; missing means 1. */
+  gains = new Map<number, Vec3>();
 
   /**
    * `capacity` sharp cubes, `sharpSize` pixels across, are made at once and
@@ -382,10 +389,8 @@ export class PanoStore {
     this.chooseSharp(near, eye, velocity);
 
     const ready = near.map((at) => shown[at]).filter((e) => e.lowCube !== null && e.depth !== null);
-    const targets = panoWeights(
-      ready.map((e) => panoDistance(eye, e.pano.position)),
-      KEEP,
-    );
+    const distances = ready.map((e) => panoDistance(eye, e.pano.position));
+    const targets = this.mode === "view" ? slotFades(distances, SLOTS) : panoWeights(distances, KEEP);
     const target = new Map<Entry, number>();
     ready.forEach((e, i) => target.set(e, targets[i]));
     const blend = 1 - Math.exp(-SHARE_RATE * dt);
@@ -414,13 +419,16 @@ export class PanoStore {
         u[`uDepth${slot}`].value = e?.depth?.texture ?? blank;
         (u.uPanoShare.value as number[])[slot] = e ? e.share : 0;
         (u.uPanoSharp.value as number[])[slot] = e?.sharpCube ? e.sharpMix : 0;
+        const gain = e ? this.gains.get(e.index) : undefined;
+        (u.uPanoGain.value as Vector3[])[slot].set(gain?.[0] ?? 1, gain?.[1] ?? 1, gain?.[2] ?? 1);
+        u.uMode.value = this.mode === "view" ? 0 : 1;
         if (e) {
           (u.uPanoPos.value as Vector3[])[slot].copy(e.origin);
           (u.uPanoInv.value as Matrix3[])[slot].copy(e.toPano);
         }
       }
     }
-    return used.map((e) => ({ index: e.index, share: e.share }));
+    return used.map((e) => ({ index: e.index, share: e.share, origin: e.pano.position }));
   }
 
   // ---- the bytes ----

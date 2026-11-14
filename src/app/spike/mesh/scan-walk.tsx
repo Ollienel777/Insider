@@ -34,6 +34,7 @@ const HINTS: [string, string][] = [
   ["P", "nearest scan position"],
   ["N", "next scan position"],
   ["G", "mesh edges"],
+  ["B", "blend rule"],
   ["Esc", "release"],
 ];
 
@@ -124,7 +125,11 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, debug }: Props) {
           </Row>
           <Row label="Speed">{hud ? `${hud.speed.toFixed(1)} m/s · ${Math.round(hud.fps)} fps` : "…"}</Row>
           <Row label="Mouse">{hud ? `${hud.sensitivity.toFixed(2)}× sensitivity` : "…"}</Row>
-          <Row label="View">{hud?.projection === false ? "Mesh only" : `Panoramas (${hud?.faces ?? faces})`}</Row>
+          <Row label="View">
+            {hud?.projection === false
+              ? "Mesh only"
+              : `Panoramas (${hud?.faces ?? faces}) · ${hud?.blend === "nearest" ? "nearest" : "by view"}`}
+          </Row>
           <Row label="In use">
             {hud && hud.panos.length > 0
               ? hud.panos.map((p) => `${p.index + 1}: ${Math.round(p.share * 100)}%`).join(" · ")

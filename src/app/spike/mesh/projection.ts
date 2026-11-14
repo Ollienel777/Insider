@@ -3,13 +3,14 @@
 //
 // For up to four panoramas at once, a fragment looks its colour up in that
 // panorama's cube map along the line from the panorama to the fragment. Each
-// one's say is the product of
-//   - its share for where the player stands (lib/scan-mesh/skybox.ts),
-//   - how nearly it saw the fragment along the player's own line of sight,
-//   - how squarely it faced the surface (a grazing view smears), and
-//   - whether it saw the fragment at all: its depth cube holds how far it
-//     could see in every direction, and a fragment farther than that is
-//     behind something.
+// one's say is lib/scan-mesh/blend.ts's rule, the same sums: by default, how
+// nearly its ray to the fragment agrees with the player's (so the picture
+// changes with every step), times its slot's share as it enters or leaves,
+// how squarely it faced the surface, and whether it saw the fragment at all:
+// its depth cube holds how far it could see in every direction, and a
+// fragment farther than that is behind something. Each panorama's colours
+// are scaled by its own gain, so neighbours taken at different exposures
+// match where they overlap.
 // A fragment no panorama saw keeps a trace of each (a wrong picture in the
 // right colours reads better than a hole).
 //
@@ -22,6 +23,7 @@
 // Colours are passed through untouched: the panorama texels are display
 // values, the output is display values, and nothing is lit.
 import { BackSide, DoubleSide, Matrix3, ShaderMaterial, Vector3, type CubeTexture } from "three";
+import { ANGLE_FLOOR, HIDDEN, REACH_PENALTY } from "@/lib/scan-mesh/blend";
 
 /** Panoramas blended at once. */
 export const SLOTS = 4;
@@ -39,6 +41,9 @@ const FRAGMENT = /* glsl */ `
 uniform vec3 uPanoPos[${SLOTS}];
 uniform mat3 uPanoInv[${SLOTS}];
 uniform float uPanoShare[${SLOTS}];
+uniform vec3 uPanoGain[${SLOTS}];
+/** 0: the view rule; 1: the nearest rule (blend.ts). */
+uniform float uMode;
 uniform samplerCube uPano0;
 uniform samplerCube uPano1;
 uniform samplerCube uPano2;
@@ -56,7 +61,7 @@ uniform float uProjection;
 uniform float uDebug;
 varying vec3 vWorld;
 
-vec4 fromPano(samplerCube pano, samplerCube low, float sharp, samplerCube depth, vec3 origin, mat3 toPano, float share, vec3 normal, vec3 sight) {
+vec4 fromPano(samplerCube pano, samplerCube low, float sharp, samplerCube depth, vec3 origin, mat3 toPano, float share, vec3 gain, vec3 normal, vec3 sight) {
   if (share <= 0.0) return vec4(0.0);
 #ifdef BACKDROP
   vec3 ray = sight;
@@ -68,16 +73,24 @@ vec4 fromPano(samplerCube pano, samplerCube low, float sharp, samplerCube depth,
   float seenTo = textureCube(depth, ray).r;
   float limit = seenTo * 1.03 + 0.08;
   float seen = 1.0 - smoothstep(limit, limit + 0.25, reach);
-  float aligned = max(dot(sight, along), 0.0);
   float facing = smoothstep(0.02, 0.3, dot(normal, -along));
-  float weight = share * (0.03 + pow(aligned, 4.0)) * (0.1 + 0.9 * facing) * (seen + 0.003);
+  float weight;
+  if (uMode > 0.5) {
+    float aligned = max(dot(sight, along), 0.0);
+    weight = share * (0.03 + pow(aligned, 4.0)) * (0.1 + 0.9 * facing) * (seen + 0.002);
+  } else {
+    float camReach = max(distance(vWorld, cameraPosition), 1e-4);
+    float angle = acos(clamp(dot(sight, along), -1.0, 1.0));
+    float penalty = angle + ${REACH_PENALTY.toFixed(4)} * max(0.0, (reach - camReach) / max(reach, 1e-4)) + ${ANGLE_FLOOR.toFixed(4)};
+    weight = share * (0.1 + 0.9 * facing) * (seen + ${HIDDEN.toExponential()}) / (penalty * penalty);
+  }
   if (uDebug > 0.5) return vec4(vec3(abs(seenTo - reach) * 2.0, seen, 0.0) * share, share);
 #endif
   vec3 lookup = toPano * ray;
   vec3 colour = sharp >= 1.0 ? textureCube(pano, lookup).rgb
     : sharp <= 0.0 ? textureCube(low, lookup).rgb
     : mix(textureCube(low, lookup).rgb, textureCube(pano, lookup).rgb, sharp);
-  return vec4(colour * weight, weight);
+  return vec4(colour * gain * weight, weight);
 }
 
 void main() {
@@ -95,12 +108,12 @@ void main() {
   vec3 bare = mix(clay, vec3(0.09, 0.115, 0.15), haze);
 #endif
   vec4 sum = vec4(0.0);
-  sum += fromPano(uPano0, uLow0, uPanoSharp[0], uDepth0, uPanoPos[0], uPanoInv[0], uPanoShare[0], normal, sight);
-  sum += fromPano(uPano1, uLow1, uPanoSharp[1], uDepth1, uPanoPos[1], uPanoInv[1], uPanoShare[1], normal, sight);
-  sum += fromPano(uPano2, uLow2, uPanoSharp[2], uDepth2, uPanoPos[2], uPanoInv[2], uPanoShare[2], normal, sight);
-  sum += fromPano(uPano3, uLow3, uPanoSharp[3], uDepth3, uPanoPos[3], uPanoInv[3], uPanoShare[3], normal, sight);
-  float shares = min(1.0, uPanoShare[0] + uPanoShare[1] + uPanoShare[2] + uPanoShare[3]);
-  float cover = sum.a > 0.0 ? uProjection * shares : 0.0;
+  sum += fromPano(uPano0, uLow0, uPanoSharp[0], uDepth0, uPanoPos[0], uPanoInv[0], uPanoShare[0], uPanoGain[0], normal, sight);
+  sum += fromPano(uPano1, uLow1, uPanoSharp[1], uDepth1, uPanoPos[1], uPanoInv[1], uPanoShare[1], uPanoGain[1], normal, sight);
+  sum += fromPano(uPano2, uLow2, uPanoSharp[2], uDepth2, uPanoPos[2], uPanoInv[2], uPanoShare[2], uPanoGain[2], normal, sight);
+  sum += fromPano(uPano3, uLow3, uPanoSharp[3], uDepth3, uPanoPos[3], uPanoInv[3], uPanoShare[3], uPanoGain[3], normal, sight);
+  float shares = uPanoShare[0] + uPanoShare[1] + uPanoShare[2] + uPanoShare[3];
+  float cover = sum.a > 0.0 ? uProjection * smoothstep(0.0, 0.2, shares) : 0.0;
   vec3 projected = sum.a > 0.0 ? sum.rgb / sum.a : bare;
   gl_FragColor = vec4(mix(bare, projected, cover), 1.0);
 }
@@ -116,6 +129,8 @@ export function createScanMaterial(blank: CubeTexture, backdrop = false): Shader
     uPanoPos: { value: Array.from({ length: SLOTS }, () => new Vector3()) },
     uPanoInv: { value: Array.from({ length: SLOTS }, () => new Matrix3()) },
     uPanoShare: { value: new Array<number>(SLOTS).fill(0) },
+    uPanoGain: { value: Array.from({ length: SLOTS }, () => new Vector3(1, 1, 1)) },
+    uMode: { value: 0 },
     uPanoSharp: { value: new Array<number>(SLOTS).fill(0) },
     uProjection: { value: 1 },
     uDebug: { value: 0 },
