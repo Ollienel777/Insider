@@ -132,7 +132,7 @@ export function DebriefScreen({
         testId="debrief-no-floor"
         label="No floor yet"
         title="This building has no board to replay on yet."
-        body="Only Halvorsen Tower has a floor plan so far. Pick it on the map to play the run."
+        body="Only the Los Angeles buildings have a floor plan so far. Pick one on the map to play the run."
         action={
           <Link href="/map" className={buttonVariants({ variant: "secondary" })}>
             Back to the map

@@ -35,7 +35,7 @@
         "lockZones": [
           "objective"
         ],
-        "rationale": "C1's analytics flagged someone in the north hall: lockdown. G4, out of suite 2410, and G3, from the south hall, converge on it. G2 holds the prototype lab. G1 blocks the loading dock. Lock the lab."
+        "rationale": "C1's analytics flagged someone in the north hall: lockdown. G4, from its post in the pantry, and G3, from the south hall, converge on it. G2 holds the prototype lab. G1 blocks the loading dock. Lock the lab."
       }
     }
   ]

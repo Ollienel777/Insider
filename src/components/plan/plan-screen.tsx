@@ -155,7 +155,7 @@ export function PlanScreen({
                 testId="board-empty"
                 label="No floor yet"
                 title="This building's level isn't ready yet."
-                body="Only Halvorsen Tower has a board so far. Pick it on the map to plan the job."
+                body="Only the Los Angeles buildings have a board so far. Pick one on the map to plan the job."
                 action={
                   <Link href="/map" className={buttonVariants({ variant: "secondary" })}>
                     Back to the map

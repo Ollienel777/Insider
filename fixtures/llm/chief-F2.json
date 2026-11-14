@@ -30,7 +30,7 @@
         "lockZones": [
           "objective"
         ],
-        "rationale": "C2 has them in the west corridor. G2, out of suites 4101 to 4118, and G3, from the elevator lobby, converge on it. G1 leaves the mail room and blocks the loading dock. Lock the vault."
+        "rationale": "C2 has them in the west corridor. G2, from the mail room, and G3, from the elevator lobby, converge on it. G1 leaves the mail room too and blocks the loading dock. Lock the vault."
       }
     }
   ]

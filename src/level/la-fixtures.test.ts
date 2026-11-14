@@ -69,9 +69,12 @@ const CASES: Case[] = [
     ],
     claims: [
       { text: "c2-west-corridor", phrase: "C2 has them in the west corridor", who: "C2", room: "west-corridor" },
-      { text: "c2-west-corridor", phrase: "G2, out of suites 4101 to 4118", who: "G2", room: "suites-4101-4118" },
+      { text: "c2-west-corridor", phrase: "G2, from the mail room", who: "G2", room: "mail-room" },
       { text: "c2-west-corridor", phrase: "G3, from the elevator lobby", who: "G3", room: "elevator-lobby" },
       { text: "c2-west-corridor", phrase: "G1 leaves the mail room", who: "G1", room: "mail-room" },
+      { text: "c2-west-corridor", phrase: "G2, from the mail room, and G3, from the elevator lobby, converge on it", who: "G2", order: "west-corridor" },
+      { text: "c2-west-corridor", phrase: "G2, from the mail room, and G3, from the elevator lobby, converge on it", who: "G3", order: "west-corridor" },
+      { text: "c2-west-corridor", phrase: "G1 leaves the mail room too and blocks the loading dock", who: "G1", order: "dock-W" },
       { text: "dock-wait", phrase: "Camera C2 turns along the west corridor", who: "C2", room: "west-corridor" },
       { text: "quiet", phrase: "the way to it is the west corridor, and C2 has you", who: "C2", room: "west-corridor" },
       { text: "lobby", phrase: "the service hall, where C1 turns", who: "C1", room: "service-hall" },
@@ -101,11 +104,12 @@ const CASES: Case[] = [
     ],
     claims: [
       { text: "c1-north-hall", phrase: "C1's analytics flagged someone in the north hall", who: "C1", room: "north-hall" },
-      { text: "c1-north-hall", phrase: "G4, out of suite 2410", who: "G4", room: "suite-2410" },
+      { text: "c1-north-hall", phrase: "G4, from its post in the pantry", who: "G4", room: "pantry" },
       { text: "c1-north-hall", phrase: "G3, from the south hall", who: "G3", room: "south-hall" },
       { text: "c1-north-hall", phrase: "G2 holds the prototype lab", who: "G2", order: "objective" },
       { text: "c1-north-hall", phrase: "G1 blocks the loading dock", who: "G1", order: "dock-N" },
       { text: "quiet", phrase: "the south hall's glass wall looks into the middle of the suite, and G3 walks that hall", who: "G3", room: "south-hall" },
+      { text: "quiet", phrase: "see which way G3 is facing", who: "G3", room: "south-hall" },
       { text: "lobby", phrase: "the north hall's C1 and C2", who: "C1", room: "north-hall" },
       { text: "lobby", phrase: "the north hall's C1 and C2", who: "C2", room: "north-hall" },
       { text: "garage", phrase: "the north hall's C1 and C2", who: "C1", room: "north-hall" },
@@ -288,11 +292,12 @@ describe.each(CASES)("$id on its fixture floor", (c) => {
       expect(rooms.length, `${text}: ${who} is on the board`).toBeGreaterThan(0);
       for (const r of rooms) expect(r, `${text}: ${phrase}: ${who}`).toBe(claim.room);
     }
-    // Every guard or camera a recorded text names has a claim for that text, so none goes unchecked.
+    // Every mention of a guard or camera in a recorded text sits inside a checked claim phrase for that
+    // text, so a second sentence about an id the text already claims fails too (#68 R1-M1). Case-insensitive.
     for (const [id, text] of texts) {
-      for (const who of new Set(text.match(/\b[CG]\d+\b/g) ?? [])) {
-        expect(c.claims.some((cl) => cl.text === id && cl.who === who), `${id} names ${who} with no claim`).toBe(true);
-      }
+      let rest = text;
+      for (const cl of c.claims.filter((x) => x.text === id)) rest = rest.split(cl.phrase).join(" ");
+      expect(rest.match(/\b[cg]\d+\b/gi) ?? [], `${id} names a guard or camera outside its claims`).toEqual([]);
     }
   });
 });

@@ -101,7 +101,7 @@ for (const w of WALKS) {
     test.setTimeout(90_000);
 
     // The map: the pin is enabled, no longer "Level in prep".
-    await page.goto("/");
+    await page.goto("/map");
     await expect(page.getByTestId("map-skeleton")).toHaveCount(0);
     const row = page.getByTestId("building-row").filter({ hasText: w.name });
     await expect(row).toContainText(w.facts);
