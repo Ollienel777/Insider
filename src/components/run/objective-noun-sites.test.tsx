@@ -83,11 +83,45 @@ describe.each([
     }
   });
 
-  it("names the noun in the Plan screen's route warning", () => {
+  it("names the noun in the corridor cleaner's rule, when every suite room holds an available suite", () => {
+    // The cached levels leave an occupied suite room on F2 and F3, so their cleaners walk a room.
+    // Make every suite room available, as on F1's floor 22: the crowded zone has no room of its
+    // own and its cleaner works a corridor (the placer's CLEANER_RULE.corridor).
+    const m = LevelManifest.parse(structuredClone(cached));
+    const quiet = m.zones.find((z) => z.role === "quiet")!;
+    const occupied = here.zones.find((z) => z.role === "crowded")?.roomIds ?? [];
+    for (const roomId of occupied) {
+      const suite = /\d+/.exec(here.level.floor.rooms.find((r) => r.id === roomId)!.label)![0];
+      m.zones.push({ ...structuredClone(quiet), id: `quiet-${suite}`, name: `Suite ${suite} (vacant)` });
+    }
+    const allAvailable = placeLevel(m, structuredClone(FIXTURE_FLOORS[id]), RUN_SEED);
+    const corridor = allAvailable.cleaners.filter((c) => /no room of its own/.test(c.rule));
+    expect(corridor.length).toBeGreaterThan(0);
+    for (const c of corridor) {
+      expect(c.rule).toMatch(new RegExp(`\\bthe ${noun}$`));
+      for (const other of others) expect(c.rule).not.toMatch(new RegExp(`\\b${other}\\b`));
+    }
+  });
+
+  it("names the noun in the Plan screen's route warnings", () => {
     const entry = here.entries.find((e) => e.nodeId === here.level.start)!;
-    const plan: CrewPlan = { steps: [{ zoneId: entry.entryId, action: "Wait one turn" }], pushback: "", confidence: 0.5 };
-    const checked = validatePlan(here, plan);
-    expect(checked.outcome).toBe("unfinished");
-    expect(checked.warnings[0].text).toMatch(new RegExp(`^The plan never takes the ${noun}: it ends in the .+\\.$`));
+    const waits: CrewPlan = { steps: [{ zoneId: entry.entryId, action: "Wait one turn" }], pushback: "", confidence: 0.5 };
+    const never = validatePlan(here, waits);
+    expect(never.outcome).toBe("unfinished");
+    expect(never.warnings[0].text).toMatch(new RegExp(`^The plan never takes the ${noun}: it ends in the .+\\.$`));
+    // A plan that takes the objective and stops there. With no camera, guard or cleaner on
+    // the board nothing sees it first, so the warning is the route's.
+    const unwatched = { ...here, level: { ...here.level, cameras: [], guards: [], cleaners: [] } };
+    const takes: CrewPlan = {
+      steps: [
+        { zoneId: entry.entryId, action: "In" },
+        { zoneId: here.objective.zoneId, action: `Take the ${noun}` },
+      ],
+      pushback: "",
+      confidence: 0.5,
+    };
+    const short = validatePlan(unwatched, takes);
+    expect(short.outcome).toBe("unfinished");
+    expect(short.warnings[0].text).toMatch(new RegExp(`^The plan ends in the .+ with the ${noun}, short of an exit\\.$`));
   });
 });

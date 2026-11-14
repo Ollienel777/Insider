@@ -22,6 +22,7 @@ describe("the objective noun (#70)", () => {
   });
 
   it("takes each noun from the mission's own objective text", () => {
-    for (const m of MISSIONS) expect(m.objective.toLowerCase()).toContain(OBJECTIVE_NOUNS[m.id]);
+    // A whole word, so "files" never passes against "profiles".
+    for (const m of MISSIONS) expect(m.objective.toLowerCase()).toMatch(new RegExp(`\\b${OBJECTIVE_NOUNS[m.id]}\\b`));
   });
 });
