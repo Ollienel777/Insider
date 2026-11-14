@@ -9,13 +9,18 @@ timezone, for example `America/Toronto`.
 
 - name: HackPrinceton Fall 2026 (Princeton University, Julis Romo Rabinowitz Building)
 - url: https://www.hackprinceton.com/
-- hacking starts: 2026-11-13 21:00 America/New_York
-- feature freeze: default
+- hacking starts: 2026-11-13 02:55 America/New_York
+- feature freeze: 2026-11-15 01:48 America/New_York
 - submission deadline: 2026-11-15 09:00 America/New_York
 - submit window: 1h
 - team: 4 people
 
-<!-- The start and deadline are ESTIMATES: 36 hours, from past editions
+<!-- Nelson, in chat, 2026-11-13 07:55 UTC: "hacking has started, dont go plan
+     mode, go build mode". `hacking starts` is set to that moment. The feature
+     freeze is pinned to where `default` put it under the 36-hour estimate
+     (deadline minus 7h12m), so the earlier start does not pull it in. The
+     deadline is still the estimate below.
+     The start and deadline are ESTIMATES: 36 hours, from past editions
      (Spring 2026 ran 36 hours, Apr 17–19, with judging from 9:30 AM Sunday).
      Replace both with the times in the hacker guide or Discord before the
      build loop starts; the build clock and the feature freeze depend on them.

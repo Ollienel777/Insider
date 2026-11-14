@@ -19,7 +19,7 @@ self-approve cards: yes
 gate: npm run gate          # defined by the spec; the planner makes it exist
 branch: type/NUM-slug
 ticket line: Closes #NUM
-harness paths: hackathon/EVENT.md, hackathon/SPEC.md, hackathon/README.md
+harness paths: hackathon/EVENT.md, hackathon/README.md   # add hackathon/SPEC.md once the spec PR merges (pack: "once merged")
 status: issue
 ```
 
