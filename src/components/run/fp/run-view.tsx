@@ -9,6 +9,7 @@ import { Footprints, Grid3x3, type LucideIcon } from "lucide-react";
 import type { FloorGraph } from "@/domain";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { FP } from "./tuning";
 import type { RunView, RunViewState } from "./view-store";
 
 export { useRunView } from "./view-store";
@@ -22,6 +23,9 @@ export const FirstPersonView = dynamic(() => import("./first-person-view"), {
 /** The status line when first person cannot be drawn and the board comes back. */
 /** First person's turn: short enough that the guards never seem to wait on the player (issue 115). */
 export { FP_TURN_MS as FIRST_PERSON_TURN_MS } from "./tuning";
+
+/** First person's pace, for the HUD to speak in seconds rather than hops and turns (`usePlayHud`). */
+export const FIRST_PERSON_PACE = Object.freeze({ unitM: FP.unitM, runMps: FP.runMps, turnMs: FP.turnMs });
 
 /** The turn the clock plays for first person, which the view supplies: the next pick while E is held, or a wait. */
 export type HeldAction = (run: import("@/engine").RunState) => import("@/engine").Action;

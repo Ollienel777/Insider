@@ -16,6 +16,9 @@
 //   anywhere else E does nothing and the prompt says to step up. While E stays
 //   down, the turn clock picks again each turn (`heldAction`); letting go
 //   lets the clock wait instead, and the engine then starts the lock over.
+//   A press plays a pick at once only to start a lock. On a part-picked one
+//   it is kept for the turn (`pickDue`) and the clock's turn plays it, so
+//   tapping E picks once a turn, no faster than holding it.
 // - E at the objective hands back `take`. Carrying it onto an exit is the
 //   engine's win, by the move that gets there.
 // - The engine is the truth. When its player node is not the one this view
@@ -47,6 +50,8 @@ export interface Walker {
   pending: { to: string | null; age: number } | null;
   /** Metres walked, for the view bob. */
   walked: number;
+  /** E was pressed this turn at this part-picked door: the clock's turn picks it, as if E were still held. */
+  pickDue: string | null;
 }
 
 export interface Controls extends Wish {
@@ -61,7 +66,7 @@ export interface Controls extends Wish {
 export function createWalker(ground: Ground, run: RunState): Walker {
   const at = ground.nodes.get(run.playerNode);
   const pos = { x: at?.x ?? 0, y: at?.y ?? 0 };
-  return { pos, vel: { x: 0, y: 0 }, node: run.playerNode, turn: run.turn, region: run.playerNode, home: pos, queue: [], pending: null, walked: 0 };
+  return { pos, vel: { x: 0, y: 0 }, node: run.playerNode, turn: run.turn, region: run.playerNode, home: pos, queue: [], pending: null, walked: 0, pickDue: null };
 }
 
 /** Where the engine will have the player once everything handed back and queued is played. */
@@ -85,7 +90,7 @@ function destination(walker: Walker): string {
  */
 export function reconcile(walker: Walker, ground: Ground, run: RunState): Walker {
   if (run.turn === walker.turn && run.playerNode === walker.node) return walker;
-  const next: Walker = { ...walker, node: run.playerNode, turn: run.turn, pending: null };
+  const next: Walker = { ...walker, node: run.playerNode, turn: run.turn, pending: null, pickDue: null };
   if (run.turn >= walker.turn) {
     const to = walker.pending?.to ?? null;
     // A move handed back, and a turn that left the player elsewhere (another turn, a clock's wait, landed
@@ -206,14 +211,16 @@ export function promptFor(walker: Walker, ground: Ground, run: RunState, yaw: nu
 
 /**
  * The action the turn clock plays for a first-person turn the player lets run
- * out: the next pick while E is held on a door the player stands at, and
- * otherwise a wait (which, as the engine rules, starts a part-picked lock over).
+ * out: the next pick while E is held on a door the player stands at, or was
+ * pressed there this turn; otherwise a wait (which, as the engine rules,
+ * starts a part-picked lock over).
  */
 export function heldAction(before: Walker, ground: Ground, run: RunState, controls: Pick<Controls, "use" | "yaw">): Action {
   const walker = reconcile(before, ground, run);
-  if (!controls.use || walker.pending || walker.queue.length > 0) return { kind: "wait" };
+  if (walker.pending || walker.queue.length > 0) return { kind: "wait" };
   const prompt = promptFor(walker, ground, run, controls.yaw);
-  if (prompt?.kind === "pick" && prompt.node === run.playerNode) return { kind: "pick", doorId: prompt.doorId };
+  if (prompt?.kind !== "pick" || prompt.node !== run.playerNode) return { kind: "wait" };
+  if (controls.use || walker.pickDue === prompt.doorId) return { kind: "pick", doorId: prompt.doorId };
   return { kind: "wait" };
 }
 
@@ -266,7 +273,11 @@ export function stepWalker(
   if (walker.pending) return { walker, action: null };
   if (walker.queue.length === 0 && controls.usePressed) {
     const prompt = promptFor(walker, ground, run, controls.yaw);
-    if (prompt?.kind === "pick" && prompt.node === run.playerNode) walker = { ...walker, queue: [{ kind: "pick", doorId: prompt.doorId }] };
+    if (prompt?.kind === "pick" && prompt.node === run.playerNode) {
+      // A lock already under way is the clock's to pick, once a turn, however often E is tapped.
+      if (prompt.done > 0) walker = { ...walker, pickDue: prompt.doorId };
+      else walker = { ...walker, queue: [{ kind: "pick", doorId: prompt.doorId }] };
+    }
     if (prompt?.kind === "take") walker = { ...walker, queue: [{ kind: "take" }] };
   }
   const [action, ...rest] = walker.queue;

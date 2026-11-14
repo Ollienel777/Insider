@@ -30,6 +30,7 @@ import {
 import type { RunState } from "@/engine";
 import type { Ground, Vec } from "./ground";
 import type { Palette } from "./palette";
+import { CrossFade } from "./fade";
 import { sightOf, watchedNodes } from "./sight";
 import { FP } from "./tuning";
 
@@ -84,6 +85,11 @@ class Flat {
     const nx = (-(b.y - a.y) / length) * (width / 2);
     const ny = ((b.x - a.x) / length) * (width / 2);
     this.positions.push(a.x + nx, y, a.y + ny, b.x + nx, y, b.y + ny, b.x - nx, y, b.y - ny, a.x + nx, y, a.y + ny, b.x - nx, y, b.y - ny, a.x - nx, y, a.y - ny);
+  }
+
+  /** What it holds, as a string: the same shapes give the same key. */
+  key(): string {
+    return this.positions.map((p) => p.toFixed(3)).join(",");
   }
 
   geometry(): BufferGeometry {
@@ -146,6 +152,9 @@ export class Actors {
   private areasNode: string | null = null;
   private readonly lenses = new Map<string, MeshBasicMaterial>();
   private readonly floor = new Group();
+  /** The watched nodes' markings, cross-faded from one turn to the next. */
+  private readonly floorFade: CrossFade;
+  private floorKey: string | null = null;
   private readonly shared: { geometries: BufferGeometry[]; materials: Material[] } = { geometries: [], materials: [] };
   private readonly objective = new Group();
   private readonly exitMarks: { nodeId: string; material: MeshBasicMaterial }[] = [];
@@ -196,6 +205,7 @@ export class Actors {
     };
     this.ringFill = keep(new MeshBasicMaterial({ color: palette.accent, side: DoubleSide }));
     this.group.add(this.floor);
+    this.floorFade = new CrossFade(this.floor, turnMs, still);
     this.areas.visible = false;
     this.group.add(this.areas);
     this.buildDoors(keep);
@@ -381,10 +391,6 @@ export class Actors {
 
   /** The floor's markings for this turn: what is watched. The cameras turn to face what they watch. */
   private drawFloor(run: RunState, now: number): void {
-    for (const child of [...this.floor.children]) {
-      (child as Mesh).geometry.dispose();
-      this.floor.remove(child);
-    }
     const at = (id: string) => this.ground.nodes.get(id);
     const sight = sightOf(run, this.ground.unitM);
     const layers = { calm: new Flat(), after: new Flat(), tripped: new Flat(), next: new Flat() };
@@ -426,11 +432,18 @@ export class Actors {
       }
     }
 
-    for (const [name, flat] of Object.entries(layers) as [keyof typeof layers, Flat][]) {
+    // In as the last turn's go out, over the turn. A new state that marks the same nodes (the Chief's
+    // orders landing mid-turn) leaves the fade as it is.
+    const entries = Object.entries(layers) as [keyof typeof layers, Flat][];
+    const key = entries.map(([name, flat]) => `${name}:${flat.key()}`).join("|");
+    if (key === this.floorKey) return;
+    this.floorKey = key;
+    const meshes = entries.map(([name, flat]) => {
       const mesh = new Mesh(flat.geometry(), this.sightMaterial[name]);
       mesh.renderOrder = 1;
-      this.floor.add(mesh);
-    }
+      return { mesh, material: this.sightMaterial[name] };
+    });
+    this.floorFade.show(meshes, now);
   }
 
   /**
@@ -519,6 +532,7 @@ export class Actors {
       leaf.mesh.visible = leaf.open < 1;
       leaf.mesh.position.set(leaf.centre.x + leaf.along.x * leaf.width * leaf.open, 0, leaf.centre.y + leaf.along.y * leaf.width * leaf.open);
     }
+    this.floorFade.update(now);
     for (const aim of this.aims.values()) {
       const k = clamp((now - aim.at) / this.turnMs, 0, 1);
       aim.holder.quaternion.slerpQuaternions(aim.from, aim.to, 1 - (1 - k) * (1 - k));
@@ -565,7 +579,7 @@ export class Actors {
   }
 
   dispose(): void {
-    for (const child of this.floor.children) (child as Mesh).geometry.dispose();
+    this.floorFade.dispose();
     for (const ring of this.rings.values()) for (const mesh of ring.fill) if (mesh.name !== "pick-track") mesh.geometry.dispose();
     for (const child of this.areas.children) {
       (child as Mesh).geometry.dispose();

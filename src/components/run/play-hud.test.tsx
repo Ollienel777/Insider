@@ -30,6 +30,7 @@ import {
   objectiveInfo,
   radioFacts,
   routeLeft,
+  secondsLeft,
   sprintVia,
   usePlayHud,
   type PlayHud,
@@ -47,6 +48,7 @@ import {
   type RadioState,
 } from "./radio";
 import { RADIO_QUIET, RadioLine } from "./radio-line";
+import { FIRST_PERSON_PACE } from "./fp/run-view";
 import { RUN_SEED } from "./run-screen";
 import { whyTargets } from "./why";
 
@@ -205,6 +207,62 @@ describe("the objective line's words", () => {
     expect(acting).toContain("Take the files");
     expect(acting).not.toContain('data-testid="hops-left"');
     expect(renderToStaticMarkup(<ObjectiveLine label="Caught" goal="x" hops={null} tone="danger" />)).not.toContain("hops-left");
+  });
+});
+
+// ---- first person: the same in real time -----------------------------------------
+
+describe("the HUD in first person (issue 115): seconds and plain words, not hops and turns", () => {
+  const pace = { unitM: 1, runMps: 1, turnMs: 1000 };
+
+  it("counts the seconds the route takes at a run, and a turn for each pick its locks still need", () => {
+    // Round by c and e: three open hops of 2 units.
+    expect(secondsLeft(twoWays(["d-short"]), pace)).toBe(6);
+    // Straight through the locked d-short: one hop of 2 units, then its two picks.
+    const locked = twoWays(["d-short", "d-far"]);
+    expect(secondsLeft(locked, pace)).toBe(4);
+    expect(secondsLeft({ ...locked, picking: { doorId: "d-short", progress: 1 } }, pace)).toBe(3);
+    // On the goal: nothing left.
+    expect(secondsLeft({ ...locked, playerNode: "b" }, pace)).toBe(0);
+    // Rounded up: never 0 short of the goal.
+    expect(secondsLeft(twoWays([]), { ...pace, runMps: 3 })).toBe(1);
+  });
+
+  it("gives the objective line seconds as well as the hops, and leaves the board's line as it was", () => {
+    const board = objectiveInfo(placed, start(), mission.objective, mission.exitCondition);
+    expect(board).not.toHaveProperty("seconds");
+    const fp = objectiveInfo(placed, start(), mission.objective, mission.exitCondition, FIRST_PERSON_PACE);
+    expect(fp).toEqual({ ...board, seconds: secondsLeft(start(), FIRST_PERSON_PACE) });
+    expect(fp.seconds).toBeGreaterThan(0);
+    const caught = objectiveInfo(placed, { ...start(), status: "caught" }, mission.objective, mission.exitCondition, FIRST_PERSON_PACE);
+    expect(caught).toMatchObject({ hops: null, seconds: null, outcome: "caught" });
+  });
+
+  it("renders the seconds in place of the hops", () => {
+    const out = renderToStaticMarkup(<ObjectiveLine label="Objective" goal="x" hops={6} seconds={9} locks={1} />);
+    expect(out).toMatch(/data-testid="time-left" data-seconds="9" data-locks="1"/);
+    expect(out).toContain(">seconds<");
+    expect(out).not.toMatch(/>hops?</);
+    expect(out).not.toContain("hops-left");
+    expect(renderToStaticMarkup(<ObjectiveLine label="Objective" goal="x" hops={1} seconds={1} />)).toContain(">second<");
+    expect(renderToStaticMarkup(<ObjectiveLine label="Caught" goal="x" hops={null} seconds={null} />)).not.toContain("time-left");
+  });
+
+  it("ends the run with the alarms in plain words, not the turns", () => {
+    const run = start();
+    expect(endNote({ ...run, turn: 12 }, true)).toBe("No alarm raised. The debrief has the replay.");
+    const raised = (n: number): RunState => ({ ...run, alarmEvents: Array.from({ length: n }, () => ({ turn: 1, cause: { kind: "camera", id: "C1" } }) as RunState["alarmEvents"][number]) });
+    expect(endNote(raised(1), true)).toBe("One alarm raised. The debrief has the replay.");
+    expect(endNote(raised(3), true)).toBe("3 alarms raised. The debrief has the replay.");
+    expect(endNote(raised(3))).toBe("0 turns, 3 alarm raises. The debrief has the replay.");
+  });
+
+  it("tells the player to move with the keys, and how to pick, not how many turns", () => {
+    const run = start();
+    expect(nextStep(placed, run, mission.objective, null, true)).toBe("You're in at the loading dock. Move with W, A, S and D.");
+    expect(nextStep(placed, play(run, [move("fl-lobby")]), mission.objective, null, true)).toBe("Pick the records room door: hold E at it");
+    // The board's own words are unchanged.
+    expect(nextStep(placed, play(run, [move("fl-lobby")]), mission.objective, null)).toBe("Pick the records room door, 2 turns");
   });
 });
 
