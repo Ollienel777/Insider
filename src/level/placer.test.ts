@@ -614,32 +614,68 @@ describe("placeLevel on a floor from a live scan (no entry tags, no named record
     expect(placeLevel(manifest(), f, SEED, {}).level.objective).toBe(p.level.objective);
   });
 
-  it("posts guards on a small scanned floor, where no node is two moves clear of the start and the entries", () => {
-    // Ten sweeps in a ring over three rooms, no tags: the shape of a small live scan, where every
-    // node is within two moves of the start or an entry.
-    const N = 10;
-    const ids = Array.from({ length: N }, (_, i) => `s${String(i).padStart(2, "0")}`);
-    const at = (i: number) => ({ x: 10 * Math.cos((i / N) * 2 * Math.PI), y: 10 * Math.sin((i / N) * 2 * Math.PI) });
-    const roomOf = (i: number) => ["north", "south", "west"][Math.floor(i / 4)];
-    const small: FloorGraph = {
+  /** `n` sweeps in a ring, four to a room, no tags: the shape of a small live scan. */
+  function ring(n: number): FloorGraph {
+    const ids = Array.from({ length: n }, (_, i) => `s${String(i).padStart(2, "0")}`);
+    const at = (i: number) => ({ x: 10 * Math.cos((i / n) * 2 * Math.PI), y: 10 * Math.sin((i / n) * 2 * Math.PI) });
+    const names = ["north", "south", "west", "east"].slice(0, Math.ceil(n / 4));
+    const roomOf = (i: number) => names[Math.floor(i / 4)];
+    return {
       nodes: ids.map((id, i) => ({ id, ...at(i), roomId: roomOf(i), tags: [] })),
       edges: ids.map((id, i) => {
-        const next = ids[(i + 1) % N];
-        return roomOf(i) === roomOf((i + 1) % N) ? { a: id, b: next } : { a: id, b: next, door: { id: `door:${id}`, lockable: false } };
+        const next = ids[(i + 1) % n];
+        return roomOf(i) === roomOf((i + 1) % n) ? { a: id, b: next } : { a: id, b: next, door: { id: `door:${id}`, lockable: false } };
       }),
-      rooms: ["north", "south", "west"].map((id, k) => ({ id, label: `Open Floor ${k + 1}`, rect: { x: -10, y: -10, w: 20, h: 20 } })),
+      rooms: names.map((id, k) => ({ id, label: `Open Floor ${k + 1}`, rect: { x: -10, y: -10, w: 20, h: 20 } })),
       sightlines: Object.fromEntries(ids.map((id, i) => [id, ids.filter((o, j) => o !== id && roomOf(j) === roomOf(i))])),
       source: "matterport",
     };
-    const p = placeLevel(manifest(), small, SEED, {});
+  }
+  /** Every node within the engine's hearing of where the objective's lock is picked. */
+  function inEarshot(p: PlacedLevel): Set<string> {
+    const inside = new Set(p.zones.find((z) => z.role === "objective")!.nodes);
+    const picks = p.level.floor.edges
+      .filter((e) => e.door && p.level.lockedDoors.includes(e.door.id) && inside.has(e.a) !== inside.has(e.b))
+      .map((e) => (inside.has(e.a) ? e.b : e.a));
+    const adj = new Map<string, string[]>();
+    for (const e of p.level.floor.edges) {
+      adj.set(e.a, [...(adj.get(e.a) ?? []), e.b]);
+      adj.set(e.b, [...(adj.get(e.b) ?? []), e.a]);
+    }
+    let frontier = picks;
+    const heard = new Set(picks);
+    for (let d = 0; d < DEFAULT_HEARING; d++) {
+      frontier = frontier.flatMap((id) => adj.get(id) ?? []).filter((id) => !heard.has(id));
+      frontier.forEach((id) => heard.add(id));
+    }
+    return heard;
+  }
+
+  it("posts a guard on a small scanned floor, nearer the entries than two moves but out of earshot of the lock", () => {
+    // Thirteen sweeps fit one guard, the dock post; it keeps the same (relaxed) entry clearance a round does.
+    const p = placeLevel(manifest(), ring(13), SEED, {});
+    expect(p.level.lockedDoors.length).toBeGreaterThan(0);
     expect(p.guards.length).toBeGreaterThan(0);
     const exits = new Set(p.entries.map((e) => e.nodeId));
+    const heard = inEarshot(p);
     for (const g of p.guards) {
       expect(g.patrol.some((id) => exits.has(id)), g.id).toBe(false);
       expect(g.patrol.includes(p.entries[0].nodeId), g.id).toBe(false);
+      expect(g.patrol.filter((id) => heard.has(id)), g.id).toEqual([]);
     }
-    const run = createRun(p.level);
-    expect(run.status).toBe("playing");
+    // The clearance relaxed: the guard stands one move from an entry, inside ENTRY_CLEARANCE.
+    const entryNeighbours = new Set(p.level.floor.edges.flatMap((e) => (exits.has(e.a) ? [e.b] : exits.has(e.b) ? [e.a] : [])));
+    expect(p.guards.some((g) => entryNeighbours.has(g.patrol[0]))).toBe(true);
+    expect(createRun(p.level).status).toBe("playing");
+  });
+
+  it("leaves a guard unplaced on a scan too small to post one out of earshot of the lock", () => {
+    // Ten sweeps: the only node clear of the entries is where the objective's lock is picked.
+    const p = placeLevel(manifest(), ring(10), SEED, {});
+    expect(p.level.lockedDoors.length).toBeGreaterThan(0);
+    expect(p.guards).toEqual([]);
+    expect(p.unplaced.some((u) => u.elementRole.startsWith("guard:"))).toBe(true);
+    expect(createRun(p.level).status).toBe("playing");
   });
 
   it("leaves F1's own placement as it was", () => {
