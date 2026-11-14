@@ -1,6 +1,8 @@
 // The scan view's pose, and the numbers it reads back from its debug looks
 // (issue 118). Pure.
 //
+import type { PanoResolution } from "./manifest";
+
 // Frame: the scan's, y-up, metres. Yaw 0 looks down -z and grows turning
 // left; pitch grows looking up (three.js's camera convention).
 
@@ -26,6 +28,45 @@ export function poseVelocity(last: ScanPose | null, now: ScanPose, dt: number, j
 /** The pose for a player whose feet are at (x, y, z), looking (yaw, pitch). */
 export function eyePose(feet: readonly [number, number, number], yaw: number, pitch: number, eyeHeight: number): ScanPose {
   return { x: feet[0], y: feet[1] + eyeHeight, z: feet[2], yaw, pitch };
+}
+
+/** How far under a scan camera its feet are assumed to be when neither the mesh nor the scan says, metres. */
+export const CAMERA_HEIGHT = 1.4;
+
+/**
+ * Where the feet stand under a scan camera at `camera`: the mesh's floor
+ * under it when a ray found one, else the floor spot the scan gives, else a
+ * camera's height below it.
+ */
+export function feetUnder(
+  camera: readonly [number, number, number],
+  meshFloor: number | null,
+  scanFloor: readonly [number, number, number] | null,
+): [number, number, number] {
+  const [x, y, z] = camera;
+  return [x, meshFloor ?? scanFloor?.[1] ?? y - CAMERA_HEIGHT, z];
+}
+
+/**
+ * How many full-size cubes are kept on the GPU, and their size, for a face
+ * resolution: six 2k cubes are about 800 MB of GPU memory.
+ */
+export function sharpLayer(faces: PanoResolution): { capacity: number; size: number } {
+  switch (faces) {
+    case "4k":
+      return { capacity: 3, size: 4096 };
+    case "2k":
+      return { capacity: 6, size: 2048 };
+    case "high":
+      return { capacity: 8, size: 1024 };
+    default:
+      return { capacity: 8, size: 512 };
+  }
+}
+
+/** Whether signed links valid until `validUntil` (ISO, or null for no limit) still have more than `margin` ms on them at `now`. */
+export function linksFresh(validUntil: string | null | undefined, now: number, margin: number): boolean {
+  return !validUntil || Date.parse(validUntil) - now > margin;
 }
 
 export interface ViewStats {

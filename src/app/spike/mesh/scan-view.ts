@@ -35,7 +35,7 @@ import {
 } from "@/lib/scan-mesh/manifest";
 import { TUNING, type MoveWorld } from "@/lib/scan-mesh/movement";
 import { parseObj } from "@/lib/scan-mesh/obj";
-import { poseVelocity, viewStats, type ScanPose, type ViewStats } from "@/lib/scan-mesh/pose";
+import { feetUnder, linksFresh, poseVelocity, sharpLayer, viewStats, type ScanPose, type ViewStats } from "@/lib/scan-mesh/pose";
 import { MeshWorld } from "./collider";
 import type { DetailReply, DetailRequest } from "./detail-worker";
 import { matchExposure } from "./exposure-match";
@@ -227,8 +227,7 @@ export class ScanView {
     const pano = this.manifest?.panos[index];
     if (!pano) return null;
     const [x, y, z] = pano.position;
-    const floor = this.floorAt(x, y, z, 3) ?? pano.floor?.[1] ?? y - 1.4;
-    return [x, floor, z];
+    return feetUnder(pano.position, this.floorAt(x, y, z, 3), pano.floor);
   }
 
   /** The scan position nearest `eye`, by index, or -1. */
@@ -414,11 +413,8 @@ export class ScanView {
       this.drawn = new Mesh(geometry, this.material);
       this.scene.add(this.drawn);
 
-      // The sharp layer's size: six 2k cubes are about 800 MB of GPU memory.
-      const faces = this.faces;
-      const capacity = faces === "4k" ? 3 : faces === "2k" ? 6 : 8;
-      const sharpSize = faces === "4k" ? 4096 : faces === "2k" ? 2048 : faces === "high" ? 1024 : 512;
-      this.panos = new PanoStore(this.renderer, geometry, capacity, sharpSize);
+      const sharp = sharpLayer(this.faces);
+      this.panos = new PanoStore(this.renderer, geometry, sharp.capacity, sharp.size);
       this.panos.onStale = () => void this.refreshLinks();
       this.panos.setPanos(manifest.panos);
 
@@ -453,8 +449,7 @@ export class ScanView {
 
   /** Whether the links in hand still have time on them. New ones are asked for only when a panorama needs one. */
   private linksUsable(): boolean {
-    const until = this.manifest?.validUntil;
-    return !until || Date.parse(until) - Date.now() > LINK_MARGIN;
+    return linksFresh(this.manifest?.validUntil, Date.now(), LINK_MARGIN);
   }
 
   /**
