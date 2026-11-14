@@ -3,8 +3,9 @@
 // The Inside view (SPEC §4.5): on a board built from a live scan, a Showcase
 // player in the side panel that moves to the player's sweep on every hop. The
 // board's node ids are the scan's sweep ids, so the player's node is where
-// the view goes. It only moves the camera: nothing is read from it, and
-// nothing leaves the page.
+// the view goes. The panel only moves the camera; once the player is open, the
+// overlay over it (issue 108) reads the pose and the floor points to draw the
+// run in first person. Nothing leaves the page.
 //
 // The Run screen renders this only on a live scan; on fixtures (the demo path
 // and the smoke) there is no panel at all.
@@ -12,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import type { InsideView } from "@/adapters/matterport";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ScanOverlay, type ScanOverlayProps } from "@/components/scan/overlay/scan-overlay";
 
 /**
  * Hands focus back to the board when it sits in the panel (a click in the
@@ -45,7 +47,7 @@ export interface InsideSession {
 export function openInsideSession(
   open: (parent: HTMLElement, signal?: AbortSignal) => Promise<InsideView>,
   parent: HTMLElement,
-  onStatus: (status: InsideStatus) => void,
+  onStatus: (status: InsideStatus, view?: InsideView) => void,
 ): InsideSession {
   let view: InsideView | null = null;
   let closed = false;
@@ -57,7 +59,7 @@ export function openInsideSession(
     (opened) => {
       if (closed) return opened.disconnect();
       view = opened;
-      onStatus("ready");
+      onStatus("ready", opened);
       if (target !== null) void opened.moveTo(target);
     },
     (error: unknown) => {
@@ -83,24 +85,32 @@ export function openInsideSession(
 export function InsideViewPanel({
   open,
   sweepId,
+  overlay,
 }: {
   /** Opens the player in the element given; from `insideViewFor`. */
   open: (parent: HTMLElement, signal?: AbortSignal) => Promise<InsideView>;
   /** The player's node on the board: a sweep id of the scan. */
   sweepId: string;
+  /** The run to draw over the scan once the player is open (issue 108). */
+  overlay?: ScanOverlayProps;
 }) {
   const panel = useRef<HTMLElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const session = useRef<InsideSession | null>(null);
   const [status, setStatus] = useState<InsideStatus>("connecting");
+  const [view, setView] = useState<InsideView | null>(null);
 
   useEffect(() => {
     const parent = host.current;
     if (!parent) return;
-    const opened = openInsideSession(open, parent, setStatus);
+    const opened = openInsideSession(open, parent, (next, ready) => {
+      setStatus(next);
+      setView(ready ?? null);
+    });
     session.current = opened;
     return () => {
       opened.close();
+      setView(null);
       if (session.current === opened) session.current = null;
     };
   }, [open]);
@@ -125,6 +135,7 @@ export function InsideViewPanel({
       </h2>
       <div className="relative aspect-video overflow-hidden rounded-md border border-border bg-surface-1">
         <div ref={host} className="absolute inset-0" />
+        {status === "ready" && view && overlay ? <ScanOverlay view={view} {...overlay} /> : null}
         {status === "connecting" ? <Skeleton className="absolute inset-0 rounded-none bg-surface-1" /> : null}
         {status === "failed" ? (
           <p className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-text-2">

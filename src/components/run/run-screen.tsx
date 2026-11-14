@@ -485,7 +485,7 @@ export function RunScreen({
           crewPlan={crewPlan}
           loading={load.status === "loading" || (load.status === "ready" && !run)}
           awaiting={hidden}
-          inside={openInside && run ? <InsideViewPanel open={openInside} sweepId={run.playerNode} /> : null}
+          inside={openInside && run ? <InsideViewPanel open={openInside} sweepId={run.playerNode} overlay={placed ? { placed, run } : undefined} /> : null}
           chief={<ChiefPanel state={chief} revealed={revealed} zoneName={(id) => (placed ? zoneName(placed, id) : id)} onRetry={retryChief} />}
         />
       }
