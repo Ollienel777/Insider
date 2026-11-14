@@ -85,13 +85,16 @@ export function chooseStage(
  * them, and under the scan a foot row with its caption. Below `lg`
  * everything stacks in reading order: switch, board, scan.
  *
- * The Live controls (live-controls.tsx) are laid over the corners of the
- * board's area, 24 px in from its sides and 12 px from its top or bottom. The
- * frame stands 20 px in and 8 px short of those edges, so the controls land
- * 4 px inside it, as the stage's own buttons sit in the head row: the timer
- * and the Tactical / Live switch in the foot row's ends, clear of the
- * caption, and on a phone the switch in the head row's free end. With the
- * board alone they sit over the board's corners, as they do on fixtures.
+ * The Run screen lays other controls over the corners of the board's area:
+ * the Live timer and the Tactical / Live switch (live-controls.tsx), 24 px in
+ * from its sides and 12 px from its bottom, or from its top for the switch on
+ * a phone; and the mute button (run-sound.tsx) in its top right corner, or on
+ * a phone under the switch. The frame stands 20 px in from the sides and a
+ * few px short of the top and bottom, so each of them lands inside it, level
+ * with the stage's own buttons: the timer and the play switch in the foot
+ * row's ends, clear of the caption, and the mute button in the head row's
+ * right end, which the scan's head leaves free. With the board alone they
+ * sit over the board's corners, as they do on fixtures.
  */
 export function StageView({
   mode,
@@ -124,8 +127,8 @@ export function StageView({
       data-testid="run-stage"
       data-stage={shown}
       className={cn(
-        "mx-5 mb-2 grid overflow-hidden rounded-md border border-border bg-surface-0 max-md:mt-2",
-        "lg:absolute lg:inset-x-5 lg:top-0 lg:bottom-2 lg:m-0 lg:grid-rows-[auto_minmax(0,1fr)_auto]",
+        "mx-5 mt-1 mb-2 grid overflow-hidden rounded-md border border-border bg-surface-0 max-md:mt-2",
+        "lg:absolute lg:inset-x-5 lg:top-1 lg:bottom-2 lg:m-0 lg:grid-rows-[auto_minmax(0,1fr)_auto]",
         shown === "split" ? SPLIT_COLUMNS : null,
         shown === "scan" ? "lg:grid-cols-[auto_minmax(0,1fr)]" : null,
       )}
@@ -154,7 +157,8 @@ export function StageView({
           room={room}
           look={look}
           onLook={onLook}
-          className={shown === "split" ? "lg:col-start-2 lg:row-start-1 lg:border-l" : undefined}
+          // Its right end is the mute button's: from `lg` the head is the stage's top right, and alone on a phone it is under the play switch.
+          className={shown === "split" ? "lg:col-start-2 lg:row-start-1 lg:border-l lg:pr-24" : "max-md:pr-12 lg:pr-24"}
         />
       ) : null}
       {shown !== "board" ? pane : null}

@@ -189,7 +189,8 @@ export function ScanFailed({ onRetry }: { onRetry: () => void }) {
       role="status"
       data-testid="inside-view"
       data-status="failed"
-      className="flex min-h-12 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-surface-1 py-1 pr-1 pl-4 max-md:pr-24"
+      // The right end is left to the controls the screen lays over this corner: the mute button, and on a phone the play switch.
+      className="flex min-h-12 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-surface-1 py-1 pr-24 pl-4"
     >
       <SourceChip />
       <p className="min-w-0 flex-1 basis-64 text-sm text-text-1">{FAILED_LINE}</p>

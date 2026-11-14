@@ -221,17 +221,21 @@ describe("the scan pane says what it is", () => {
   });
 });
 
-// The Live controls (live-controls.tsx) are laid over the corners of the board's area: 24 px in
-// from its sides, 12 px from its top (the play switch on a phone) or its bottom. What holds here is
-// the room the stage leaves them; that nothing overlaps was measured in a browser on a real scan.
-describe("room for the Live controls", () => {
+// The Run screen lays other controls over the corners of the board's area: the Live timer and the
+// Tactical / Live switch (live-controls.tsx) 24 px in from its sides and 12 px from its bottom, or its
+// top for the switch on a phone; the mute button (run-sound.tsx) in its top right corner, or under the
+// switch on a phone. What holds here is the room the stage leaves them; that nothing overlaps was
+// measured in a browser on a real scan.
+describe("room for the controls laid over the board's area", () => {
   const classOf = (out: string, testId: string) =>
     out.match(new RegExp(`data-testid="${testId}"[^>]*class="([^"]*)"`))![1].split(" ");
 
-  it("stands 4 px outside where the controls land, so they sit inside the frame as its own buttons do", () => {
+  it("stands just outside where the controls land, so they sit inside the frame as its own buttons do", () => {
     const stage = classOf(live(), "run-stage");
-    // 20 px in from the sides and 8 px short of the bottom at every width; 8 px down on a phone, for the switch at the top.
-    expect(stage).toEqual(expect.arrayContaining(["mx-5", "mb-2", "max-md:mt-2", "lg:inset-x-5", "lg:top-0", "lg:bottom-2", "lg:m-0"]));
+    // 20 px in from the sides, 8 px short of the bottom and 4 px of the top at every width; 8 px down on a phone, for the switch at the top.
+    expect(stage).toEqual(
+      expect.arrayContaining(["mx-5", "mt-1", "mb-2", "max-md:mt-2", "lg:inset-x-5", "lg:top-1", "lg:bottom-2", "lg:m-0"]),
+    );
   });
 
   it("keeps the caption clear of the timer on the left and, from md, the play switch on the right", () => {
@@ -244,8 +248,16 @@ describe("room for the Live controls", () => {
     expect(has(live(), "inside-caption")).toBe(mode !== "board");
   });
 
-  it("keeps the failed line clear of the play switch a phone lays over the head row", () => {
-    expect(renderToStaticMarkup(<ScanFailed onRetry={() => {}} />)).toMatch(/data-status="failed" class="[^"]*\bmax-md:pr-24\b/);
+  it("leaves the head row's right end to the mute button: the scan's head ends short of it", () => {
+    expect(classOf(live(), "inside-head")).toEqual(expect.arrayContaining(["lg:pr-24"]));
+    storeChoice("scan");
+    // Alone on a phone the head is the second row, where the mute button sits under the play switch.
+    expect(classOf(live(), "inside-head")).toEqual(expect.arrayContaining(["lg:pr-24", "max-md:pr-12"]));
+  });
+
+  it("keeps the failed line and Try again clear of that corner too", () => {
+    const failed = renderToStaticMarkup(<ScanFailed onRetry={() => {}} />);
+    expect(failed.match(/data-status="failed" class="([^"]*)"/)![1].split(" ")).toContain("pr-24");
   });
 });
 
