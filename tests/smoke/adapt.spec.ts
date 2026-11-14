@@ -71,6 +71,39 @@ test("a second run of F1 by the dock: G3 starts posted nearer it, the Chief says
   await expect(g3(page)).toHaveAttribute("data-node", defaultG3!);
 });
 
+test("Restart after a caught run places the guards from it, as a reload would, and Forget then restores the default", async ({ page }) => {
+  await open(page);
+  const defaultG3 = await g3(page).getAttribute("data-node");
+  await trip(page);
+  await caught(page);
+
+  // No reload: Restart starts the second run from the history the first just joined.
+  await page.getByRole("button", { name: "Restart" }).click();
+  await expect(page.getByTestId("turn")).toHaveText("0");
+  await expect(page.getByTestId("forget-history")).toHaveText("Forget 1 earlier run");
+  await expect(g3(page)).not.toHaveAttribute("data-node", defaultG3!);
+  const adaptedG3 = await g3(page).getAttribute("data-node");
+  await trip(page);
+  const rationale = page.getByTestId("chief-rationale");
+  await expect(rationale).toHaveAttribute("data-done", "true", { timeout: 4_000 });
+  await expect(rationale).toContainText("They used the loading dock before. G3 starts there tonight.");
+
+  // A Restart mid-run records nothing and keeps the board it was on.
+  await page.getByRole("button", { name: "Restart" }).click();
+  await expect(page.getByTestId("turn")).toHaveText("0");
+  await expect(page.getByTestId("forget-history")).toHaveText("Forget 1 earlier run");
+  await expect(g3(page)).toHaveAttribute("data-node", adaptedG3!);
+
+  // After Forget, the next Restart is on the default posture too.
+  await page.getByTestId("forget-history").click();
+  await expect(page.getByTestId("forget-history")).toHaveCount(0);
+  await expect(g3(page)).toHaveAttribute("data-node", defaultG3!);
+  await trip(page);
+  await page.getByRole("button", { name: "Restart" }).click();
+  await expect(page.getByTestId("turn")).toHaveText("0");
+  await expect(g3(page)).toHaveAttribute("data-node", defaultG3!);
+});
+
 test("the Plan board and the Debrief's replay stand the guards where the second run placed them", async ({ page }) => {
   await open(page);
   const defaultG3 = await g3(page).getAttribute("data-node");

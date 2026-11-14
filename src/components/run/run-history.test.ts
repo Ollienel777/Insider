@@ -119,6 +119,24 @@ describe("a finished run's record", () => {
     clearRunHistory("F1", storage, "romaine-1974");
     expect(loadRunHistory("F1", storage, "romaine-1974")).toEqual([]);
   });
+
+  it("keeps the good records when one is corrupt or carries an unknown key, still capped at the limit", () => {
+    const storage = memoryStorage();
+    const good = (noise: number): RunRecord => ({ outcome: "caught", entryZone: "dock-N", detectedZones: [], noise });
+    const stored = [good(0), { outcome: "lost", entryZone: 7 }, null, { ...good(1), x: 12 }, good(2)];
+    storage.setItem(runHistoryKey("F1"), JSON.stringify(stored));
+    expect(loadRunHistory("F1", storage)).toEqual([good(0), good(2)]);
+    // The next finished run adds to them; it does not overwrite them.
+    appendRunHistory("F1", good(3), storage);
+    expect(loadRunHistory("F1", storage).map((r) => r.noise)).toEqual([0, 2, 3]);
+    // More than the limit stored: the newest are kept.
+    storage.setItem(runHistoryKey("F1"), JSON.stringify(Array.from({ length: HISTORY_MAX + 5 }, (_, i) => good(i))));
+    const kept = loadRunHistory("F1", storage);
+    expect(kept).toHaveLength(HISTORY_MAX);
+    expect(kept[0].noise).toBe(5);
+    storage.setItem(runHistoryKey("F1"), JSON.stringify({ not: "an array" }));
+    expect(loadRunHistory("F1", storage)).toEqual([]);
+  });
   it("stays quiet when storage throws, on reaching it or on every call (#96)", () => {
     const record: RunRecord = { outcome: "caught", entryZone: "dock-N", detectedZones: [], noise: 1 };
     const boom = () => {

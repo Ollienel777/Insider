@@ -10,7 +10,7 @@ import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Building, LateChief, LevelManifest } from "@/domain";
+import type { Building, FloorGraph, LateChief, LevelManifest } from "@/domain";
 import { act, applyChiefOrders, createRun, type Action, type RunState } from "@/engine";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
@@ -51,7 +51,7 @@ export { runLogKey } from "./run-log-store";
 
 type Load =
   | { status: "loading" }
-  | { status: "ready"; placed: PlacedLevel; live: boolean; history: readonly RunRecord[] }
+  | { status: "ready"; placed: PlacedLevel; floor: FloorGraph; live: boolean; history: readonly RunRecord[] }
   | { status: "no-floor" }
   | { status: "error"; message: string };
 
@@ -116,6 +116,24 @@ export function RunScreen({
     saveRunLog(runLogOf(fresh, chiefSources.current, null, watchEntry.current), undefined, missionId);
   }, [missionId]);
 
+  /**
+   * Places the level on `floor` from the history stored now and starts a run on it: on opening,
+   * and on a Restart after a run ended, which has just joined the history (#35). Throws as the placer does.
+   */
+  const placeAndStart = useCallback(
+    (level: LevelManifest, floor: FloorGraph): PlacedLevel => {
+      // Earlier runs here set the guards' starting posture (#35): the placer takes it as an input.
+      const history = loadRunHistory(building.id, undefined, missionId);
+      const placed = placeLevel(level, floor, RUN_SEED, undefined, postureOf(history));
+      setLoad({ status: "ready", placed, floor, live: floor.source === "matterport", history });
+      setStoredRuns(history.length);
+      watchEntry.current = placed.watch?.entryId;
+      startRun(placed.level);
+      return placed;
+    },
+    [building.id, startRun, missionId],
+  );
+
   useEffect(() => {
     if (!manifest) return;
     let live = true;
@@ -128,13 +146,7 @@ export function RunScreen({
         (floor) => {
           if (!live) return;
           if (!floor) return setLoad({ status: "no-floor" });
-          // Earlier runs here set the guards' starting posture (#35): the placer takes it as an input.
-          const history = loadRunHistory(building.id, undefined, missionId);
-          const placed = placeLevel(manifest, floor, RUN_SEED, undefined, postureOf(history));
-          setLoad({ status: "ready", placed, live: floor.source === "matterport", history });
-          setStoredRuns(history.length);
-          watchEntry.current = placed.watch?.entryId;
-          startRun(placed.level);
+          const placed = placeAndStart(manifest, floor);
           setStatus(`You're in at the ${placed.entries[0].label.toLowerCase()}. Pick a number to move.`);
         },
         (error: unknown) => {
@@ -147,13 +159,14 @@ export function RunScreen({
     return () => {
       live = false;
     };
-  }, [building, manifest, heistMode, attempt, startRun, missionId]);
+  }, [building, manifest, heistMode, attempt, placeAndStart, missionId]);
 
   const load: Load = manifest ? loaded : { status: "no-floor" };
   const placed = load.status === "ready" ? load.placed : null;
   // The placement and the Chief's summary use `history`, read when the level was placed; the
   // Forget button uses `storedRuns`, which also counts a run that ended since.
   const history = load.status === "ready" ? load.history : null;
+  const floor = load.status === "ready" ? load.floor : null;
   const zones = useMemo(() => (placed ? chiefZones(placed) : null), [placed]);
 
   // The crew's plan from the Plan screen, read after mount (storage is the browser's).
@@ -237,11 +250,15 @@ export function RunScreen({
       setStatus(describeTurn(placed, run, result.run));
       if (result.run.alarmEvents.length > run.alarmEvents.length) callChief(result.run, result.run.alarmEvents.length - 1);
       // A run that just ended joins the history; the next visit's guards start from it.
-      const record = run.status === "playing" ? runRecordOf(result.run) : null;
-      if (record) {
-        appendRunHistory(building.id, record, undefined, missionId);
-        // The Forget button counts what is stored now, not what this run was placed from.
-        setStoredRuns(loadRunHistory(building.id, undefined, missionId).length);
+      try {
+        const record = run.status === "playing" ? runRecordOf(result.run) : null;
+        if (record) {
+          appendRunHistory(building.id, record, undefined, missionId);
+          // The Forget button counts what is stored now, not what this run was placed from.
+          setStoredRuns(loadRunHistory(building.id, undefined, missionId).length);
+        }
+      } catch {
+        // A board the record can't be read from: the history misses this run, the log below is still saved.
       }
       saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current, watchEntry.current), undefined, missionId);
     },
@@ -265,10 +282,22 @@ export function RunScreen({
   }, [building.id, missionId]);
 
   const restart = useCallback(() => {
-    if (!placed) return;
-    startRun(placed.level);
+    if (!placed || !run) return;
+    if (run.status !== "playing" && manifest && floor) {
+      // The run that ended joined the history: place again from it, as a reload would (#35).
+      try {
+        placeAndStart(manifest, floor);
+      } catch (error) {
+        latestRun.current = null;
+        setRun(null);
+        setLoad({ status: "error", message: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+    } else {
+      startRun(placed.level);
+    }
     setStatus("Back at the start. The guards are on their rounds.");
-  }, [placed, startRun]);
+  }, [placed, run, manifest, floor, placeAndStart, startRun]);
 
   const revealed = useChiefStream(chief);
   const hidden = useMemo(() => hiddenRoutes(chief, revealed), [chief, revealed]);

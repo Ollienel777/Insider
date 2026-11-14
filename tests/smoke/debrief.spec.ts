@@ -297,10 +297,11 @@ test("Restart after a capture, before the late answer lands: the log is the new 
   await expect(page.getByTestId("run-outcome")).toHaveAttribute("data-status", "caught");
   // Restart at once: the Chief's answer to the catching turn's sighting is still out, and never lands on the new run.
   await page.getByRole("button", { name: "Restart" }).click();
-  await expectFreshRun(page);
+  // Restart after a finished run places the level with that run's history (#35), as a reload would.
+  await expectFreshRun(page, "dock-N");
   await expect(page.getByTestId("chief-panel")).toHaveAttribute("data-state", "idle");
   await page.waitForTimeout(3_000);
-  await expectFreshRun(page);
+  await expectFreshRun(page, "dock-N");
   await expect(page.getByTestId("chief-panel")).toHaveAttribute("data-state", "idle");
 
   await railToDebrief(page);

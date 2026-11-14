@@ -32,8 +32,6 @@ export const RunRecord = z.strictObject({
 });
 export type RunRecord = z.infer<typeof RunRecord>;
 
-const RunHistory = z.array(RunRecord).max(HISTORY_MAX);
-
 const browserStorage = (): Storage | undefined => globalThis.localStorage;
 
 /** The record a finished run leaves; null while it is still being played. */
@@ -59,8 +57,13 @@ export function loadRunHistory(buildingId: string, storage?: Pick<Storage, "getI
   try {
     const raw = (storage ?? browserStorage())?.getItem(runHistoryKey(buildingId, missionId));
     if (!raw) return [];
-    const parsed = RunHistory.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // Record by record: one bad record costs only itself, not the runs stored beside it.
+    return parsed.flatMap((item) => {
+      const record = RunRecord.safeParse(item);
+      return record.success ? [record.data] : [];
+    }).slice(-HISTORY_MAX);
   } catch {
     return [];
   }
