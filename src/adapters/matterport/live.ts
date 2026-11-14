@@ -364,7 +364,8 @@ export interface InsidePlayer extends InsideSdk {
 export interface InsideView {
   /**
    * Sends the view to `sweepId`, in a flight of `ms` milliseconds: 600 when
-   * `ms` is left out or is not a finite number of at least 0. Moves never
+   * `ms` is left out or is not a finite number of at least 0, and at most
+   * 10 s when it asks for longer. Moves never
    * overlap: one made while another is in flight is held, and only the latest
    * held target is flown to once the flight settles, in its own `ms`. A move
    * the player refuses is ignored: the board, not the view, is the game.
@@ -373,8 +374,10 @@ export interface InsideView {
   /**
    * Turns the camera by `dx` degrees across and `dy` degrees up or down:
    * `Camera.rotate`'s horizontal and vertical, with the signs the SDK gives
-   * them. The turn lands at once (under 20 ms on SDK 26.11) and the promise
-   * resolves when it has. A turn the player refuses is dropped without a
+   * them: a positive `dx` lowers the yaw (on a real scan, `rotate(30, 0)`
+   * turned it by -30 degrees). The turn lands at once (under 20 ms on SDK
+   * 26.11) and the promise resolves when it has, after `TURN_MS` (1 s) at
+   * most, or at `disconnect`. A turn the player refuses is dropped without a
    * word, since turns come at pointer rate; the promise never rejects.
    */
   rotate(dx: number, dy: number): Promise<void>;
@@ -428,11 +431,15 @@ const BUSY_WAIT_MS = 400;
 
 /** A flight's travel time when the move names none. `Sweep.moveTo` keeps to it within about 50 ms (SDK 26.11). */
 const FLY_MS = 600;
+/** The longest travel time a move may ask for. A longer one is flown in this, which also keeps the move's deadline within `setTimeout`'s range. */
+const MAX_FLY_MS = 10_000;
 /** A move that has not settled this long after its travel time counts as refused, so a lost flight cannot freeze the view. */
 const MOVE_GRACE_MS = 5_000;
 
 /** `Camera.rotate`'s speed, in degrees a second: at 3000 a turn lands in under 20 ms (SDK 26.11). */
 export const LOOK_SPEED = 3_000;
+/** How long a turn may take before its promise resolves anyway, so a lost turn cannot leave it pending. */
+const TURN_MS = 1_000;
 
 /** How long the scan's positions may go quiet before `floorPoints` takes them as all there. */
 export const SWEEPS_QUIET_MS = 300;
@@ -453,11 +460,11 @@ const RawPose = z.object({ position: RawPoint, rotation: z.object({ x: z.number(
  */
 const RawPuck = z.object({ sid: z.string().min(1), puckPosition: RawPoint });
 
-/** `promise`, or a rejection once `ms` pass without it settling. */
-function settleWithin<T>(promise: Promise<T>, ms: number): Promise<T> {
+/** `promise`, or a rejection once `ms` pass without it settling. `what` names it in that rejection. */
+function settleWithin<T>(promise: Promise<T>, ms: number, what = "the move"): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`the move did not settle within ${ms} ms`)), ms);
+    timer = setTimeout(() => reject(new Error(`${what} did not settle within ${ms} ms`)), ms);
   });
   return Promise.race([promise, late]).finally(() => clearTimeout(timer));
 }
@@ -633,7 +640,6 @@ export async function connectInsideView(
   /** Opens the one `Camera.pose` subscription, which the view keeps until it is disconnected. */
   function watchPose() {
     if (watchingPose || gone) return;
-    watchingPose = true;
     let opening = true;
     const subscription = sdk.Camera.pose.subscribe((raw) => {
       if (gone) return;
@@ -645,6 +651,8 @@ export async function connectInsideView(
       if (!opening) for (const entry of [...poseListeners]) tell(entry);
     });
     opening = false;
+    // Only now: a `subscribe` that threw is tried again on the next ask.
+    watchingPose = true;
     closed.signal.addEventListener(
       "abort",
       () => {
@@ -659,24 +667,36 @@ export async function connectInsideView(
   return {
     moveTo(sweepId, ms) {
       target = sweepId;
-      travel = typeof ms === "number" && Number.isFinite(ms) && ms >= 0 ? ms : FLY_MS;
+      travel = typeof ms === "number" && Number.isFinite(ms) && ms >= 0 ? Math.min(ms, MAX_FLY_MS) : FLY_MS;
       flying ??= fly();
       return flying;
     },
     async rotate(dx, dy) {
-      if (gone) return;
+      if (gone || closed.signal.aborted) return;
+      // Ends the wait at disconnect. Each turn has its own, removed as it settles, so nothing outlives it.
+      let onClose = () => {};
+      const shut = new Promise<void>((resolve) => (onClose = resolve));
+      closed.signal.addEventListener("abort", onClose, { once: true });
       try {
-        // Not queued behind moves, and not bounded: a lost turn holds nothing up.
-        await sdk.Camera.rotate(dx, dy, { speed: LOOK_SPEED });
+        // Not queued behind moves. Bounded, and ended by disconnect, so a lost turn never leaves the caller waiting.
+        await Promise.race([settleWithin(sdk.Camera.rotate(dx, dy, { speed: LOOK_SPEED }), TURN_MS, "the turn"), shut]);
       } catch {
         // Dropped: the next turn is already on its way.
+      } finally {
+        closed.signal.removeEventListener("abort", onClose);
       }
     },
     onPose(listener) {
       if (gone) return () => {};
       const entry: PoseEntry = { listener, heard: null };
       poseListeners.add(entry);
-      watchPose();
+      try {
+        watchPose();
+      } catch (error) {
+        // No unsubscribe reaches the caller, so the entry must not stay to hear a later subscription.
+        poseListeners.delete(entry);
+        throw error;
+      }
       queueMicrotask(() => tell(entry));
       return () => {
         poseListeners.delete(entry);
