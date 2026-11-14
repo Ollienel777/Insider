@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
-import { readCachedLevel } from "@/agents/builder/cache";
+import { readCachedLevel, type CachedLevel } from "@/agents/builder/cache";
 import { DebriefScreen } from "@/components/debrief/debrief-screen";
+import { LevelUnavailable } from "@/components/shell/level-unavailable";
 import { findBuilding } from "@/lib/building";
 
 // The Debrief screen (SPEC §2 beat 6). Pure client state: the run's log is in
@@ -11,7 +12,14 @@ export default async function DebriefPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const building = await findBuilding(id);
   if (!building) notFound();
-  const cached = await readCachedLevel(building.id);
+  // A level that fails its check is this screen's error state, as on the Dossier.
+  let cached: CachedLevel | null;
+  try {
+    cached = await readCachedLevel(building.id);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return <LevelUnavailable buildingId={building.id} name={building.name} step="Debrief" detail={message} />;
+  }
   return (
     <DebriefScreen
       building={{ id: building.id, name: building.name, matterportModelId: building.matterportModelId }}
