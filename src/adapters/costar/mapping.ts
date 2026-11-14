@@ -13,9 +13,10 @@ import { AvailableSpace, Building, type City } from "@/domain";
 
 /**
  * The only kit files the casting search may read, relative to
- * `COSTAR_KIT_DIR` (SPEC §4.5): buildings, space for lease or sale, and the
- * join to Matterport models. Their fields are not pinned until the kit's
- * `schemas/` are read (#27), so nothing maps them yet.
+ * `COSTAR_KIT_DIR`: buildings, space for lease or sale, and the join to
+ * Matterport models. Unverified: the paths are SPEC §4.5's, never checked
+ * against a kit, and their fields are not pinned until the kit's `schemas/`
+ * are read (#27). Nothing reads them yet.
  */
 export const KIT_FILES = {
   properties: "data/commercial-property.jsonl",

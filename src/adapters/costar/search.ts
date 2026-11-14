@@ -4,6 +4,7 @@
 // properties are left and the best of them. The Casting Director chooses the
 // order and judges ties; nothing here calls a model.
 import {
+  type Building,
   type CastingFilter,
   type InventoryProperty,
   type InventorySearch,
@@ -41,6 +42,10 @@ export function passes(p: InventoryProperty, f: CastingFilter): boolean {
       return p.layers.matterport;
     case "needsEntry":
       return f.needsEntry.some((kind) => p.entries.includes(kind));
+    default: {
+      const unknown: never = f;
+      throw new Error(`unknown casting filter kind: ${(unknown as { kind?: unknown }).kind}`);
+    }
   }
 }
 
@@ -58,13 +63,20 @@ function top(left: readonly InventoryProperty[]): SearchCandidate[] {
     .map(({ p, floor }) => toCandidate(p, floor));
 }
 
-/** Applies `filters` in order to `inventory`; one step for the whole inventory, then one per filter. */
-export function searchInventory(inventory: readonly InventoryProperty[], filters: readonly CastingFilter[]): InventorySearch {
+/**
+ * Applies `filters` in order to `inventory`; one step for the whole
+ * inventory, then one per filter. `source` names the inventory.
+ */
+export function searchInventory(
+  inventory: readonly InventoryProperty[],
+  filters: readonly CastingFilter[],
+  source: Building["source"],
+): InventorySearch {
   let left = inventory;
   const steps = [{ label: `${inventory.length} buildings in the inventory`, count: inventory.length, top: top(left) }];
   for (const f of filters) {
     left = left.filter((p) => passes(p, f));
     steps.push({ label: f.label, count: left.length, top: top(left) });
   }
-  return { steps };
+  return { steps, source };
 }
