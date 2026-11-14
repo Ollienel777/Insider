@@ -81,3 +81,24 @@ test("under reduced motion the drill shows its result at once", async ({ browser
   await expect(page.getByTestId("narrative-text")).toHaveAttribute("data-done", "true");
   await context.close();
 });
+
+// Issue #91: beat 7's three answers (the bottleneck, the zone table and the
+// warden posts) are in view after playback, with no scrolling, at the demo's
+// 1440x900 and at 1280x720. The panel scrolls, so ratio 1 also checks that
+// its overflow does not clip them.
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 1280, height: 720 },
+]) {
+  test(`at ${viewport.width}x${viewport.height} the bottleneck, zone table and warden posts are in view after playback`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/b/F1/drill");
+    await expect(time(page)).toHaveAttribute("data-phase", "done", { timeout: 10_000 });
+    await expect(page.getByTestId("narrative-text")).toHaveAttribute("data-done", "true", { timeout: 20_000 });
+    for (const id of ["bottleneck", "bottleneck-figures", "zones", "warden-posts"]) {
+      await expect(page.getByTestId(id), id).toBeInViewport({ ratio: 1 });
+    }
+  });
+}

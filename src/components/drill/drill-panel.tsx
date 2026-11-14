@@ -9,8 +9,10 @@ export type Phase = "playing" | "done";
 
 /**
  * The drill's side panel (DESIGN.md, Drill): the time to clear in `3xl`, the
- * blocked stair and the report's sentence on why, the bottleneck, per-zone
- * clear times, warden posts and the headcount's basis. While the playback
+ * three answers SPEC beat 7 names (the bottleneck, per-zone clear times and
+ * warden posts) straight under it, so all three sit above the fold at
+ * 1440x900; then who cannot reach a stair, the blocked stair and the
+ * report's sentence on why, the narrative and the headcount's basis. While the playback
  * runs, the clock counts and each zone row ticks as its last occupant reaches
  * a stair. Every figure here is read from the report.
  */
@@ -38,7 +40,7 @@ export function DrillPanel({
   const delta = report.timeToClearS - baselineS;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <section aria-labelledby="clear-label" className="flex flex-col gap-1">
         <div className="flex items-baseline justify-between gap-2">
           <h2 id="clear-label" className="label-caps text-text-3">
@@ -89,22 +91,6 @@ export function DrillPanel({
           </>
         )}
       </section>
-
-      <section aria-labelledby="scenario-label" className="flex flex-col gap-2">
-        <h2 id="scenario-label" className="label-caps text-text-3">
-          Scenario
-        </h2>
-        {blocked ? (
-          <p data-testid="blocked-stair-name" className="border-l-2 border-danger pl-3 text-base font-medium text-text-1">
-            {blocked.label} blocked
-          </p>
-        ) : null}
-        <p data-testid="scenario-rule" className="text-sm text-text-2">
-          {report.scenario.rule}.
-        </p>
-      </section>
-
-      {narrative}
 
       <section aria-labelledby="bottleneck-label" className="flex flex-col gap-1">
         <h2 id="bottleneck-label" className="label-caps text-text-3">
@@ -213,6 +199,22 @@ export function DrillPanel({
           </ul>
         </section>
       ) : null}
+
+      <section aria-labelledby="scenario-label" className="flex flex-col gap-2">
+        <h2 id="scenario-label" className="label-caps text-text-3">
+          Scenario
+        </h2>
+        {blocked ? (
+          <p data-testid="blocked-stair-name" className="border-l-2 border-danger pl-3 text-base font-medium text-text-1">
+            {blocked.label} blocked
+          </p>
+        ) : null}
+        <p data-testid="scenario-rule" className="text-sm text-text-2">
+          {report.scenario.rule}.
+        </p>
+      </section>
+
+      {narrative}
 
       <section aria-labelledby="headcount-label" className="flex flex-col gap-2">
         <h2 id="headcount-label" className="flex items-center gap-2 label-caps text-text-3">
