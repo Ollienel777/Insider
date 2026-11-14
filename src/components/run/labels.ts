@@ -171,10 +171,32 @@ export interface RoomLabel {
   quad: Quad;
 }
 
+/** A room this narrow (in floor units) or narrower is a corridor: one row of nodes, end to end. */
+const CORRIDOR_WIDTH = 4;
+
+/**
+ * Whether a room's back edge (the one its label runs along) is the floor's
+ * outer wall: no other room's tile lies against any of it.
+ */
+export function backEdgeIsOuter(room: Pick<FloorGraph["rooms"][number], "id" | "rect">, rooms: FloorGraph["rooms"]): boolean {
+  const r = room.rect;
+  const alongX = r.w >= r.h;
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
+  return !rooms.some((o) => {
+    if (o.id === room.id) return false;
+    const q = o.rect;
+    return alongX
+      ? near(q.y + q.h, r.y) && q.x < r.x + r.w && q.x + q.w > r.x
+      : near(q.x + q.w, r.x) && q.y < r.y + r.h && q.y + q.h > r.y;
+  });
+}
+
 /**
  * Each room's name on its tile, by `choose`: along the back edge where it
  * fits whole (the default), else slid along it, else along the front edge,
- * else smaller.
+ * else smaller. A corridor whose back edge is the floor's outer wall takes its
+ * name just outside that edge (#83 R1-N2): on the tile, every spot is under a
+ * node or a pawn at some point in the run.
  */
 export function placeRoomLabels(
   floor: Pick<FloorGraph, "rooms">,
@@ -185,9 +207,13 @@ export function placeRoomLabels(
     const text = label(room.label);
     const { edge, em } = roomLabelFit(room.rect, text.length);
     const slots: LabelSlot[] = [];
+    // A corridor along the floor's outer wall: every spot on its tile is under a node or a pawn
+    // at some point in the run, so its name goes just outside, where nothing ever stands.
+    const corridor = Math.min(room.rect.w, room.rect.h) <= CORRIDOR_WIDTH && backEdgeIsOuter(room, floor.rooms);
+    const sides = corridor ? (["outside", "back", "front"] as const) : (["back", "front"] as const);
     for (const scale of [1, 0.85]) {
       const slack = edge - 0.6 - em * scale * text.length * GLYPH.advance;
-      for (const side of ["back", "front"] as const) {
+      for (const side of sides) {
         for (let shift = 0; shift <= slack + 1e-9; shift += 0.25) slots.push({ side, shift, scale });
       }
     }
