@@ -121,12 +121,20 @@ export function legalMoves(run: RunState, from: string, to: string, maxHops: num
 
 const distance = (a: Vec, b: Vec) => Math.hypot(a.x - b.x, a.y - b.y);
 
+/** The middle of a door's face, nudged 5 cm towards `pos`, so a line to it ends before the door itself. */
+function nearestOnBar(door: GroundDoor, pos: Vec): Vec {
+  const d = distance(door.centre, pos) || 1;
+  return { x: door.centre.x + ((pos.x - door.centre.x) / d) * 0.05, y: door.centre.y + ((pos.y - door.centre.y) / d) * 0.05 };
+}
+
 /** What E does from here, for the HUD's prompt, the door's ring and `stepWalker`. */
 export type Prompt =
   /** A locked door: `node` is its node on the player's side, `moves` the legal moves there first. */
   | { kind: "pick"; doorId: string; node: string; moves: readonly Action[]; done: number; of: number }
   /** A locked door in reach that cannot be picked from here: its node on this side is too far by legal moves. */
   | { kind: "locked"; doorId: string }
+  /** A locked door in view, too far off to pick: the player should step up to it. */
+  | { kind: "far"; doorId: string }
   | { kind: "take" }
   | null;
 
@@ -152,10 +160,10 @@ function nearSide(ground: Ground, door: GroundDoor, pos: Vec): string {
 }
 
 /** The locked door the middle of the view is on, within reach, if any. */
-export function doorInView(ground: Ground, run: RunState, pos: Vec, yaw: number): GroundDoor | null {
+export function doorInView(ground: Ground, run: RunState, pos: Vec, yaw: number, reach: number = FP.reachM): GroundDoor | null {
   const look = facing(yaw);
   let best: GroundDoor | null = null;
-  let bestT: number = FP.reachM;
+  let bestT: number = reach;
   for (const door of ground.doors) {
     if (!run.locked.includes(door.doorId)) continue;
     const t = lineMeets(door, pos, look);
@@ -179,6 +187,9 @@ export function promptFor(walker: Walker, ground: Ground, run: RunState, yaw: nu
   }
   const objective = ground.nodes.get(run.board.level.objective);
   if (canTake(run) && objective && distance(objective, walker.pos) <= FP.reachM) return { kind: "take" };
+  // Nothing walls the line off: a door seen through a wall is not pointed out.
+  const far = doorInView(ground, run, walker.pos, yaw, FP.noticeM);
+  if (far && ground.clear(walker.pos, nearestOnBar(far, walker.pos), run.locked.filter((id) => id !== far.doorId))) return { kind: "far", doorId: far.doorId };
   return null;
 }
 

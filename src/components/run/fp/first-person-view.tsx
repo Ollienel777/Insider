@@ -323,6 +323,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       data-ready={ready ? "true" : undefined}
       data-node={run.playerNode}
       data-turn={run.turn}
+      data-locked={run.locked.join(" ")}
       data-alarm={run.alarm}
       data-pointer={hud.locked ? "locked" : "free"}
       role="application"
@@ -351,19 +352,21 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
             <p data-testid="fp-over" className={cn("rounded-sm bg-surface-1 px-3 py-2 text-base shadow-e-1", run.status === "won" ? "text-success" : "text-danger")}>
               {run.status === "won" ? `Out with the ${noun}.` : `Caught in the ${roomName(placed.level.floor, run.playerNode)}.`}
             </p>
-          ) : paused ? (
+          ) : null}
+          {!over && paused ? (
             <p data-testid="fp-paused" className="flex items-center gap-2 rounded-sm bg-surface-1 px-3 py-2 text-sm text-text-1 shadow-e-1">
               Paused. <Key>P</Key> to go on
             </p>
-          ) : hud.prompt ? (
+          ) : null}
+          {over ? null : hud.prompt ? (
             <p
               data-testid="fp-prompt"
               data-kind={hud.prompt.kind}
               data-using={hud.using ? "true" : undefined}
               className="flex items-center gap-2 rounded-sm bg-surface-1 px-3 py-2 text-sm text-text-1 shadow-e-1"
             >
-              {hud.prompt.kind === "locked" ? (
-                "Locked. Step up to the door to pick it."
+              {hud.prompt.kind === "locked" || hud.prompt.kind === "far" ? (
+                "A locked door. Step up to it and hold E to pick it."
               ) : hud.prompt.kind === "take" ? (
                 <>
                   Hold <Key>E</Key> to take the {noun}

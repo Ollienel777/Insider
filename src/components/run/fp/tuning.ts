@@ -26,6 +26,8 @@ export const FP = Object.freeze({
   watchedM: 0.9,
   /** How near a locked door or the objective E works from. */
   reachM: 1.5,
+  /** How far off a locked door in view is pointed out ("get closer"). */
+  noticeM: 6,
   turnMs: FP_TURN_MS,
   /** Crossing into an area this many legal moves away plays them all; further, the player is held back. */
   maxHops: 3,

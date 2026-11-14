@@ -213,7 +213,7 @@ describe.each(CASES)("free movement on $id", ({ id, cached }) => {
     const a = ground.nodes.get(door.a)!;
     s.walker = { ...s.walker, pos: { x: a.x, y: a.y }, region: door.a };
     const yaw = yawTo(a, door.centre);
-    if (distance(a, door.centre) > FP.reachM) expect(promptFor(s.walker, s.ground, s.run, yaw)).toBeNull();
+    if (distance(a, door.centre) > FP.reachM) expect(promptFor(s.walker, s.ground, s.run, yaw)?.kind).not.toBe("pick");
     step(s, { ...IDLE, yaw: yaw + Math.PI, use: true, usePressed: true });
     expect(s.played).toEqual([]);
   });
