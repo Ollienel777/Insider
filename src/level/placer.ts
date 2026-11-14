@@ -212,8 +212,8 @@ const CLEANER_RULE = {
 
 const CORRIDOR = /corridor|hall/i;
 const SUITE_ROOM = /suite|office/i;
-/** Rooms people pass through: never the objective or the secure room, whatever a model names the zone. */
-const CIRCULATION = /corridor|hall|lobby|stair|lift|elevator|landing/i;
+/** Rooms people pass through: never the objective or the secure room, whatever a model names the zone. Words, not parts of words ("Marshall", "Uplift"). */
+const CIRCULATION = /\b(?:corridor|hall|lobby|stair|lift|elevator|landing)/i;
 
 // ---- graph helpers ----------------------------------------------------------
 
@@ -249,9 +249,10 @@ function hops(adj: Adjacency, from: readonly string[], allowed?: ReadonlySet<str
   return dist;
 }
 
-/** A shortest path from `a` to `b` inside `allowed`, both ends included. */
+/** A shortest path from `a` to `b` inside `allowed`, both ends included; empty when `b` cannot be reached. */
 function pathWithin(adj: Adjacency, a: string, b: string, allowed: ReadonlySet<string>): string[] {
   const back = hops(adj, [b], allowed);
+  if (!back.has(a)) return [];
   const path = [a];
   let at = a;
   while (at !== b) {
@@ -402,13 +403,21 @@ export function placeLevel(
       // Occupied suites: suite and office rooms that no available suite matches.
       return suiteRooms.filter((r) => !claimed.has(r.id) && !holdsAvailable(r.label)).map((r) => r.id);
     }
-    // The fixed keywords first, then the zone's own (model-written) name; never a room people pass through.
+    // The fixed keywords first ("Records Hall" is a records room), then the
+    // zone's own (model-written) name. A name under three letters matches
+    // nearly any room, so it is not tried; and for the objective and secure
+    // rooms it never lands on a room people pass through, or a suite or office.
     const usable = (r: { id: string; label: string }) => !claimed.has(r.id) && !CIRCULATION.test(r.label);
-    const words = [...(ROOM_WORDS[zone.role] ?? []), zone.name.trim().toLowerCase()].filter(Boolean);
-    for (const word of words) {
-      const room = floor.rooms.find((r) => r.label.toLowerCase().includes(word) && usable(r));
+    for (const word of ROOM_WORDS[zone.role] ?? []) {
+      const room = floor.rooms.find((r) => r.label.toLowerCase().includes(word) && !claimed.has(r.id));
       if (room) return [room.id];
     }
+    const name = zone.name.trim().toLowerCase();
+    const locked = zone.role === "objective" || zone.role === "secure";
+    const named =
+      name.length >= 3 &&
+      floor.rooms.find((r) => r.label.toLowerCase().includes(name) && (locked ? usable(r) && !SUITE_ROOM.test(r.label) : !claimed.has(r.id)));
+    if (named) return [named.id];
     if (zone.role !== "objective") return [];
     // No room's label names the objective: it goes in the unclaimed room
     // farthest from the start that people do not pass through, that holds no

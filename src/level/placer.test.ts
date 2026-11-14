@@ -362,6 +362,50 @@ describe("placeLevel on F1 from the cached manifest", () => {
     }
   });
 
+  it("never puts the objective in a suite or office by its model-written name (R1 review)", () => {
+    // Suite 2210 let, no records room, and a model that names the objective "Office".
+    const f = floor();
+    for (const r of f.rooms) if (r.id === "records-room") r.label = "Storage";
+    const m = manifest();
+    m.zones = m.zones.filter((z) => z.id !== "quiet-2210");
+    m.zones.find((z) => z.role === "objective")!.name = "Office";
+    const p = placeLevel(m, f, SEED, {});
+    expect(p.zones.find((z) => z.role === "objective")?.roomIds).toEqual(["records-room"]);
+  });
+
+  it("ignores a model-written name under three letters, which matches nearly any room (R1 review)", () => {
+    const f = floor();
+    for (const r of f.rooms) if (r.id === "records-room") r.label = "Storage";
+    const m = manifest();
+    m.zones.find((z) => z.role === "objective")!.name = "e";
+    const p = placeLevel(m, f, SEED, {});
+    expect(p.zones.find((z) => z.role === "objective")?.roomIds).toEqual(["records-room"]);
+    expect(p.zones.find((z) => z.role === "secure")?.roomIds).toEqual(["server-closet"]);
+  });
+
+  it("finds a records room named a hall by its keyword, and reads circulation words whole (R1 review)", () => {
+    for (const label of ["Records Hall", "Hall of Records"]) {
+      const f = floor();
+      for (const r of f.rooms) if (r.id === "records-room") r.label = label;
+      const p = placeLevel(manifest(), f, SEED, {});
+      expect(p.zones.find((z) => z.role === "objective")?.roomIds, label).toEqual(["records-room"]);
+    }
+    // "Uplift" is not a lift: the fallback still takes the room.
+    const f = floor();
+    for (const r of f.rooms) if (r.id === "records-room") r.label = "Uplift Storage";
+    const m = manifest();
+    m.zones.find((z) => z.role === "objective")!.name = "Corridor";
+    expect(placeLevel(m, f, SEED, {}).zones.find((z) => z.role === "objective")?.roomIds).toEqual(["records-room"]);
+  });
+
+  it("still gives an entry zone the lobby its name matches (R1 review)", () => {
+    const m = manifest();
+    const objective = m.zones.find((z) => z.role === "objective")!;
+    m.zones.push({ ...objective, id: "entry-lobby", role: "entry", name: "Elevator Lobby" });
+    const p = placeLevel(m, floor(), SEED);
+    expect(p.zones.find((z) => z.zoneId === "entry-lobby")?.roomIds).toEqual(["elevator-lobby"]);
+  });
+
   it("gives every placed element its manifest provenance entries, the same objects", () => {
     const m = manifest();
     const p = placeLevel(m, floor(), SEED);
@@ -450,6 +494,16 @@ describe("placeLevel refuses what it cannot run", () => {
     const f = floor();
     for (const n of f.nodes) n.tags = n.tags.filter((t) => t !== "entry");
     expect(() => placeLevel(manifest(), f, SEED)).toThrow(/no entry node/);
+  });
+
+  it("still places a floor whose objective room cannot be reached from the start (R1-M1: no hang)", () => {
+    // Sever every edge into the records room: the objective is cut off from the dock.
+    const f = floor();
+    const inside = new Set(f.nodes.filter((n) => n.roomId === "records-room").map((n) => n.id));
+    f.edges = f.edges.filter((e) => inside.has(e.a) === inside.has(e.b));
+    const p = placeLevel(manifest(), f, SEED);
+    expect(p.level.objective).toBe(F1_DEMO.objective);
+    expect(p.cleaners.map((k) => k.id)).toEqual(["K1"]);
   });
 
   it("throws on a floor with no room for the objective: every room left is one people pass through, a suite, or taken", () => {
