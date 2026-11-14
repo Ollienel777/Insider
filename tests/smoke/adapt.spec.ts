@@ -50,21 +50,27 @@ test("a second run of F1 by the dock: G3 starts posted nearer it, the Chief says
   expect(stored[0]).not.toBeNull();
   expect(stored[1]).toBeNull();
 
-  // The second run: G3 stands elsewhere, and the first rationale names the dock and G3.
+  // The second run: G3 stands in the secure room off the dock corridor, one door from dc-west.
   await open(page);
   await expect(page.getByTestId("forget-history")).toHaveText("Forget 1 earlier run");
   const adaptedG3 = await g3(page).getAttribute("data-node");
   expect(adaptedG3).not.toBe(defaultG3);
-  // The secure room off the dock corridor: nearer the dock than any guard starts on a first run.
+  // Nearer the dock than any guard starts on a first run.
   expect(adaptedG3).toBe("sc-rack");
-  await trip(page);
-  await expect(rationale).toHaveAttribute("data-done", "true", { timeout: 4_000 });
-  await expect(rationale).toContainText("They used the loading dock before. G3 starts in the secure room off the dock corridor tonight.");
 
   // Mid-run, forgetting would throw the run away: it waits for the start or the end.
+  await pressFor(page, "fl-lobby");
   await expect(page.getByTestId("forget-history")).toBeDisabled();
+  await pressFor(page, "dc-west");
+  await expect(page.getByTestId("alarm-banner")).toHaveAttribute("data-state", "alert");
+  // C2 trips as on the first run, and G3 is out of the closet on them that turn: the adaptation, on the board.
+  await expect(page.getByTestId("run-outcome")).toHaveAttribute("data-status", "caught");
+  await expect(rationale).toHaveAttribute("data-done", "true", { timeout: 4_000 });
+  await expect(rationale).toContainText("They used the loading dock before. G3 starts in the secure room off the dock corridor tonight.");
+  await expect(page.getByTestId("forget-history")).toHaveText("Forget 2 earlier runs");
   await page.getByRole("button", { name: "Restart" }).click();
   await expect(page.getByTestId("turn")).toHaveText("0");
+  await expect(g3(page)).toHaveAttribute("data-node", "sc-rack");
 
   // Forgetting the history places the level again in its default posture.
   await page.getByTestId("forget-history").click();
@@ -83,22 +89,30 @@ test("Restart after a caught run places the guards from it, as a reload would, a
   await page.getByRole("button", { name: "Restart" }).click();
   await expect(page.getByTestId("turn")).toHaveText("0");
   await expect(page.getByTestId("forget-history")).toHaveText("Forget 1 earlier run");
-  await expect(g3(page)).not.toHaveAttribute("data-node", defaultG3!);
-  const adaptedG3 = await g3(page).getAttribute("data-node");
-  await trip(page);
-  const rationale = page.getByTestId("chief-rationale");
-  await expect(rationale).toHaveAttribute("data-done", "true", { timeout: 4_000 });
-  await expect(rationale).toContainText("They used the loading dock before. G3 starts in the secure room off the dock corridor tonight.");
+  await expect(g3(page)).toHaveAttribute("data-node", "sc-rack");
 
   // A Restart mid-run records nothing and keeps the board it was on.
+  await pressFor(page, "fl-lobby");
   await page.getByRole("button", { name: "Restart" }).click();
   await expect(page.getByTestId("turn")).toHaveText("0");
   await expect(page.getByTestId("forget-history")).toHaveText("Forget 1 earlier run");
-  await expect(g3(page)).toHaveAttribute("data-node", adaptedG3!);
+  await expect(g3(page)).toHaveAttribute("data-node", "sc-rack");
 
-  // After Forget, the next Restart is on the default posture too.
+  await trip(page);
+  await expect(page.getByTestId("run-outcome")).toHaveAttribute("data-status", "caught");
+  const rationale = page.getByTestId("chief-rationale");
+  await expect(rationale).toHaveAttribute("data-done", "true", { timeout: 4_000 });
+  await expect(rationale).toContainText("They used the loading dock before. G3 starts in the secure room off the dock corridor tonight.");
+  await expect(page.getByTestId("forget-history")).toHaveText("Forget 2 earlier runs");
+  // Restart after this finished run re-places from both runs: G3 is still posted.
+  await page.getByRole("button", { name: "Restart" }).click();
+  await expect(page.getByTestId("turn")).toHaveText("0");
+  await expect(g3(page)).toHaveAttribute("data-node", "sc-rack");
+
+  // After Forget, the level is placed again on the default posture, and a Restart keeps it.
   await page.getByTestId("forget-history").click();
   await expect(page.getByTestId("forget-history")).toHaveCount(0);
+  await expect(page.getByTestId("turn")).toHaveText("0");
   await expect(g3(page)).toHaveAttribute("data-node", defaultG3!);
   await trip(page);
   await page.getByRole("button", { name: "Restart" }).click();
