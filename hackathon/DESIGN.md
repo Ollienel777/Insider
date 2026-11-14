@@ -21,7 +21,8 @@ a little cinematic. The data is the star; the game reads it.
 **Dark only.** The game is a night heist, a dark board makes cones and
 guard pieces readable, and dark reads as premium on the demo video and on
 a laptop screen at a judging table. A light theme is not shipped. Every
-text token is checked to AA on `--surface-0` and `--surface-1`.
+text token is checked to AA (4.5:1) on `--surface-0` through `--surface-3`
+(`src/app/tokens.test.ts` enforces it).
 
 ## Tokens
 
@@ -34,7 +35,7 @@ Tailwind theme. Components use these names only, never raw values.
 :root {
   /* neutrals (cool slate) */
   --n-950: #07090c;  --n-900: #0c1015;  --n-850: #11161d;  --n-800: #171d26;
-  --n-700: #232b37;  --n-600: #323c4b;  --n-500: #4a5566;  --n-400: #6b7686;
+  --n-700: #232b37;  --n-600: #323c4b;  --n-500: #4a5566;  --n-400: #7d8899;
   --n-300: #939caa;  --n-200: #bcc3cd;  --n-100: #e1e5ea;  --n-50:  #f4f6f8;
 
   /* surfaces */
@@ -47,8 +48,8 @@ Tailwind theme. Components use these names only, never raw values.
 
   /* text */
   --text-1: var(--n-50);    /* primary */
-  --text-2: var(--n-300);   /* secondary, AA on surface-0/1 */
-  --text-3: var(--n-400);   /* labels only, 12px mono caps, never body */
+  --text-2: var(--n-300);   /* secondary */
+  --text-3: var(--n-400);   /* labels only, 12px mono caps, never body; 4.7:1 on surface-3 */
 
   /* the one accent: signal amber, the colour of a lit window at night */
   --accent:        #f2a93b;
