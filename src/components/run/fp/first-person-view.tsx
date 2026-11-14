@@ -11,7 +11,7 @@
 //   walker.ts      free position → engine actions, over a `Ground`
 //   scene.ts       the floor's static geometry, one three.js group
 //   actors.ts      guards, cameras, sight, doors and markers, over a `Ground`
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AmbientLight, DirectionalLight, Fog, PerspectiveCamera, PointLight, Scene, Vector3, WebGLRenderer } from "three";
 import type { Action, RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
@@ -83,9 +83,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
   const world = useMemo(() => buildWorld(placed.level.floor), [placed]);
   const ground = useMemo(() => groundOf(world), [world]);
 
-  // The loop reads the latest run and the latest `play` without being rebuilt for each turn.
+  // The loop reads the latest run and the latest `play` without being rebuilt for each turn. Updated in a
+  // layout effect, before the browser paints, so no animation frame reads the run before last.
   const latest = useRef({ run, onAct, onUnavailable, onHeld });
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = { run, onAct, onUnavailable, onHeld };
   }, [run, onAct, onUnavailable, onHeld]);
 
@@ -365,7 +366,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
               data-using={hud.using ? "true" : undefined}
               className="flex items-center gap-2 rounded-sm bg-surface-1 px-3 py-2 text-sm text-text-1 shadow-e-1"
             >
-              {hud.prompt.kind === "locked" || hud.prompt.kind === "far" ? (
+              {hud.prompt.kind === "far" ? (
                 "A locked door. Step up to it and hold E to pick it."
               ) : hud.prompt.kind === "take" ? (
                 <>

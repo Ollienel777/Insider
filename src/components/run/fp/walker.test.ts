@@ -15,7 +15,7 @@ import f3 from "../../../../data/levels/F3.night-desk.json";
 import { RUN_SEED } from "../run-screen";
 import type { Ground, Vec } from "./ground";
 import { FP } from "./tuning";
-import { createWalker, heldAction, legalMoves, promptFor, reconcile, stepWalker, type Controls, type Walker } from "./walker";
+import { createWalker, doorInView, heldAction, legalMoves, promptFor, reconcile, stepWalker, type Controls, type Walker } from "./walker";
 import { buildWorld, groundOf, type World } from "./world";
 
 const CASES = [
@@ -177,20 +177,26 @@ describe.each(CASES)("free movement on $id", ({ id, cached }) => {
     expect(s.walker.region).toBe(start);
   });
 
-  it("holding E at a locked door moves to its node first, then picks on each held turn; letting go starts it over, as the engine rules", () => {
+  it("holding E at a locked door, standing in its node's area, picks on each held turn and moves nowhere; letting go starts it over, as the engine rules", () => {
     const run0 = empty();
     const doorId = run0.locked[0];
     const door = ground.doors.find((d) => d.doorId === doorId)!;
-    // The engine has the player one move short of the door's node, the body stands at the door.
+    // Walked there, never placed by hand: the engine starts one move short of the door's node, and the body
+    // walks that move and then up to the door, so the walker's area and the engine's node are its own doing.
     const before = neighbours(run0.board, door.a).find((e) => e.to !== door.b && e.doorId === undefined)!.to;
     const s = session(world, { ...run0, playerNode: before });
-    s.walker = { ...s.walker, pos: inFront(ground, door, door.a), region: door.a, node: before };
+    walkEdge(s, before, door.a);
+    walkTo(s, inFront(ground, door, door.a));
+    rest(s, 2);
+    expect(s.played).toEqual([{ kind: "move", to: door.a }]);
+    expect(ground.regionOf(s.walker.pos)).toBe(s.run.playerNode);
     const yaw = yawTo(s.walker.pos, door.centre);
     const held = { ...IDLE, yaw, use: true };
-    expect(promptFor(s.walker, s.ground, s.run, yaw)).toMatchObject({ kind: "pick", doorId, node: door.a, moves: [{ kind: "move", to: door.a }] });
+    expect(promptFor(s.walker, s.ground, s.run, yaw)).toMatchObject({ kind: "pick", doorId, node: door.a });
     step(s, { ...held, usePressed: true });
     rest(s, 2);
     expect(s.played).toEqual([{ kind: "move", to: door.a }, { kind: "pick", doorId }]);
+    expect(ground.regionOf(s.walker.pos)).toBe(s.run.playerNode);
     const of = (promptFor(s.walker, s.ground, s.run, yaw) as { of: number }).of;
     expect(s.run.picking).toEqual({ doorId, progress: 1 });
     // Let go for a turn: the clock waits, and the engine starts the lock over.
@@ -286,6 +292,67 @@ describe.each(CASES)("free movement on $id", ({ id, cached }) => {
     expect(s.walker.region).toBe(s.run.playerNode);
   });
 
+  it("E at a locked door never puts the engine's node anywhere but the area the body stands in, from wherever the door is faced", () => {
+    // The second review of issue 115's first person (M2): E used to queue the moves to the door's node on the far side of
+    // its line, wherever the body was, and move the engine there without the body. Each door locked alone,
+    // the body set down in every area within 2 m of it, facing the door, presses E and holds it.
+    let picks = 0;
+    for (const door of ground.doors) {
+      for (let dx = -2; dx <= 2; dx += 0.25) {
+        for (let dy = -2; dy <= 2; dy += 0.25) {
+          const pos = { x: door.centre.x + dx, y: door.centre.y + dy };
+          const area = ground.regionOf(pos);
+          if (area === null) continue;
+          // Only where a body can stand: one set down in a wall is pushed out, maybe over an area's edge.
+          const stood = ground.collide(pos, { x: 0, y: 0 }, FP.stepS, [door.doorId]).pos;
+          if (distance(stood, pos) > 1e-9) continue;
+          const run = { ...empty(), playerNode: area, locked: [door.doorId] };
+          const s: Session = { world, ground, walker: { ...createWalker(ground, run), pos, home: pos }, run, played: [] };
+          const yaw = yawTo(pos, door.centre);
+          for (let i = 0; i < 4; i++) step(s, { ...IDLE, yaw, use: true, usePressed: i === 0 });
+          const where = `${door.doorId} from ${area} at (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}): ${JSON.stringify(s.played)}`;
+          expect(s.played.filter((a) => a.kind === "move"), where).toEqual([]);
+          expect(ground.regionOf(s.walker.pos), where).toBe(s.run.playerNode);
+          if (s.played.some((a) => a.kind === "pick")) picks++;
+        }
+      }
+    }
+    expect(picks).toBeGreaterThan(0);
+  });
+
+  it("a move the engine refuses stays refused when a clock turn lands before the walker gives up on it", () => {
+    // The second review of issue 115's first person (M3): a new turn that left the player where they were used to clear the
+    // unanswered move and keep counting the body in the area it had walked into, with the engine elsewhere.
+    const s = session(world, { ...empty(), locked: [] });
+    const start = s.run.playerNode;
+    const to = neighbours(s.run.board, start)[0].to;
+    let handed: Action | null = null;
+    for (const point of ground.path(start, to).slice(1)) {
+      for (let i = 0; i < 12 / FP.stepS && distance(s.walker.pos, point) > 0.06 && handed === null; i++) {
+        const out = stepWalker(s.walker, s.ground, s.run, { ...IDLE, forward: 1, yaw: yawTo(s.walker.pos, point) });
+        s.walker = out.walker;
+        handed = out.action;
+      }
+    }
+    // The engine refuses the move (it is not played), and within the answer time the clock plays its wait.
+    expect(handed).toEqual({ kind: "move", to });
+    expect(ground.regionOf(s.walker.pos)).toBe(to);
+    play(s, { kind: "wait" });
+    step(s, IDLE);
+    expect(s.run.playerNode).toBe(start);
+    expect(ground.regionOf(s.walker.pos)).toBe(s.run.playerNode);
+    expect(s.walker.region).toBe(start);
+    expect(s.walker.queue).toEqual([]);
+    expect(s.walker.pending).toBeNull();
+    rest(s, 60);
+    expect(s.played).toEqual([{ kind: "wait" }]);
+    // The next crossing hands the move back again.
+    walkEdge(s, start, to);
+    rest(s, 2);
+    expect(s.played).toEqual([{ kind: "wait" }, { kind: "move", to }]);
+    expect(ground.regionOf(s.walker.pos)).toBe(s.run.playerNode);
+  });
+
   it("stops the body when the run is over", () => {
     const s = session(world, { ...empty(), locked: [] });
     s.run = { ...s.run, status: "caught" };
@@ -293,5 +360,38 @@ describe.each(CASES)("free movement on $id", ({ id, cached }) => {
     for (let i = 0; i < 30; i++) step(s, { ...IDLE, forward: 1, yaw: 0.3, use: true, usePressed: true });
     expect(s.played).toEqual([]);
     expect(distance(s.walker.pos, pos)).toBeLessThan(0.5);
+  });
+});
+
+describe("E at a locked door seen from another node's area plays nothing", () => {
+  // The two places the second review of issue 115's first person (M2) found: E there played the moves to the door's far node
+  // and a pick, and left the engine metres from the body, for good.
+  it.each([
+    { id: "F1", cached: f1, area: "sc-rack", doorId: "d-freight-lobby", pos: { x: 6.4, y: 2.9 }, through: "the server closet's wall" },
+    { id: "F2", cached: f2, area: "fl-car", doorId: "d-freight-north", pos: { x: 5.6, y: 22.74 }, through: null },
+  ] as const)("$id: from $area, facing $doorId", ({ id, cached, area, doorId, pos, through }) => {
+    const placed = placeLevel(LevelManifest.parse(structuredClone(cached)), structuredClone(FIXTURE_FLOORS[id]), RUN_SEED);
+    const world = buildWorld(placed.level.floor);
+    const ground = groundOf(world);
+    const fresh = createRun(placed.level);
+    // F1's closet door stands open (picked), the freight door is shut; on F2 the freight door is shut too.
+    const locked = [...fresh.locked.filter((d) => d !== "d-server-closet"), doorId];
+    const run: RunState = { ...fresh, guards: [], cleaners: [], playerNode: area, locked };
+    const door = ground.doors.find((d) => d.doorId === doorId)!;
+    const yaw = yawTo(pos, door.centre);
+    // The case as found: the body in `area`, the view's line on the door within reach, a wall between or not.
+    expect(ground.regionOf(pos)).toBe(area);
+    expect(doorInView(ground, run, pos, yaw)?.doorId).toBe(doorId);
+    expect(ground.clear(pos, door.centre, [])).toBe(through === null);
+    const s: Session = { world, ground, walker: { ...createWalker(ground, run), pos, home: pos }, run, played: [] };
+    // Not "Hold E to pick": through a wall nothing is pointed out; in plain view, the player is told to step up to it.
+    expect(promptFor(s.walker, ground, s.run, yaw)).toEqual(through === null ? { kind: "far", doorId } : null);
+    for (let i = 0; i < 4; i++) step(s, { ...IDLE, yaw, use: true, usePressed: i === 0 });
+    expect(s.played).toEqual([]);
+    expect(s.run.playerNode).toBe(area);
+    expect(ground.regionOf(s.walker.pos)).toBe(s.run.playerNode);
+    // Walking away plays the moves the body makes, as ever.
+    walkEdge(s, area, neighbours(s.run.board, area).find((e) => e.doorId === undefined || !locked.includes(e.doorId))!.to);
+    expect(ground.regionOf(s.walker.pos)).toBe(s.run.playerNode);
   });
 });
