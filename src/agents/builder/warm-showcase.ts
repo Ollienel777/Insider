@@ -4,6 +4,7 @@
 // memory; nothing is written to disk. A build that fails is logged, and that
 // building's Dossier still offers "Build this level".
 import { getCoStar } from "@/adapters/costar";
+import { safeErrorMessage } from "@/adapters/llm";
 import { configuredModes } from "@/lib/mode";
 import { showcase, type ShowcaseEntry } from "@/lib/showcase";
 import type { Building } from "@/domain";
@@ -37,11 +38,11 @@ export async function warmShowcase(options: WarmOptions = {}): Promise<number> {
         log(`Showcase: CoStar has no building ${buildingId}; skipped`);
         continue;
       }
-      await buildKitLevel(building, missionId, options.build);
+      await buildKitLevel(building, missionId, { build: options.build, uncapped: true });
       built += 1;
       log(`Showcase: ${buildingId} (${missionId}) is ready, built in ${Math.round((Date.now() - started) / 1000)} s`);
     } catch (error) {
-      log(`Showcase: ${buildingId} (${missionId}) failed to build: ${error instanceof Error ? error.message : String(error)}`);
+      log(`Showcase: ${buildingId} (${missionId}) failed to build: ${safeErrorMessage(error)}`);
     }
   }
   return built;

@@ -11,7 +11,11 @@
 import { z } from "zod";
 import { Id, Text } from "./common";
 
-/** The setup's format. A stored setup of another version does not parse. */
+/**
+ * The setup's format. A stored setup of another version does not parse. The
+ * fields added since (cleaners, a camera's cover, the generated list) are
+ * optional, so a setup saved before them still parses and plays as it did.
+ */
 export const OWNER_SETUP_VERSION = 1;
 
 /** How a camera watches (SPEC §4.3): it sweeps two halves, cycles three PTZ presets, or holds one view. */
@@ -38,6 +42,13 @@ export const OwnerGuard = z.object({
   round: z.array(Id),
   /** Turns per hop along the round: 1 is the tightest. */
   tempo: z.int().positive(),
+  /**
+   * Turns later than it would otherwise walk its round (negative: earlier),
+   * as the Security Chief's retime says it: the guard starts that many nodes
+   * further back along the round on every night, from wherever it starts that
+   * night. Absent or 0: on time. A guard with no round ignores it.
+   */
+  retime: z.int().optional(),
 });
 export type OwnerGuard = z.infer<typeof OwnerGuard>;
 
@@ -47,8 +58,42 @@ export const OwnerCamera = z.object({
   node: Id,
   kind: OwnerCameraKind,
   facing: Compass,
+  /**
+   * The nodes it watches, in sweep order. Absent, they are worked out from
+   * the node, facing and kind. A camera taken from the generated security
+   * keeps the rules table's cover here until it is moved, turned or changed.
+   */
+  cover: z.array(Id).min(1).optional(),
 });
 export type OwnerCamera = z.infer<typeof OwnerCamera>;
+
+/**
+ * A night cleaner: someone who walks a round all night and watches like a
+ * guard, but whose sighting only raises suspicion and who never gives chase.
+ * The round is a loop as a guard's is, walked from its first node at the
+ * building's tempo; one node, and the cleaner stays there.
+ */
+export const OwnerCleaner = z.object({
+  id: Id,
+  round: z.array(Id).min(1),
+});
+export type OwnerCleaner = z.infer<typeof OwnerCleaner>;
+
+/**
+ * The elements still as the rules table placed them, by id. They keep the
+ * data's provenance, and each walker on its generated round starts it where
+ * the rules table starts it for the seed, so the untouched setup plays the
+ * generated level exactly. An edit takes the element off its list.
+ */
+export const OwnerGenerated = z
+  .object({
+    guards: z.array(Id).optional(),
+    cameras: z.array(Id).optional(),
+    cleaners: z.array(Id).optional(),
+    doors: z.array(Id).optional(),
+  })
+  .strict();
+export type OwnerGenerated = z.infer<typeof OwnerGenerated>;
 
 export const OwnerSetup = z
   .object({
@@ -66,6 +111,9 @@ export const OwnerSetup = z
      * raises the alarm to Suspicious, and it never catches anyone.
      */
     desks: z.array(Id),
+    /** Night cleaners walking rounds. Absent: none. */
+    cleaners: z.array(OwnerCleaner).optional(),
+    generated: OwnerGenerated.optional(),
   })
   .strict();
 export type OwnerSetup = z.infer<typeof OwnerSetup>;
