@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { connection } from "next/server";
 import { getCoStar } from "@/adapters/costar";
 import { getVexcel } from "@/adapters/vexcel";
+import { builtMissions } from "@/agents/builder/live-levels";
 import { demoEpochScript, syncDemoEpoch } from "@/lib/demo-epoch";
 import type { Fallback } from "@/lib/fallback";
 import { forcedServices } from "@/lib/forced-server";
@@ -44,7 +45,11 @@ export async function AppShell({ children, building }: AppShellProps) {
     <div className="flex min-h-dvh flex-col lg:h-dvh">
       {epoch ? <script dangerouslySetInnerHTML={{ __html: demoEpochScript(epoch) }} /> : null}
       <TopBar status={status} building={building} />
-      {building ? <StepRail buildingId={building.id} factsOnly={isFactsOnly(building.source)} /> : null}
+      {building ? <StepRail
+          buildingId={building.id}
+          factsOnly={isFactsOnly(building.source)}
+          builtMissions={isFactsOnly(building.source) ? builtMissions(building.id) : undefined}
+        /> : null}
       <main className="flex min-h-0 flex-1 flex-col">{children}</main>
       <DemoSafety status={status} />
     </div>

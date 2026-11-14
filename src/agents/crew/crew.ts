@@ -3,7 +3,7 @@
 // the keyword-routed recorded reply answers, and the answer says so. The
 // browser checks the plan on the board (src/level/validate-plan.ts); the
 // server never sees the floor.
-import { readCachedLevel } from "@/agents/builder/cache";
+import { readLevel } from "@/agents/builder/live-levels";
 import { defaultMissionId } from "@/agents/builder/missions";
 import { structuredCall, type StructuredCallOptions } from "@/adapters/llm";
 import { CrewPlan } from "@/domain";
@@ -40,7 +40,7 @@ export async function briefCrew(buildingId: string, order: string, options: Brie
   if (text.length === 0) throw new CrewRequestError("the order is empty");
   if (text.length > ORDER_MAX) throw new CrewRequestError(`the order is longer than ${ORDER_MAX} characters`);
   const missionId = options.missionId ?? defaultMissionId(buildingId);
-  const cached = missionId ? await readCachedLevel(buildingId, missionId, options.levelsDir) : null;
+  const cached = missionId ? await readLevel(buildingId, missionId, options.levelsDir) : null;
   if (!cached) return null;
 
   let recording: string | undefined;

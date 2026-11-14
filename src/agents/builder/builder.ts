@@ -45,6 +45,8 @@ export interface BuildOptions extends TraceRecorderOptions {
   missions?: BuildRun["missions"];
   /** The run's start time, for the trace header. */
   recordedAt?: Date;
+  /** Stops the run: an on-demand build past its deadline (#93). */
+  signal?: AbortSignal;
 }
 
 /** The subagents the builder can dispatch, as its trace lists them. */
@@ -149,7 +151,7 @@ export async function buildLevel(buildingId: string, missionId: string, options:
   try {
     const result = await agent.invoke(
       { messages: [{ role: "user", content: `Build the level for building ${buildingId} and mission ${missionId}.` }] },
-      { recursionLimit: 60 },
+      { recursionLimit: 60, signal: options.signal },
     );
     const last = result.messages.at(-1);
     summary = typeof last?.content === "string" ? last.content : "";
