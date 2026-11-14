@@ -1,6 +1,6 @@
-// POST /api/crew/strategies: the crew proposes Owner Mode's attempts (#126).
+// POST /api/crew/strategies: the crew proposes Owner Mode's attempts (issue 126).
 // The body is `{buildingId}`, with an optional `setupId` (an owner's setup,
-// #125; echoed back, not yet read), and nothing else: the server reads the
+// issue 125; echoed back, not yet read), and nothing else: the server reads the
 // entries, zones and guard roster from its own cached manifest, so no floor
 // data can arrive here or travel on to a model (SPEC §4.5). Answers
 // `StrategiesAnswer`; the browser plays the strategies on the board.

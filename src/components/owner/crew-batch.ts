@@ -1,7 +1,7 @@
-// The browser's side of Owner Mode's batch (#126): ask the crew for its
+// The browser's side of Owner Mode's batch (issue 126): ask the crew for its
 // strategies (POST /api/crew/strategies, body `{buildingId, setupId?}` and
 // nothing else, SPEC §4.5), then play each across the seeds on the board
-// here, where the floor stays. The batch view (#127) renders the result.
+// here, where the floor stays. The batch view (issue 127) renders the result.
 "use client";
 
 import type { StrategiesAnswer } from "@/agents/crew/strategies";

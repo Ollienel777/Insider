@@ -1,4 +1,4 @@
-// The browser's side of the batch (#126): the request carries only the ids,
+// The browser's side of the batch (issue 126): the request carries only the ids,
 // and the server's drops and the board's are reported together.
 import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
