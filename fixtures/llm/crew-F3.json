@@ -1,0 +1,175 @@
+{
+  "buildingId": "F3",
+  "note": "Recorded crew replies for Meridian on Wilshire, keyword-routed by src/agents/crew/recorded.ts. The first reply whose keyword set all occur in the order answers; the last, with no keywords, is the default. Zone ids are the cached manifest's (data/levels/F3.night-desk.json; these replies are kept per building, so any mission on F3 reuses them).",
+  "replies": [
+    {
+      "id": "quiet",
+      "when": [
+        [
+          "quiet"
+        ],
+        [
+          "suite"
+        ],
+        [
+          "dark"
+        ]
+      ],
+      "plan": {
+        "steps": [
+          {
+            "zoneId": "dock-N",
+            "action": "Up the service lift from the loading dock"
+          },
+          {
+            "zoneId": "quiet-2401",
+            "action": "Into suite 2401 by its west door, and wait two turns there in the dark"
+          },
+          {
+            "zoneId": "objective",
+            "action": "Across the suite to the end of the north hall, badge the lab door, four turns, and take the prototype"
+          },
+          {
+            "zoneId": "quiet-2401",
+            "action": "Back into the suite with the prototype, out of the north hall"
+          },
+          {
+            "zoneId": "dock-N",
+            "action": "Across the suite and down the service lift"
+          }
+        ],
+        "pushback": "Suite 2401 keeps you out of the halls, but the south hall's glass wall looks into the middle of the suite, and G3 walks that hall. Wait at the west door and see which way G3 is facing before you cross.",
+        "confidence": 0.7
+      }
+    },
+    {
+      "id": "roof",
+      "when": [
+        [
+          "roof"
+        ],
+        [
+          "stair"
+        ]
+      ],
+      "plan": {
+        "steps": [
+          {
+            "zoneId": "roof",
+            "action": "Down to the east stair from the roof deck"
+          },
+          {
+            "zoneId": "objective",
+            "action": "Badge the lab door and take the prototype"
+          },
+          {
+            "zoneId": "roof",
+            "action": "Back up to the roof deck"
+          }
+        ],
+        "pushback": "The east stair lets out into the east hall, and every hall on this floor has a camera with analytics. One look and it's lockdown.",
+        "confidence": 0.3
+      }
+    },
+    {
+      "id": "lobby",
+      "when": [
+        [
+          "lobby"
+        ]
+      ],
+      "plan": {
+        "steps": [
+          {
+            "zoneId": "dock-N",
+            "action": "Up the service lift from the loading dock instead"
+          },
+          {
+            "zoneId": "objective",
+            "action": "Badge the lab door and take the prototype"
+          },
+          {
+            "zoneId": "dock-N",
+            "action": "Back down the service lift"
+          }
+        ],
+        "pushback": "The Wilshire lobby has facial-recognition turnstiles past the desk, and its lifts don't stop on 24 at night. It's the service lift from the dock, and the north hall's C1 and C2 have analytics.",
+        "confidence": 0.25
+      }
+    },
+    {
+      "id": "garage",
+      "when": [
+        [
+          "garage"
+        ]
+      ],
+      "plan": {
+        "steps": [
+          {
+            "zoneId": "dock-N",
+            "action": "Up the service lift from the loading dock instead"
+          },
+          {
+            "zoneId": "objective",
+            "action": "Badge the lab door and take the prototype"
+          },
+          {
+            "zoneId": "dock-N",
+            "action": "Back down the service lift"
+          }
+        ],
+        "pushback": "The garage gate reads plates, and its lifts don't reach 24. It's the service lift from the dock, and the north hall's C1 and C2 have analytics.",
+        "confidence": 0.3
+      }
+    },
+    {
+      "id": "dock",
+      "when": [
+        [
+          "dock"
+        ]
+      ],
+      "plan": {
+        "steps": [
+          {
+            "zoneId": "dock-N",
+            "action": "Up the service lift from the loading dock"
+          },
+          {
+            "zoneId": "objective",
+            "action": "Along the north hall, badge the lab door, four turns, and take the prototype"
+          },
+          {
+            "zoneId": "dock-N",
+            "action": "Back down the service lift"
+          }
+        ],
+        "pushback": "The north hall is the short way, but C1 and C2 watch it and they have analytics: one sighting and the floor goes to lockdown. Cut through suite 2401 instead.",
+        "confidence": 0.4
+      }
+    },
+    {
+      "id": "default",
+      "when": [],
+      "plan": {
+        "steps": [
+          {
+            "zoneId": "dock-N",
+            "action": "Up the service lift from the loading dock"
+          },
+          {
+            "zoneId": "objective",
+            "action": "Badge the lab door and take the prototype"
+          },
+          {
+            "zoneId": "dock-N",
+            "action": "Back down the service lift"
+          }
+        ],
+        "pushback": "You didn't say how you want in, so it's the service lift: it's the shortest way to the lab. But the short way is the north hall, and C1 and C2 there have analytics. Go through suite 2401.",
+        "confidence": 0.4
+      }
+    }
+  ]
+}

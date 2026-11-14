@@ -185,10 +185,11 @@ test("beat 5 to 6: caught after the wow beat, the debrief says so, with the Chie
   // The heist ends here (#113): no hand-over to the drill, and Try again opens a fresh run.
   await expect(page.getByRole("link", { name: "Run the drill" })).toHaveCount(0);
   await expect(page.getByTestId("try-again-line")).toHaveText("Same floor, same rounds. Try another way in.");
-  await expect(page.getByTestId("debrief-to-map")).toHaveAttribute("href", "/");
+  await expect(page.getByTestId("debrief-to-map")).toHaveAttribute("href", "/map");
   await page.getByTestId("debrief-try-again").click();
   await expect(page).toHaveURL(/\/b\/F1\/run\?m=romaine-1974$/, { timeout: 15_000 });
-  await expectFreshRun(page);
+  // The caught run joined the history (#35): the fresh run is placed with its posture.
+  await expectFreshRun(page, "dock-N");
   await expect(page.getByTestId("player-piece")).toHaveAttribute("data-node", "fl-car");
   await railToDebrief(page);
   await expectNotStarted(page);
@@ -260,17 +261,22 @@ async function railToDebrief(page: Page) {
   await expect(page).toHaveURL(/\/b\/F1\/debrief\?m=romaine-1974$/, { timeout: 15_000 });
 }
 
-/** The board is on turn 0, and the log in storage is that run's: no turns, nothing pending, nothing late. */
-async function expectFreshRun(page: Page) {
+/**
+ * The board is on turn 0, and the log in storage is that run's: no turns, nothing pending, nothing late.
+ * A visit after a finished run places the level with that history's posture (#35), and logs it as `watchEntry`.
+ */
+async function expectFreshRun(page: Page, watchEntry?: string) {
   await expect(page.getByTestId("run-board")).toBeVisible();
   await expect(page.getByTestId("turn")).toHaveText("0");
   await expect.poll(async () => storedLog(page)).toEqual({
     buildingId: "F1",
     missionId: expect.any(String),
     seed: 7,
+    rules: 2,
     turns: [],
     status: "playing",
     alarmEvents: [],
+    ...(watchEntry && { watchEntry }),
   });
 }
 
@@ -291,17 +297,18 @@ test("Restart after a capture, before the late answer lands: the log is the new 
   await expect(page.getByTestId("run-outcome")).toHaveAttribute("data-status", "caught");
   // Restart at once: the Chief's answer to the catching turn's sighting is still out, and never lands on the new run.
   await page.getByRole("button", { name: "Restart" }).click();
-  await expectFreshRun(page);
+  // Restart after a finished run places the level with that run's history (#35), as a reload would.
+  await expectFreshRun(page, "dock-N");
   await expect(page.getByTestId("chief-panel")).toHaveAttribute("data-state", "idle");
   await page.waitForTimeout(3_000);
-  await expectFreshRun(page);
+  await expectFreshRun(page, "dock-N");
   await expect(page.getByTestId("chief-panel")).toHaveAttribute("data-state", "idle");
 
   await railToDebrief(page);
   await expectNotStarted(page);
   // Its link goes back to the run, and a first move makes it a run the debrief shows.
   await page.getByTestId("debrief-empty").getByRole("link", { name: "Back to the run" }).click();
-  await expectFreshRun(page);
+  await expectFreshRun(page, "dock-N");
   await pressFor(page, "fl-lobby");
   await expect.poll(async () => (await storedLog(page)).turns.length).toBe(1);
   await railToDebrief(page);
@@ -319,7 +326,7 @@ test('"Start the run over" from a mid-run debrief: the debrief opened next shows
   // A run left mid-way has no Try again: "Start the run over" says what the link does.
   await expect(page.getByTestId("debrief-try-again")).toHaveCount(0);
   await expect(page.getByTestId("try-again-line")).toHaveCount(0);
-  await expect(page.getByTestId("debrief-to-map")).toHaveAttribute("href", "/");
+  await expect(page.getByTestId("debrief-to-map")).toHaveAttribute("href", "/map");
 
   await page.getByTestId("debrief-run-again").click();
   await expect(page).toHaveURL(/\/b\/F1\/run\?m=romaine-1974$/, { timeout: 15_000 });
@@ -337,7 +344,7 @@ test("a fresh visit to the Run screen replaces a finished run's log with its own
   await expect.poll(async () => (await storedLog(page)).status).toBe("caught");
 
   await page.goto("/b/F1/run");
-  await expectFreshRun(page);
+  await expectFreshRun(page, "dock-N");
   await page.goto("/b/F1/debrief");
   await expectNotStarted(page);
 });

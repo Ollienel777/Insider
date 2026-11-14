@@ -1,9 +1,9 @@
 // The Why card's model (SPEC §4.1, DESIGN.md "The signature element"): for a
-// guard, camera, lock or zone on the board, the provenance entries the placer
-// attached to it, in the placer's order, and nothing else. The card's rows are
-// those entries with their value as text; it never writes a reason of its own.
-// The one line it adds is how the placer chose a post, which the placer itself
-// recorded on the guard.
+// guard, cleaner, camera, lock or zone on the board, the provenance entries the
+// placer attached to it, in the placer's order, and nothing else. The card's
+// rows are those entries with their value as text; it never writes a reason of
+// its own. The one line it adds is how the placer chose a guard's post or a
+// cleaner's room, which the placer itself recorded on the piece.
 //
 // Pure: no DOM. Where the card and its thread sit is worked out here too, from
 // the board's viewBox and the size it is drawn at.
@@ -13,7 +13,7 @@ import type { PlacedLevel } from "@/level/placer";
 import { roomName, zoneName } from "./board";
 import type { Frame, Point } from "./iso";
 
-export type WhyKind = "guard" | "camera" | "lock" | "zone";
+export type WhyKind = "guard" | "cleaner" | "camera" | "lock" | "zone";
 
 /** A board element the Why card can explain. Its `key` is what the board marks it with (`data-why`). */
 export interface WhyTarget {
@@ -52,6 +52,7 @@ export const THREAD_COLOUR: Readonly<Record<ProvenanceLayer, string>> = {
 
 export const whyKey = {
   guard: (id: string) => `guard:${id}`,
+  cleaner: (id: string) => `cleaner:${id}`,
   camera: (id: string) => `camera:${id}`,
   lock: (doorId: string) => `lock:${doorId}`,
   room: (roomId: string) => `room:${roomId}`,
@@ -71,6 +72,17 @@ export function whyTargets(placed: PlacedLevel): WhyTarget[] {
       subtitle: `${guardOrigin(placed, guard.id)}, in the ${roomLabel(guard.roomId)}`,
       provenance: guard.provenance,
       placement: guard.post?.rule ?? null,
+    });
+  }
+
+  for (const cleaner of placed.cleaners) {
+    targets.push({
+      key: whyKey.cleaner(cleaner.id),
+      kind: "cleaner",
+      title: cleaner.id,
+      subtitle: `Night cleaner, in the ${roomLabel(cleaner.roomId)}`,
+      provenance: cleaner.provenance,
+      placement: cleaner.rule,
     });
   }
 

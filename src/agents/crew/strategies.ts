@@ -11,15 +11,15 @@ import path from "node:path";
 import { z } from "zod";
 import { readCachedLevel } from "@/agents/builder/cache";
 import { defaultMissionId } from "@/agents/builder/missions";
-import { structuredCall, type StructuredCallOptions } from "@/adapters/llm";
+import { structuredCall, type StructuredAnswer, type StructuredCallOptions } from "@/adapters/llm";
 import { Strategy, StrategySet, type DroppedStrategy, type LevelManifest } from "@/domain";
 import { crewContext, type CrewContext } from "./prompt";
+import { CREW_FIXTURES, NoRecordingError } from "./recorded";
 
 /** The crew's view for strategies: its order context, and which of its zones are entries. */
 export interface StrategyContext extends CrewContext {
   entries: string[];
 }
-import { CREW_FIXTURES, NoRecordingError } from "./recorded";
 
 export const STRATEGIES_PROMPT_HEAD = "You are the crew for a Heist Anywhere job, planning attempts on the building.";
 
@@ -40,7 +40,8 @@ export interface StrategiesAnswer {
   dropped: DroppedStrategy[];
   /** True when the recorded strategies answered, not a live model. */
   recorded: boolean;
-  reason?: "fake mode" | "timeout" | "error";
+  /** Why the recording answered: structuredCall's reason, or "error" when no live strategy survived the clamp. */
+  reason?: StructuredAnswer<StrategySet>["reason"];
 }
 
 export interface StrategiesOptions {
@@ -112,8 +113,8 @@ the timing, the route preference or the risk taken. Each has:
 - id: a short lowercase slug, unique; name: under 40 characters.
 - entryId: the entry to come in by; exitId: the entry to leave by. Both from
   the entries below.
-- timing: "immediate", or "wait-for-round" to hold at the entry until a
-  round has passed.
+- timing: "immediate", or "wait-for-round" to pause at the entry for up to
+  two turns and look further ahead before moving.
 - route: "shortest", "quiet-zones" (keep to the vacant suites) or
   "avoid-cameras".
 - via: zero to two zone ids from the zones below, to pass through in order
@@ -163,8 +164,18 @@ export async function proposeStrategies(
     selection: options.selection,
     timeoutMs: options.timeoutMs,
   });
+  const clamped = clampStrategies(manifest, answer.value.strategies);
+  if (!answer.recorded && clamped.strategies.length === 0) {
+    // Every live strategy named an id the level does not have: the recording
+    // stands in, as for a failed call, and the live drops stay reported.
+    const file = await loadStrategyRecording(buildingId, options.fixturesDir);
+    if (file) {
+      const recorded = clampStrategies(manifest, file.strategies);
+      return { strategies: recorded.strategies, dropped: [...clamped.dropped, ...recorded.dropped], recorded: true, reason: "error" };
+    }
+  }
   return {
-    ...clampStrategies(manifest, answer.value.strategies),
+    ...clamped,
     recorded: answer.recorded,
     ...(answer.reason && { reason: answer.reason }),
   };

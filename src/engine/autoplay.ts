@@ -37,7 +37,7 @@ const POLICY = {
   high: { peek: 1, patience: 1, sprint: true },
 } as const;
 
-/** What `wait-for-round` adds before the first move: a deeper peek, more patience, and a seeded pause. */
+/** What `wait-for-round` adds before the first move: a deeper peek, more patience, and a seeded pause of 0-2 turns (not a full round). */
 const ROUND = { peek: 1, patience: 4, pause: 3 } as const;
 
 /**

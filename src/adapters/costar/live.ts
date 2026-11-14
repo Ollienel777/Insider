@@ -29,7 +29,7 @@ export function createLiveCoStar(config: LiveCoStarConfig): CoStarAdapter {
     throw new CoStarNotConfiguredError(missing.filter((m): m is string => Boolean(m)));
   }
 
-  // The kit reader (`KIT_FILES` in mapping.ts) waits on #27: until then the
+  // The kit reader (`KIT_FILES` in mapping.ts) waits on #2: until then the
   // search answers from the fixture inventory itself, marked
   // `source: "fixture"`, without throwing, so it never trips the breaker
   // that live buildings share.

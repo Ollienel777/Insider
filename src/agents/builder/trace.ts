@@ -16,6 +16,12 @@
 // tasks "Run <subagent>", since the model writes them from that data.
 // Nothing derived from a kit record is ever committed (SPEC §4.5).
 //
+// A `task` naming a subagent the builder does not have throws in deepagents
+// before any subagent runs. It is recorded under the builder that called it,
+// `failure: "unknown"`, keeping the attempted name in its output, so the
+// dossier reads "task (unknown)", not a failed run of a subagent it never
+// started (#72).
+//
 // A tool that throws is answered with an error ToolMessage instead of ending
 // the run, so a live model sees what went wrong and can call again.
 //
@@ -129,9 +135,11 @@ export class TraceRecorder {
           this.todos(agent, (args as { todos?: unknown }).todos);
           return handler(request);
         }
+        const subagent = name === "task" ? dispatched(args) : undefined;
+        const unknown = name === "task" && subagent === undefined;
         const end =
           name === "task"
-            ? this.start("subagent", subagentName(args), this.recordPayloads ? describeTask(args) : runLabel(args), describeTask(args))
+            ? this.start("subagent", subagent ?? agent, this.recordPayloads ? describeTask(args) : runLabel(subagent), describeTask(args))
             : this.start("tool", agent, name, JSON.stringify(args, null, 2));
         try {
           const result = await handler(request);
@@ -139,13 +147,16 @@ export class TraceRecorder {
           // error result here is a call that returned an error, not a failed run.
           const message = toolMessageOf(result);
           const ok = message?.status !== "error";
-          end(ok, message ? contentText(message.content) : undefined, ok ? undefined : "returned");
+          end(ok, message ? contentText(message.content) : undefined, ok ? undefined : unknown ? "unknown" : "returned");
           return result;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          // A `task` that throws is the subagent's whole run failing, not one tool's error (R1-M1).
-          const content = name === "task" ? `Error: the ${String(args.subagent_type)} subagent's run failed: ${message}` : `Error: ${message}`;
-          end(false, content, "thrown");
+          // A `task` that throws is the subagent's whole run failing, not one
+          // tool's error (R1-M1), unless no such subagent exists (#72).
+          let content = `Error: ${message}`;
+          if (unknown) content = `Error: unknown subagent ${JSON.stringify(args.subagent_type)}; the builder has ${KNOWN_SUBAGENTS.join(", ")}: ${message}`;
+          else if (name === "task") content = `Error: the ${String(args.subagent_type)} subagent's run failed: ${message}`;
+          end(false, content, unknown ? "unknown" : "thrown");
           return new ToolMessage({ content, tool_call_id: id ?? name, name, status: "error" });
         }
       },
@@ -176,10 +187,12 @@ function lastTask(messages: BaseMessage[]): string {
   return human ? text(human.content) : "";
 }
 
-/** The subagent a `task` dispatched; an unknown name falls back to the builder itself. */
-function subagentName(args: Record<string, unknown>): BuilderAgent {
-  const parsed = BuilderAgent.safeParse(args.subagent_type);
-  return parsed.success && parsed.data !== "level-builder" ? parsed.data : "level-builder";
+/** The subagents a `task` can dispatch: every builder agent but the builder itself. */
+const KNOWN_SUBAGENTS = BuilderAgent.options.filter((name) => name !== "level-builder");
+
+/** The subagent a `task` dispatched, or undefined when the builder has none of that name. */
+function dispatched(args: Record<string, unknown>): BuilderAgent | undefined {
+  return KNOWN_SUBAGENTS.find((name) => name === args.subagent_type);
 }
 
 /** The ToolMessage a tool answered with: itself, or the last one in a `task`'s Command update. */
@@ -195,9 +208,8 @@ function contentText(content: unknown): string {
 }
 
 /** A task's label on live data: the subagent's name only, if it is one the builder has. */
-function runLabel(args: Record<string, unknown>): string {
-  const parsed = BuilderAgent.safeParse(args.subagent_type);
-  return parsed.success && parsed.data !== "level-builder" ? `Run ${parsed.data}` : "Run a subagent";
+function runLabel(subagent: BuilderAgent | undefined): string {
+  return subagent ? `Run ${subagent}` : "Run an unknown subagent";
 }
 
 function describeTask(args: Record<string, unknown>): string {

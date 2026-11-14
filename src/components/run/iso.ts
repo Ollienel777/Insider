@@ -86,7 +86,8 @@ export function roomLabelTransform(rect: { x: number; y: number; w: number; h: n
  * units along that edge, at `scale` times its largest size.
  */
 export interface LabelSlot {
-  side: "back" | "front";
+  /** "outside": just beyond the back edge, off the tile, where that edge is the floor's outer wall. */
+  side: "back" | "front" | "outside";
   shift: number;
   scale: number;
 }
@@ -111,19 +112,20 @@ export function roomLabelMatrix(
   const em = roomLabelFit(rect, chars).em * slot.scale;
   const k = SCALE * (em / LABEL_FONT);
   // On the back edge the baseline sits a cap height in from it; on the front edge, just in from it.
-  const inset = slot.side === "back" ? 0.3 + em * 0.75 : 0.3;
+  // Outside, the baseline sits just beyond the back edge and the glyphs rise away from the tile.
+  const inset = slot.side === "back" ? 0.3 + em * 0.75 : slot.side === "outside" ? -0.3 : 0.3;
   const s = slot.shift;
   // Text runs along u and its baseline's "down" is v, both floor directions.
   const [u, v, at] = alongX
     ? [
         { x: 1, y: 0 },
         { x: 0, y: 1 },
-        { x: rect.x + 0.3 + s, y: slot.side === "back" ? rect.y + inset : rect.y + rect.h - inset },
+        { x: rect.x + 0.3 + s, y: slot.side === "front" ? rect.y + rect.h - inset : rect.y + inset },
       ]
     : [
         { x: 0, y: -1 },
         { x: 1, y: 0 },
-        { x: slot.side === "back" ? rect.x + inset : rect.x + rect.w - inset, y: rect.y + rect.h - 0.3 - s },
+        { x: slot.side === "front" ? rect.x + rect.w - inset : rect.x + inset, y: rect.y + rect.h - 0.3 - s },
       ];
   const screen = (d: { x: number; y: number }) => ({ x: (d.x - d.y) * COS * k, y: (d.x + d.y) * SIN * k });
   const a = screen(u);
