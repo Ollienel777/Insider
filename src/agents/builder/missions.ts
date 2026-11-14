@@ -28,10 +28,13 @@ export function findMission(id: string, library: readonly Mission[] = MISSIONS):
 }
 
 /**
- * The mission a building stages when no `?m=` names one (#119): the mission
- * whose recorded finalists put this building first, as SPEC §7 casts each
- * fixture building for its own mission (F1 → `romaine-1974`). Null for a
- * building no mission casts first.
+ * The mission a building stages when no `?m=` names one (#119): its "own"
+ * mission. SPEC §7 gives each fixture building one (F1 → `romaine-1974`) and
+ * C1 makes each the first finalist of that mission's funnel, but no fixture
+ * carries it as a field. The one place that records it is
+ * fixtures/inventory-finalists.json, the finalists each mission's funnel ends
+ * with, so this reads it there: the mission that casts this building first.
+ * Null for any other building (an inventory property, a live id).
  */
 export function defaultMissionId(buildingId: string): string | null {
   const entry = Object.entries(finalists as Record<string, string[]>).find(([, ids]) => ids[0] === buildingId);

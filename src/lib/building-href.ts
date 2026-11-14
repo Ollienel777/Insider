@@ -3,8 +3,12 @@
 // router call built anywhere else would drop it. A test fails any raw
 // `/b/${…}` link outside this file.
 
-/** `/b/<id>/<screen>?m=<missionId>`; without a mission, the building's page picks its own and redirects. */
-export function buildingHref(buildingId: string, screen: string, missionId?: string | null): string {
+/**
+ * `/b/<id>/<screen>?m=<missionId>`. The mission is required: pass `null`
+ * only where no mission is chosen yet (the map), and the building's page
+ * then redirects to the building's own mission, or 404s when it has none.
+ */
+export function buildingHref(buildingId: string, screen: string, missionId: string | null): string {
   const path = `/b/${encodeURIComponent(buildingId)}/${screen}`;
   return missionId ? `${path}?m=${encodeURIComponent(missionId)}` : path;
 }

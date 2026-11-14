@@ -12,7 +12,7 @@
 // It refuses to run unless the model is live and CoStar and Vexcel are on
 // fixtures: a recording is committed to a public repository, so it must hold
 // fixture building data only.
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getChatModelSelection, safeErrorMessage } from "@/adapters/llm";
 import { buildLevel, defaultMissionId, LevelBuildError, scriptName, writeCachedLevel } from "@/agents/builder";
@@ -36,6 +36,7 @@ if (getChatModelSelection("builder").mode !== "live") {
 }
 
 let failed = 0;
+let recordedF1 = false;
 for (const arg of ids) {
   const [id, named] = arg.split(":");
   const missionId = named ?? defaultMissionId(id);
@@ -54,6 +55,7 @@ for (const arg of ids) {
     const scriptPath = path.join(RECORDED_DIR, `${name}.json`);
     await writeFile(scriptPath, `${JSON.stringify(script, null, 2)}\n`);
     const written = await writeCachedLevel(level, RECORDED_DIR);
+    if (id === "F1") recordedF1 = true;
 
     const perAgent = script.agents.map((a) => `${a.agent} ${a.turns.length}`).join(", ");
     const failedTools = level.trace.events.filter((e) => e.status === "failed").map((e) => `${e.agent}/${e.label}`);
@@ -68,5 +70,10 @@ for (const arg of ids) {
       for (const e of error.trace.events) console.error(`  ${e.kind} ${e.agent}/${e.label}: ${e.status}`);
     }
   }
+}
+// A fresh F1 recording replaces the stale pre-#119 one, so the two never sit side by side.
+if (recordedF1) {
+  await rm(path.join(RECORDED_DIR, "pre-119"), { recursive: true, force: true });
+  console.log("removed the stale pre-#119 recording, fixtures/llm/recorded/pre-119/");
 }
 process.exit(failed > 0 ? 1 : 0);

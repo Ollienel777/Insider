@@ -28,7 +28,18 @@ describe("missionParam", () => {
     expect(await thrown(missionParam("F1", "run", params({ m: "no-such-mission" })))).toMatch(/NOT_FOUND|404/);
   });
 
-  it("leaves a building that no mission casts first without one", async () => {
-    expect(await missionParam("L01", "scout", params({}))).toBeNull();
+  it("is a 404 for a building with no own mission (L01, a live id) and no m; with one, it keeps it", async () => {
+    expect(await thrown(missionParam("L01", "scout", params({})))).toMatch(/NOT_FOUND|404/);
+    expect(await missionParam("L01", "scout", params({ m: "romaine-1974" }))).toBe("romaine-1974");
+  });
+
+  it("reads the first of a repeated m", async () => {
+    expect(await missionParam("F1", "run", params({ m: ["romaine-1974", "night-desk"] }))).toBe("romaine-1974");
+    expect(await thrown(missionParam("F1", "run", params({ m: ["bogus", "romaine-1974"] })))).toMatch(/NOT_FOUND|404/);
+  });
+
+  it("tolerant (Drill, which reads no level), keeps an m that names no mission instead of a 404", async () => {
+    expect(await missionParam("F1", "drill", params({ m: "typo" }), { tolerant: true })).toBe("typo");
+    expect(await thrown(missionParam("F1", "drill", params({}), { tolerant: true }))).toMatch(/\/b\/F1\/drill\?m=romaine-1974;/);
   });
 });

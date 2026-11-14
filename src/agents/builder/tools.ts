@@ -25,6 +25,8 @@ export interface BuildRun {
   missions?: readonly Mission[];
   /** Set by `derive_security_profile`. */
   derivation?: SecurityDerivation;
+  /** The game master's last answer, kept by the builder; `write_manifest` checks the briefing came from it. */
+  gameMasterAnswer?: string;
   /** Set by `write_manifest`. */
   manifest?: LevelManifest;
 }
@@ -173,6 +175,11 @@ export function builderTools(run: BuildRun) {
       const derivation = run.derivation;
       if (!derivation) throw new Error("call derive_security_profile (through the data-analyst) before write_manifest");
       const problems = briefingProblems(briefing);
+      // Verbatim: the briefing must appear, word for word, in what the game master answered (R1-M1).
+      const squash = (t: string) => t.replace(/\s+/g, " ").trim();
+      if (run.gameMasterAnswer !== undefined && !squash(run.gameMasterAnswer).includes(squash(briefing))) {
+        problems.push("the briefing is not the game master's word for word: copy it exactly, every sentence");
+      }
       if (problems.length > 0) {
         throw new Error(`${problems.join("; ")}. Send it back to the game-master to rewrite; do not edit it yourself`);
       }

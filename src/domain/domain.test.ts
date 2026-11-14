@@ -335,16 +335,23 @@ describe("LevelManifest", () => {
   });
 
   it("counts the briefing's words and requires the game-fiction line (#119)", () => {
-    const withBriefing = (briefing: string) => ({ ...manifest, mission: { ...manifest.mission, briefing } });
     const fiction = " The security is game fiction.";
     const words = (n: number) => Array.from({ length: n }, () => "word").join(" ");
     expect(briefingWords("Floor 22 — dark, quiet; in by the dock.")).toBe(8);
-    expect(LevelManifest.safeParse(withBriefing(words(BRIEFING_MAX_WORDS - 5) + fiction)).success).toBe(true);
-    const long = LevelManifest.safeParse(withBriefing(words(BRIEFING_MAX_WORDS) + fiction));
-    expect(long.success).toBe(false);
-    expect(long.error?.issues[0].message).toBe(`the briefing is ${BRIEFING_MAX_WORDS + 5} words; the limit is ${BRIEFING_MAX_WORDS}`);
-    expect(LevelManifest.safeParse(withBriefing("In by the dock, out by the roof.")).success).toBe(false);
+    expect(briefingProblems(words(BRIEFING_MAX_WORDS - 5) + fiction)).toEqual([]);
+    expect(briefingProblems(words(BRIEFING_MAX_WORDS) + fiction)).toEqual([
+      `the briefing is ${BRIEFING_MAX_WORDS + 5} words; the limit is ${BRIEFING_MAX_WORDS}`,
+    ]);
+    expect(briefingProblems("In by the dock, out by the roof.")).toEqual([
+      'the briefing must say its security is game fiction (the words "game fiction")',
+    ]);
     expect(briefingProblems("All of it is game-fiction security.")).toEqual([]);
+  });
+
+  it("reads a manifest whatever its briefing: the rules are enforced on write, not on read", () => {
+    const withBriefing = (briefing: string) => ({ ...manifest, mission: { ...manifest.mission, briefing } });
+    expect(LevelManifest.safeParse(withBriefing(Array.from({ length: 200 }, () => "word").join(" "))).success).toBe(true);
+    expect(LevelManifest.safeParse(withBriefing("In by the dock.")).success).toBe(true);
   });
 });
 

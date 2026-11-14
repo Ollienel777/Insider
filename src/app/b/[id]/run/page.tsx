@@ -19,7 +19,7 @@ export default async function RunPage({
   const building = await findBuilding(id);
   if (!building) notFound();
   const missionId = await missionParam(building.id, "run", searchParams);
-  const cached = missionId ? await readCachedLevel(building.id, missionId) : null;
+  const cached = await readCachedLevel(building.id, missionId);
   return (
     <RunScreen
       building={{ id: building.id, name: building.name, matterportModelId: building.matterportModelId }}

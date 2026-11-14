@@ -117,6 +117,8 @@ export const briefingWords = (briefing: string): number =>
 /**
  * What is wrong with a briefing, in words the agent can act on; empty when
  * nothing is. Checked in code, so the length is counted, never self-reported.
+ * Enforced where a level is written (`write_manifest`, `writeCachedLevel`),
+ * not in the schema: a cached level is still read whatever its briefing.
  */
 export function briefingProblems(briefing: string): string[] {
   const problems: string[] = [];
@@ -145,9 +147,6 @@ export const LevelManifest = z
     checkUnique(manifest.entries.map((e) => e.id), "entry", ["entries"], ctx);
     if (manifest.missionId !== manifest.mission.id) {
       ctx.addIssue({ code: "custom", path: ["missionId"], message: `missionId ${manifest.missionId} is not the mission's id ${manifest.mission.id}` });
-    }
-    for (const message of briefingProblems(manifest.mission.briefing)) {
-      ctx.addIssue({ code: "custom", path: ["mission", "briefing"], message });
     }
   });
 export type LevelManifest = z.infer<typeof LevelManifest>;

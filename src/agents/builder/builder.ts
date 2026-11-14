@@ -11,7 +11,7 @@
 // script (record.ts), in fixtures/llm/recorded/.
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { createDeepAgent, GENERAL_PURPOSE_SUBAGENT } from "deepagents";
-import { todoListMiddleware } from "langchain";
+import { createMiddleware, todoListMiddleware } from "langchain";
 import { getCoStar } from "@/adapters/costar";
 import { getChatModelSelection, loadScript, type Script } from "@/adapters/llm";
 import { getVexcel } from "@/adapters/vexcel";
@@ -137,7 +137,7 @@ export async function buildLevel(buildingId: string, missionId: string, options:
         description: SUBAGENT_DESCRIPTIONS["game-master"],
         systemPrompt: GAME_MASTER_PROMPT,
         tools: gameMasterTools(run),
-        middleware: [recorder.middleware("game-master")],
+        middleware: [recorder.middleware("game-master"), keepAnswer(run)],
       },
     ],
   });
@@ -167,6 +167,27 @@ export async function buildLevel(buildingId: string, missionId: string, options:
     summary,
     turns: recorder.turns,
   };
+}
+
+/**
+ * Keeps the game master's last answer (a turn with no tool calls) on the run,
+ * so `write_manifest` can check the briefing was copied from it word for word.
+ */
+function keepAnswer(run: BuildRun) {
+  return createMiddleware({
+    name: "GameMasterAnswer",
+    wrapModelCall: async (request, handler) => {
+      const response = await handler(request);
+      if ((response.tool_calls ?? []).length === 0) {
+        const { content } = response;
+        run.gameMasterAnswer =
+          typeof content === "string"
+            ? content
+            : content.map((b) => (b.type === "text" && typeof b.text === "string" ? b.text : "")).join("\n");
+      }
+      return response;
+    },
+  });
 }
 
 /** A build that did not produce a manifest, with the trace of what it did. */

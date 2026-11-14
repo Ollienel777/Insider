@@ -59,6 +59,14 @@ describe("readCachedLevel, keyed by building and mission", () => {
     expect(await readCachedLevel("F1", "sunset-1986", dir)).toBeNull();
   });
 
+  it("reads a level whose briefing breaks the rules, but never writes one", async () => {
+    const level = (await readCachedLevel("F1", "romaine-1974"))!;
+    const long = { ...level, manifest: { ...level.manifest, mission: { ...level.manifest.mission, briefing: "In by the dock." } } };
+    await expect(writeCachedLevel(long, dir)).rejects.toThrow("not writing F1.romaine-1974: the briefing must say its security is game fiction");
+    writeFileSync(path.join(dir, "F1.romaine-1974.json"), JSON.stringify(long.manifest));
+    expect((await readCachedLevel("F1", "romaine-1974", dir))?.manifest.mission.briefing).toBe("In by the dock.");
+  });
+
   it("refuses a file that holds another pair", async () => {
     copyFileSync(path.join(LEVELS_DIR, "F1.romaine-1974.json"), path.join(dir, "F1.night-desk.json"));
     copyFileSync(path.join(LEVELS_DIR, "F1.romaine-1974.trace.json"), path.join(dir, "F1.night-desk.trace.json"));

@@ -15,8 +15,8 @@ describe("buildingHref", () => {
   });
 
   it("without a mission leaves m off, for the page to pick the building's own", () => {
-    expect(buildingHref("F1", "scout")).toBe("/b/F1/scout");
     expect(buildingHref("F1", "scout", null)).toBe("/b/F1/scout");
+    expect(buildingHref("F1", "scout", "")).toBe("/b/F1/scout");
   });
 
   it("reads no mission outside the app router", () => {
@@ -34,23 +34,32 @@ const files = (dir: string): string[] =>
   );
 
 describe("no building link bypasses buildingHref", () => {
+  // A quote or backtick, maybe a line break, then `/b` and either `/` and
+  // anything but `[` (the route pattern in comments), or a closing quote
+  // (`"/b" + id`, `'/b'`).
+  const RAW = /[`"']\s*\/b(?:\/(?!\[)|[`"'])/g;
+  const lineOf = (text: string, index: number) => text.slice(0, index).split("\n").length;
+
   it("has no string or template starting /b/ outside the helper and the tests", () => {
-    // A quote or backtick, then /b/ and anything but `[` (the route pattern in comments).
-    const raw = /[`"']\/b\/(?!\[)/;
     const offenders = files(SRC)
       .filter((f) => !/\.test\.tsx?$/.test(f) && path.basename(f) !== "building-href.ts")
-      .flatMap((f) =>
-        readFileSync(f, "utf8")
-          .split("\n")
-          .map((line, i) => ({ at: `${path.relative(SRC, f)}:${i + 1}`, line }))
-          .filter(({ line }) => raw.test(line)),
-      );
-    expect(offenders).toEqual([]);
+      .flatMap((f) => {
+        const text = readFileSync(f, "utf8");
+        return [...text.matchAll(RAW)].map((m) => `${path.relative(SRC, f)}:${lineOf(text, m.index)}`);
+      });
+    expect(
+      offenders,
+      "Build every /b/[id]/… link with buildingHref(id, screen, missionId) from @/lib/building-href, so it carries ?m= (issue 119)",
+    ).toEqual([]);
   });
 
-  it("would catch one", () => {
-    expect(/[`"']\/b\/(?!\[)/.test("href={`/b/${id}/plan`}")).toBe(true);
-    expect(/[`"']\/b\/(?!\[)/.test('router.push("/b/F1/run")')).toBe(true);
-    expect(/[`"']\/b\/(?!\[)/.test("// The Dossier (`/b/[id]/dossier`)")).toBe(false);
+  it("would catch one, in each form", () => {
+    const caught = (code: string) => [...code.matchAll(RAW)].length > 0;
+    expect(caught("href={`/b/${id}/plan`}")).toBe(true);
+    expect(caught('router.push("/b/F1/run")')).toBe(true);
+    expect(caught('const href = "/b" + "/" + id;')).toBe(true);
+    expect(caught("const base = '/b';")).toBe(true);
+    expect(caught("href={`\n  /b/${id}/run`}")).toBe(true);
+    expect(caught("// The Dossier (`/b/[id]/dossier`)")).toBe(false);
   });
 });

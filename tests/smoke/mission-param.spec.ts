@@ -44,6 +44,23 @@ test("without ?m=, every building screen redirects to the building's own mission
   await expect(page).toHaveURL(at("scout"));
 });
 
+test("the map passes no mission: its Scout link lands on the building's own (?m=romaine-1974)", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("map-skeleton")).toHaveCount(0);
+  await page.getByTestId("building-row").filter({ hasText: "Halvorsen Tower" }).click();
+  const link = page.getByRole("link", { name: "Scout this building" });
+  await expect(link).toHaveAttribute("href", "/b/F1/scout");
+  await link.click();
+  await expect(page).toHaveURL(at("scout"));
+});
+
+test("an unknown m is a 404 at the first hop; Drill, which reads no level, keeps it", async ({ page }) => {
+  expect((await page.goto("/b/F1?m=bogus"))?.status()).toBe(404);
+  expect((await page.goto("/b/F1/drill?m=typo"))?.status()).toBe(200);
+  await expect(page).toHaveURL(/\/b\/F1\/drill\?m=typo$/);
+  await railKeeps(page, "typo");
+});
+
 test("another mission on F1 has no level yet, and keeps its ?m=; an unknown one is a 404", async ({ page }) => {
   await page.goto("/b/F1/dossier?m=sunset-1986");
   await expect(page).toHaveURL(at("dossier", "sunset-1986"));

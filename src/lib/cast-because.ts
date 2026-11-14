@@ -7,7 +7,11 @@
 // in fake mode (`data/casting/<missionId>.json`, SPEC §4.4). Until that agent
 // lands (#117) no shortlist exists, and the finalist is derived here instead,
 // deterministically, from the fixture inventory and the mission's casting
-// filters; the row says so.
+// filters; the row says so. A shortlist that is unreadable, or that does not
+// list this building, falls back to the derived reason too: the dossier never
+// breaks on it. Once the Casting Director's reader is on main (PR 141,
+// `readCachedCasting` in src/agents/casting/cache.ts), `castingResult` becomes
+// a call to it, and nothing else here changes.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -21,7 +25,8 @@ import {
 } from "@/domain";
 import raw from "../../fixtures/inventory.json";
 
-export const CASTING_DIR = path.join(process.cwd(), "data", "casting");
+/** Where the fake-mode shortlists are cached (SPEC §4.4); named apart from the Casting Director's own constant. */
+export const SHORTLIST_DIR = path.join(process.cwd(), "data", "casting");
 
 export interface CastFinalist {
   candidate: Candidate;
@@ -30,7 +35,7 @@ export interface CastFinalist {
 }
 
 /** The cached shortlist for a mission, or null when none is cached. The seam for #117. */
-export async function castingResult(missionId: string, dir: string = CASTING_DIR): Promise<CastingResult | null> {
+export async function castingResult(missionId: string, dir: string = SHORTLIST_DIR): Promise<CastingResult | null> {
   if (!/^[\w-]+$/.test(missionId)) return null;
   try {
     return CastingResult.parse(JSON.parse(await readFile(path.join(dir, `${missionId}.json`), "utf8")));
@@ -96,13 +101,19 @@ export function deriveCandidate(p: InventoryProperty, mission: Mission): Candida
   };
 }
 
-/** Why `buildingId` was cast for `mission`: the shortlist's finalist when one is cached, else derived; null when neither. */
+/**
+ * Why `buildingId` was cast for `mission`: the shortlist's finalist when a
+ * cached shortlist lists it, else derived; null when neither can say.
+ */
 export async function castFinalist(mission: Mission, buildingId: string, dir?: string): Promise<CastFinalist | null> {
-  const result = await castingResult(mission.id, dir);
-  if (result) {
-    const candidate = result.finalists.find((c) => c.id === buildingId);
-    return candidate ? { candidate, source: "shortlist" } : null;
+  let result: CastingResult | null = null;
+  try {
+    result = await castingResult(mission.id, dir);
+  } catch (error) {
+    console.error(`cast-because: the shortlist for ${mission.id} is unreadable; deriving the reason instead:`, error);
   }
+  const listed = result?.finalists.find((c) => c.id === buildingId);
+  if (listed) return { candidate: listed, source: "shortlist" };
   const property = fixtureInventory().find((p) => p.id === buildingId);
   const candidate = property ? deriveCandidate(property, mission) : null;
   return candidate ? { candidate, source: "derived" } : null;

@@ -18,8 +18,9 @@ export async function POST(request: Request): Promise<Response> {
   if (typeof buildingId !== "string" || typeof order !== "string") {
     return Response.json({ error: "buildingId and order must be strings" }, { status: 400 });
   }
-  if (missionId !== undefined && typeof missionId !== "string") {
-    return Response.json({ error: "missionId must be a string" }, { status: 400 });
+  // Bounded like the Chief's ids (ShortId): 1 to 64 characters.
+  if (missionId !== undefined && (typeof missionId !== "string" || missionId.length < 1 || missionId.length > 64)) {
+    return Response.json({ error: "missionId must be a string of 1 to 64 characters" }, { status: 400 });
   }
   try {
     const forced = forcedFromRequest(request).has("llm");

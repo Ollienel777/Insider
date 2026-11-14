@@ -231,6 +231,19 @@ describe("the builder takes the chosen mission as input (#119)", () => {
     expect(r.manifest?.mission.briefing).toMatch(/game fiction\.$/);
   });
 
+  it("write_manifest refuses a briefing that is not the game master's word for word", async () => {
+    const r = run();
+    await tool(analystTools(r), "derive_security_profile").invoke({ buildingId: "F1" });
+    r.gameMasterAnswer = "Mission: romaine-1974. Briefing: In by the dock,   out by the roof. The security is game fiction.";
+    const write = tool(builderTools(r), "write_manifest");
+    const args = { buildingId: "F1", missionId: "romaine-1974", objective: { name: "R", rule: "Take" } };
+    await expect(write.invoke({ ...args, briefing: "In by the dock. The security is game fiction." })).rejects.toThrow(
+      "the briefing is not the game master's word for word",
+    );
+    await write.invoke({ ...args, briefing: "In by the dock, out by the roof. The security is game fiction." });
+    expect(r.manifest).toBeDefined();
+  });
+
   it("copies the game master's briefing into write_manifest verbatim on the recorded script", async () => {
     const script = await loadScript("builder-F1-romaine-1974");
     const gm = script.agents.find((a) => a.agent === "game-master")!.turns.at(-1)!.content;

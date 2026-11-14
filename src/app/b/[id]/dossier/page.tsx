@@ -29,7 +29,7 @@ export default async function DossierPage({
 
   let level: CachedLevel | null;
   try {
-    level = missionId ? await readCachedLevel(building.id, missionId) : null;
+    level = await readCachedLevel(building.id, missionId);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return <DossierUnavailable buildingId={building.id} name={building.name} reason="invalid" detail={message} />;
@@ -38,7 +38,8 @@ export default async function DossierPage({
 
   // Why this building was cast for the mission: the table's first row (beat 4).
   const mission = findMission(level.manifest.missionId);
-  const finalist = mission ? await castFinalist(mission, building.id) : null;
+  // castFinalist never throws on a bad shortlist; anything else it throws drops the row, not the page.
+  const finalist = mission ? await castFinalist(mission, building.id).catch(() => null) : null;
   const cast = mission && finalist ? { candidate: finalist.candidate, mission, derived: finalist.source === "derived" } : null;
 
   return (

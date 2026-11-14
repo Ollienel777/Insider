@@ -70,6 +70,16 @@ describe("the Chief's request over its limits (#97)", () => {
     expect(request.lastKnownZone).toBe("dock-corridor");
   });
 
+  it("carries the mission when given with the building, and none from a bare building id (issue 119)", () => {
+    const zones = chiefZones(base);
+    const run = tripped(base);
+    expect(chiefRequest({ buildingId: "F1", missionId: "romaine-1974" }, base, zones, run, lastEvent(run)).missionId).toBe(
+      "romaine-1974",
+    );
+    expect(chiefRequest({ buildingId: "F1", missionId: null }, base, zones, run, lastEvent(run))).not.toHaveProperty("missionId");
+    expect(chiefRequest("F1", base, zones, run, lastEvent(run))).not.toHaveProperty("missionId");
+  });
+
   it("fails with a plain message, not a schema dump, when the request still cannot fit", () => {
     const zones = chiefZones(base);
     const run = tripped(base);

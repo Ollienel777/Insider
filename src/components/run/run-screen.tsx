@@ -155,7 +155,7 @@ export function RunScreen({
       latestSeq.current = seq;
       let request: ReturnType<typeof chiefRequest>;
       try {
-        request = chiefRequest(building.id, placed, zones, state, state.alarmEvents[seq], missionId);
+        request = chiefRequest({ buildingId: building.id, missionId }, placed, zones, state, state.alarmEvents[seq]);
       } catch (error) {
         // A board the request can't carry: the panel says so, and the turn (and its log) goes on.
         setChief({ status: "error", seq, message: error instanceof Error ? error.message : String(error) });

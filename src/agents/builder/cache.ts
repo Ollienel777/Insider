@@ -5,7 +5,7 @@
 // a model.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { BuildTrace, LevelManifest } from "@/domain";
+import { briefingProblems, BuildTrace, LevelManifest } from "@/domain";
 
 export const LEVELS_DIR = path.join(process.cwd(), "data", "levels");
 
@@ -26,7 +26,8 @@ const files = (dir: string, buildingId: string, missionId: string) => ({
 });
 
 /**
- * The cached level of `buildingId` built for `missionId`, `null` when there
+ * The cached level of `buildingId` built for `missionId`, read whatever its
+ * briefing (the briefing rules are checked on write), `null` when there
  * is none, or an error when a file fails its schema or holds another pair.
  */
 export async function readCachedLevel(
@@ -55,6 +56,9 @@ export async function writeCachedLevel(level: CachedLevel, dir: string = LEVELS_
   const { buildingId, missionId } = level.manifest;
   if (!isLevelId(buildingId)) throw new Error(`invalid building id "${buildingId}"`);
   if (!isLevelId(missionId)) throw new Error(`invalid mission id "${missionId}"`);
+  // The briefing rules hold on write; reading stays tolerant, so an older level never breaks a page.
+  const problems = briefingProblems(level.manifest.mission.briefing);
+  if (problems.length > 0) throw new Error(`not writing ${levelKey(buildingId, missionId)}: ${problems.join("; ")}`);
   await mkdir(dir, { recursive: true });
   const paths = files(dir, buildingId, missionId);
   const text = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;

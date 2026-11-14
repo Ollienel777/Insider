@@ -72,13 +72,14 @@ export function chiefZones(placed: PlacedLevel): ChiefZones {
  * last sighting names first. Throws a plain message when it still fails its schema.
  */
 export function chiefRequest(
-  buildingId: string,
+  /** The building, or the building and the mission whose level is on the board (issue 119). */
+  level: string | { buildingId: string; missionId: string | null },
   placed: PlacedLevel,
   zones: ChiefZones,
   run: RunState,
   event: AlarmEvent,
-  missionId?: string | null,
 ): ChiefRequest {
+  const { buildingId, missionId } = typeof level === "string" ? { buildingId: level, missionId: null } : level;
   const chiefId = (engineId: string) => zones.toChief.get(engineId) ?? clampId(engineId);
   const lastKnownZone = event.lastKnownZone === null ? null : chiefId(event.lastKnownZone);
   const guards = run.guards.slice(0, MAX_GUARDS).map((g) => ({

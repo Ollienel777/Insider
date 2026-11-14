@@ -16,6 +16,8 @@ export default async function DrillPage({
   const { id } = await params;
   const building = await findBuilding(id);
   if (!building) notFound();
-  await missionParam(building.id, "drill", searchParams);
+  // Drill reads no level, so it carries any `m` through and never 404s on it;
+  // a missing one still redirects, as on every /b/[id]/… route (C5).
+  await missionParam(building.id, "drill", searchParams, { tolerant: true });
   return <DrillScreen building={building} heistMode={process.env.HEIST_MODE} />;
 }

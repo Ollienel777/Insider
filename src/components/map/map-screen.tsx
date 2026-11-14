@@ -107,7 +107,7 @@ export function MapScreen({ buildings, initialCity }: MapScreenProps) {
             )}
           </p>
           {selected ? (
-            <Link href={buildingHref(selected.id, "scout")} className={buttonVariants({ variant: "primary" })}>
+            <Link href={buildingHref(selected.id, "scout", null /* no mission picked on the map: Scout redirects to its own */)} className={buttonVariants({ variant: "primary" })}>
               Scout this building
             </Link>
           ) : (
