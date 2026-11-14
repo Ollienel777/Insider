@@ -102,7 +102,9 @@ describe.each(CASES)("free movement on $id", ({ id, cached }) => {
         walkTo(s, inFront(ground, door, s.run.playerNode));
         const yaw = yawTo(s.walker.pos, door.centre);
         const before = s.played.length;
-        step(s, { ...IDLE, yaw, use: true, usePressed: true });
+        // E held: the press starts the lock, and each pick after it is the clock's turn.
+        if (s.run.picking?.doorId === expected.doorId) play(s, heldAction(s.walker, s.ground, s.run, { use: true, yaw }));
+        else step(s, { ...IDLE, yaw, use: true, usePressed: true });
         rest(s, 2);
         expect(s.played.slice(before), JSON.stringify(expected)).toEqual([expected]);
       } else if (expected.kind === "take") {
@@ -203,6 +205,52 @@ describe.each(CASES)("free movement on $id", ({ id, cached }) => {
     expect(s.run.locked).not.toContain(doorId);
     expect(s.played.slice(-of)).toEqual(Array.from({ length: of }, () => ({ kind: "pick", doorId })));
     expect(promptFor(s.walker, s.ground, s.run, yaw)).toBeNull();
+  });
+
+  it("tapping E picks no faster than holding it: one pick a turn, the clock's, through the same path", () => {
+    const run0 = empty();
+    const doorId = run0.locked[0];
+    const door = ground.doors.find((d) => d.doorId === doorId)!;
+    const yaw = yawTo(inFront(ground, door, door.a), door.centre);
+    const at = () => {
+      const s = session(world, { ...run0, playerNode: door.a });
+      s.walker = { ...s.walker, pos: inFront(ground, door, door.a), region: door.a };
+      return s;
+    };
+    const first = at();
+    const of = (promptFor(first.walker, first.ground, first.run, yaw) as { of: number }).of;
+    expect(of).toBeGreaterThan(1);
+    const tap = (s: Session) => {
+      step(s, { ...IDLE, yaw, use: true, usePressed: true });
+      step(s, { ...IDLE, yaw });
+    };
+    const clock = (s: Session, use: boolean) => play(s, heldAction(s.walker, s.ground, s.run, { use, yaw }));
+
+    // Held: a pick on the press, then one on each turn the clock plays.
+    const held = at();
+    step(held, { ...IDLE, yaw, use: true, usePressed: true });
+    for (let turn = 1; turn < of; turn++) {
+      rest(held, 2);
+      clock(held, true);
+    }
+    // Tapped, many times a turn: the first tap starts the lock, the rest are kept for the clock's turn.
+    const tapped = at();
+    for (let turn = 0; turn < of; turn++) {
+      for (let i = 0; i < 6; i++) tap(tapped);
+      if (turn < of - 1) clock(tapped, false);
+    }
+    expect(tapped.played).toEqual(held.played);
+    expect(tapped.played).toEqual(Array.from({ length: of }, () => ({ kind: "pick", doorId })));
+    expect(tapped.run.locked).not.toContain(doorId);
+
+    // A turn with no tap and E up is a wait, and the lock starts over, as when E is let go.
+    const idle = at();
+    tap(idle);
+    tap(idle);
+    clock(idle, false);
+    clock(idle, false);
+    expect(idle.played).toEqual([{ kind: "pick", doorId }, { kind: "pick", doorId }, { kind: "wait" }]);
+    expect(idle.run.picking).toBeNull();
   });
 
   it("does not pick a door the view is not on, or one out of reach", () => {
