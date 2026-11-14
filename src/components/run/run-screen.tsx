@@ -14,6 +14,7 @@ import type { Building, FloorGraph, LateChief, LevelManifest } from "@/domain";
 import { act, applyChiefOrders, createRun, type Action, type RunState } from "@/engine";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { objectiveNoun } from "@/lib/objective-noun";
+import { placedFloor, recordLabel } from "@/lib/record-label";
 import { cn } from "@/lib/utils";
 import { AlarmBanner } from "./alarm-banner";
 import {
@@ -87,11 +88,14 @@ export function RunScreen({
   building,
   manifest,
   heistMode,
+  source,
 }: {
   building: RunBuilding;
   /** The cached manifest; null when the building has no level yet. */
   manifest: LevelManifest | null;
   heistMode?: string;
+  /** The building's source: a CoStar kit building is labelled with its real record and its floor (#95). */
+  source?: Building["source"];
 }) {
   const [loaded, setLoad] = useState<Load>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
@@ -377,6 +381,8 @@ export function RunScreen({
 
   const options = useMemo(() => (run ? choicesOf(run, mode) : []), [run, mode]);
   const over = run !== null && run.status !== "playing";
+  // A kit building's label, once the board is placed: it names the scan only when the board stands on it.
+  const label = load.status === "ready" ? recordLabel(source, placedFloor(load.floor.source)) : null;
 
   return (
     <BuildingScreen
@@ -387,10 +393,22 @@ export function RunScreen({
             <span className="flex items-center gap-2 label-caps text-text-2">
               <LayerDot layer="matterport" decorative />
               Matterport
-              <span className="max-md:hidden">
-                {load.status === "ready" && load.live ? " · floor plan from the scan" : " · floor plan from fixtures"}
-              </span>
+              {/* A kit building's label (below) names its floor, so the line doesn't say it twice. */}
+              {source === "costar" ? null : (
+                <span className="max-md:hidden">
+                  {load.status === "ready" && load.live ? " · floor plan from the scan" : " · floor plan from fixtures"}
+                </span>
+              )}
             </span>
+            {label ? (
+              <span
+                data-testid="record-label"
+                title={label}
+                className="min-w-0 truncate rounded-sm border border-border px-1.5 py-0.5 label-caps text-text-2 md:shrink-0"
+              >
+                {label}
+              </span>
+            ) : null}
             <span aria-hidden className="h-4 w-px bg-border" />
             <span className="truncate text-sm text-text-1">{manifest?.mission.title}</span>
             <div className="ml-auto flex items-center gap-2">
@@ -453,6 +471,7 @@ export function RunScreen({
                 onChoose={(c: Choice) => play(c.action)}
                 hiddenRoutes={hidden}
                 lens={lens}
+                source={source}
               />
             ) : null}
           </div>
