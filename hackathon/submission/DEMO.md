@@ -1,7 +1,8 @@
 # The demo script (2 minutes)
 
-The live demo, written against `main` at 9531d91 and walked there in fake mode
-on 2026-11-14. SPEC §2 is the target. Where `main` cannot do a beat yet, the
+The live demo, written against `main` at 23e02da (the same tree as 9531d91 before the
+repo moved to Ollienel777/Insider) and walked there in fake mode on
+2026-11-14. SPEC §2 is the target. Where `main` cannot do a beat yet, the
 beat is listed under **Open items** and is not in the script.
 
 Rules on stage:
@@ -12,6 +13,8 @@ Rules on stage:
   `FIXTURES`.
 - Never click **Drill** (top right of the step rail). Drill Mode is on hold
   (SPEC Q8) and off the script.
+- Never press **S** on the Run board: it switches sprint mode on, and the
+  numbered rings then mark rooms two hops away.
 - If a beat breaks, say its fallback line, do its fallback click, and move
   on. Do not debug on stage.
 
@@ -53,7 +56,7 @@ Screen: the map at `/`, Los Angeles tab open, nothing selected.
 4. Click **Scout this building**.
 
 Fallback: if the map or the row does not respond, type
-`localhost:<port>/b/F1/scout` in the address bar. Say: **"Straight to the
+`localhost:3000/b/F1/scout` in the address bar. Say: **"Straight to the
 building."**
 
 ### Beat 2 · casting
@@ -99,7 +102,7 @@ the demo (checklist).
 
 1. Click the **Your order** box, paste (**Cmd+V**):
    `Go in through the dock, wait for the 2 am round to pass, take the records room.`
-2. Press **Enter**.
+2. Press **Enter** (or click **Brief the crew**).
 3. The crew's four-step plan appears, drawn on the board, with the
    **Recorded** chip. Say: **"The crew answers with a plan, checks it on the
    board, and pushes back: camera C2 catches us in the dock corridor on the
@@ -118,7 +121,7 @@ mark the moves.
 1. Hand the judge the mouse. Say: **"Your move. Click 1."** (Freight lift
    lobby.)
 2. Say: **"Now 1 again."** (The Dock Corridor, in C2's cone.) Keys **1**, **1**
-   do the same.
+   do the same. Do not press **S** (sprint mode).
 3. The alarm jumps to **Alert**. The status line reads "C2 saw you in the
    Dock Corridor. The guards are converging."
 4. The Security Chief's orders stream into the side panel (about 2 s). Say:
@@ -146,6 +149,9 @@ timeline.
    of the Chief's decisions and its reason."**
 3. Close: **"Every guard, camera and lock you saw came from a rule on the
    building's data, and the Why card shows which."**
+
+The demo ends on the Debrief. Do not click **Try again** (the primary
+button): it sends you back to the Run and starts it again.
 
 Fallback: if the Debrief says "No run yet" (the browser lost the run log), do
 not replay the run, and do not press Back: the Run screen starts again at
@@ -210,22 +216,23 @@ script.
 
 1. **Beat 1, the mission picker.** `/` on `main` is the building map ("Pick a
    building"), not five mission cards. The mission is fixed per building
-   (F1 plays *The Romaine Street Papers*). Closes with #143 (C4).
+   (F1 plays *The Romaine Street Papers*). Closes with issue #25 (C4; its draft PR is still in
+   the old repo, Ollienel777/heist-anywhere#143, with no Insider PR yet).
 2. **Beat 2, the cast screen** (`/m/[missionId]/cast`: funnel, pins dimming,
-   three finalists). Not on `main`. Needs #135 (C2, inventory search), #141
-   (C3, Casting Director) and #143 (C4). Only #133 (C1, missions and the
-   fixture inventory) has merged.
+   three finalists). Not on `main`. Needs PR #46 (C2, inventory search; issue
+   #23), PR #50 (C3, Casting Director; issue #24) and issue #25 (C4). Only C1 (missions and the fixture
+   inventory) has merged, as 23e02da on `main`.
 3. **`?m=` on every route, and the dossier's "cast because" row.** `main`'s
    routes carry no `?m=`, and its Data → Level table has five rows
    (yearBuilt, buildingClass, availableSpace, typicalFloorSf, entries.kind),
-   none of them "cast because". Closes with #142 (C5).
+   none of them "cast because". Closes with PR #53 (C5; issue #26).
 4. **Beat 7's Monday line** ("the search that cast your heist is the one a
    location scout runs on Monday") describes casting, so it is false on
    `main`. Say it only once items 1–3 merge. The smoke walking casting is
-   #120 (C6, no PR yet).
-5. **Owner Mode** (SPEC §13): open decision. PRs #136, #140, #148, #159.
+   issue #27 (C6, no PR yet).
+5. **Owner Mode** (SPEC §13): open decision. PRs #47, #49, #55, #62.
    Whether it gets about 15 s (from Scout and Debrief) is decided at the
-   Saturday 4 PM ET checkpoint (Nelson on #1 and #129). Not scripted.
+   Saturday 4 PM ET checkpoint (Nelson on #1 and #32). Not scripted.
 6. **Drill Mode is on hold** (SPEC §1, Q8): off the demo script; its route
    and the **Drill** link in the step rail are still on `main`.
 7. **Wording differs from SPEC §2.** The script quotes `main`, not the SPEC:
@@ -241,8 +248,11 @@ script.
 8. **Live mode was not walked.** SPEC §2 runs the demo in whichever mode the
    rehearsal proved. This script is fake mode only; a live demo needs its
    own walk.
-9. **Open PRs that change screens on this path**: #100 (night cleaners on the
-   demo floor), #101 (Chief orders end at Calm), #108 (the Chief adapts
-   between runs), #138, #149, #157 (rubric passes on Plan, Run, Map, Scout,
-   Dossier and Debrief), #146 (F2 and F3 levels). After any of them merges,
+9. **Open PRs that change screens on this path**: #41 (night cleaners on the
+   demo floor), #42 (Chief orders end at Calm), #44 (the Chief adapts
+   between runs), #45 (the Dossier's trace rows open and name their
+   subagent), #48, #56, #61 (rubric passes on Plan, Run, Map, Scout,
+   Dossier and Debrief), #54 (the LLM chip and its fallback toast), #63 (Run sprint status),
+   Ollienel777/heist-anywhere#146 (F2 and F3 levels: an old-repo draft PR
+   with no Insider PR yet; its issue is #11). After any of them merges,
    walk the script again; the run's moves and on-screen text may change.
