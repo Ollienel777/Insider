@@ -48,8 +48,9 @@ test("Enter sends the order, and a lobby plan's off-floor zones are dropped and 
   await open(page);
   await page.getByTestId("crew-order").fill("Walk in through the lobby");
   await page.getByTestId("crew-order").press("Enter");
-  await expect(page.getByTestId("dropped-steps")).toContainText('Dropped step 1: "lobby-S" is not a zone on this floor.');
-  await expect(page.locator('[data-testid="crew-step"][data-dropped="true"]')).toHaveCount(2);
+  // The lobby reply opens at the dock and names the lobby as its way out, which is not on this floor (#89).
+  await expect(page.getByTestId("dropped-steps")).toContainText('Dropped step 3: "lobby-S" is not a zone on this floor.');
+  await expect(page.locator('[data-testid="crew-step"][data-dropped="true"]')).toHaveCount(1);
 });
 
 test("a building with no level yet says so", async ({ page }) => {
