@@ -275,6 +275,40 @@ describe("write_shortlist's refusals", () => {
   });
 });
 
+describe("the scout's refusals", () => {
+  const romaine = MISSIONS.find((m) => m.id === "romaine-1974")!;
+
+  function scout() {
+    const run: CastRun = { mission: romaine, costar: createFakeCoStar(), vexcel: createFakeVexcel(), inventory: FIXTURE_INVENTORY, applied: [] };
+    const tools = scoutTools(run);
+    const search = (filter: string) =>
+      tools.find((t) => t.name === "search_inventory")!.invoke({ missionId: romaine.id, filter });
+    const get = (id: string) => tools.find((t) => t.name === "get_candidate")!.invoke({ id });
+    return { run, search, get };
+  }
+
+  it("reads only a candidate this run's search returned, though the inventory holds others", async () => {
+    const { run, search, get } = scout();
+    await search(romaine.casting[0].kind);
+    const returned = new Set(run.search!.steps.flatMap((s) => s.top).map((c) => c.id));
+    const other = FIXTURE_INVENTORY.find((p) => !returned.has(p.id));
+    expect(other, "an inventory property the search did not return").toBeDefined();
+    await expect(get(other!.id)).rejects.toThrow(new RegExp(`${other!.id} is not among the candidates search_inventory returned`));
+    const first = [...returned][0];
+    expect(JSON.parse(await get(first)).id).toBe(first);
+  });
+
+  it("refuses a filter already applied, and leaves the search as it was", async () => {
+    const { run, search } = scout();
+    const kind = romaine.casting[0].kind;
+    await search(kind);
+    const before = run.search;
+    await expect(search(kind)).rejects.toThrow(new RegExp(`"${kind}" filter is already applied`));
+    expect(run.applied.map((f) => f.kind)).toEqual([kind]);
+    expect(run.search).toBe(before);
+  });
+});
+
 describe("the director's guard rails", () => {
   const script = (turns: ScriptInput["agents"][number]["turns"]): ScriptInput => ({
     id: "guard-rails",
