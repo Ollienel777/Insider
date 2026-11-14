@@ -3,7 +3,7 @@
 // how many elements each layer produced, for the legend.
 //
 // Nothing here is a hand-written map from element kind to layer. A guard's,
-// camera's, lock's, zone's or entry's layers are the layers of the provenance
+// cleaner's, camera's, lock's, zone's or entry's layers are the layers of the provenance
 // entries the placer attached to it, the same entries its Why card lists, so
 // an element with entries from two layers carries both. Game fiction (the
 // mission) is not a data layer, so an element whose only entries are fiction
@@ -31,7 +31,7 @@ export const LENS_LABEL: Readonly<Record<LensLayer, string>> = {
   matterport: "Matterport",
 };
 
-export type LensKind = "guard" | "camera" | "lock" | "zone" | "entry" | "room";
+export type LensKind = "guard" | "cleaner" | "camera" | "lock" | "zone" | "entry" | "room";
 
 /** One element on the board as the lens tints it. `key` is what the board marks it with (`data-lens`). */
 export interface LensElement {
@@ -63,7 +63,7 @@ export const lensKey = {
 };
 
 /**
- * Every element the board draws, with its layers: each guard, camera and
+ * Every element the board draws, with its layers: each guard, cleaner, camera and
  * entry, each lock on a door still `locked`, and each room tile. A room that
  * holds a zone is a `zone` and carries its zones' layers on top of the
  * floor's; any other room is a `room`, from the floor alone.
@@ -113,7 +113,7 @@ export interface LayerCount {
   byKind: readonly { kind: LensKind; count: number }[];
 }
 
-const KIND_ORDER: readonly LensKind[] = ["guard", "camera", "lock", "zone", "entry", "room"];
+const KIND_ORDER: readonly LensKind[] = ["guard", "cleaner", "camera", "lock", "zone", "entry", "room"];
 
 /**
  * The legend's counts: for each layer, the elements that carry it. An element
@@ -137,6 +137,7 @@ export function layerCounts(elements: readonly LensElement[]): { layers: LayerCo
 
 const NOUN: Readonly<Record<LensKind, [string, string]>> = {
   guard: ["guard", "guards"],
+  cleaner: ["cleaner", "cleaners"],
   camera: ["camera", "cameras"],
   lock: ["lock", "locks"],
   zone: ["zone room", "zone rooms"],

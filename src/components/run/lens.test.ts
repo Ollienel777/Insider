@@ -21,9 +21,11 @@ const dataLayers = (entries: readonly Provenance[]) =>
   new Set(entries.map((p) => p.layer).filter((layer) => layer !== "fiction"));
 
 describe("lensElements", () => {
-  it("has one element per guard, camera, locked door, entry and room, each once", () => {
+  it("has one element per guard, cleaner, camera, locked door, entry and room, each once", () => {
     const kinds = (kind: LensElement["kind"]) => elements.filter((e) => e.kind === kind).length;
     expect(kinds("guard")).toBe(placed.guards.length);
+    expect(placed.cleaners).toHaveLength(1);
+    expect(kinds("cleaner")).toBe(placed.cleaners.length);
     expect(kinds("camera")).toBe(placed.cameras.length);
     expect(kinds("lock")).toBe(placed.locks.length);
     expect(kinds("entry")).toBe(placed.entries.length);
@@ -41,6 +43,11 @@ describe("lensElements", () => {
     for (const entry of placed.entries) {
       expect(new Set(byKey(`entry:${entry.entryId}`).layers)).toEqual(dataLayers(entry.provenance));
     }
+    // K1 works for the crowded zone, so it carries that zone's CoStar entry (#95).
+    for (const cleaner of placed.cleaners) {
+      expect(new Set(byKey(`cleaner:${cleaner.id}`).layers)).toEqual(dataLayers(cleaner.provenance));
+    }
+    expect(byKey("cleaner:K1").layers).toEqual(["costar"]);
     const post = placed.guards.find((g) => g.post)!;
     expect(byKey(`guard:${post.id}`).layers).toEqual(["costar", "vexcel"]);
     expect(byKey("guard:G1").layers).toEqual(["costar"]);

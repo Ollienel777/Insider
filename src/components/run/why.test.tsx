@@ -39,9 +39,11 @@ const decode = (html: string) =>
 describe("whyTargets", () => {
   const targets = whyTargets(placed);
 
-  it("offers a card for every guard, camera, lock and zoned room the placer placed", () => {
+  it("offers a card for every guard, cleaner, camera, lock and zoned room the placer placed", () => {
     const keys = targets.map((t) => t.key);
     for (const g of placed.guards) expect(keys).toContain(whyKey.guard(g.id));
+    expect(placed.cleaners.map((k) => k.id)).toEqual(["K1"]);
+    for (const k of placed.cleaners) expect(keys).toContain(whyKey.cleaner(k.id));
     for (const c of placed.cameras) expect(keys).toContain(whyKey.camera(c.id));
     for (const l of placed.locks) expect(keys).toContain(whyKey.lock(l.doorId));
     for (const z of placed.zones) for (const r of z.roomIds) expect(keys).toContain(whyKey.room(r));
@@ -52,6 +54,7 @@ describe("whyTargets", () => {
     const elementOf = (key: string): readonly Provenance[] => {
       const [kind, id] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)];
       if (kind === "guard") return placed.guards.find((g) => g.id === id)!.provenance;
+      if (kind === "cleaner") return placed.cleaners.find((k) => k.id === id)!.provenance;
       if (kind === "camera") return placed.cameras.find((c) => c.id === id)!.provenance;
       if (kind === "lock") return placed.locks.find((l) => l.doorId === id)!.provenance;
       return placed.zones.filter((z) => z.roomIds.includes(id)).flatMap((z) => z.provenance);
@@ -78,6 +81,25 @@ describe("whyTargets", () => {
     expect(g4.subtitle).toBe("Posted for the loading dock, in the Elevator Lobby");
     expect(g4.placement).toBe(placed.guards.find((g) => g.id === "G4")!.post!.rule);
     expect(threadColour(g4)).toBe("var(--layer-vexcel)");
+  });
+
+  it("explains Suites 2206–2209 as the four vacant suites the manifest lists, never as occupied space (R1-C1)", () => {
+    const room = whyTarget(placed, whyKey.room("suites-2206-2209"))!;
+    expect(room.subtitle).toBe("4 zones: Suite 2206 (vacant), Suite 2207 (vacant), Suite 2208 (vacant), Suite 2209 (vacant)");
+    expect(whyRows(room).map((r) => r.elementRole)).toEqual(["zone:quiet-2206", "zone:quiet-2207", "zone:quiet-2208", "zone:quiet-2209"]);
+    for (const row of whyRows(room)) expect(row.rule).toMatch(/is available → quiet zone/);
+  });
+
+  it("explains night cleaner K1 from the crowded zone's CoStar row, with the placer's line for its corridor (#95)", () => {
+    const k1 = whyTarget(placed, whyKey.cleaner("K1"))!;
+    expect(k1.kind).toBe("cleaner");
+    expect(whyRows(k1).map((r) => [r.layer, r.field, r.elementRole])).toEqual([["costar", "typicalFloorSf", "zone:crowded-22"]]);
+    expect(whyRows(k1)[0].rule).toMatch(/1,509 sf occupied → crowded zone: night cleaners raise Suspicious/);
+    expect(k1.subtitle).toBe("Night cleaner, in the Main Corridor");
+    expect(k1.placement).toMatch(/^Every suite room on this floor holds an available suite/);
+    expect(k1.placement).toBe(placed.cleaners[0].rule);
+    expect(threadColour(k1)).toBe("var(--layer-costar)");
+    expect(KIND_LABEL[k1.kind]).toBe("Why this cleaner");
   });
 
   it("explains the records room lock with the year-built row and the era rule", () => {
@@ -168,11 +190,12 @@ describe("WhyCard", () => {
 describe("BoardView with the Why card", () => {
   const run = createRun(placed.level);
 
-  it("marks every guard, camera, locked door and zoned room as a button that opens its card", () => {
+  it("marks every guard, cleaner, camera, locked door and zoned room as a button that opens its card", () => {
     const html = renderToStaticMarkup(<BoardView placed={placed} run={run} choices={[]} onChoose={() => {}} />);
     const marked = [...html.matchAll(/data-why-target="([^"]+)"/g)].map((m) => m[1]).sort();
     const expected = [
       ...placed.guards.map((g) => whyKey.guard(g.id)),
+      ...placed.cleaners.map((k) => whyKey.cleaner(k.id)),
       ...placed.cameras.map((c) => whyKey.camera(c.id)),
       ...run.locked.map((d) => whyKey.lock(d)),
       ...new Set(placed.zones.flatMap((z) => z.roomIds.map(whyKey.room))),
@@ -188,6 +211,15 @@ describe("BoardView with the Why card", () => {
     );
     expect(html.split('data-testid="why-card"').length - 1).toBe(1);
     expect(html).toContain('data-why="guard:G4"');
+  });
+
+  it("opens K1's card from its pawn, like a guard's (#95)", () => {
+    const html = renderToStaticMarkup(
+      <BoardView placed={placed} run={run} choices={[]} onChoose={() => {}} initialWhy={whyKey.cleaner("K1")} />,
+    );
+    expect(html.split('data-testid="why-card"').length - 1).toBe(1);
+    expect(html).toContain('data-why="cleaner:K1"');
+    expect(html).toContain('aria-label="Why is K1 here?"');
   });
 });
 

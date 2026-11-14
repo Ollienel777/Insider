@@ -9,6 +9,7 @@ import { LAYER_LABEL, whyRows, type WhyRow, type WhyTarget } from "./why";
 
 export const KIND_LABEL: Readonly<Record<WhyTarget["kind"], string>> = {
   guard: "Why this guard",
+  cleaner: "Why this cleaner",
   camera: "Why this camera",
   lock: "Why this lock",
   zone: "Why this zone",

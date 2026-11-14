@@ -1,11 +1,12 @@
 // The placer (SPEC §4, §4.5, D13): turns a cached `LevelManifest` into a
 // playable level on a `FloorGraph`. It maps the manifest's roles onto the
-// floor: zones onto rooms (quiet = available suites, crowded = an occupied
-// suite room with its night cleaners, objective = the records room, secure =
-// the server closet), entries onto `entry` nodes, locks onto
-// the lockable doors of the objective and secure rooms, cameras onto corridor
-// nodes, one guard onto a post for the dock entry and the rest onto patrol
-// rounds. Every placed element carries the
+// floor: zones onto rooms (quiet = available suites, crowded = the suite
+// rooms no available suite takes, objective = the records room, secure = the
+// server closet), entries onto `entry` nodes, locks onto the lockable doors of
+// the objective and secure rooms, cameras onto corridor nodes, one guard onto
+// a post for the dock entry and the rest onto patrol rounds, and the crowded
+// zone's night cleaners onto its room, or onto a corridor when the floor has
+// no occupied room. Every placed element carries the
 // manifest's provenance entries for it (the same objects, not copies), which
 // is what the Why card (#21) reads.
 //
@@ -60,6 +61,23 @@ export interface PlacedGuard {
   provenance: readonly Provenance[];
 }
 
+/**
+ * A night cleaner (SPEC §4.3). It works for the crowded zone, so it carries
+ * that zone's provenance: the rules table's occupied-space rule.
+ */
+export interface PlacedCleaner {
+  id: string;
+  /** The crowded zone it works for. */
+  zoneId: string;
+  /** The room it walks: the zone's own, or a corridor when the zone has no room (see `CLEANER_RULE`). */
+  roomId: string;
+  /** Waypoints, as the engine's `GuardSpec.patrol`: the cleaner starts on the first. */
+  patrol: readonly string[];
+  /** How the placer chose its room, in the words the Why card shows. */
+  rule: string;
+  provenance: readonly Provenance[];
+}
+
 export interface PlacedLock {
   doorId: string;
   /** The zone the door closes: the objective or the secure zone. */
@@ -99,6 +117,7 @@ export interface PlacedLevel {
   locks: readonly PlacedLock[];
   cameras: readonly PlacedCamera[];
   guards: readonly PlacedGuard[];
+  cleaners: readonly PlacedCleaner[];
   unplaced: readonly Unplaced[];
 }
 
@@ -173,6 +192,23 @@ const ROOM_WORDS: Partial<Record<ZoneRole, readonly string[]>> = {
  * more), off the cameras' covers, the quiet zones and the locked rooms.
  */
 const DOCK_POST_RULE = "Posted on the nearest node to the dock that keeps out of sight of the way in and out of earshot of the door to the files";
+
+/**
+ * How a night cleaner's room is chosen, in the words the Why card shows. The
+ * crowded zone is the floor's occupied space (the rules table: the typical
+ * floor area less the available suites). Its cleaners walk the suite rooms no
+ * available suite takes. When every suite room on the floor holds an
+ * available suite, the occupied space has no room of its own, and they work
+ * the corridor farthest from the start. Either way they keep off the nodes
+ * that see the shortest way from the start to the objective.
+ */
+const CLEANER_RULE = {
+  room: "Walks the occupied suites, the suite rooms no available suite takes, out of sight of the way in to the files",
+  corridor: (why: string) =>
+    `${why}, so the occupied space has no room of its own: the cleaner works the corridor farthest from the start, out of sight of the way in to the files`,
+  allAvailable: "Every suite room on this floor holds an available suite",
+  noSuites: "This floor has no suite rooms",
+} as const;
 
 const CORRIDOR = /corridor|hall/i;
 const SUITE_ROOM = /suite|office/i;
@@ -343,42 +379,46 @@ export function placeLevel(
   const fromStart = hops(adj, [start]);
   const fromEntries = hops(adj, entryNodes.map((n) => n.id));
 
-  // Zones onto rooms.
+  // Zones onto rooms. Every available suite keeps its own room: the crowded
+  // zone (the occupied space) takes only the suite rooms that no available
+  // suite matches, so the board never shows a vacant suite as occupied.
   const claimed = new Set<string>();
   const suiteOf = (zone: Zone) => /suite\s+(\S+)/i.exec(zone.name)?.[1] ?? zone.id.replace(/^quiet-/, "");
   const quietSuites = manifest.zones.filter((z) => z.role === "quiet").map(suiteOf);
   const suiteRooms = floor.rooms.filter((r) => SUITE_ROOM.test(r.label));
-  // The occupied rest of the floor always has a room when the manifest has a
-  // crowded zone (SPEC §4.3: its night cleaners). Where every suite room
-  // holds an available suite, the crowded zone keeps the one farthest from
-  // the start, off the way in, and the quiet zones leave it alone.
-  const reserved = new Set<string>();
-  if (manifest.zones.some((z) => z.role === "crowded") && suiteRooms.length > 0) {
-    const allAvailable = suiteRooms.every((r) => quietSuites.some((s) => suitesIn(r.label)(s)));
-    if (allAvailable) {
-      const nearest = (roomId: string) => Math.min(...(roomNodes.get(roomId) ?? []).map((id) => fromStart.get(id) ?? Infinity));
-      const far = [...suiteRooms].sort((a, b) => nearest(b.id) - nearest(a.id) || a.id.localeCompare(b.id))[0];
-      reserved.add(far.id);
-    }
-  }
+  const holdsAvailable = (label: string) => quietSuites.some((s) => suitesIn(label)(s));
+  const hasEntry = (roomId: string) => (roomNodes.get(roomId) ?? []).some((id) => nodeById.get(id)!.tags.includes("entry"));
+  const nearestToStart = (roomId: string) =>
+    Math.min(...(roomNodes.get(roomId) ?? []).map((id) => fromStart.get(id) ?? Infinity));
+  // A room another role's keywords name: the objective's fallback leaves it to that zone.
+  const namedForOther = (role: ZoneRole, label: string) =>
+    Object.entries(ROOM_WORDS).some(([other, words]) => other !== role && words.some((w) => label.toLowerCase().includes(w)));
   const roomsFor = (zone: Zone): string[] => {
     if (zone.role === "quiet") {
       const suite = suiteOf(zone);
-      return floor.rooms.filter((r) => suitesIn(r.label)(suite) && !reserved.has(r.id)).map((r) => r.id);
+      return floor.rooms.filter((r) => suitesIn(r.label)(suite)).map((r) => r.id);
     }
     if (zone.role === "crowded") {
-      // Occupied suites: suite and office rooms that no quiet zone took.
-      return suiteRooms.filter((r) => !claimed.has(r.id)).map((r) => r.id);
+      // Occupied suites: suite and office rooms that no available suite matches.
+      return suiteRooms.filter((r) => !claimed.has(r.id) && !holdsAvailable(r.label)).map((r) => r.id);
     }
     // The fixed keywords first, then the zone's own (model-written) name; never a room people pass through.
+    const usable = (r: { id: string; label: string }) => !claimed.has(r.id) && !CIRCULATION.test(r.label);
     const words = [...(ROOM_WORDS[zone.role] ?? []), zone.name.trim().toLowerCase()].filter(Boolean);
     for (const word of words) {
-      const room = floor.rooms.find(
-        (r) => r.label.toLowerCase().includes(word) && !claimed.has(r.id) && !reserved.has(r.id) && !CIRCULATION.test(r.label),
-      );
+      const room = floor.rooms.find((r) => r.label.toLowerCase().includes(word) && usable(r));
       if (room) return [room.id];
     }
-    return [];
+    if (zone.role !== "objective") return [];
+    // No room's label names the objective: it goes in the unclaimed room
+    // farthest from the start that people do not pass through, that holds no
+    // entry, is not a suite or office (the quiet and the occupied space) and
+    // is not named for another zone. Ties go to the lower id.
+    const fallback = floor.rooms
+      .filter((r) => usable(r) && !SUITE_ROOM.test(r.label) && !hasEntry(r.id) && !namedForOther(zone.role, r.label))
+      .filter((r) => (roomNodes.get(r.id) ?? []).length > 0)
+      .sort((a, b) => nearestToStart(b.id) - nearestToStart(a.id) || a.id.localeCompare(b.id))[0];
+    return fallback ? [fallback.id] : [];
   };
   // Quiet zones first, so a crowded zone gets only the suites they leave.
   const order: ZoneRole[] = ["quiet", "objective", "secure", "entry", "crowded"];
@@ -387,10 +427,10 @@ export function placeLevel(
   for (const zone of zoneList) {
     const roomIds = roomsFor(zone);
     if (roomIds.length === 0) {
-      const inReserved = zone.role === "quiet" && floor.rooms.some((r) => reserved.has(r.id) && suitesIn(r.label)(suiteOf(zone)));
-      const reason = inReserved
-        ? "its room is staged as the floor's occupied space, for the night cleaners"
-        : `no room on the floor fits a ${zone.role} zone`;
+      const reason =
+        zone.role === "crowded"
+          ? `${(suiteRooms.length > 0 ? CLEANER_RULE.allAvailable : CLEANER_RULE.noSuites).toLowerCase()}, so the occupied space has no room of its own; its night cleaners work a corridor`
+          : `no room on the floor fits a ${zone.role} zone`;
       unplaced.push({ elementRole: `zone:${zone.id}`, reason });
       continue;
     }
@@ -409,7 +449,11 @@ export function placeLevel(
 
   // The objective: the anchored node, or the objective room's node farthest from the start.
   const objectiveZone = byRole("objective")[0];
-  if (!objectiveZone) throw new PlacementError("no room on the floor fits the objective zone");
+  if (!objectiveZone) {
+    throw new PlacementError(
+      "no room on the floor fits the objective zone: every room left is a corridor, lobby, stair or lift, a suite or office, holds an entry, or is taken",
+    );
+  }
   const objectiveNode =
     anchors.objective && objectiveZone.nodes.includes(anchors.objective)
       ? anchors.objective
@@ -606,12 +650,43 @@ export function placeLevel(
   for (const zone of zones) if (zone.nodes.length > 0) engineZones[zone.zoneId] = zone.nodes;
   for (const entry of entries) if (!Object.hasOwn(engineZones, entry.entryId)) engineZones[entry.entryId] = [entry.nodeId];
 
-  // Night cleaners walk each crowded zone's room (SPEC §4.3).
-  const cleaners: GuardSpec[] = byRole("crowded").flatMap((zone, i) => {
-    const chain = chainOf(adj, zone.nodes.filter((id) => !isEntry(id)), fromStart);
-    if (chain.length === 0) return [];
-    return [{ id: `K${i + 1}`, patrol: chain.length > 1 ? [chain[0], chain[chain.length - 1]] : chain }];
-  });
+  // Night cleaners (SPEC §4.3), one for each crowded zone: they walk its
+  // room, or a corridor when it has none (CLEANER_RULE), off the nodes that
+  // see the shortest way from the start to the objective.
+  const wayIn = new Set(pathWithin(adj, start, objective.nodeId, nodeIds));
+  const offWayIn = (id: string) => !isEntry(id) && !wayIn.has(id) && !(floor.sightlines[id] ?? []).some((s) => wayIn.has(s));
+  const cleaners: PlacedCleaner[] = [];
+  for (const zone of manifest.zones.filter((z) => z.role === "crowded")) {
+    const id = `K${cleaners.length + 1}`;
+    const zoneRooms = placedZones.get(zone.id)?.roomIds;
+    const rooms = zoneRooms
+      ? zoneRooms.map((roomId) => ({ roomId, rule: CLEANER_RULE.room }))
+      : floor.rooms
+          .filter((r) => !claimed.has(r.id) && CORRIDOR.test(r.label))
+          .sort((a, b) => nearestToStart(b.id) - nearestToStart(a.id) || a.id.localeCompare(b.id))
+          .map((r) => ({
+            roomId: r.id,
+            rule: CLEANER_RULE.corridor(suiteRooms.length > 0 ? CLEANER_RULE.allAvailable : CLEANER_RULE.noSuites),
+          }));
+    const walk = rooms
+      .map((room) => ({ ...room, chain: chainOf(adj, (roomNodes.get(room.roomId) ?? []).filter(offWayIn), fromStart) }))
+      .find((room) => room.chain.length > 0);
+    if (!walk) {
+      unplaced.push({ elementRole: `cleaner:${id}`, reason: "the floor has no room for a cleaner out of sight of the way in" });
+      continue;
+    }
+    const { chain } = walk;
+    const own = provenanceOf(`cleaner:${id}`);
+    cleaners.push({
+      id,
+      zoneId: zone.id,
+      roomId: walk.roomId,
+      patrol: chain.length > 1 ? [chain[0], chain[chain.length - 1]] : chain,
+      rule: walk.rule,
+      // Its own entries when the manifest has them, else the crowded zone's: the rules-table entry that puts cleaners on the floor.
+      provenance: own.length > 0 ? own : zone.provenance,
+    });
+  }
 
   const level: Level = {
     buildingId: manifest.buildingId,
@@ -627,10 +702,10 @@ export function placeLevel(
     guards: guards.map((g) => ({ id: g.id, patrol: g.patrol })),
     zones: engineZones,
     cameras: cameras.map(({ id, kind, cover, phase }) => ({ id, kind, cover, phase })),
-    cleaners,
+    cleaners: cleaners.map((c): GuardSpec => ({ id: c.id, patrol: c.patrol })),
     quietZones: byRole("quiet").map((z) => z.zoneId).filter((id) => Object.hasOwn(engineZones, id)),
     hearing: DEFAULT_HEARING,
   };
 
-  return { level, entries, zones, objective, locks, cameras, guards, unplaced };
+  return { level, entries, zones, objective, locks, cameras, guards, cleaners, unplaced };
 }
