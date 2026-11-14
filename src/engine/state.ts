@@ -51,6 +51,10 @@ export interface Level {
   pickTurns: number;
   /** Player turns per guard hop: the security profile's `patrolTempo`. */
   patrolTempo: number;
+  /** Guard id → its own turns per hop, overriding `patrolTempo` (an owner's setup sets one per guard). */
+  guardTempo?: Readonly<Record<string, number>>;
+  /** Locked door id → its own picks to open, overriding `pickTurns` (an owner's setup mixes key locks and badge readers). */
+  doorPickTurns?: Readonly<Record<string, number>>;
   guards: readonly GuardSpec[];
   /**
    * Zone id → its nodes, for guard orders (Chief orders name zones). A room
@@ -224,6 +228,10 @@ export function compileBoard(level: Level): Board {
   for (const [name, value] of [["pickTurns", level.pickTurns], ["patrolTempo", level.patrolTempo]] as const) {
     if (!whole(value, 1)) throw new LevelError(`${name} ${value} is not a positive integer`);
   }
+  for (const [doorId, turns] of Object.entries(level.doorPickTurns ?? {})) {
+    if (!doors.has(doorId)) throw new LevelError(`pick turns set for "${doorId}", which is not a door of the floor`);
+    if (!whole(turns, 1)) throw new LevelError(`door "${doorId}" pick turns ${turns} is not a positive integer`);
+  }
   need(level.start, "start");
   need(level.objective, "objective");
   if (level.exits.length === 0) throw new LevelError("the level has no exits");
@@ -240,6 +248,11 @@ export function compileBoard(level: Level): Board {
       if (walker.patrol.length === 0) throw new LevelError(`${what} "${walker.id}" has an empty patrol`);
       walker.patrol.forEach((id) => need(id, `${what} "${walker.id}" patrol waypoint`));
     }
+  }
+  const guardIds = new Set(level.guards.map((g) => g.id));
+  for (const [guardId, tempo] of Object.entries(level.guardTempo ?? {})) {
+    if (!guardIds.has(guardId)) throw new LevelError(`tempo set for "${guardId}", which is not a guard of the level`);
+    if (!whole(tempo, 1)) throw new LevelError(`guard "${guardId}" tempo ${tempo} is not a positive integer`);
   }
   const zones = level.zones ?? {};
   for (const [zoneId, zoneNodes] of Object.entries(zones)) {
