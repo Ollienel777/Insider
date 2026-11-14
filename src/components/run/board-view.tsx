@@ -235,8 +235,8 @@ export function BoardView({
   // Labels (#68). The rooms' names and everything that never moves first, once per level; then each
   // guard's id beside its pawn, and the plan's marks, each in the first spot clear of the rest.
   const fixed = useMemo(() => fixedLabels(placed, run.board.cameras, lens), [placed, run.board.cameras, lens]);
-  // With the lens on, each guard's lens marks are placed too, clear of the labels (#37).
-  const guardMarks = lensed ? (id: string) => layersOf(whyKey.guard(id))?.length ?? 0 : undefined;
+  // With the lens on, each guard's and cleaner's lens marks are placed too, clear of the labels.
+  const guardMarks = lensed ? (kind: "guard" | "cleaner", id: string) => layersOf(whyKey[kind](id))?.length ?? 0 : undefined;
   const { pawns: pawnLabels, ghost: ghostLabels, marks: pawnMarks } = movingLabels(fixed, at, choices, standing, ghost, guardMarks);
 
   // Where the selected element stands, in board units: the thread starts there.
@@ -871,8 +871,8 @@ export function movingLabels(
   choices: readonly Choice[],
   standing: readonly { kind: "guard" | "cleaner" | "player"; id: string; p: Point }[],
   ghost: GhostPlan | null,
-  /** With the lens on: how many lens marks each guard carries; its marks are placed after the ids. */
-  markCount?: (guardId: string) => number,
+  /** With the lens on: how many lens marks each guard and cleaner carries; its marks are placed after the ids. */
+  markCount?: (kind: "guard" | "cleaner", id: string) => number,
 ): { pawns: Map<string, LabelSpot>; ghost: LabelSpot[]; marks: Map<string, Point>; taken: Taken } {
   const taken: Taken = { text: [...fixed.taken.text], marks: [...fixed.taken.marks] };
   for (const c of choices) {
@@ -888,7 +888,7 @@ export function movingLabels(
   );
   const lensMarks = new Map<string, Point>();
   for (const piece of standing) {
-    const n = piece.kind === "guard" && markCount ? markCount(piece.id) : 0;
+    const n = piece.kind !== "player" && markCount ? markCount(piece.kind, piece.id) : 0;
     if (n > 0) lensMarks.set(piece.id, placeMarks(piece.p, n, taken));
   }
   // A plan mark keeps clear of the lens's rings too, so it never reads as a lock's or a camera's label.

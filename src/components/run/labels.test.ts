@@ -122,15 +122,17 @@ describe("the board's labels (#68)", () => {
     const marks = fixedLensMarks(placed, createRun(placed.level).board.cameras);
     // C1, C2 (CoStar), both locks (CoStar), the dock and the roof (Vexcel).
     expect(marks).toHaveLength(6);
-    // Each guard's marks too, where the board places them (`movingLabels` with the lens on).
+    // Each guard's and cleaner's marks too, where the board places them (`movingLabels` with the lens on).
     const layers = lensElements(placed, placed.level.lockedDoors);
-    const count = (id: string) => layers.find((e) => e.key === `guard:${id}`)?.layers.length ?? 0;
+    const count = (kind: "guard" | "cleaner", id: string) => layers.find((e) => e.key === `${kind}:${id}`)?.layers.length ?? 0;
     const guardMarks = (run: RunState) => {
       const standing = standingOf(run, at(run));
       const moving = movingLabels(fixedLabels(placed, run.board.cameras, true), at(run), choicesOf(run), standing, null, count);
       return standing.flatMap((s) => {
         const spot = moving.marks.get(s.id);
-        return spot ? [{ name: `${s.id} lens marks`, quad: box(s.p.x + spot.x, s.p.y + spot.y, s.p.x + spot.x + 14 * count(s.id) + 3 * (count(s.id) - 1), s.p.y + spot.y + 14) }] : [];
+        if (!spot || s.kind === "player") return [];
+        const n = count(s.kind, s.id);
+        return [{ name: `${s.id} lens marks`, quad: box(s.p.x + spot.x, s.p.y + spot.y, s.p.x + spot.x + 14 * n + 3 * (n - 1), s.p.y + spot.y + 14) }];
       });
     };
     const lensed = (run: RunState) => [
@@ -138,7 +140,9 @@ describe("the board's labels (#68)", () => {
       ...marks.map((quad, i) => ({ name: `lens mark ${i}`, quad })),
       ...guardMarks(run),
     ];
-    expect(guardMarks(createRun(placed.level))).toHaveLength(4);
+    // The four guards and the night cleaner K1: a cleaner's marks are placed like a guard's.
+    expect(guardMarks(createRun(placed.level)).map((m) => m.name)).toContain("K1 lens marks");
+    expect(guardMarks(createRun(placed.level))).toHaveLength(5);
     expect(collisions(lensed(createRun(placed.level)))).toEqual([]);
     const wow = play(createRun(placed.level), [{ kind: "move", to: "fl-lobby" }, { kind: "move", to: "dc-west" }]);
     expect(collisions(lensed(wow))).toEqual([]);
