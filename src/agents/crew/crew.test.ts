@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { ScriptedChatModel } from "@/adapters/llm";
 import { LevelManifest } from "@/domain";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import { POST } from "../../app/api/crew/route";
 import { briefCrew, CREW_PROMPT_HEAD, crewContext, crewMessages, loadCrewRecording, routeOrder } from "./index";
 

@@ -33,7 +33,7 @@ test("a building screen shows the building and the step rail", async ({ page }) 
 test("the primary action walks to the next step and marks the last one done", async ({ page }) => {
   await page.goto("/b/F1/scout");
   await page.getByRole("link", { name: "Plan the job" }).click();
-  await expect(page).toHaveURL(/\/b\/F1\/dossier$/);
+  await expect(page).toHaveURL(/\/b\/F1\/dossier\?m=romaine-1974$/);
   const rail = page.getByRole("navigation", { name: "Steps" });
   await expect(rail.locator('[aria-current="page"]')).toHaveText("Dossier");
   await expect(rail.locator('[data-state="done"]')).toHaveText(["Scout(done)"]);

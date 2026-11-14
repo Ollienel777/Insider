@@ -4,7 +4,7 @@
 // the replay spaces its moments evenly instead of keeping the recorded gaps.
 //
 // Pure: the screen asks what is shown at `elapsed` ms, so a test can too.
-import type { BuildTrace, BuildTraceEvent } from "@/domain";
+import { type BuildTrace, type BuildTraceEvent, SCRIPTED_MODEL_PREFIX } from "@/domain";
 
 /** When the first trace moment shows. */
 export const REPLAY_START_MS = 400;
@@ -73,6 +73,13 @@ export interface StepView {
   /** Running until the replay moves past it, then the recorded status. */
   status: TodoStatus;
   durationMs?: number;
+  /** The recorded input and output, shown when the row is expanded. */
+  input?: string;
+  output?: string;
+  /** True when live data served the run, so nothing went into or came out of the trace. */
+  withheld: boolean;
+  /** How a failed call failed: threw, or returned an error. */
+  failure?: BuildTraceEvent["failure"];
   /** 1 for a tool a subagent called, under its task. */
   depth: 0 | 1;
 }
@@ -89,7 +96,7 @@ export interface TraceView {
  * row is listed from the start, so the list never changes height.
  */
 export function traceView(
-  trace: { events: readonly (Omit<BuildTraceEvent, "agent"> & { agent: string })[] },
+  trace: { events: readonly (Omit<BuildTraceEvent, "agent"> & { agent: string })[]; liveData?: boolean },
   shown: (index: number) => boolean,
   /** The agent the run belongs to; the tools any other agent calls indent under its task. */
   root = "level-builder",
@@ -112,6 +119,10 @@ export function traceView(
       shown: visible,
       status: event.status,
       durationMs: event.durationMs,
+      input: event.input,
+      output: event.output,
+      withheld: trace.liveData === true,
+      failure: event.failure,
       depth: event.kind === "tool" && event.agent !== root ? 1 : 0,
     });
   });
@@ -138,9 +149,28 @@ export function formatRecordedAt(iso: string | undefined): string {
   return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}, ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
 }
 
-/** The TraceList's header line (#17, R1-M2): "Recorded run · <timestamp> · <model>". */
-export function recordedRunHeader(trace: { recordedAt?: string; model?: string }): string {
-  return ["Recorded run", formatRecordedAt(trace.recordedAt), trace.model ?? "model not recorded"].join(" · ");
+/**
+ * The TraceList's header line (#17, R1-M2, R1-M5): "Recorded replay ·
+ * <timestamp> · model turns: <what produced them>". The screen replays; the
+ * model label says whose turns were recorded.
+ */
+export function recordedRunHeader(trace: Pick<BuildTrace, "recordedAt" | "model">): string {
+  return ["Recorded replay", formatRecordedAt(trace.recordedAt), `model turns: ${trace.model ?? "not recorded"}`].join(" · ");
+}
+
+/**
+ * The line under the trace's header: what the replay is of, read from the
+ * trace, so a live run is never called fixtures (#79).
+ */
+export function traceBanner(trace: Pick<BuildTrace, "model" | "liveData">): string {
+  const data = trace.liveData ? "on live data" : "on fixtures";
+  const turns =
+    trace.model === undefined
+      ? ""
+      : trace.model.startsWith(SCRIPTED_MODEL_PREFIX)
+        ? ", with scripted model turns"
+        : `, with model turns from ${trace.model}`;
+  return `A replay of a run recorded ${data}${turns}. Nothing on this screen calls a model.`;
 }
 
 /** "3 ms", "1.2 s". */

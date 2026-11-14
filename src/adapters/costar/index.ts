@@ -76,7 +76,9 @@ const slot = serverSlot<CoStarSelection>("costar");
  * The process-wide CoStar adapter: the mode is read once, on first use.
  * `forced` (the demo settings' switch) answers from the fixtures without
  * touching the live service. Read `mode` and `fallback` after a call to know
- * what that call served.
+ * what that call served, except for `searchInventory`: until #2 it reports
+ * what served it in its own `source`, not through `mode`/`fallback`, and in
+ * live mode it answers from the fixture inventory with `source: "fixture"`.
  */
 export function getCoStar(options: { forced?: boolean } = {}): CoStarSelection {
   // A new demo epoch (`npm run demo:reset`) resets the breaker here too, not
@@ -88,7 +90,7 @@ export function getCoStar(options: { forced?: boolean } = {}): CoStarSelection {
     if (chosen.mode === "live") {
       const guarded = withFallback(knownToFixtures(chosen.adapter, fake), fake, slot.breaker);
       // The search stays outside the breaker while it has no live
-      // implementation (#27): it answers from the fixtures anyway, and a
+      // implementation (#2): it answers from the fixtures anyway, and a
       // caller's malformed filter is not a CoStar failure.
       slot.selected = { ...chosen, adapter: { ...guarded, searchInventory: (filters) => chosen.adapter.searchInventory(filters) } };
     } else {

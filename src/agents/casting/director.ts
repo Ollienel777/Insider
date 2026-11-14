@@ -59,7 +59,7 @@ async function scriptFor(missionId: string): Promise<Script | undefined> {
   }
 }
 
-/** Says plainly what ran: no language model, only the recorded script (#17, R1-M5). */
+/** Says plainly what ran: no language model, only the recorded script, as the Level Builder labels it. */
 const scriptedLabel = (script: Script): string => `ScriptedChatModel (script ${script.id}, no LLM)`;
 
 async function resolveModel(
@@ -109,7 +109,7 @@ export async function castMission(missionId: string, options: CastOptions = {}):
     systemPrompt: DIRECTOR_PROMPT,
     tools: directorTools(run),
     // deepagents 1.16.5 adds the todo list only for some harness profiles;
-    // the director passes it explicitly, as the Level Builder does (#53).
+    // the director passes it explicitly, as the Level Builder does.
     middleware: [todoListMiddleware(), recorder.middleware("casting-director")],
     subagents: [
       // deepagents adds a general-purpose subagent unless one by that name is

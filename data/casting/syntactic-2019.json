@@ -130,7 +130,7 @@
         },
         {
           "criterion": "a dock on the aerial",
-          "value": "dock"
+          "value": "dock (inventory tag; no aerial loaded)"
         }
       ],
       "reason": "A 1996 single-storey industrial building with 6,200 SF on the market and a dock: a plant floor where the samples would be made."
@@ -183,18 +183,23 @@
         },
         {
           "criterion": "a dock on the aerial",
-          "value": "dock"
+          "value": "dock (inventory tag; no aerial loaded)"
         }
       ],
       "reason": "A 2012 flex tech center with its ground floor on the market and a dock: newer networked security around a test bay."
     }
   ],
   "trace": {
-    "recordedAt": "2026-11-14T04:28:16.474Z",
+    "recordedAt": "2026-11-14T08:58:04.318Z",
     "model": "ScriptedChatModel (script casting-syntactic-2019, no LLM)",
+    "liveData": false,
+    "subagents": [
+      "general-purpose",
+      "location-scout"
+    ],
     "events": [
       {
-        "atMs": 17,
+        "atMs": 16,
         "kind": "tool",
         "agent": "casting-director",
         "label": "get_mission",
@@ -204,58 +209,58 @@
         "output": "{\n  \"id\": \"syntactic-2019\",\n  \"city\": \"Houston\",\n  \"type\": \"prevent\",\n  \"title\": \"Syntactic\",\n  \"inspiredBy\": {\n    \"event\": \"The Trelleborg syntactic-foam trade-secret case, Houston\",\n    \"date\": \"2019\",\n    \"sourceUrl\": \"https://worldoil.com/news/2019/7/30/prolific-chinese-theft-ring-targeted-deepwater-drilling-technologies/\"\n  },\n  \"objective\": \"Keep the foam samples and the formula binder in the lab\",\n  \"exitCondition\": \"Stop the samples leaving by the dock, or hold the lab until dawn\",\n  \"casting\": [\n    {\n      \"kind\": \"city\",\n      \"label\": \"in Houston\",\n      \"city\": \"Houston\"\n    },\n    {\n      \"kind\": \"yearBuilt\",\n      \"label\": \"built 2019 or earlier\",\n      \"yearBuilt\": {\n        \"max\": 2019\n      }\n    },\n    {\n      \"kind\": \"propertyTypes\",\n      \"label\": \"industrial or flex\",\n      \"propertyTypes\": [\n        \"industrial\",\n        \"flex\"\n      ]\n    },\n    {\n      \"kind\": \"minVacantFloorSf\",\n      \"label\": \"a floor with 2,500 SF or more on the market\",\n      \"minVacantFloorSf\": 2500\n    },\n    {\n      \"kind\": \"needsScan\",\n      \"label\": \"a Matterport scan\"\n    },\n    {\n      \"kind\": \"needsEntry\",\n      \"label\": \"a dock on the aerial\",\n      \"needsEntry\": [\n        \"dock\"\n      ]\n    }\n  ]\n}"
       },
       {
-        "atMs": 22,
+        "atMs": 20,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Read mission syntactic-2019 and its casting needs",
         "status": "completed"
       },
       {
-        "atMs": 22,
+        "atMs": 20,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Narrow the inventory with the location scout, one filter at a time",
         "status": "in_progress"
       },
       {
-        "atMs": 22,
+        "atMs": 20,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Pick three finalists and write the shortlist",
         "status": "pending"
       },
       {
-        "atMs": 25,
+        "atMs": 24,
         "kind": "subagent",
         "agent": "location-scout",
         "label": "Mission syntactic-2019: apply its casting filters with search_inventory in this order: city, yearBuilt, propertyTypes, minVacantFloorSf, needsScan, needsEntry. Then check the candidates left with get_candidate and get_aerial_entries, and report the funnel's counts and each candidate's year, class, vacant floor and matching entries.",
         "status": "completed",
-        "durationMs": 81,
+        "durationMs": 57,
         "input": "Mission syntactic-2019: apply its casting filters with search_inventory in this order: city, yearBuilt, propertyTypes, minVacantFloorSf, needsScan, needsEntry. Then check the candidates left with get_candidate and get_aerial_entries, and report the funnel's counts and each candidate's year, class, vacant floor and matching entries.",
         "output": "Funnel: 61 in the inventory -> 29 (in Houston) -> 26 (built 2019 or earlier) -> 9 (industrial or flex) -> 7 (a floor with 2,500 SF or more on the market) -> 5 (a Matterport scan) -> 3 (a dock on the aerial). Left: F5 Westchase Commons: built 2008, Class B flex, floor 4 has 6,518 SF on the market, scanned, dock; H13 Sims Bayou Industrial, Building 4: built 1996, Class B industrial, floor 1 has 6,200 SF on the market, scanned, dock; H17 Beltway Eight Tech Center: built 2012, Class B flex, floor 1 has 5,940 SF on the market, scanned, dock."
       },
       {
-        "atMs": 35,
+        "atMs": 31,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_mission",
         "status": "completed",
-        "durationMs": 0,
+        "durationMs": 1,
         "input": "{\"missionId\":\"syntactic-2019\"}",
         "output": "{\n  \"id\": \"syntactic-2019\",\n  \"city\": \"Houston\",\n  \"type\": \"prevent\",\n  \"title\": \"Syntactic\",\n  \"inspiredBy\": {\n    \"event\": \"The Trelleborg syntactic-foam trade-secret case, Houston\",\n    \"date\": \"2019\",\n    \"sourceUrl\": \"https://worldoil.com/news/2019/7/30/prolific-chinese-theft-ring-targeted-deepwater-drilling-technologies/\"\n  },\n  \"objective\": \"Keep the foam samples and the formula binder in the lab\",\n  \"exitCondition\": \"Stop the samples leaving by the dock, or hold the lab until dawn\",\n  \"casting\": [\n    {\n      \"kind\": \"city\",\n      \"label\": \"in Houston\",\n      \"city\": \"Houston\"\n    },\n    {\n      \"kind\": \"yearBuilt\",\n      \"label\": \"built 2019 or earlier\",\n      \"yearBuilt\": {\n        \"max\": 2019\n      }\n    },\n    {\n      \"kind\": \"propertyTypes\",\n      \"label\": \"industrial or flex\",\n      \"propertyTypes\": [\n        \"industrial\",\n        \"flex\"\n      ]\n    },\n    {\n      \"kind\": \"minVacantFloorSf\",\n      \"label\": \"a floor with 2,500 SF or more on the market\",\n      \"minVacantFloorSf\": 2500\n    },\n    {\n      \"kind\": \"needsScan\",\n      \"label\": \"a Matterport scan\"\n    },\n    {\n      \"kind\": \"needsEntry\",\n      \"label\": \"a dock on the aerial\",\n      \"needsEntry\": [\n        \"dock\"\n      ]\n    }\n  ]\n}"
       },
       {
-        "atMs": 44,
+        "atMs": 34,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
         "status": "completed",
-        "durationMs": 1,
+        "durationMs": 0,
         "input": "{\"missionId\":\"syntactic-2019\",\"filter\":\"city\"}",
         "output": "{\n  \"applied\": \"in Houston\",\n  \"left\": 29,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in Houston\",\n      \"count\": 29\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"H21\",\n      \"name\": \"Harrisburg Logistics Center\",\n      \"yearBuilt\": 2022,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 38000\n      }\n    },\n    {\n      \"id\": \"H14\",\n      \"name\": \"Greens Point Distribution Center\",\n      \"yearBuilt\": 2001,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 22000\n      }\n    },\n    {\n      \"id\": \"H25\",\n      \"name\": \"Energy Corridor West Campus\",\n      \"yearBuilt\": 2020,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 8,\n        \"sf\": 21100\n      }\n    },\n    {\n      \"id\": \"H22\",\n      \"name\": \"Avenida Tower\",\n      \"yearBuilt\": 2018,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 30,\n        \"sf\": 19500\n      }\n    },\n    {\n      \"id\": \"H07\",\n      \"name\": \"Westheimer Court\",\n      \"yearBuilt\": 1985,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 8,\n        \"sf\": 14600\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"yearBuilt\",\n    \"propertyTypes\",\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
       },
       {
-        "atMs": 51,
+        "atMs": 37,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
@@ -265,7 +270,7 @@
         "output": "{\n  \"applied\": \"built 2019 or earlier\",\n  \"left\": 26,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in Houston\",\n      \"count\": 29\n    },\n    {\n      \"label\": \"built 2019 or earlier\",\n      \"count\": 26\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"H14\",\n      \"name\": \"Greens Point Distribution Center\",\n      \"yearBuilt\": 2001,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 22000\n      }\n    },\n    {\n      \"id\": \"H22\",\n      \"name\": \"Avenida Tower\",\n      \"yearBuilt\": 2018,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 30,\n        \"sf\": 19500\n      }\n    },\n    {\n      \"id\": \"H07\",\n      \"name\": \"Westheimer Court\",\n      \"yearBuilt\": 1985,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 8,\n        \"sf\": 14600\n      }\n    },\n    {\n      \"id\": \"H03\",\n      \"name\": \"Ashford Greenway Plaza\",\n      \"yearBuilt\": 1976,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 12,\n        \"sf\": 14200\n      }\n    },\n    {\n      \"id\": \"H27\",\n      \"name\": \"Holcombe Medical Commons\",\n      \"yearBuilt\": 2011,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 11,\n        \"sf\": 13700\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"propertyTypes\",\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
       },
       {
-        "atMs": 54,
+        "atMs": 40,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
@@ -275,7 +280,7 @@
         "output": "{\n  \"applied\": \"industrial or flex\",\n  \"left\": 9,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in Houston\",\n      \"count\": 29\n    },\n    {\n      \"label\": \"built 2019 or earlier\",\n      \"count\": 26\n    },\n    {\n      \"label\": \"industrial or flex\",\n      \"count\": 9\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"H14\",\n      \"name\": \"Greens Point Distribution Center\",\n      \"yearBuilt\": 2001,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 22000\n      }\n    },\n    {\n      \"id\": \"H11\",\n      \"name\": \"Navigation Terminal Warehouse\",\n      \"yearBuilt\": 1958,\n      \"buildingClass\": \"C\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 9800\n      }\n    },\n    {\n      \"id\": \"F5\",\n      \"name\": \"Westchase Commons\",\n      \"yearBuilt\": 2008,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"flex\",\n      \"vacantFloor\": {\n        \"floor\": 4,\n        \"sf\": 6518\n      }\n    },\n    {\n      \"id\": \"H13\",\n      \"name\": \"Sims Bayou Industrial, Building 4\",\n      \"yearBuilt\": 1996,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 6200\n      }\n    },\n    {\n      \"id\": \"H17\",\n      \"name\": \"Beltway Eight Tech Center\",\n      \"yearBuilt\": 2012,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"flex\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 5940\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
       },
       {
-        "atMs": 61,
+        "atMs": 43,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
@@ -285,7 +290,7 @@
         "output": "{\n  \"applied\": \"a floor with 2,500 SF or more on the market\",\n  \"left\": 7,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in Houston\",\n      \"count\": 29\n    },\n    {\n      \"label\": \"built 2019 or earlier\",\n      \"count\": 26\n    },\n    {\n      \"label\": \"industrial or flex\",\n      \"count\": 9\n    },\n    {\n      \"label\": \"a floor with 2,500 SF or more on the market\",\n      \"count\": 7\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"H14\",\n      \"name\": \"Greens Point Distribution Center\",\n      \"yearBuilt\": 2001,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 22000\n      }\n    },\n    {\n      \"id\": \"H11\",\n      \"name\": \"Navigation Terminal Warehouse\",\n      \"yearBuilt\": 1958,\n      \"buildingClass\": \"C\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 9800\n      }\n    },\n    {\n      \"id\": \"F5\",\n      \"name\": \"Westchase Commons\",\n      \"yearBuilt\": 2008,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"flex\",\n      \"vacantFloor\": {\n        \"floor\": 4,\n        \"sf\": 6518\n      }\n    },\n    {\n      \"id\": \"H13\",\n      \"name\": \"Sims Bayou Industrial, Building 4\",\n      \"yearBuilt\": 1996,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 6200\n      }\n    },\n    {\n      \"id\": \"H17\",\n      \"name\": \"Beltway Eight Tech Center\",\n      \"yearBuilt\": 2012,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"flex\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 5940\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
       },
       {
-        "atMs": 68,
+        "atMs": 47,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
@@ -295,7 +300,7 @@
         "output": "{\n  \"applied\": \"a Matterport scan\",\n  \"left\": 5,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in Houston\",\n      \"count\": 29\n    },\n    {\n      \"label\": \"built 2019 or earlier\",\n      \"count\": 26\n    },\n    {\n      \"label\": \"industrial or flex\",\n      \"count\": 9\n    },\n    {\n      \"label\": \"a floor with 2,500 SF or more on the market\",\n      \"count\": 7\n    },\n    {\n      \"label\": \"a Matterport scan\",\n      \"count\": 5\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"F5\",\n      \"name\": \"Westchase Commons\",\n      \"yearBuilt\": 2008,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"flex\",\n      \"vacantFloor\": {\n        \"floor\": 4,\n        \"sf\": 6518\n      }\n    },\n    {\n      \"id\": \"H13\",\n      \"name\": \"Sims Bayou Industrial, Building 4\",\n      \"yearBuilt\": 1996,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 6200\n      }\n    },\n    {\n      \"id\": \"H17\",\n      \"name\": \"Beltway Eight Tech Center\",\n      \"yearBuilt\": 2012,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"flex\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 5940\n      }\n    },\n    {\n      \"id\": \"H18\",\n      \"name\": \"Energy Corridor Flex Park\",\n      \"yearBuilt\": 2015,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"flex\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 4800\n      }\n    },\n    {\n      \"id\": \"H19\",\n      \"name\": \"Northwest Crossing Labs\",\n      \"yearBuilt\": 2005,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"flex\",\n      \"vacantFloor\": {\n        \"floor\": 2,\n        \"sf\": 3900\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"needsEntry\"\n  ]\n}"
       },
       {
-        "atMs": 74,
+        "atMs": 52,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
@@ -305,37 +310,37 @@
         "output": "{\n  \"applied\": \"a dock on the aerial\",\n  \"left\": 3,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in Houston\",\n      \"count\": 29\n    },\n    {\n      \"label\": \"built 2019 or earlier\",\n      \"count\": 26\n    },\n    {\n      \"label\": \"industrial or flex\",\n      \"count\": 9\n    },\n    {\n      \"label\": \"a floor with 2,500 SF or more on the market\",\n      \"count\": 7\n    },\n    {\n      \"label\": \"a Matterport scan\",\n      \"count\": 5\n    },\n    {\n      \"label\": \"a dock on the aerial\",\n      \"count\": 3\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"F5\",\n      \"name\": \"Westchase Commons\",\n      \"yearBuilt\": 2008,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"flex\",\n      \"vacantFloor\": {\n        \"floor\": 4,\n        \"sf\": 6518\n      }\n    },\n    {\n      \"id\": \"H13\",\n      \"name\": \"Sims Bayou Industrial, Building 4\",\n      \"yearBuilt\": 1996,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 6200\n      }\n    },\n    {\n      \"id\": \"H17\",\n      \"name\": \"Beltway Eight Tech Center\",\n      \"yearBuilt\": 2012,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"flex\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 5940\n      }\n    }\n  ],\n  \"filtersLeft\": []\n}"
       },
       {
-        "atMs": 79,
+        "atMs": 56,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_candidate",
         "status": "completed",
         "durationMs": 0,
         "input": "{\"id\":\"F5\"}",
-        "output": "{\n  \"id\": \"F5\",\n  \"name\": \"Westchase Commons\",\n  \"city\": \"Houston\",\n  \"neighbourhood\": \"Westchase\",\n  \"yearBuilt\": 2008,\n  \"buildingClass\": \"B\",\n  \"propertyType\": \"flex\",\n  \"stories\": 6,\n  \"rbaSf\": 128904,\n  \"typicalFloorSf\": 21736,\n  \"vacantFloors\": [\n    {\n      \"floor\": 4,\n      \"sf\": 6518,\n      \"suites\": [\n        \"410\"\n      ]\n    },\n    {\n      \"floor\": 2,\n      \"sf\": 5568,\n      \"suites\": [\n        \"210\",\n        \"245\"\n      ]\n    },\n    {\n      \"floor\": 5,\n      \"sf\": 3047,\n      \"suites\": [\n        \"520\"\n      ]\n    },\n    {\n      \"floor\": 1,\n      \"sf\": 2843,\n      \"suites\": [\n        \"150\"\n      ]\n    }\n  ],\n  \"scans\": 0,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
+        "output": "{\n  \"id\": \"F5\",\n  \"name\": \"Westchase Commons\",\n  \"city\": \"Houston\",\n  \"neighbourhood\": \"Westchase\",\n  \"yearBuilt\": 2008,\n  \"buildingClass\": \"B\",\n  \"propertyType\": \"flex\",\n  \"stories\": 6,\n  \"rbaSf\": 128904,\n  \"typicalFloorSf\": 21736,\n  \"vacantFloors\": [\n    {\n      \"floor\": 4,\n      \"sf\": 6518,\n      \"suites\": [\n        \"410\"\n      ]\n    },\n    {\n      \"floor\": 2,\n      \"sf\": 5568,\n      \"suites\": [\n        \"210\",\n        \"245\"\n      ]\n    },\n    {\n      \"floor\": 5,\n      \"sf\": 3047,\n      \"suites\": [\n        \"520\"\n      ]\n    },\n    {\n      \"floor\": 1,\n      \"sf\": 2843,\n      \"suites\": [\n        \"150\"\n      ]\n    }\n  ],\n  \"scanned\": true,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
       },
       {
-        "atMs": 83,
+        "atMs": 60,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_aerial_entries",
         "status": "completed",
-        "durationMs": 1,
+        "durationMs": 0,
         "input": "{\"id\":\"F5\"}",
         "output": "{\n  \"source\": \"fixture\",\n  \"entries\": [\n    {\n      \"id\": \"lobby-S\",\n      \"kind\": \"lobby\",\n      \"label\": \"Front lobby\",\n      \"view\": \"S\"\n    },\n    {\n      \"id\": \"dock-E\",\n      \"kind\": \"dock\",\n      \"label\": \"Loading door\",\n      \"view\": \"E\"\n    },\n    {\n      \"id\": \"garage-N\",\n      \"kind\": \"garage\",\n      \"label\": \"Parking deck walkway\",\n      \"view\": \"N\"\n    },\n    {\n      \"id\": \"exit-W\",\n      \"kind\": \"service\",\n      \"label\": \"Rear stair exit\",\n      \"view\": \"W\"\n    },\n    {\n      \"id\": \"roof\",\n      \"kind\": \"roof\",\n      \"label\": \"Roof hatch\",\n      \"view\": \"ortho\"\n    }\n  ]\n}"
       },
       {
-        "atMs": 88,
+        "atMs": 66,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_candidate",
         "status": "completed",
         "durationMs": 0,
         "input": "{\"id\":\"H13\"}",
-        "output": "{\n  \"id\": \"H13\",\n  \"name\": \"Sims Bayou Industrial, Building 4\",\n  \"city\": \"Houston\",\n  \"neighbourhood\": \"Hobby\",\n  \"yearBuilt\": 1996,\n  \"buildingClass\": \"B\",\n  \"propertyType\": \"industrial\",\n  \"stories\": 1,\n  \"rbaSf\": 48000,\n  \"typicalFloorSf\": 48000,\n  \"vacantFloors\": [\n    {\n      \"floor\": 1,\n      \"sf\": 6200,\n      \"suites\": [\n        \"110\"\n      ]\n    }\n  ],\n  \"scans\": 0,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
+        "output": "{\n  \"id\": \"H13\",\n  \"name\": \"Sims Bayou Industrial, Building 4\",\n  \"city\": \"Houston\",\n  \"neighbourhood\": \"Hobby\",\n  \"yearBuilt\": 1996,\n  \"buildingClass\": \"B\",\n  \"propertyType\": \"industrial\",\n  \"stories\": 1,\n  \"rbaSf\": 48000,\n  \"typicalFloorSf\": 48000,\n  \"vacantFloors\": [\n    {\n      \"floor\": 1,\n      \"sf\": 6200,\n      \"suites\": [\n        \"110\"\n      ]\n    }\n  ],\n  \"scanned\": true,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
       },
       {
-        "atMs": 95,
+        "atMs": 70,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_aerial_entries",
@@ -345,17 +350,17 @@
         "output": "{\n  \"source\": \"inventory\",\n  \"entryKinds\": [\n    \"dock\"\n  ],\n  \"note\": \"no aerial yet; the inventory's entry tags\"\n}"
       },
       {
-        "atMs": 99,
+        "atMs": 74,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_candidate",
         "status": "completed",
         "durationMs": 0,
         "input": "{\"id\":\"H17\"}",
-        "output": "{\n  \"id\": \"H17\",\n  \"name\": \"Beltway Eight Tech Center\",\n  \"city\": \"Houston\",\n  \"neighbourhood\": \"Westchase\",\n  \"yearBuilt\": 2012,\n  \"buildingClass\": \"B\",\n  \"propertyType\": \"flex\",\n  \"stories\": 2,\n  \"rbaSf\": 60480,\n  \"typicalFloorSf\": 31500,\n  \"vacantFloors\": [\n    {\n      \"floor\": 1,\n      \"sf\": 5940,\n      \"suites\": [\n        \"110\",\n        \"120\"\n      ]\n    }\n  ],\n  \"scans\": 0,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
+        "output": "{\n  \"id\": \"H17\",\n  \"name\": \"Beltway Eight Tech Center\",\n  \"city\": \"Houston\",\n  \"neighbourhood\": \"Westchase\",\n  \"yearBuilt\": 2012,\n  \"buildingClass\": \"B\",\n  \"propertyType\": \"flex\",\n  \"stories\": 2,\n  \"rbaSf\": 60480,\n  \"typicalFloorSf\": 31500,\n  \"vacantFloors\": [\n    {\n      \"floor\": 1,\n      \"sf\": 5940,\n      \"suites\": [\n        \"110\",\n        \"120\"\n      ]\n    }\n  ],\n  \"scanned\": true,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
       },
       {
-        "atMs": 103,
+        "atMs": 78,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_aerial_entries",
@@ -365,28 +370,28 @@
         "output": "{\n  \"source\": \"inventory\",\n  \"entryKinds\": [\n    \"dock\",\n    \"garage\"\n  ],\n  \"note\": \"no aerial yet; the inventory's entry tags\"\n}"
       },
       {
-        "atMs": 110,
+        "atMs": 85,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Read mission syntactic-2019 and its casting needs",
         "status": "completed"
       },
       {
-        "atMs": 110,
+        "atMs": 85,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Narrow the inventory with the location scout, one filter at a time",
         "status": "completed"
       },
       {
-        "atMs": 110,
+        "atMs": 85,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Pick three finalists and write the shortlist",
         "status": "in_progress"
       },
       {
-        "atMs": 113,
+        "atMs": 88,
         "kind": "tool",
         "agent": "casting-director",
         "label": "write_shortlist",
@@ -396,32 +401,27 @@
         "output": "Shortlist written for syntactic-2019: F5, H13, H17, from a funnel of 7 rows."
       },
       {
-        "atMs": 115,
+        "atMs": 91,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Read mission syntactic-2019 and its casting needs",
         "status": "completed"
       },
       {
-        "atMs": 115,
+        "atMs": 91,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Narrow the inventory with the location scout, one filter at a time",
         "status": "completed"
       },
       {
-        "atMs": 115,
+        "atMs": 91,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Pick three finalists and write the shortlist",
         "status": "completed"
       }
-    ],
-    "subagents": [
-      "general-purpose",
-      "location-scout"
-    ],
-    "liveData": false
+    ]
   },
   "source": "fixture"
 }

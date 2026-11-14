@@ -54,7 +54,10 @@ function toCandidate(p: InventoryProperty, vacantFloor: VacantFloor | null): Sea
   return structuredClone({ id, name, city, neighbourhood, lat, lng, yearBuilt, buildingClass, propertyType, stories, layers, source, vacantFloor });
 }
 
-/** The best `SEARCH_TOP` of `left`: largest vacant floor first, then id. */
+/**
+ * The best `SEARCH_TOP` of `left`: largest vacant floor first, then id in
+ * numeric order (`localeCompare` with `numeric: true`, so F2 before F10).
+ */
 function top(left: readonly InventoryProperty[]): SearchCandidate[] {
   return left
     .map((p) => ({ p, floor: vacantFloors(p)[0] ?? null }))

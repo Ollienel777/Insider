@@ -48,7 +48,7 @@ test("the cast screen replays to three finalists, F1 first, with the pins dimmin
   await expect(page.getByTestId("trace-header")).toContainText("Scripted run");
   await expect(page.getByTestId("trace-header")).toContainText("ScriptedChatModel");
   await expect(cards.first().getByRole("img", { name: /^Massing of Halvorsen Tower/ })).toBeVisible();
-  await expect(page.getByTestId("replay-notice")).toHaveText("A replay of a run recorded on fixtures. Nothing on this screen calls a model.");
+  await expect(page.getByTestId("trace-banner")).toHaveText("A replay of a run recorded on fixtures. Nothing on this screen calls a model.");
   await expect(page.getByTestId("replay")).toBeVisible();
 });
 

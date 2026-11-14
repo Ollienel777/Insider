@@ -1,6 +1,7 @@
+import { buildingHref } from "@/lib/building-href";
+
 // Where picking a finalist goes: its Scout, carrying the chosen mission as
-// `?m=` (SPEC §2 beat 3, §4). One small function on purpose: issue 119 adds the
-// helper that builds every `/b/[id]/…` href with `?m=`, and replaces this.
+// `?m=` (SPEC §2 beat 3, §4), built by the one building-href helper (#119).
 export function scoutHref(buildingId: string, missionId: string): string {
-  return `/b/${encodeURIComponent(buildingId)}/scout?m=${encodeURIComponent(missionId)}`;
+  return buildingHref(buildingId, "scout", missionId);
 }

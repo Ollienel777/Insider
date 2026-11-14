@@ -19,7 +19,7 @@ cloud wip limit: 6
 cloud repo cap: 6
 commit author: Nelson Kang <155183974+Ollienel777@users.noreply.github.com>
 cloud model: claude-opus-5-5
-round cap: 7
+round cap: 12                # Nelson, 2026-11-14: raised from 7 so the review ceiling never parks the casting MVP; "Review rounds" below keeps 7 for the rest
 settle rounds: 1
 mediums block: no
 areas: labels
@@ -72,6 +72,10 @@ worktree only for the rehearser and an M2 implementer.
 - The build VM is small (2 vCPUs, 3.7 GB, 2 GB swap). Two gates at once is the
   most it holds; a gate that runs out of memory fails for that reason, not the
   code's.
+
+## Review rounds (Nelson, 2026-11-14)
+
+The ceiling is 12 rounds only for PRs that close a casting ticket (SPEC §12, C1–C6: #23–#27) or an Owner Mode ticket (SPEC §13, O1–O5: #28–#31, #33). Every other PR keeps a ceiling of 7: when `harness pr` routes one with 7 or more rounds this run to another round or a fixer, apply `unsettled` with `ran out of rounds` (the ceiling, 7) instead, as the CLI would have at 7.
 
 ## Skein (insider, Nelson via the Skein brain, 2026-11-14)
 

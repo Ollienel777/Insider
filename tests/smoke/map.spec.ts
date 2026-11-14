@@ -17,7 +17,7 @@ test("the map lists Halvorsen Tower and its Scout route opens from it", async ({
   await expect(page.locator('[data-testid="map-pin"][data-building="F1"]')).toHaveAttribute("data-selected", "true");
 
   await page.getByRole("link", { name: "Scout this building" }).click();
-  await expect(page).toHaveURL(/\/b\/F1\/scout$/);
+  await expect(page).toHaveURL(/\/b\/F1\/scout\?m=romaine-1974$/);
   await expect(page.getByTestId("building-slot")).toHaveText("Halvorsen Tower · Los Angeles");
 });
 

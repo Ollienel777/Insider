@@ -31,11 +31,16 @@ export interface CastRun {
   vexcel: VexcelAdapter;
   /**
    * The inventory records `get_candidate` reads, for searches the fixtures
-   * answered. No reader exists yet for the kit's records (#27).
+   * answered. No reader exists yet for the kit's records (#2).
    */
   inventory: readonly InventoryProperty[];
   /** The filters applied so far, in order. */
   applied: CastingFilter[];
+  /**
+   * The entry kinds `get_aerial_entries` found on each candidate's aerial, or
+   * null where no aerial was loaded and it fell back to the inventory's tags.
+   */
+  aerials?: Map<string, readonly string[] | null>;
   /** The last search, with every applied filter. */
   search?: InventorySearch;
   /** Set by `write_shortlist`. */
@@ -141,7 +146,7 @@ export function scoutTools(run: CastRun) {
         rbaSf: p.rbaSf,
         typicalFloorSf: p.typicalFloorSf,
         vacantFloors: vacantFloors(p),
-        scans: p.matterportModelId ? 1 : 0,
+        scanned: p.layers.matterport,
         layers: p.layers,
       });
     },
@@ -149,7 +154,7 @@ export function scoutTools(run: CastRun) {
       name: "get_candidate",
       description:
         "A candidate's CoStar facts: year built, class, property type, stories and areas, its vacant floors from " +
-        "the listings (suites added up per floor, largest first), its scan count and its layer flags.",
+        "the listings (suites added up per floor, largest first), whether it has a Matterport scan, and its layer flags.",
       schema: PropertyArg,
     },
   );
@@ -158,6 +163,8 @@ export function scoutTools(run: CastRun) {
     async ({ id }) => {
       const p = record(run, id);
       const aerial = await run.vexcel.getAerial(id);
+      run.aerials ??= new Map();
+      run.aerials.set(id, aerial ? aerial.entries.map((e) => e.kind) : null);
       if (aerial) {
         return json({
           source: aerial.source,
@@ -178,8 +185,17 @@ export function scoutTools(run: CastRun) {
   return [missionTool(run), searchInventory, getCandidate, getAerialEntries];
 }
 
-/** One fit line per casting filter: the filter's label and the candidate's own value. */
-export function fitOf(p: InventoryProperty, filters: readonly CastingFilter[]): Fit[] {
+/**
+ * One fit line per casting filter: the filter's label and the candidate's own
+ * value. `aerialKinds` is what `get_aerial_entries` found on the candidate's
+ * aerial: the entry kinds when one was loaded, null or undefined when it was
+ * not, in which case the entry line names the inventory tags as its source.
+ */
+export function fitOf(
+  p: InventoryProperty,
+  filters: readonly CastingFilter[],
+  aerialKinds?: readonly string[] | null,
+): Fit[] {
   return filters.map((f): Fit => {
     switch (f.kind) {
       case "city":
@@ -196,8 +212,13 @@ export function fitOf(p: InventoryProperty, filters: readonly CastingFilter[]): 
       }
       case "needsScan":
         return { criterion: f.label, value: p.layers.matterport };
-      case "needsEntry":
-        return { criterion: f.label, value: f.needsEntry.filter((k) => p.entries.includes(k)).join(", ") || "none" };
+      case "needsEntry": {
+        if (aerialKinds) {
+          return { criterion: f.label, value: f.needsEntry.filter((k) => aerialKinds.includes(k)).join(", ") || "none" };
+        }
+        const tagged = f.needsEntry.filter((k) => p.entries.includes(k)).join(", ") || "none";
+        return { criterion: f.label, value: `${tagged} (inventory tag; no aerial loaded)` };
+      }
       default: {
         const unknown: never = f;
         throw new Error(`unknown casting filter kind: ${(unknown as { kind?: unknown }).kind}`);
@@ -235,7 +256,7 @@ export function directorTools(run: CastRun) {
         const c = left.get(id);
         if (!c) throw new Error(`${id} is not among the candidates left after the last filter`);
         if (!c.vacantFloor) throw new Error(`${id} has nothing on the market`);
-        return { ...c, vacantFloor: c.vacantFloor, fit: fitOf(record(run, id), run.applied), reason: reason.trim() };
+        return { ...c, vacantFloor: c.vacantFloor, fit: fitOf(record(run, id), run.applied, run.aerials?.get(id)), reason: reason.trim() };
       });
       run.shortlist = {
         funnel: search.steps.map(({ label, count }) => ({ label, count })),

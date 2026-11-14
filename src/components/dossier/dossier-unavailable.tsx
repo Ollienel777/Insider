@@ -4,6 +4,7 @@ import { buttonVariants } from "@/components/ui/button";
 
 interface DossierUnavailableProps {
   buildingId: string;
+  missionId: string;
   name: string;
   /** `missing`: no cached level yet; `invalid`: the cached files fail their schema. */
   reason: "missing" | "invalid";
@@ -11,8 +12,8 @@ interface DossierUnavailableProps {
 }
 
 /** The dossier without a cached level: what happened, and the way to fix it or go on. */
-export function DossierUnavailable({ buildingId, name, reason, detail }: DossierUnavailableProps) {
-  const command = `npm run build:levels -- ${buildingId}`;
+export function DossierUnavailable({ buildingId, missionId, name, reason, detail }: DossierUnavailableProps) {
+  const command = `npm run build:levels -- ${buildingId}:${missionId}`;
   return (
     <BuildingScreen
       visualLabel="Dossier"

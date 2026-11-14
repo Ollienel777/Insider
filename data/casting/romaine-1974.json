@@ -152,7 +152,7 @@
         },
         {
           "criterion": "a dock or service entry on the aerial",
-          "value": "service"
+          "value": "service (inventory tag; no aerial loaded)"
         }
       ],
       "reason": "A 1968 Class B office with 14,620 SF dark on floor 9 and a service door: older and smaller than Halvorsen, so a quieter, scrappier job."
@@ -210,61 +210,25 @@
         },
         {
           "criterion": "a dock or service entry on the aerial",
-          "value": "dock"
+          "value": "dock (inventory tag; no aerial loaded)"
         }
       ],
       "reason": "A 1971 Class A tower with floor 17 on the market and a dock: the right era, though less of its floor is empty than at Halvorsen."
     }
   ],
   "trace": {
-    "recordedAt": "2026-11-14T04:28:15.869Z",
+    "recordedAt": "2026-11-14T08:58:03.747Z",
     "model": "ScriptedChatModel (script casting-romaine-1974, no LLM)",
+    "liveData": false,
+    "subagents": [
+      "general-purpose",
+      "location-scout"
+    ],
     "events": [
       {
-        "atMs": 82,
+        "atMs": 71,
         "kind": "tool",
         "agent": "casting-director",
-        "label": "get_mission",
-        "status": "completed",
-        "durationMs": 2,
-        "input": "{\"missionId\":\"romaine-1974\"}",
-        "output": "{\n  \"id\": \"romaine-1974\",\n  \"city\": \"LA\",\n  \"type\": \"heist\",\n  \"title\": \"The Romaine Street Papers\",\n  \"inspiredBy\": {\n    \"event\": \"The Summa Corporation burglary, 7000 Romaine St, Hollywood\",\n    \"date\": \"June 5, 1974\",\n    \"sourceUrl\": \"https://www.cia.gov/stories/story/the-exposing-of-project-azorian\"\n  },\n  \"objective\": \"Take the files from the records room\",\n  \"exitCondition\": \"Leave by any entry with the files before the alarm reaches Lockdown\",\n  \"casting\": [\n    {\n      \"kind\": \"city\",\n      \"label\": \"in LA\",\n      \"city\": \"LA\"\n    },\n    {\n      \"kind\": \"yearBuilt\",\n      \"label\": \"built 1974 or earlier\",\n      \"yearBuilt\": {\n        \"max\": 1974\n      }\n    },\n    {\n      \"kind\": \"propertyTypes\",\n      \"label\": \"office\",\n      \"propertyTypes\": [\n        \"office\"\n      ]\n    },\n    {\n      \"kind\": \"buildingClass\",\n      \"label\": \"Class A or B\",\n      \"buildingClass\": [\n        \"A\",\n        \"B\"\n      ]\n    },\n    {\n      \"kind\": \"minVacantFloorSf\",\n      \"label\": \"a floor with 10,000 SF or more on the market\",\n      \"minVacantFloorSf\": 10000\n    },\n    {\n      \"kind\": \"needsScan\",\n      \"label\": \"a Matterport scan\"\n    },\n    {\n      \"kind\": \"needsEntry\",\n      \"label\": \"a dock or service entry on the aerial\",\n      \"needsEntry\": [\n        \"dock\",\n        \"service\"\n      ]\n    }\n  ]\n}"
-      },
-      {
-        "atMs": 93,
-        "kind": "todo",
-        "agent": "casting-director",
-        "label": "Read mission romaine-1974 and its casting needs",
-        "status": "completed"
-      },
-      {
-        "atMs": 93,
-        "kind": "todo",
-        "agent": "casting-director",
-        "label": "Narrow the inventory with the location scout, one filter at a time",
-        "status": "in_progress"
-      },
-      {
-        "atMs": 93,
-        "kind": "todo",
-        "agent": "casting-director",
-        "label": "Pick three finalists and write the shortlist",
-        "status": "pending"
-      },
-      {
-        "atMs": 106,
-        "kind": "subagent",
-        "agent": "location-scout",
-        "label": "Mission romaine-1974: apply its casting filters with search_inventory in this order: city, yearBuilt, propertyTypes, buildingClass, minVacantFloorSf, needsScan, needsEntry. Then check the candidates left with get_candidate and get_aerial_entries, and report the funnel's counts and each candidate's year, class, vacant floor and matching entries.",
-        "status": "completed",
-        "durationMs": 109,
-        "input": "Mission romaine-1974: apply its casting filters with search_inventory in this order: city, yearBuilt, propertyTypes, buildingClass, minVacantFloorSf, needsScan, needsEntry. Then check the candidates left with get_candidate and get_aerial_entries, and report the funnel's counts and each candidate's year, class, vacant floor and matching entries.",
-        "output": "Funnel: 61 in the inventory -> 32 (in LA) -> 14 (built 1974 or earlier) -> 11 (office) -> 8 (Class A or B) -> 5 (a floor with 10,000 SF or more on the market) -> 4 (a Matterport scan) -> 3 (a dock or service entry on the aerial). Left: F1 Halvorsen Tower: built 1974, Class A office, floor 22 has 23,341 SF on the market (suites 2202-2210), scanned, dock and service entry; L01 Lancaster Building: built 1968, Class B office, floor 9 has 14,620 SF on the market, scanned, service entry; L02 Tolland Center: built 1971, Class A office, floor 17 has 11,880 SF on the market, scanned, dock."
-      },
-      {
-        "atMs": 116,
-        "kind": "tool",
-        "agent": "location-scout",
         "label": "get_mission",
         "status": "completed",
         "durationMs": 1,
@@ -272,17 +236,58 @@
         "output": "{\n  \"id\": \"romaine-1974\",\n  \"city\": \"LA\",\n  \"type\": \"heist\",\n  \"title\": \"The Romaine Street Papers\",\n  \"inspiredBy\": {\n    \"event\": \"The Summa Corporation burglary, 7000 Romaine St, Hollywood\",\n    \"date\": \"June 5, 1974\",\n    \"sourceUrl\": \"https://www.cia.gov/stories/story/the-exposing-of-project-azorian\"\n  },\n  \"objective\": \"Take the files from the records room\",\n  \"exitCondition\": \"Leave by any entry with the files before the alarm reaches Lockdown\",\n  \"casting\": [\n    {\n      \"kind\": \"city\",\n      \"label\": \"in LA\",\n      \"city\": \"LA\"\n    },\n    {\n      \"kind\": \"yearBuilt\",\n      \"label\": \"built 1974 or earlier\",\n      \"yearBuilt\": {\n        \"max\": 1974\n      }\n    },\n    {\n      \"kind\": \"propertyTypes\",\n      \"label\": \"office\",\n      \"propertyTypes\": [\n        \"office\"\n      ]\n    },\n    {\n      \"kind\": \"buildingClass\",\n      \"label\": \"Class A or B\",\n      \"buildingClass\": [\n        \"A\",\n        \"B\"\n      ]\n    },\n    {\n      \"kind\": \"minVacantFloorSf\",\n      \"label\": \"a floor with 10,000 SF or more on the market\",\n      \"minVacantFloorSf\": 10000\n    },\n    {\n      \"kind\": \"needsScan\",\n      \"label\": \"a Matterport scan\"\n    },\n    {\n      \"kind\": \"needsEntry\",\n      \"label\": \"a dock or service entry on the aerial\",\n      \"needsEntry\": [\n        \"dock\",\n        \"service\"\n      ]\n    }\n  ]\n}"
       },
       {
-        "atMs": 124,
+        "atMs": 80,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Read mission romaine-1974 and its casting needs",
+        "status": "completed"
+      },
+      {
+        "atMs": 80,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Narrow the inventory with the location scout, one filter at a time",
+        "status": "in_progress"
+      },
+      {
+        "atMs": 80,
+        "kind": "todo",
+        "agent": "casting-director",
+        "label": "Pick three finalists and write the shortlist",
+        "status": "pending"
+      },
+      {
+        "atMs": 87,
+        "kind": "subagent",
+        "agent": "location-scout",
+        "label": "Mission romaine-1974: apply its casting filters with search_inventory in this order: city, yearBuilt, propertyTypes, buildingClass, minVacantFloorSf, needsScan, needsEntry. Then check the candidates left with get_candidate and get_aerial_entries, and report the funnel's counts and each candidate's year, class, vacant floor and matching entries.",
+        "status": "completed",
+        "durationMs": 63,
+        "input": "Mission romaine-1974: apply its casting filters with search_inventory in this order: city, yearBuilt, propertyTypes, buildingClass, minVacantFloorSf, needsScan, needsEntry. Then check the candidates left with get_candidate and get_aerial_entries, and report the funnel's counts and each candidate's year, class, vacant floor and matching entries.",
+        "output": "Funnel: 61 in the inventory -> 32 (in LA) -> 14 (built 1974 or earlier) -> 11 (office) -> 8 (Class A or B) -> 5 (a floor with 10,000 SF or more on the market) -> 4 (a Matterport scan) -> 3 (a dock or service entry on the aerial). Left: F1 Halvorsen Tower: built 1974, Class A office, floor 22 has 23,341 SF on the market (suites 2202-2210), scanned, dock and service entry; L01 Lancaster Building: built 1968, Class B office, floor 9 has 14,620 SF on the market, scanned, service entry; L02 Tolland Center: built 1971, Class A office, floor 17 has 11,880 SF on the market, scanned, dock."
+      },
+      {
+        "atMs": 96,
+        "kind": "tool",
+        "agent": "location-scout",
+        "label": "get_mission",
+        "status": "completed",
+        "durationMs": 0,
+        "input": "{\"missionId\":\"romaine-1974\"}",
+        "output": "{\n  \"id\": \"romaine-1974\",\n  \"city\": \"LA\",\n  \"type\": \"heist\",\n  \"title\": \"The Romaine Street Papers\",\n  \"inspiredBy\": {\n    \"event\": \"The Summa Corporation burglary, 7000 Romaine St, Hollywood\",\n    \"date\": \"June 5, 1974\",\n    \"sourceUrl\": \"https://www.cia.gov/stories/story/the-exposing-of-project-azorian\"\n  },\n  \"objective\": \"Take the files from the records room\",\n  \"exitCondition\": \"Leave by any entry with the files before the alarm reaches Lockdown\",\n  \"casting\": [\n    {\n      \"kind\": \"city\",\n      \"label\": \"in LA\",\n      \"city\": \"LA\"\n    },\n    {\n      \"kind\": \"yearBuilt\",\n      \"label\": \"built 1974 or earlier\",\n      \"yearBuilt\": {\n        \"max\": 1974\n      }\n    },\n    {\n      \"kind\": \"propertyTypes\",\n      \"label\": \"office\",\n      \"propertyTypes\": [\n        \"office\"\n      ]\n    },\n    {\n      \"kind\": \"buildingClass\",\n      \"label\": \"Class A or B\",\n      \"buildingClass\": [\n        \"A\",\n        \"B\"\n      ]\n    },\n    {\n      \"kind\": \"minVacantFloorSf\",\n      \"label\": \"a floor with 10,000 SF or more on the market\",\n      \"minVacantFloorSf\": 10000\n    },\n    {\n      \"kind\": \"needsScan\",\n      \"label\": \"a Matterport scan\"\n    },\n    {\n      \"kind\": \"needsEntry\",\n      \"label\": \"a dock or service entry on the aerial\",\n      \"needsEntry\": [\n        \"dock\",\n        \"service\"\n      ]\n    }\n  ]\n}"
+      },
+      {
+        "atMs": 100,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
         "status": "completed",
-        "durationMs": 2,
+        "durationMs": 1,
         "input": "{\"missionId\":\"romaine-1974\",\"filter\":\"city\"}",
         "output": "{\n  \"applied\": \"in LA\",\n  \"left\": 32,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"L19\",\n      \"name\": \"Boyle Heights Distribution Center\",\n      \"yearBuilt\": 1983,\n      \"buildingClass\": \"C\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 32000\n      }\n    },\n    {\n      \"id\": \"L13\",\n      \"name\": \"Ninth Street Freight Terminal\",\n      \"yearBuilt\": 1970,\n      \"buildingClass\": \"C\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 24000\n      }\n    },\n    {\n      \"id\": \"F1\",\n      \"name\": \"Halvorsen Tower\",\n      \"yearBuilt\": 1974,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 22,\n        \"sf\": 23341\n      }\n    },\n    {\n      \"id\": \"L22\",\n      \"name\": \"Cole Street Tower\",\n      \"yearBuilt\": 2022,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 11,\n        \"sf\": 20100\n      }\n    },\n    {\n      \"id\": \"F3\",\n      \"name\": \"Meridian on Wilshire\",\n      \"yearBuilt\": 2017,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 24,\n        \"sf\": 18974\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"yearBuilt\",\n    \"propertyTypes\",\n    \"buildingClass\",\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
       },
       {
-        "atMs": 134,
+        "atMs": 104,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
@@ -292,7 +297,7 @@
         "output": "{\n  \"applied\": \"built 1974 or earlier\",\n  \"left\": 14,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    },\n    {\n      \"label\": \"built 1974 or earlier\",\n      \"count\": 14\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"L13\",\n      \"name\": \"Ninth Street Freight Terminal\",\n      \"yearBuilt\": 1970,\n      \"buildingClass\": \"C\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 24000\n      }\n    },\n    {\n      \"id\": \"F1\",\n      \"name\": \"Halvorsen Tower\",\n      \"yearBuilt\": 1974,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 22,\n        \"sf\": 23341\n      }\n    },\n    {\n      \"id\": \"L11\",\n      \"name\": \"Slauson Cold Storage\",\n      \"yearBuilt\": 1961,\n      \"buildingClass\": \"C\",\n      \"propertyType\": \"industrial\",\n      \"vacantFloor\": {\n        \"floor\": 1,\n        \"sf\": 18500\n      }\n    },\n    {\n      \"id\": \"L04\",\n      \"name\": \"Arcadia Exchange\",\n      \"yearBuilt\": 1972,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 19,\n        \"sf\": 16040\n      }\n    },\n    {\n      \"id\": \"L01\",\n      \"name\": \"Lancaster Building\",\n      \"yearBuilt\": 1968,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 9,\n        \"sf\": 14620\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"propertyTypes\",\n    \"buildingClass\",\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
       },
       {
-        "atMs": 138,
+        "atMs": 108,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
@@ -302,7 +307,7 @@
         "output": "{\n  \"applied\": \"office\",\n  \"left\": 11,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    },\n    {\n      \"label\": \"built 1974 or earlier\",\n      \"count\": 14\n    },\n    {\n      \"label\": \"office\",\n      \"count\": 11\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"F1\",\n      \"name\": \"Halvorsen Tower\",\n      \"yearBuilt\": 1974,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 22,\n        \"sf\": 23341\n      }\n    },\n    {\n      \"id\": \"L04\",\n      \"name\": \"Arcadia Exchange\",\n      \"yearBuilt\": 1972,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 19,\n        \"sf\": 16040\n      }\n    },\n    {\n      \"id\": \"L01\",\n      \"name\": \"Lancaster Building\",\n      \"yearBuilt\": 1968,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 9,\n        \"sf\": 14620\n      }\n    },\n    {\n      \"id\": \"L03\",\n      \"name\": \"Marston Building\",\n      \"yearBuilt\": 1962,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 11,\n        \"sf\": 12300\n      }\n    },\n    {\n      \"id\": \"L02\",\n      \"name\": \"Tolland Center\",\n      \"yearBuilt\": 1971,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 17,\n        \"sf\": 11880\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"buildingClass\",\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
       },
       {
-        "atMs": 145,
+        "atMs": 112,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
@@ -312,7 +317,7 @@
         "output": "{\n  \"applied\": \"Class A or B\",\n  \"left\": 8,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    },\n    {\n      \"label\": \"built 1974 or earlier\",\n      \"count\": 14\n    },\n    {\n      \"label\": \"office\",\n      \"count\": 11\n    },\n    {\n      \"label\": \"Class A or B\",\n      \"count\": 8\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"F1\",\n      \"name\": \"Halvorsen Tower\",\n      \"yearBuilt\": 1974,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 22,\n        \"sf\": 23341\n      }\n    },\n    {\n      \"id\": \"L04\",\n      \"name\": \"Arcadia Exchange\",\n      \"yearBuilt\": 1972,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 19,\n        \"sf\": 16040\n      }\n    },\n    {\n      \"id\": \"L01\",\n      \"name\": \"Lancaster Building\",\n      \"yearBuilt\": 1968,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 9,\n        \"sf\": 14620\n      }\n    },\n    {\n      \"id\": \"L03\",\n      \"name\": \"Marston Building\",\n      \"yearBuilt\": 1962,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 11,\n        \"sf\": 12300\n      }\n    },\n    {\n      \"id\": \"L02\",\n      \"name\": \"Tolland Center\",\n      \"yearBuilt\": 1971,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 17,\n        \"sf\": 11880\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"minVacantFloorSf\",\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
       },
       {
-        "atMs": 161,
+        "atMs": 120,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
@@ -322,17 +327,17 @@
         "output": "{\n  \"applied\": \"a floor with 10,000 SF or more on the market\",\n  \"left\": 5,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    },\n    {\n      \"label\": \"built 1974 or earlier\",\n      \"count\": 14\n    },\n    {\n      \"label\": \"office\",\n      \"count\": 11\n    },\n    {\n      \"label\": \"Class A or B\",\n      \"count\": 8\n    },\n    {\n      \"label\": \"a floor with 10,000 SF or more on the market\",\n      \"count\": 5\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"F1\",\n      \"name\": \"Halvorsen Tower\",\n      \"yearBuilt\": 1974,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 22,\n        \"sf\": 23341\n      }\n    },\n    {\n      \"id\": \"L04\",\n      \"name\": \"Arcadia Exchange\",\n      \"yearBuilt\": 1972,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 19,\n        \"sf\": 16040\n      }\n    },\n    {\n      \"id\": \"L01\",\n      \"name\": \"Lancaster Building\",\n      \"yearBuilt\": 1968,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 9,\n        \"sf\": 14620\n      }\n    },\n    {\n      \"id\": \"L03\",\n      \"name\": \"Marston Building\",\n      \"yearBuilt\": 1962,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 11,\n        \"sf\": 12300\n      }\n    },\n    {\n      \"id\": \"L02\",\n      \"name\": \"Tolland Center\",\n      \"yearBuilt\": 1971,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 17,\n        \"sf\": 11880\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"needsScan\",\n    \"needsEntry\"\n  ]\n}"
       },
       {
-        "atMs": 169,
+        "atMs": 124,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
         "status": "completed",
-        "durationMs": 2,
+        "durationMs": 1,
         "input": "{\"missionId\":\"romaine-1974\",\"filter\":\"needsScan\"}",
         "output": "{\n  \"applied\": \"a Matterport scan\",\n  \"left\": 4,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    },\n    {\n      \"label\": \"built 1974 or earlier\",\n      \"count\": 14\n    },\n    {\n      \"label\": \"office\",\n      \"count\": 11\n    },\n    {\n      \"label\": \"Class A or B\",\n      \"count\": 8\n    },\n    {\n      \"label\": \"a floor with 10,000 SF or more on the market\",\n      \"count\": 5\n    },\n    {\n      \"label\": \"a Matterport scan\",\n      \"count\": 4\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"F1\",\n      \"name\": \"Halvorsen Tower\",\n      \"yearBuilt\": 1974,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 22,\n        \"sf\": 23341\n      }\n    },\n    {\n      \"id\": \"L01\",\n      \"name\": \"Lancaster Building\",\n      \"yearBuilt\": 1968,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 9,\n        \"sf\": 14620\n      }\n    },\n    {\n      \"id\": \"L03\",\n      \"name\": \"Marston Building\",\n      \"yearBuilt\": 1962,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 11,\n        \"sf\": 12300\n      }\n    },\n    {\n      \"id\": \"L02\",\n      \"name\": \"Tolland Center\",\n      \"yearBuilt\": 1971,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 17,\n        \"sf\": 11880\n      }\n    }\n  ],\n  \"filtersLeft\": [\n    \"needsEntry\"\n  ]\n}"
       },
       {
-        "atMs": 174,
+        "atMs": 127,
         "kind": "tool",
         "agent": "location-scout",
         "label": "search_inventory",
@@ -342,37 +347,37 @@
         "output": "{\n  \"applied\": \"a dock or service entry on the aerial\",\n  \"left\": 3,\n  \"funnel\": [\n    {\n      \"label\": \"61 buildings in the inventory\",\n      \"count\": 61\n    },\n    {\n      \"label\": \"in LA\",\n      \"count\": 32\n    },\n    {\n      \"label\": \"built 1974 or earlier\",\n      \"count\": 14\n    },\n    {\n      \"label\": \"office\",\n      \"count\": 11\n    },\n    {\n      \"label\": \"Class A or B\",\n      \"count\": 8\n    },\n    {\n      \"label\": \"a floor with 10,000 SF or more on the market\",\n      \"count\": 5\n    },\n    {\n      \"label\": \"a Matterport scan\",\n      \"count\": 4\n    },\n    {\n      \"label\": \"a dock or service entry on the aerial\",\n      \"count\": 3\n    }\n  ],\n  \"top\": [\n    {\n      \"id\": \"F1\",\n      \"name\": \"Halvorsen Tower\",\n      \"yearBuilt\": 1974,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 22,\n        \"sf\": 23341\n      }\n    },\n    {\n      \"id\": \"L01\",\n      \"name\": \"Lancaster Building\",\n      \"yearBuilt\": 1968,\n      \"buildingClass\": \"B\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 9,\n        \"sf\": 14620\n      }\n    },\n    {\n      \"id\": \"L02\",\n      \"name\": \"Tolland Center\",\n      \"yearBuilt\": 1971,\n      \"buildingClass\": \"A\",\n      \"propertyType\": \"office\",\n      \"vacantFloor\": {\n        \"floor\": 17,\n        \"sf\": 11880\n      }\n    }\n  ],\n  \"filtersLeft\": []\n}"
       },
       {
-        "atMs": 180,
+        "atMs": 131,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_candidate",
         "status": "completed",
-        "durationMs": 1,
+        "durationMs": 0,
         "input": "{\"id\":\"F1\"}",
-        "output": "{\n  \"id\": \"F1\",\n  \"name\": \"Halvorsen Tower\",\n  \"city\": \"LA\",\n  \"neighbourhood\": \"Bunker Hill\",\n  \"yearBuilt\": 1974,\n  \"buildingClass\": \"A\",\n  \"propertyType\": \"office\",\n  \"stories\": 42,\n  \"rbaSf\": 1018437,\n  \"typicalFloorSf\": 24850,\n  \"vacantFloors\": [\n    {\n      \"floor\": 22,\n      \"sf\": 23341,\n      \"suites\": [\n        \"2202\",\n        \"2203\",\n        \"2204\",\n        \"2205\",\n        \"2206\",\n        \"2207\",\n        \"2208\",\n        \"2209\",\n        \"2210\"\n      ]\n    },\n    {\n      \"floor\": 31,\n      \"sf\": 5203,\n      \"suites\": [\n        \"3120\"\n      ]\n    },\n    {\n      \"floor\": 37,\n      \"sf\": 3861,\n      \"suites\": [\n        \"3702\"\n      ]\n    },\n    {\n      \"floor\": 8,\n      \"sf\": 2618,\n      \"suites\": [\n        \"810\"\n      ]\n    },\n    {\n      \"floor\": 15,\n      \"sf\": 1947,\n      \"suites\": [\n        \"1504\"\n      ]\n    }\n  ],\n  \"scans\": 0,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
+        "output": "{\n  \"id\": \"F1\",\n  \"name\": \"Halvorsen Tower\",\n  \"city\": \"LA\",\n  \"neighbourhood\": \"Bunker Hill\",\n  \"yearBuilt\": 1974,\n  \"buildingClass\": \"A\",\n  \"propertyType\": \"office\",\n  \"stories\": 42,\n  \"rbaSf\": 1018437,\n  \"typicalFloorSf\": 24850,\n  \"vacantFloors\": [\n    {\n      \"floor\": 22,\n      \"sf\": 23341,\n      \"suites\": [\n        \"2202\",\n        \"2203\",\n        \"2204\",\n        \"2205\",\n        \"2206\",\n        \"2207\",\n        \"2208\",\n        \"2209\",\n        \"2210\"\n      ]\n    },\n    {\n      \"floor\": 31,\n      \"sf\": 5203,\n      \"suites\": [\n        \"3120\"\n      ]\n    },\n    {\n      \"floor\": 37,\n      \"sf\": 3861,\n      \"suites\": [\n        \"3702\"\n      ]\n    },\n    {\n      \"floor\": 8,\n      \"sf\": 2618,\n      \"suites\": [\n        \"810\"\n      ]\n    },\n    {\n      \"floor\": 15,\n      \"sf\": 1947,\n      \"suites\": [\n        \"1504\"\n      ]\n    }\n  ],\n  \"scanned\": true,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
       },
       {
-        "atMs": 185,
+        "atMs": 134,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_aerial_entries",
         "status": "completed",
-        "durationMs": 1,
+        "durationMs": 0,
         "input": "{\"id\":\"F1\"}",
         "output": "{\n  \"source\": \"fixture\",\n  \"entries\": [\n    {\n      \"id\": \"dock-N\",\n      \"kind\": \"dock\",\n      \"label\": \"Loading dock\",\n      \"view\": \"N\"\n    },\n    {\n      \"id\": \"garage-E\",\n      \"kind\": \"garage\",\n      \"label\": \"Garage ramp\",\n      \"view\": \"E\"\n    },\n    {\n      \"id\": \"lobby-S\",\n      \"kind\": \"lobby\",\n      \"label\": \"Main lobby\",\n      \"view\": \"S\"\n    },\n    {\n      \"id\": \"exit-W\",\n      \"kind\": \"service\",\n      \"label\": \"Stair B exit\",\n      \"view\": \"W\"\n    },\n    {\n      \"id\": \"roof\",\n      \"kind\": \"roof\",\n      \"label\": \"Roof hatch\",\n      \"view\": \"ortho\"\n    }\n  ]\n}"
       },
       {
-        "atMs": 191,
+        "atMs": 138,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_candidate",
         "status": "completed",
         "durationMs": 0,
         "input": "{\"id\":\"L01\"}",
-        "output": "{\n  \"id\": \"L01\",\n  \"name\": \"Lancaster Building\",\n  \"city\": \"LA\",\n  \"neighbourhood\": \"Mid-Wilshire\",\n  \"yearBuilt\": 1968,\n  \"buildingClass\": \"B\",\n  \"propertyType\": \"office\",\n  \"stories\": 13,\n  \"rbaSf\": 197184,\n  \"typicalFloorSf\": 15800,\n  \"vacantFloors\": [\n    {\n      \"floor\": 9,\n      \"sf\": 14620,\n      \"suites\": [\n        \"910\",\n        \"920\",\n        \"930\"\n      ]\n    },\n    {\n      \"floor\": 4,\n      \"sf\": 2210,\n      \"suites\": [\n        \"410\"\n      ]\n    }\n  ],\n  \"scans\": 0,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
+        "output": "{\n  \"id\": \"L01\",\n  \"name\": \"Lancaster Building\",\n  \"city\": \"LA\",\n  \"neighbourhood\": \"Mid-Wilshire\",\n  \"yearBuilt\": 1968,\n  \"buildingClass\": \"B\",\n  \"propertyType\": \"office\",\n  \"stories\": 13,\n  \"rbaSf\": 197184,\n  \"typicalFloorSf\": 15800,\n  \"vacantFloors\": [\n    {\n      \"floor\": 9,\n      \"sf\": 14620,\n      \"suites\": [\n        \"910\",\n        \"920\",\n        \"930\"\n      ]\n    },\n    {\n      \"floor\": 4,\n      \"sf\": 2210,\n      \"suites\": [\n        \"410\"\n      ]\n    }\n  ],\n  \"scanned\": true,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
       },
       {
-        "atMs": 194,
+        "atMs": 140,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_aerial_entries",
@@ -382,17 +387,17 @@
         "output": "{\n  \"source\": \"inventory\",\n  \"entryKinds\": [\n    \"service\",\n    \"lobby\",\n    \"roof\"\n  ],\n  \"note\": \"no aerial yet; the inventory's entry tags\"\n}"
       },
       {
-        "atMs": 199,
+        "atMs": 143,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_candidate",
         "status": "completed",
         "durationMs": 0,
         "input": "{\"id\":\"L02\"}",
-        "output": "{\n  \"id\": \"L02\",\n  \"name\": \"Tolland Center\",\n  \"city\": \"LA\",\n  \"neighbourhood\": \"Financial District\",\n  \"yearBuilt\": 1971,\n  \"buildingClass\": \"A\",\n  \"propertyType\": \"office\",\n  \"stories\": 28,\n  \"rbaSf\": 575232,\n  \"typicalFloorSf\": 21400,\n  \"vacantFloors\": [\n    {\n      \"floor\": 17,\n      \"sf\": 11880,\n      \"suites\": [\n        \"1710\",\n        \"1720\",\n        \"1730\"\n      ]\n    },\n    {\n      \"floor\": 23,\n      \"sf\": 1875,\n      \"suites\": [\n        \"2310\"\n      ]\n    }\n  ],\n  \"scans\": 0,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
+        "output": "{\n  \"id\": \"L02\",\n  \"name\": \"Tolland Center\",\n  \"city\": \"LA\",\n  \"neighbourhood\": \"Financial District\",\n  \"yearBuilt\": 1971,\n  \"buildingClass\": \"A\",\n  \"propertyType\": \"office\",\n  \"stories\": 28,\n  \"rbaSf\": 575232,\n  \"typicalFloorSf\": 21400,\n  \"vacantFloors\": [\n    {\n      \"floor\": 17,\n      \"sf\": 11880,\n      \"suites\": [\n        \"1710\",\n        \"1720\",\n        \"1730\"\n      ]\n    },\n    {\n      \"floor\": 23,\n      \"sf\": 1875,\n      \"suites\": [\n        \"2310\"\n      ]\n    }\n  ],\n  \"scanned\": true,\n  \"layers\": {\n    \"costar\": true,\n    \"vexcel\": true,\n    \"matterport\": true\n  }\n}"
       },
       {
-        "atMs": 205,
+        "atMs": 146,
         "kind": "tool",
         "agent": "location-scout",
         "label": "get_aerial_entries",
@@ -402,63 +407,58 @@
         "output": "{\n  \"source\": \"inventory\",\n  \"entryKinds\": [\n    \"dock\",\n    \"garage\",\n    \"lobby\"\n  ],\n  \"note\": \"no aerial yet; the inventory's entry tags\"\n}"
       },
       {
-        "atMs": 220,
+        "atMs": 154,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Read mission romaine-1974 and its casting needs",
         "status": "completed"
       },
       {
-        "atMs": 220,
+        "atMs": 154,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Narrow the inventory with the location scout, one filter at a time",
         "status": "completed"
       },
       {
-        "atMs": 220,
+        "atMs": 154,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Pick three finalists and write the shortlist",
         "status": "in_progress"
       },
       {
-        "atMs": 224,
+        "atMs": 158,
         "kind": "tool",
         "agent": "casting-director",
         "label": "write_shortlist",
         "status": "completed",
-        "durationMs": 14,
+        "durationMs": 30,
         "input": "{\"missionId\":\"romaine-1974\",\"finalists\":[{\"id\":\"F1\",\"reason\":\"The 1974 tower with a near-empty floor 22 and a loading dock: the closest stand-in for a 1974 records office, and its era matches the burglary's own year.\"},{\"id\":\"L01\",\"reason\":\"A 1968 Class B office with 14,620 SF dark on floor 9 and a service door: older and smaller than Halvorsen, so a quieter, scrappier job.\"},{\"id\":\"L02\",\"reason\":\"A 1971 Class A tower with floor 17 on the market and a dock: the right era, though less of its floor is empty than at Halvorsen.\"}]}",
         "output": "Shortlist written for romaine-1974: F1, L01, L02, from a funnel of 8 rows."
       },
       {
-        "atMs": 244,
+        "atMs": 193,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Read mission romaine-1974 and its casting needs",
         "status": "completed"
       },
       {
-        "atMs": 244,
+        "atMs": 193,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Narrow the inventory with the location scout, one filter at a time",
         "status": "completed"
       },
       {
-        "atMs": 244,
+        "atMs": 193,
         "kind": "todo",
         "agent": "casting-director",
         "label": "Pick three finalists and write the shortlist",
         "status": "completed"
       }
-    ],
-    "subagents": [
-      "general-purpose",
-      "location-scout"
-    ],
-    "liveData": false
+    ]
   },
   "source": "fixture"
 }

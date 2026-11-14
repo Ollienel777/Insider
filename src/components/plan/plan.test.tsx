@@ -10,7 +10,7 @@ import { CrewPlan, LevelManifest } from "@/domain";
 import { createRun } from "@/engine";
 import { placeLevel } from "@/level/placer";
 import { validatePlan } from "@/level/validate-plan";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import recording from "../../../fixtures/llm/crew-F1.json";
 import { askCrew, crewRequest, EXAMPLE_ORDER, type CrewAnswer } from "./crew-request";
 import { CrewReply, ghostOf } from "./crew-reply";

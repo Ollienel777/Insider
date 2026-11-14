@@ -64,11 +64,15 @@ describe("searchInventory on the fake adapter", () => {
   });
 
   it("hands out copies, so a caller cannot change the inventory", async () => {
+    const inventoryBefore = structuredClone(FIXTURE_INVENTORY);
     const { steps } = await costar.searchInventory([]);
+    const before = structuredClone(steps[0].top[0]);
+    expect(before.layers.matterport).toBe(true);
     steps[0].top[0].layers.matterport = false;
     steps[0].top[0].vacantFloor!.suites.length = 0;
     const again = await costar.searchInventory([]);
-    expect(again.steps[0].top[0]).not.toEqual(steps[0].top[0]);
+    expect(again.steps[0].top[0]).toEqual(before);
+    expect(FIXTURE_INVENTORY).toEqual(inventoryBefore);
   });
 });
 
@@ -80,7 +84,7 @@ describe.each(missions.map((m) => m.id))("searchInventory for %s", (id) => {
   });
 });
 
-describe("searchInventory live (the kit is not mapped yet, #27)", () => {
+describe("searchInventory live (the kit is not mapped yet, #2)", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();

@@ -8,7 +8,7 @@ import { BASEMAPS, fitView, project } from "@/components/map/basemap";
 import { CityTabs, MapView, useCityTab } from "@/components/map/map-screen";
 import { formatRecordedAt, recordedRunHeader, traceView } from "@/components/dossier/replay";
 import { Reveal } from "@/components/dossier/reveal";
-import { FIXTURE_REPLAY_NOTICE, TraceList } from "@/components/dossier/trace-list";
+import { TraceList } from "@/components/dossier/trace-list";
 import { LAYERS, LayerDot, type Layer } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { City, type CastingResult, type Mission } from "@/domain";
@@ -40,7 +40,7 @@ export interface CastScreenProps {
 /** The notice over the trace: what this replay is, and that nothing here calls a model. */
 export function castNotice(source: CastingResult["source"]): string {
   return source === "fixture"
-    ? FIXTURE_REPLAY_NOTICE
+    ? "A replay of a run recorded on fixtures. Nothing on this screen calls a model."
     : "A replay of a run cast ahead on CoStar's data. Nothing on this screen calls a model.";
 }
 
@@ -167,7 +167,7 @@ export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, 
           control={control}
           title="Casting Director"
           wrapLongParts
-          notice={castNotice(result.source)}
+          banner={castNotice(result.source)}
           afterPlan={<Funnel funnel={funnel} landed={landed} source={result.source} />}
         />
       </div>
