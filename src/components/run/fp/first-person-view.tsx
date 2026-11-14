@@ -40,6 +40,8 @@ export interface FirstPersonViewProps {
 
 interface Hud {
   locked: boolean;
+  /** The browser refused to lock the mouse: the hint says to drag instead. */
+  refused: boolean;
   prompt: Prompt;
   /** The room the engine has the player in, when the body has walked on to a node it cannot move to. */
   astray: string | null;
@@ -70,7 +72,7 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
   const surface = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const labelLayer = useRef<HTMLDivElement>(null);
-  const [hud, setHud] = useState<Hud>({ locked: false, prompt: null, astray: null });
+  const [hud, setHud] = useState<Hud>({ locked: false, refused: false, prompt: null, astray: null });
   const [ready, setReady] = useState(false);
 
   const world = useMemo(() => buildWorld(placed.level.floor), [placed]);
@@ -155,8 +157,11 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
       const towards = ahead ? ground.path(state.playerNode, ahead.nodeId)[1] : null;
       return towards ? Math.atan2(towards.y - from.y, towards.x - from.x) : null;
     };
-    const controller = new Controller(host, wayOn(first, walker.pos) ?? 0, (locked) =>
-      setHud((h) => (h.locked === locked ? h : { ...h, locked })),
+    const controller = new Controller(
+      host,
+      wayOn(first, walker.pos) ?? 0,
+      (locked) => setHud((h) => (h.locked === locked ? h : { ...h, locked, refused: locked ? false : h.refused })),
+      () => setHud((h) => (h.refused ? h : { ...h, refused: true })),
     );
 
     const resize = () => {
@@ -392,7 +397,9 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
               </>
             ) : (
               <>
-                <span className="text-text-1">Click to look</span>
+                <span data-testid="fp-look-hint" className="text-text-1">
+                  {hud.refused ? "Hold the mouse button and drag to look" : "Click to look, or hold and drag"}
+                </span>
                 <span className="flex items-center gap-1.5">
                   <Key>W</Key>
                   <Key>A</Key>

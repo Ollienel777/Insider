@@ -6,6 +6,7 @@
 // QWERTY keeps the same hand shape:
 //   W A S D   move, relative to the view        Shift   walk
 //   mouse     look, once the view is clicked    Esc     release the mouse
+//             (where the browser refuses the lock, hold the button and drag)
 //   ← →       turn without a mouse; ↑ ↓ move forwards and back
 //   E         use: pick a locked door, take the objective
 //   F         wait a turn
@@ -33,12 +34,16 @@ export class Controller {
   private shift = false;
   private interact = false;
   private wait = false;
+  /** Where a drag last was, while the button is held and the mouse is not locked. */
+  private drag: [number, number] | null = null;
   private readonly cleanup: (() => void)[] = [];
 
   constructor(
     private readonly surface: HTMLElement,
     yaw: number,
     private readonly onLock: (locked: boolean) => void,
+    /** Called when the browser refuses the lock: the view then says to drag. */
+    private readonly onRefused: () => void = () => {},
   ) {
     this.yaw = yaw;
     const listen = <K extends keyof WindowEventMap>(target: Window | Document | HTMLElement, type: K | string, handler: (event: never) => void, capture = false) => {
@@ -58,15 +63,37 @@ export class Controller {
       if (!this.locked) return;
       this.turn(event.movementX * FP.lookRadPerPx, -event.movementY * FP.lookRadPerPx);
     });
+    listen(document, "pointerlockerror", () => this.onRefused());
     listen(surface, "click", () => {
       if (this.locked) return;
       try {
-        // A browser may refuse (no gesture, a sandboxed frame): the arrow keys still turn the view.
-        void Promise.resolve(surface.requestPointerLock()).catch(() => {});
+        // A browser may refuse (no gesture, a sandboxed frame, a remote session): dragging and the arrow keys still turn the view.
+        void Promise.resolve(surface.requestPointerLock()).catch(() => this.onRefused());
       } catch {
-        // As above.
+        this.onRefused();
       }
     });
+    // Drag to look: the way to turn the view wherever the lock is refused. Same direction as the locked mouse.
+    listen(surface, "pointerdown", (event: PointerEvent) => {
+      if (this.locked || event.button !== 0) return;
+      this.drag = [event.clientX, event.clientY];
+      try {
+        surface.setPointerCapture(event.pointerId);
+      } catch {
+        // No capture: the drag still works while the pointer stays over the view.
+      }
+    });
+    listen(surface, "pointermove", (event: PointerEvent) => {
+      if (this.locked || !this.drag) return;
+      const [x, y] = this.drag;
+      this.drag = [event.clientX, event.clientY];
+      this.turn((event.clientX - x) * FP.dragRadPerPx, -(event.clientY - y) * FP.dragRadPerPx);
+    });
+    const drop = () => {
+      this.drag = null;
+    };
+    listen(surface, "pointerup", drop);
+    listen(surface, "pointercancel", drop);
   }
 
   private key(event: KeyboardEvent, isDown: boolean): void {
@@ -89,6 +116,7 @@ export class Controller {
   private release(): void {
     this.down.clear();
     this.shift = false;
+    this.drag = null;
   }
 
   private turn(yaw: number, pitch: number): void {

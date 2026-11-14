@@ -39,6 +39,8 @@ export const FP = Object.freeze({
 
   /** Mouse look, radians per pixel. */
   lookRadPerPx: 0.0022,
+  /** Looking by dragging with the button held, where the mouse cannot be locked: radians per pixel. */
+  dragRadPerPx: 0.004,
   /** Arrow-key turning, radians per second. */
   turnRadPerS: 2.4,
   /** How far up or down the view tips. */
