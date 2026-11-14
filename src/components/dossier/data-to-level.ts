@@ -54,6 +54,19 @@ export function suiteRange(suites: readonly string[]): string {
   return consecutive ? `${sorted[0]}–${sorted[sorted.length - 1]}` : sorted.join(", ");
 }
 
+/**
+ * What an entry rule gave the level, from its recorded words: `The aerial
+ * tags "Loading dock" (dock): a loading dock is always offered as a way in
+ * and out` → "Always offered as a way in and out". The subject is dropped
+ * because the row's rule already names the entry.
+ */
+export function entryEffect(rule: string): string {
+  const at = rule.indexOf(": ");
+  const tail = at < 0 ? rule : rule.slice(at + 2);
+  const predicate = /^(?:an? |the )?[\w -]+? is (.+)$/.exec(tail)?.[1] ?? tail;
+  return capitalise(predicate);
+}
+
 export function dataToLevelRows(manifest: LevelManifest): DataToLevelRow[] {
   const byRole = new Map<string, Provenance>();
   for (const p of manifest.provenance) if (!byRole.has(p.elementRole)) byRole.set(p.elementRole, p);
@@ -127,16 +140,19 @@ export function dataToLevelRows(manifest: LevelManifest): DataToLevelRow[] {
 
   // The aerial's dock tag → the way in and out. The level offers the other
   // tags too and the briefing names them; the table keeps to the five rules
-  // that fit beside the briefing at 1440×900.
+  // that fit beside the briefing at 1440×900. The field and value are the
+  // recorded provenance (`entries.kind` = `dock`), never the entry's id, and
+  // the result is the recorded rule's own words.
   const dock = manifest.entries.find((e) => e.kind === "dock" && byRole.has(`entry:${e.id}`));
-  if (dock) {
+  const dockWhy = dock ? byRole.get(`entry:${dock.id}`) : undefined;
+  if (dock && dockWhy) {
     rows.push({
       id: "dock",
       layer: "vexcel",
-      field: byRole.get(`entry:${dock.id}`)!.field,
-      value: dock.id,
+      field: dockWhy.field,
+      value: String(dockWhy.value),
       rule: `${dock.label} on the aerial`,
-      result: "Entry and exit",
+      result: entryEffect(dockWhy.rule),
     });
   }
 
