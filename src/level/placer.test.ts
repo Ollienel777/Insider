@@ -163,6 +163,33 @@ describe("placeLevel on F1 from the cached manifest", () => {
     }
   });
 
+  it("keeps a quiet route and a guard on a round with the watch post of a second run (#35)", { timeout: 30_000 }, () => {
+    // Hops from the dock over the floor's edges, doors included.
+    const dockHops = new Map<string, number>([[F1_DEMO.dockEntry, 0]]);
+    for (const at of dockHops.keys()) {
+      for (const e of floor().edges) {
+        const to = e.a === at ? e.b : e.b === at ? e.a : null;
+        if (to && !dockHops.has(to)) dockHops.set(to, dockHops.get(at)! + 1);
+      }
+    }
+    for (const seed of SEEDS) {
+      const p = placeLevel(manifest(), floor(), seed, undefined, { watchEntry: "dock-N" });
+      expect(p.watch, `seed ${seed}`).not.toBeNull();
+      // With the night cleaners on the floor, and the posted guard strictly nearer the dock than any default start.
+      expect(p.cleaners.length, `seed ${seed}`).toBeGreaterThan(0);
+      const nearest = (q: PlacedLevel) => Math.min(...q.level.guards.map((g) => dockHops.get(g.patrol[0]) ?? Infinity));
+      const watchStart = p.level.guards.find((g) => g.id === p.watch!.guardId)!.patrol[0];
+      expect(dockHops.get(watchStart), `seed ${seed}`).toBeLessThan(nearest(placeF1(seed)));
+      expect(nearest(p), `seed ${seed}`).toBeLessThan(nearest(placeF1(seed)));
+      expect(p.guards.some((g) => g.post === undefined && g.patrol.length > 1), `seed ${seed}`).toBe(true);
+      const route = quietRoute(p);
+      expect(route, `seed ${seed}`).not.toBeNull();
+      const run = play(createRun(p.level), route!);
+      expect(run.alarmEvents, `seed ${seed}`).toEqual([]);
+      expect(run.status, `seed ${seed}`).toBe("won");
+    }
+  });
+
   it("has no quiet route when there is no time for one, or every node of the corridor is watched", () => {
     expect(quietRoute(placed, 10)).toBeNull();
     const m = manifest();

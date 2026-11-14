@@ -10,7 +10,7 @@ import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Building, LateChief, LevelManifest } from "@/domain";
+import type { Building, FloorGraph, LateChief, LevelManifest } from "@/domain";
 import { act, applyChiefOrders, createRun, type Action, type RunState } from "@/engine";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { objectiveNoun } from "@/lib/objective-noun";
@@ -36,6 +36,7 @@ import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chi
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
 import { loadCrewPlan, type StoredCrewPlan } from "./crew-plan-store";
 import { clearRunLog, runLogOf, saveRunLog } from "./run-log-store";
+import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postureOf, runRecordOf, type RunRecord } from "./run-history";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -51,7 +52,7 @@ export { runLogKey } from "./run-log-store";
 
 type Load =
   | { status: "loading" }
-  | { status: "ready"; placed: PlacedLevel; live: boolean }
+  | { status: "ready"; placed: PlacedLevel; floor: FloorGraph; live: boolean; history: readonly RunRecord[] }
   | { status: "no-floor" }
   | { status: "error"; message: string };
 
@@ -75,6 +76,8 @@ export function RunScreen({
 }) {
   const [loaded, setLoad] = useState<Load>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
+  /** The runs stored for this building now: what the Forget button would clear. */
+  const [storedRuns, setStoredRuns] = useState(0);
   const [run, setRun] = useState<RunState | null>(null);
   const [status, setStatus] = useState<string>("");
   const [lens, toggleLens] = useLayerLens();
@@ -92,6 +95,8 @@ export function RunScreen({
   const chiefSources = useRef(new Map<number, ChiefAnswer["source"]>());
   /** The Chief's answer that landed after the run ended, if one did. */
   const lateChief = useRef<LateChief | null>(null);
+  /** The way in the placed level's watch post stands near (#35), logged so the Debrief places the same board. */
+  const watchEntry = useRef<string | undefined>(undefined);
 
   /**
    * Puts a fresh run on the board, on opening and on Restart: no Chief call
@@ -109,8 +114,26 @@ export function RunScreen({
     latestRun.current = fresh;
     setRun(fresh);
     setMode("walk");
-    saveRunLog(runLogOf(fresh, chiefSources.current), undefined, missionId);
+    saveRunLog(runLogOf(fresh, chiefSources.current, null, watchEntry.current), undefined, missionId);
   }, [missionId]);
+
+  /**
+   * Places the level on `floor` from the history stored now and starts a run on it: on opening,
+   * and on a Restart after a run ended, which has just joined the history (#35). Throws as the placer does.
+   */
+  const placeAndStart = useCallback(
+    (level: LevelManifest, floor: FloorGraph): PlacedLevel => {
+      // Earlier runs here set the guards' starting posture (#35): the placer takes it as an input.
+      const history = loadRunHistory(building.id, undefined, missionId);
+      const placed = placeLevel(level, floor, RUN_SEED, undefined, postureOf(history));
+      setLoad({ status: "ready", placed, floor, live: floor.source === "matterport", history });
+      setStoredRuns(history.length);
+      watchEntry.current = placed.watch?.entryId;
+      startRun(placed.level);
+      return placed;
+    },
+    [building.id, startRun, missionId],
+  );
 
   useEffect(() => {
     if (!manifest) return;
@@ -124,9 +147,7 @@ export function RunScreen({
         (floor) => {
           if (!live) return;
           if (!floor) return setLoad({ status: "no-floor" });
-          const placed = placeLevel(manifest, floor, RUN_SEED);
-          setLoad({ status: "ready", placed, live: floor.source === "matterport" });
-          startRun(placed.level);
+          const placed = placeAndStart(manifest, floor);
           setStatus(`You're in at the ${placed.entries[0].label.toLowerCase()}. Pick a number to move.`);
         },
         (error: unknown) => {
@@ -139,10 +160,14 @@ export function RunScreen({
     return () => {
       live = false;
     };
-  }, [building, manifest, heistMode, attempt, startRun, missionId]);
+  }, [building, manifest, heistMode, attempt, placeAndStart, missionId]);
 
   const load: Load = manifest ? loaded : { status: "no-floor" };
   const placed = load.status === "ready" ? load.placed : null;
+  // The placement and the Chief's summary use `history`, read when the level was placed; the
+  // Forget button uses `storedRuns`, which also counts a run that ended since.
+  const history = load.status === "ready" ? load.history : null;
+  const floor = load.status === "ready" ? load.floor : null;
   const zones = useMemo(() => (placed ? chiefZones(placed) : null), [placed]);
 
   // The crew's plan from the Plan screen, read after mount (storage is the browser's).
@@ -166,7 +191,13 @@ export function RunScreen({
       latestSeq.current = seq;
       let request: ReturnType<typeof chiefRequest>;
       try {
-        request = chiefRequest({ buildingId: building.id, missionId }, placed, zones, state, state.alarmEvents[seq]);
+        // The run's first transition carries the summary of earlier runs, so the Chief's first word can adapt.
+        const watch = placed.watch;
+        const summary =
+          seq === 0 && history
+            ? chiefHistory(history, zones, watch ? { guardId: watch.guardId, zoneId: watch.entryId, startZone: watch.startZone } : undefined)
+            : null;
+        request = chiefRequest({ buildingId: building.id, missionId }, placed, zones, state, state.alarmEvents[seq], summary);
       } catch (error) {
         // A board the request can't carry: the panel says so, and the turn (and its log) goes on.
         setChief({ status: "error", seq, message: error instanceof Error ? error.message : String(error) });
@@ -185,7 +216,7 @@ export function RunScreen({
             // still shows it, marked late, but no guard moves on it. The log keeps it as a late
             // decision, so the Debrief lists every re-plan the player watched.
             lateChief.current = { turn: current.turn, chief: orders, chiefSource: answer.source };
-            saveRunLog(runLogOf(current, chiefSources.current, lateChief.current), undefined, missionId);
+            saveRunLog(runLogOf(current, chiefSources.current, lateChief.current, watchEntry.current), undefined, missionId);
             setChief({ status: "ready", seq, answer, applied: result, late: true });
             return;
           }
@@ -194,7 +225,7 @@ export function RunScreen({
           chiefSources.current.set(result.run.turn, answer.source);
           latestRun.current = result.run;
           setRun(result.run);
-          saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current), undefined, missionId);
+          saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current, watchEntry.current), undefined, missionId);
           setChief({ status: "ready", seq, answer, applied: result });
         },
         (error: unknown) => {
@@ -203,7 +234,7 @@ export function RunScreen({
         },
       );
     },
-    [placed, zones, building.id, missionId],
+    [placed, zones, history, building.id, missionId],
   );
 
   const play = useCallback(
@@ -219,9 +250,20 @@ export function RunScreen({
       setRun(result.run);
       setStatus(describeTurn(placed, run, result.run));
       if (result.run.alarmEvents.length > run.alarmEvents.length) callChief(result.run, result.run.alarmEvents.length - 1);
-      saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current), undefined, missionId);
+      // A run that just ended joins the history; the next visit's guards start from it.
+      try {
+        const record = run.status === "playing" ? runRecordOf(result.run) : null;
+        if (record) {
+          appendRunHistory(building.id, record, undefined, missionId);
+          // The Forget button counts what is stored now, not what this run was placed from.
+          setStoredRuns(loadRunHistory(building.id, undefined, missionId).length);
+        }
+      } catch {
+        // A board the record can't be read from: the history misses this run, the log below is still saved.
+      }
+      saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current, watchEntry.current), undefined, missionId);
     },
-    [placed, run, callChief, missionId],
+    [placed, run, callChief, building.id, missionId],
   );
 
   const retryChief = useCallback(() => {
@@ -229,11 +271,34 @@ export function RunScreen({
     if (current && current.alarmEvents.length > 0) callChief(current, current.alarmEvents.length - 1);
   }, [callChief]);
 
+  /** Forgets the earlier runs and places the level again, in its default posture. */
+  const forgetHistory = useCallback(() => {
+    clearRunHistory(building.id, undefined, missionId);
+    setStoredRuns(0);
+    // No run on the board until the level is placed again: no key plays the old one meanwhile.
+    latestRun.current = null;
+    setRun(null);
+    setLoad({ status: "loading" });
+    setAttempt((a) => a + 1);
+  }, [building.id, missionId]);
+
   const restart = useCallback(() => {
-    if (!placed) return;
-    startRun(placed.level);
+    if (!placed || !run) return;
+    if (run.status !== "playing" && manifest && floor) {
+      // The run that ended joined the history: place again from it, as a reload would (#35).
+      try {
+        placeAndStart(manifest, floor);
+      } catch (error) {
+        latestRun.current = null;
+        setRun(null);
+        setLoad({ status: "error", message: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+    } else {
+      startRun(placed.level);
+    }
     setStatus("Back at the start. The guards are on their rounds.");
-  }, [placed, startRun]);
+  }, [placed, run, manifest, floor, placeAndStart, startRun]);
 
   const revealed = useChiefStream(chief);
   const hidden = useMemo(() => hiddenRoutes(chief, revealed), [chief, revealed]);
@@ -303,6 +368,17 @@ export function RunScreen({
             <span aria-hidden className="h-4 w-px bg-border" />
             <span className="truncate text-sm text-text-1">{manifest?.mission.title}</span>
             <div className="ml-auto flex items-center gap-2">
+              {storedRuns > 0 ? (
+                <Button
+                  variant="ghost"
+                  onClick={forgetHistory}
+                  // Mid-run it would throw the run away: it waits for the start or the end.
+                  disabled={!run || (run.turn > 0 && run.status === "playing")}
+                  data-testid="forget-history"
+                >
+                  Forget {storedRuns === 1 ? "1 earlier run" : `${storedRuns} earlier runs`}
+                </Button>
+              ) : null}
               <LensToggle on={lens} onToggle={toggleLens} disabled={!run} />
               <Button variant="ghost" onClick={restart} disabled={!run || run.turn === 0}>
                 <RotateCcw aria-hidden />

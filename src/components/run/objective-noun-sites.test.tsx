@@ -63,12 +63,20 @@ describe.each([
     expect(renderToStaticMarkup(<Outcome placed={here} run={run} />)).toContain(`Out with the ${noun}.`);
   });
 
-  it("names the noun in the dock guard's and the cleaners' rules on the Why card", () => {
-    const rules = [
-      ...here.guards.flatMap((g) => (g.post ? [g.post.rule] : [])),
-      ...here.cleaners.map((c) => c.rule),
-    ];
-    expect(rules.length).toBeGreaterThan(0);
+  it("names the noun in the posts' and the cleaners' rules on the Why card, the watch post's included", () => {
+    // The watch post (#35) stands only when a later run watches an earlier way in: place one for each entry.
+    const watched = here.entries.map((e) =>
+      placeLevel(LevelManifest.parse(structuredClone(cached)), structuredClone(FIXTURE_FLOORS[id]), RUN_SEED, undefined, {
+        watchEntry: e.entryId,
+      }),
+    );
+    const rules = [here, ...watched].flatMap((level) => [
+      ...level.guards.flatMap((g) => (g.post ? [g.post.rule] : [])),
+      ...level.cleaners.map((c) => c.rule),
+    ]);
+    expect(rules.some((r) => r.startsWith("Posted on the nearest node to the dock"))).toBe(true);
+    expect(rules.some((r) => r.startsWith("Posted near the way in"))).toBe(true);
+    expect(here.cleaners.length).toBeGreaterThan(0);
     for (const rule of rules) {
       expect(rule).toMatch(new RegExp(`\\bthe ${noun}$`));
       for (const other of others) expect(rule).not.toMatch(new RegExp(`\\b${other}\\b`));
