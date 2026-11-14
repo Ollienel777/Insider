@@ -16,6 +16,11 @@ interface BuildingScreenProps {
    * same element either way, so what it holds keeps its state.
    */
   panelClosed?: boolean;
+  /**
+   * Below `lg`, where the panel stacks under the visual, gives the visual
+   * more height first: the Run screen in Live, whose rows sit around the board.
+   */
+  visualTall?: boolean;
 }
 
 /**
@@ -23,14 +28,24 @@ interface BuildingScreenProps {
  * side panel on the right with its primary action pinned to the bottom. Below
  * `lg` the panel stacks under the visual.
  */
-export function BuildingScreen({ visual, panel, action, visualLabel, panelClosed = false }: BuildingScreenProps) {
+export function BuildingScreen({
+  visual,
+  panel,
+  action,
+  visualLabel,
+  panelClosed = false,
+  visualTall = false,
+}: BuildingScreenProps) {
   return (
     <div
       className={cn(
         "grid min-h-0 flex-1",
         panelClosed
           ? "grid-rows-[minmax(320px,1fr)]"
-          : "grid-rows-[minmax(320px,1fr)_auto] lg:grid-cols-[minmax(0,1fr)_400px] lg:grid-rows-1",
+          : [
+              visualTall ? "grid-rows-[minmax(560px,1fr)_auto]" : "grid-rows-[minmax(320px,1fr)_auto]",
+              "lg:grid-cols-[minmax(0,1fr)_400px] lg:grid-rows-1",
+            ],
       )}
     >
       <section aria-label={visualLabel} className="relative min-h-0 overflow-hidden bg-surface-0">

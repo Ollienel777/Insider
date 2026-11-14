@@ -84,8 +84,8 @@ export function DangerMeter({
           ))}
         </span>
       </div>
-      <p className="mt-1 flex flex-wrap items-baseline gap-x-2 text-base">
-        <span role="status" aria-live="assertive" data-testid="danger-level" className={cn("font-semibold", style.text)}>
+      <p className="flex flex-wrap items-baseline gap-x-2 text-base">
+        <span role="status" aria-live="assertive" data-testid="danger-level" className={cn("text-lg font-semibold", style.text)}>
           {style.label}
         </span>
         <span data-testid="danger-watchers" data-noticed={noticed ? "true" : "false"} className={noticed ? "text-text-1" : "text-text-2"}>

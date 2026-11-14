@@ -1,13 +1,15 @@
 import { LockKeyhole } from "lucide-react";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 // The objective line (issue 100): where the player is going. A mono caps
-// label, the goal in the mission's own words, and the hops left to it. It
-// takes plain words and numbers and knows nothing about the board, so the
-// first-person scan view shows the same line.
+// label, the goal in the mission's own words, and the hops left to it. Once
+// the run is over, the same line says how it ended. It takes plain words and
+// numbers and knows nothing about the board, so the first-person scan view
+// shows the same line.
 
 export interface ObjectiveLineProps {
-  /** The mono caps label over the goal: "Objective", "Way out". */
+  /** The mono caps label over the goal: "Objective", "Way out", "Caught". */
   label: string;
   /** The goal, in a short line. */
   goal: string;
@@ -17,24 +19,48 @@ export interface ObjectiveLineProps {
   locks?: number;
   /** A word beside the label once the objective is in hand: "Files taken". */
   taken?: string | null;
+  /** The label's colour: `success` and `danger` for how a run ended, the quiet label otherwise. */
+  tone?: "plain" | "success" | "danger";
   /** What the player can do where they stand, in place of the count: "Take the files". */
   action?: { label: string; onAct: () => void; keyHint?: string } | null;
+  /** Controls that follow the line: where to go once the run is over. */
+  children?: ReactNode;
   className?: string;
 }
 
-export function ObjectiveLine({ label, goal, hops, locks = 0, taken = null, action = null, className }: ObjectiveLineProps) {
+const LABEL = { plain: "text-text-3", success: "text-success", danger: "text-danger" } as const;
+
+export function ObjectiveLine({
+  label,
+  goal,
+  hops,
+  locks = 0,
+  taken = null,
+  tone = "plain",
+  action = null,
+  children,
+  className,
+}: ObjectiveLineProps) {
   return (
-    <section aria-label="Objective" data-testid="objective-line" className={cn("flex min-w-0 items-center gap-4", className)}>
+    <section
+      aria-label="Objective"
+      data-testid="objective-line"
+      className={cn("flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2", className)}
+    >
+      {/* The goal and its count stay on one row; only the controls after them wrap under. */}
+      <div className="flex min-w-0 items-center gap-4">
       <div className="min-w-0">
-        <p className="flex items-center gap-2 label-caps text-text-3">
-          {label}
+        <p className="flex items-center gap-2 label-caps">
+          <span data-testid="objective-label" className={LABEL[tone]}>
+            {label}
+          </span>
           {taken ? (
             <span data-testid="objective-taken" className="text-success">
               {taken}
             </span>
           ) : null}
         </p>
-        <p data-testid="objective-goal" className="mt-1 text-base font-medium text-text-1 md:truncate">
+        <p data-testid="objective-goal" className="mt-1 text-base font-medium text-text-1">
           {goal}
         </p>
       </div>
@@ -60,7 +86,12 @@ export function ObjectiveLine({ label, goal, hops, locks = 0, taken = null, acti
           ) : null}
         </button>
       ) : hops !== null ? (
-        <p data-testid="hops-left" data-hops={hops} data-locks={locks} className="flex shrink-0 items-baseline gap-2 border-l border-border pl-4">
+        <p
+          data-testid="hops-left"
+          data-hops={hops}
+          data-locks={locks}
+          className="flex shrink-0 items-baseline gap-2 border-l border-border pl-4"
+        >
           <span className="font-mono text-lg font-medium text-text-1">{hops}</span>
           <span className="label-caps text-text-2">{hops === 1 ? "hop" : "hops"}</span>
           {locks > 0 ? (
@@ -71,6 +102,8 @@ export function ObjectiveLine({ label, goal, hops, locks = 0, taken = null, acti
           ) : null}
         </p>
       ) : null}
+      </div>
+      {children}
     </section>
   );
 }

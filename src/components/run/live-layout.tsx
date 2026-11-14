@@ -12,7 +12,8 @@
 // row over it and one under it, so they never cover a piece. The side panel
 // (the alarm banner, the Chief, the plan, the guards' orders), the board's bar
 // with the Layer lens, the lens legend and the keys' legend are closed until
-// the one Details control opens them.
+// the one Details control opens them. The board itself is not put away: its
+// guards, cameras and locks still open their Why cards.
 //
 // The board is the same element in every mode, so its pieces, an open Why card
 // and the play mode switch keep their state when the layout changes.
@@ -62,17 +63,22 @@ export function useDetails(live: boolean): [boolean, () => void] {
   return [open, toggle];
 }
 
-/** Who says each kind of line, and how it reads: the crew warns in the alarm's colours, the Chief is overheard. */
+/**
+ * Who says each kind of line, and how it reads. The crew is the voice in the
+ * player's ear: the next step in the accent, a warning in the alarm's colours.
+ * The Chief is the other side, overheard.
+ */
 const VOICE: Readonly<Record<RadioKind, { speaker: string; tone: RadioTone }>> = {
-  step: { speaker: "Crew", tone: "plain" },
+  step: { speaker: "Crew", tone: "next" },
+  note: { speaker: "Crew", tone: "plain" },
   noise: { speaker: "Crew", tone: "warning" },
   sighting: { speaker: "Crew", tone: "danger" },
   chief: { speaker: "Chief", tone: "plain" },
 };
 
-/** A radio message as the radio line shows it: with its speaker and its tone. */
+/** A radio message as the radio line shows it: with its speaker, its tone and, for the Chief, where it came from. */
 export function voiced(message: RadioMessage | null): RadioLineProps["line"] {
-  return message ? { ...VOICE[message.kind], text: message.text } : null;
+  return message ? { ...VOICE[message.kind], text: message.text, tag: message.tag ?? null } : null;
 }
 
 /** The rule under the HUD's top row: nothing at Calm, the alarm's colour above it. */
@@ -82,6 +88,8 @@ const HUD_RULE: Readonly<Record<AlarmState, string>> = {
   alert: "border-danger",
   lockdown: "border-danger",
 };
+
+const OUTCOME_TONE = { won: "success", caught: "danger" } as const;
 
 export interface RunLayoutProps {
   mode: PlayMode;
@@ -94,6 +102,8 @@ export interface RunLayoutProps {
   loading: boolean;
   /** Takes the objective, from the objective line's own button. */
   onTake: () => void;
+  /** Starts the run over, from the objective line once the run has ended. */
+  onRestart: () => void;
   /** The board's bar: the floor's source, the mission, the Layer lens and Restart. */
   bar: ReactNode;
   /** The board's area, with whatever sits over its corners. */
@@ -106,15 +116,17 @@ export interface RunLayoutProps {
   panel: ReactNode;
   /** The screen's primary action, once the run is over. */
   action?: ReactNode;
-  /** The run's end, for Live with the panel closed: how it ended, and Restart. Null while the run is on. */
-  end?: { outcome: ReactNode; onRestart: () => void } | null;
 }
 
 /**
  * The Run screen's layout. In Tactical: the bar, the board, the legend and
  * the status line, with the panel beside them, as before Live existed. In
  * Live: the HUD's two rows around the board, and the rest only while Details
- * is open.
+ * is open; while the board is set up, the HUD's skeleton. With no board coming
+ * there is no run to show a HUD for, and Live looks as Tactical does.
+ * Once a Live run is over with the panel closed, the objective line
+ * says how it ended and carries the screen's action and Restart, which the
+ * closed panel and bar would otherwise hold.
  */
 export function RunLayout({
   mode,
@@ -123,20 +135,23 @@ export function RunLayout({
   hud,
   loading,
   onTake,
+  onRestart,
   bar,
   board,
   legend,
   footer,
   panel,
   action,
-  end = null,
 }: RunLayoutProps) {
-  const live = mode === "live";
-  const open = panelsOpen(mode, details);
+  // Live's layout is for a run: with no board coming (no floor, an error), the screen is Tactical's own.
+  const live = mode === "live" && (hud !== null || loading);
+  const open = !live || details;
+  const objective = hud?.objective ?? null;
   return (
     <BuildingScreen
       visualLabel="Run board"
       panelClosed={!open}
+      visualTall={live}
       visual={
         <div className="absolute inset-0 flex flex-col">
           {live ? (
@@ -148,29 +163,34 @@ export function RunLayout({
                 HUD_RULE[hud?.danger.alarm ?? "calm"],
               )}
             >
-              {hud ? (
+              {objective ? (
                 <ObjectiveLine
-                  label={hud.objective.label}
-                  goal={hud.objective.goal}
-                  hops={hud.objective.hops}
-                  locks={hud.objective.locks}
-                  taken={hud.objective.taken}
-                  action={hud.objective.take ? { label: hud.objective.take, onAct: onTake, keyHint: "Space" } : null}
+                  label={objective.label}
+                  goal={objective.goal}
+                  hops={objective.hops}
+                  locks={objective.locks}
+                  taken={objective.taken}
+                  tone={objective.outcome ? OUTCOME_TONE[objective.outcome] : "plain"}
+                  action={objective.take ? { label: objective.take, onAct: onTake, keyHint: "Space" } : null}
                   className="flex-1 basis-72"
-                />
-              ) : loading ? (
+                >
+                  {objective.outcome && !open ? (
+                    <div data-testid="live-end" className="flex shrink-0 items-center gap-2">
+                      {action}
+                      <Button variant="secondary" data-testid="live-restart" onClick={onRestart}>
+                        <RotateCcw aria-hidden />
+                        Restart
+                      </Button>
+                    </div>
+                  ) : null}
+                </ObjectiveLine>
+              ) : (
                 <div className="flex-1 basis-72">
                   <Skeleton data-testid="hud-skeleton" className="h-11 w-72 max-w-full" />
                 </div>
-              ) : (
-                <div className="flex-1" />
               )}
               <div className="flex items-center gap-6 max-md:w-full max-md:justify-between">
-                {hud ? (
-                  <DangerMeter alarm={hud.danger.alarm} watchers={hud.danger.watchers} />
-                ) : loading ? (
-                  <Skeleton className="h-11 w-48" />
-                ) : null}
+                {hud ? <DangerMeter alarm={hud.danger.alarm} watchers={hud.danger.watchers} /> : <Skeleton className="h-11 w-48" />}
                 <DetailsToggle open={details} onToggle={onDetails} />
               </div>
             </div>
@@ -188,27 +208,12 @@ export function RunLayout({
               <Fragment key="footer">{footer}</Fragment>
             )
           ) : null}
-          {live && end && !open ? (
-            <div
-              key="end"
-              data-testid="live-end"
-              className="mx-auto flex w-full max-w-3xl shrink-0 items-stretch gap-3 px-6 pt-2 pb-4 animate-in fade-in-0 duration-base max-md:flex-col max-md:px-4"
-            >
-              <div className="min-w-0 flex-1">{end.outcome}</div>
-              <div className="flex shrink-0 flex-col justify-center gap-2 max-md:flex-row max-md:[&>*]:flex-1">
-                {action}
-                <Button variant="secondary" data-testid="live-restart" onClick={end.onRestart}>
-                  <RotateCcw aria-hidden />
-                  Restart
-                </Button>
-              </div>
-            </div>
-          ) : live && (hud || loading) ? (
+          {live ? (
             <div key="radio" className="shrink-0 px-6 pt-2 pb-4 max-md:px-4">
               {hud ? (
                 <RadioLine line={voiced(hud.radio)} className="mx-auto max-w-3xl" />
               ) : (
-                <Skeleton className="mx-auto h-14 max-w-3xl rounded-md" />
+                <Skeleton className="mx-auto h-16 max-w-3xl rounded-md max-md:h-20" />
               )}
             </div>
           ) : null}

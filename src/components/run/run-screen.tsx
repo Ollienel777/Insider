@@ -421,7 +421,7 @@ export function RunScreen({
       hud={hud}
       loading={settingUp}
       onTake={() => play({ kind: "take" })}
-      end={over && run && placed ? { outcome: <Outcome placed={placed} run={run} />, onRestart: restart } : null}
+      onRestart={restart}
       bar={
           <div className="flex h-14 shrink-0 items-center gap-3 px-6">
             <span className="flex items-center gap-2 label-caps text-text-2">

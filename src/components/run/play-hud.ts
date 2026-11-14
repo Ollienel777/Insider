@@ -77,8 +77,9 @@ const isAlert = (alarm: AlarmState) => alarm === "alert" || alarm === "lockdown"
  * its own node ends the turn before anyone else looks. Empty when `after` is
  * not the turn after `before`.
  *
- * The log does not keep the middle node of a sprint, so a sighting there is
- * read from the alarm event it raised.
+ * The log does not keep the middle node of a sprint. When only one node can
+ * have been it, the player is looked for there first, as the engine did. When
+ * several can, a sighting on the way is read from the alarm event it raised.
  */
 export function noticedBy(before: RunState, after: RunState): Watcher[] {
   if (after.board !== before.board || after.turn !== before.turn + 1) return [];
@@ -91,36 +92,63 @@ export function noticedBy(before: RunState, after: RunState): Watcher[] {
     // The engine drops a suspicion at Alert (alarm.ts `detect`).
     if (!sighting && alert) return;
     if (sighting) alert = true;
-    if (!found.some((w) => w.id === id)) found.push({ id, sense });
+    const known = found.find((w) => w.id === id);
+    // A guard who heard the player and then saw them is named once, as seeing.
+    if (known) known.sense = sense === "sees" ? "sees" : known.sense;
+    else found.push({ id, sense });
   };
-  const caughtBy = (guards: readonly GuardState[]) => alert && guards.some((g) => g.nodeId === here);
-  const look = (guards: readonly GuardState[], cleaners: readonly GuardState[]) => {
-    for (const guard of guards) if (visibleFrom(board, guard).includes(here)) note(guard.id, "sees", true);
-    for (const cleaner of cleaners) if (visibleFrom(board, cleaner).includes(here)) note(cleaner.id, "sees", false);
+  const caughtOn = (nodeId: string, guards: readonly GuardState[]) => alert && guards.some((g) => g.nodeId === nodeId);
+  const look = (nodeId: string, guards: readonly GuardState[], cleaners: readonly GuardState[]) => {
+    for (const guard of guards) if (visibleFrom(board, guard).includes(nodeId)) note(guard.id, "sees", true);
+    for (const cleaner of cleaners) if (visibleFrom(board, cleaner).includes(nodeId)) note(cleaner.id, "sees", false);
+  };
+  /** What the turn's alarm events name and the replay above did not reach: a sprint's middle node, when it could be one of several. */
+  const withEvents = () => {
+    for (const { cause } of after.alarmEvents.slice(before.alarmEvents.length)) {
+      if (cause.id === undefined) continue;
+      const sense = cause.kind === "noise" ? "hears" : cause.kind === "decay" || cause.kind === "set" ? null : "sees";
+      const known = found.find((w) => w.id === cause.id);
+      if (sense === "sees" && known) known.sense = "sees";
+      else if (sense && !known) found.push({ id: cause.id, sense });
+    }
+    return found;
   };
 
-  // A sighting on the way (a sprint's middle node), from the event it raised.
-  for (const event of after.alarmEvents.slice(before.alarmEvents.length)) {
-    const { cause } = event;
-    if (cause.id === undefined || event.turn !== before.turn) continue;
-    if (cause.kind === "camera" || cause.kind === "guard") note(cause.id, "sees", true);
+  // The player's half of the turn: each node they entered, in order (the node they stayed on, for a wait).
+  const via = kind === "sprint" ? sprintVia(before, here) : null;
+  for (const nodeId of via ? [via, here] : [here]) {
+    if (!caughtOn(nodeId, before.guards)) {
+      for (const camera of board.cameras) if (watched(camera, before.turn).includes(nodeId)) note(camera.id, "sees", true);
+      look(nodeId, before.guards, before.cleaners);
+    }
+    if (caughtOn(nodeId, before.guards)) return withEvents();
   }
-  alert = isAlert(before.alarm);
-
-  // The player's half of the turn.
-  if (!caughtBy(before.guards)) {
-    for (const camera of board.cameras) if (watched(camera, before.turn).includes(here)) note(camera.id, "sees", true);
-    look(before.guards, before.cleaners);
-  }
-  if (caughtBy(before.guards)) return found;
   if (kind === "sprint" || kind === "pick") {
     const heard = withinHops(board, here, hearingRange(board, here));
     for (const guard of before.guards) if (heard.has(guard.nodeId)) note(guard.id, "hears", false);
   }
   // The guards' half: they have moved, and look again. A run the player just won ends before it.
-  if (after.status === "won") return found;
-  if (!caughtBy(after.guards)) look(after.guards, after.cleaners);
-  return found;
+  if (after.status === "won") return withEvents();
+  if (!caughtOn(here, after.guards)) look(here, after.guards, after.cleaners);
+  return withEvents();
+}
+
+/**
+ * The middle node of the sprint that took the player from where `before` has
+ * them to `to`, when exactly one node can have been it: a neighbour of both,
+ * through doors that were open. Null when several can, and when `to` is itself
+ * a neighbour (a guard caught the player on the middle node, and the sprint
+ * stopped there).
+ */
+export function sprintVia(before: RunState, to: string): string | null {
+  const { board } = before;
+  const open = (exit: Exit) => exit.doorId === undefined || !before.locked.includes(exit.doorId);
+  const firsts = neighbours(board, before.playerNode);
+  if (firsts.some((exit) => exit.to === to)) return null;
+  const middles = firsts
+    .filter((first) => open(first) && neighbours(board, first.to).some((second) => second.to === to && open(second)))
+    .map((first) => first.to);
+  return middles.length === 1 ? middles[0] : null;
 }
 
 /** The callout for a turn somebody noticed the player on: who, and the room. Null when nobody did. */
@@ -167,6 +195,8 @@ export interface ObjectiveInfo {
   taken: string | null;
   /** The player stands on the objective and can take it: the label of the action that does. */
   take: string | null;
+  /** How the run ended; null while it is on. */
+  outcome: "won" | "caught" | null;
 }
 
 /**
@@ -176,24 +206,50 @@ export interface ObjectiveInfo {
  */
 export function objectiveInfo(placed: PlacedLevel, run: RunState, objective: string, exitCondition: string): ObjectiveInfo {
   const noun = objectiveNoun(placed.level.missionId);
-  const taken = run.carrying ? `${noun[0].toUpperCase()}${noun.slice(1)} taken` : null;
-  if (run.status === "won") return { label: "Clean exit", goal: `Out with the ${noun}.`, hops: null, locks: 0, taken: null, take: null };
+  const still = { hops: null, locks: 0, taken: null, take: null };
+  if (run.status === "won") return { ...still, label: "Clean exit", goal: `Out with the ${noun}.`, outcome: "won" };
   if (run.status === "caught") {
     const room = roomName(placed.level.floor, run.playerNode);
-    return { label: "Caught", goal: `Caught in the ${room}.`, hops: null, locks: 0, taken, take: null };
+    return { ...still, label: "Caught", goal: `Caught in the ${room}.`, outcome: "caught" };
   }
   const route = routeLeft(run);
   const hops = route?.hops ?? null;
   const locks = route?.locks ?? 0;
   if (!run.carrying) {
-    return { label: "Objective", goal: objective, hops, locks, taken: null, take: canTake(run) ? `Take the ${noun}` : null };
+    const take = canTake(run) ? `Take the ${noun}` : null;
+    return { label: "Objective", goal: objective, hops, locks, taken: null, take, outcome: null };
   }
   const exit = placed.entries.find((e) => e.nodeId === route?.goal);
-  return { label: "Way out", goal: exit ? `Out by the ${exit.label.toLowerCase()}` : exitCondition, hops, locks, taken, take: null };
+  const goal = exit ? `Out by the ${exit.label.toLowerCase()}` : exitCondition;
+  return { label: "Way out", goal, hops, locks, taken: `${noun[0].toUpperCase()}${noun.slice(1)} taken`, take: null, outcome: null };
 }
 
-/** The crew's next plan step: the briefed plan's when there is one, else the level's own (as the Run panel's plan). */
+/** The radio's last word once the run is over: what it took, and where the replay is. */
+export function endNote(run: RunState): string {
+  const raises = run.alarmEvents.filter((e) => e.cause.kind !== "decay").length;
+  const turns = `${run.turn} ${run.turn === 1 ? "turn" : "turns"}`;
+  return `${turns}, ${raises} alarm ${raises === 1 ? "raise" : "raises"}. The debrief has the replay.`;
+}
+
+/**
+ * Where the Chief's answer came from, as the word the radio shows beside its
+ * lines: nothing for a live model's, the Chief panel's own chip for a recorded
+ * or rule-based one, and "Late" for one that landed after the run had ended.
+ */
+export function chiefTag(state: Extract<ChiefState, { status: "ready" }>): string | null {
+  if (state.late) return "Late";
+  return state.answer.source === "model" ? null : state.answer.source === "recorded" ? "Recorded" : "Rule-based";
+}
+
+/**
+ * The crew's line when nobody else is talking. Until the player has moved, it
+ * is where they are and how to move (the status line's opening words, which
+ * Live puts away). After that it is the next plan step: the briefed plan's
+ * when there is one, else the level's own, as in the Run panel's plan.
+ */
 export function nextStep(placed: PlacedLevel, run: RunState, objective: string, crewPlan: StoredCrewPlan | null): string | null {
+  const moved = run.turns.some((t) => t.player.kind !== "wait");
+  if (!moved) return `You're in at the ${placed.entries[0].label.toLowerCase()}. Pick a number to move.`;
   const briefed = crewPlan ? crewPlanSteps(placed, run, crewPlan.plan) : [];
   const steps = briefed.length > 0 ? briefed : planSteps(placed, run, objective);
   return steps.find((s) => s.state === "next")?.label ?? null;
@@ -253,7 +309,7 @@ export function usePlayHud({
   chief: ChiefState;
   /** How much of the Chief's answer its stream has shown (`useChiefStream`). */
   revealed: Revealed;
-  /** A line that stands in for the plan step while it applies: the sprint hint. */
+  /** A line that stands in for the plan step while it applies (the sprint hint); null otherwise. */
   notice: string | null;
 }): PlayHud | null {
   const { before, after } = useLastTurn(run);
@@ -262,18 +318,20 @@ export function usePlayHud({
 
   const playing = on && run.status === "playing";
   const step = useMemo(
-    () => (playing ? (notice ?? nextStep(placed, run, mission.objective, crewPlan)) : null),
-    [playing, placed, run, mission, crewPlan, notice],
+    () => (playing ? nextStep(placed, run, mission.objective, crewPlan) : null),
+    [playing, placed, run, mission, crewPlan],
   );
+  // Once the run is over, the radio's last word is how it went.
+  const note = !on ? null : playing ? notice : endNote(run);
   const callout = playing ? calloutOf(watchers, run.turn - 1, roomName(placed.level.floor, run.playerNode)) : null;
-  // A late answer reached no guard (the run had ended): it is not read out.
-  const reading = playing && chief.status === "ready" && !chief.late ? chief : null;
+  // The Chief's own words, who it sends where and why, are read out to the end, after the run's too.
+  const reading = on && chief.status === "ready" ? chief : null;
   const lines = useMemo(
     () => (reading ? chiefLines(reading.answer.orders.rationale, revealed.words) : []),
     [reading, revealed.words],
   );
-  const facts: RadioFacts | null = playing
-    ? { step, callout, chief: reading ? { answer: reading, lines, done: revealed.done } : null }
+  const facts: RadioFacts | null = on
+    ? { step, note, callout, chief: reading ? { answer: reading, lines, done: revealed.done, tag: chiefTag(reading) } : null }
     : null;
   const radio = useRadio(facts);
 
