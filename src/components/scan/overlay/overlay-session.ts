@@ -1,3 +1,5 @@
+"use client";
+
 // What the overlay reads from the Inside view (issue 108), and when: the
 // scan's floor points once, and the camera's pose each time it changes, at
 // most once a frame (the pose streams at about 55 a second while the camera

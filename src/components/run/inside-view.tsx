@@ -92,7 +92,7 @@ export function InsideViewPanel({
   /** The player's node on the board: a sweep id of the scan. */
   sweepId: string;
   /** The run to draw over the scan once the player is open (issue 108). */
-  overlay?: ScanOverlayProps;
+  overlay?: Omit<ScanOverlayProps, "view" | "sweepId">;
 }) {
   const panel = useRef<HTMLElement>(null);
   const host = useRef<HTMLDivElement>(null);
@@ -135,7 +135,7 @@ export function InsideViewPanel({
       </h2>
       <div className="relative aspect-video overflow-hidden rounded-md border border-border bg-surface-1">
         <div ref={host} className="absolute inset-0" />
-        {status === "ready" && view && overlay ? <ScanOverlay view={view} {...overlay} /> : null}
+        {status === "ready" && view && overlay ? <ScanOverlay {...overlay} view={view} sweepId={sweepId} /> : null}
         {status === "connecting" ? <Skeleton className="absolute inset-0 rounded-none bg-surface-1" /> : null}
         {status === "failed" ? (
           <p className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-text-2">

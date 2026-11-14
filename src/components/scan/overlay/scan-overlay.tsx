@@ -8,8 +8,9 @@
 // exits once carrying. Only what the player could see (`seenFrom`). A click on
 // a guard, a cleaner or a camera opens its Why card.
 //
-// The Inside view mounts this once its player is open, so it rides along
-// wherever the player is shown. Nothing it reads leaves the page (SPEC §4.5).
+// Two mounts: the Inside view panel once its player is open (today's side
+// panel), and issue 107's full-stage `ScanStage` through its `overlay` render
+// prop. Nothing it reads leaves the page (SPEC §4.5).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { InsidePose, InsideView, ScanPoint } from "@/adapters/matterport";
@@ -28,12 +29,24 @@ import { sceneOf } from "./scene";
 /** How long a guard or cleaner takes to glide to its new node: the Inside view's own default flight. */
 export const GLIDE_MS = 600;
 
+/**
+ * What the layer takes: exactly what issue 107's `ScanStage` passes its `overlay` render prop
+ * (`view`, `sweepId`, `hops`, `aimed`), plus the run and the placed level.
+ */
 export interface ScanOverlayProps {
+  /** The open Inside view: its pose, its floor points and `project`. */
+  view: InsideView;
+  /**
+   * The node the camera stands on, and the legal hops from it. `ScanStage` mounts the layer only once
+   * the camera stands on the player's node, so these agree with `run`; the layer draws from `run`.
+   */
+  sweepId?: string;
+  hops?: readonly string[];
+  /** The legal hop the player is aiming at (issue 107 works it out); with none, every hop ring is drawn plain. */
+  aimed?: string | null;
+  run: RunState;
   /** The level as placed, for the Why cards. */
   placed: PlacedLevel;
-  run: RunState;
-  /** The legal hop the player is aiming at (#107 works it out); with none, every hop ring is drawn plain. */
-  aimed?: string | null;
 }
 
 /** Where each guard and cleaner stands, by id. */
@@ -67,7 +80,7 @@ interface Glide {
   id: number;
 }
 
-export function ScanOverlay({ view, placed, run, aimed = null }: ScanOverlayProps & { view: InsideView }) {
+export function ScanOverlay({ view, placed, run, aimed = null }: ScanOverlayProps) {
   const wrap = useRef<HTMLDivElement>(null);
   const [points, setPoints] = useState<ReadonlyMap<string, ScanPoint> | null>(null);
   const [pose, setPose] = useState<InsidePose | null>(null);

@@ -210,6 +210,22 @@ describe("the layer in the Inside view", () => {
   });
 });
 
+describe("the layer on issue 107's full-stage scan", () => {
+  it("takes exactly what ScanStage's overlay render prop passes, plus the run and the placed level", () => {
+    const stub = stubView();
+    // The shape of ScanStage's `overlay` argument (src/components/scan/scan-stage.tsx on feat/107-scan-run-view).
+    const scan: { view: InsideView; sweepId: string; hops: readonly string[]; aimed: string | null } = {
+      view: stub.view,
+      sweepId: run().playerNode,
+      hops: ["a3"],
+      aimed: "a3",
+    };
+    const html = renderToStaticMarkup(<ScanOverlay {...scan} run={run()} placed={placedFor()} />);
+    expect(html).toContain('data-testid="scan-overlay"');
+    expect(html).toMatch(/class="pointer-events-none/);
+  });
+});
+
 /** Enough of a placed level for the layer's Why cards. */
 function placedFor(): PlacedLevel {
   const level = run().board.level;

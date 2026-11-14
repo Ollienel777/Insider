@@ -1,3 +1,5 @@
+"use client";
+
 // Test doubles for the scan overlay's tests: a small made-up floor with a wall
 // in it, its floor points, and a pinhole camera standing in for the Inside
 // view's `project`. Nothing here comes from a scan.

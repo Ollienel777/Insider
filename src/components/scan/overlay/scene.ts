@@ -1,3 +1,5 @@
+"use client";
+
 // The overlay's scene (issue 108): what the run board shows from above, as
 // marks standing on the scan's floor points, for the layer over the Inside
 // view to draw in first person.
@@ -48,7 +50,7 @@ export interface SceneInput {
   run: RunState;
   /** Each scan position's floor point, by node id (`InsideView.floorPoints`). */
   points: ReadonlyMap<string, ScanPoint>;
-  /** The legal hop the player is aiming at, if any; #107 works it out from the view. */
+  /** The legal hop the player is aiming at, if any; issue 107 works it out from the view. */
   aimed?: string | null;
   /** Where each guard and cleaner stood before this turn's move, and how far through its glide it is, 0 to 1. */
   glide?: { from: ReadonlyMap<string, string>; t: number };

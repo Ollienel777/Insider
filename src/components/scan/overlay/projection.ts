@@ -1,3 +1,5 @@
+"use client";
+
 // Projection (issue 108): the scene's marks as pixels in the Inside view's
 // frame. The embed SDK cannot place 3D objects in the player, so the overlay
 // is drawn on a layer over it, and every shape is worked out from points in
