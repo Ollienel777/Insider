@@ -88,7 +88,7 @@ test("the demo path: beats 1 to 7 on F1, in fake mode", async ({ page }) => {
   await expect(era).toContainText("1974");
   await expect(era).toContainText("Analog era");
   await expect(table.locator('[data-rule="guards"]')).toContainText("4 guards");
-  await expect(table.locator('[data-rule="dock"]')).toContainText("Entry and exit");
+  await expect(table.locator('[data-rule="dock"]')).toContainText("Always offered as a way in and out");
   await expect(page.getByTestId("briefing").getByRole("heading", { name: "The Romaine Street Papers" })).toBeVisible();
   await shot(page, "beat-3-dossier");
   await page.getByRole("link", { name: "Brief the crew" }).click();

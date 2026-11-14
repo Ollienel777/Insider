@@ -37,6 +37,33 @@ test("LA shows three pins and rows; the Houston tab shows two", async ({ page })
   await expect(page.getByRole("tab", { name: /Houston/ })).toHaveAttribute("aria-selected", "true");
 });
 
+test("the city tab and the address stay in step both ways: after Houston, the wordmark shows LA at /", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("map-skeleton")).toHaveCount(0);
+  const tab = (name: RegExp) => page.getByRole("tab", { name });
+
+  // Tab → address.
+  await tab(/Houston/).click();
+  await expect(page).toHaveURL(/\/\?city=Houston$/);
+  await expect(tab(/Houston/)).toHaveAttribute("aria-selected", "true");
+
+  // Address → tab: the wordmark navigates to `/`, and the tab follows it.
+  await page.getByRole("link", { name: "Heist Anywhere" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(tab(/Los Angeles/)).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("building-row")).toHaveCount(3);
+  await expect(page.getByTestId("building-row").first()).toContainText("Halvorsen Tower");
+
+  // And back to Houston by its tab, then away and Back: the tab follows the address again.
+  await tab(/Houston/).click();
+  await expect(page).toHaveURL(/\/\?city=Houston$/);
+  await page.goto("/b/F1/scout");
+  await page.goBack();
+  await expect(page).toHaveURL(/\/\?city=Houston$/);
+  await expect(tab(/Houston/)).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("building-row")).toHaveCount(2);
+});
+
 test("pins sit where their CoStar coordinates put them, each with three layer dots", async ({ page }) => {
   await page.goto("/");
   const basemap = page.getByTestId("basemap").getByRole("img");
