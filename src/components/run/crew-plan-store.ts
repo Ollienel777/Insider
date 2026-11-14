@@ -1,7 +1,8 @@
 // The briefed crew plan, carried from Plan into Run (SPEC §2 beats 4 to 5).
 // The Plan screen keeps the crew's latest answer in localStorage, beside the
 // run log; the Run screen follows it as the panel's plan. Storage can be
-// blocked or full, so every read and write may quietly do nothing.
+// blocked or full, so every read and write may quietly do nothing: even
+// reaching `localStorage` throws when site data is blocked.
 import { CrewPlan } from "@/domain";
 
 export interface StoredCrewPlan {
@@ -10,20 +11,34 @@ export interface StoredCrewPlan {
   recorded: boolean;
 }
 
-export const crewPlanKey = (buildingId: string) => `heist:crew-plan:${buildingId}`;
+/** Keyed by building and mission (issue 119), like the run log. */
+export const crewPlanKey = (buildingId: string, missionId?: string | null) =>
+  missionId ? `heist:crew-plan:${buildingId}:${missionId}` : `heist:crew-plan:${buildingId}`;
 
-export function saveCrewPlan(buildingId: string, stored: StoredCrewPlan, storage: Pick<Storage, "setItem"> | undefined = globalThis.localStorage): void {
+/** The browser's storage, read inside the caller's `try`: the getter itself throws when site data is blocked. */
+const browserStorage = (): Storage | undefined => globalThis.localStorage;
+
+export function saveCrewPlan(
+  buildingId: string,
+  stored: StoredCrewPlan,
+  storage?: Pick<Storage, "setItem">,
+  missionId?: string | null,
+): void {
   try {
-    storage?.setItem(crewPlanKey(buildingId), JSON.stringify(stored));
+    (storage ?? browserStorage())?.setItem(crewPlanKey(buildingId, missionId), JSON.stringify(stored));
   } catch {
     // The plan on screen still stands; only the hand-off to Run is lost.
   }
 }
 
 /** The stored plan, or null when there is none or it no longer parses. */
-export function loadCrewPlan(buildingId: string, storage: Pick<Storage, "getItem"> | undefined = globalThis.localStorage): StoredCrewPlan | null {
+export function loadCrewPlan(
+  buildingId: string,
+  storage?: Pick<Storage, "getItem">,
+  missionId?: string | null,
+): StoredCrewPlan | null {
   try {
-    const raw = storage?.getItem(crewPlanKey(buildingId));
+    const raw = (storage ?? browserStorage())?.getItem(crewPlanKey(buildingId, missionId));
     if (!raw) return null;
     const value = JSON.parse(raw) as { plan?: unknown; recorded?: unknown };
     const plan = CrewPlan.safeParse(value.plan);

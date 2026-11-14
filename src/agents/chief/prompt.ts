@@ -16,9 +16,15 @@ export function chiefSystemPrompt(manifest: LevelManifest, request: ChiefRequest
 The alarm just changed. Re-plan your guards. Give each guard you move one
 order: hold, sweep, converge or block, and one zone id from the list below.
 Converge on the last-known zone sends a guard onto the spot the intruder was
-last seen. List zone ids to lock in lockZones. Use only these guard and zone
-ids; never invent one. Then give your rationale in clipped radio style, at
-most ${CHIEF_RATIONALE_MAX} characters, naming the guards and zones you moved.
+last seen. List the zone ids to lock in lockZones: lock what the intruder is
+after, not the zones your own guards must pass through. Use only these guard
+and zone ids; never invent one.
+
+The rationale is what you say on the radio to your guards: clipped, plain
+words, short sentences, no filler. Call zones by their names, never their
+ids. Name each guard you moved. At most 160 characters, never more than
+${CHIEF_RATIONALE_MAX}. Example of the voice: "Lost them by the freight
+lift. G3 holds the dock. G1 and G2 sweep east to west. Lock the records room."
 
 Building: ${manifest.buildingId}. Mission: ${manifest.mission.title}.
 Security: ${p.era} era, ${p.guardCount} guards, ${p.cameraKind} cameras, ${p.lockKind} locks.

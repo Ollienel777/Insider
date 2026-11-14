@@ -1,4 +1,4 @@
-// The run board's model and render on the cached F1 level (data/levels/F1.json)
+// The run board's model and render on the cached F1 level (data/levels/F1.romaine-1974.json)
 // placed on the F1 fixture floor, as the Run screen places it.
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -7,7 +7,7 @@ import { LevelManifest, type AlarmState } from "@/domain";
 import { act, createRun, moveGuards, type Action, type RunState } from "@/engine";
 import { sightingsAt } from "@/engine/vision";
 import { placeLevel } from "@/level/placer";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import { ALARM_STYLE, AlarmBanner } from "./alarm-banner";
 import {
   actionForKey,
@@ -18,6 +18,7 @@ import {
   describeTurn,
   guardOrders,
   planSteps,
+  sprintChoices,
 } from "./board";
 import { BoardView } from "./board-view";
 import { frameOf, hull, project } from "./iso";
@@ -222,6 +223,69 @@ describe("choices and keys", () => {
     expect(actionForKey("9", run)).toBeNull();
     expect(actionForKey("x", run)).toBeNull();
     expect(actionForKey("Enter", run)).toBeNull();
+  });
+
+  it("offer, in sprint mode, every node two open hops away and no neighbour, each a sprint the engine takes (#121)", () => {
+    // From the start the one neighbour is the freight lift lobby, so the only sprint is on to the dock corridor.
+    expect(sprintChoices(start()).map((c) => [c.key, c.nodeId, c.kind])).toEqual([[1, "dc-west", "sprint"]]);
+    expect(choices(start(), "sprint")).toEqual(sprintChoices(start()));
+
+    let run = start();
+    for (const step of QUIET_ROUTE.slice(0, 5)) run = press(run, [keyOf(run, step)]);
+    for (const state of [press(start(), ["1"]), run]) {
+      const sprints = sprintChoices(state);
+      const adjacent = new Set(choices(state).map((c) => c.nodeId));
+      expect(sprints.map((c) => c.key)).toEqual(sprints.map((_, i) => i + 1));
+      for (const c of sprints) {
+        expect(adjacent.has(c.nodeId), c.nodeId).toBe(false);
+        expect(c.nodeId).not.toBe(state.playerNode);
+        const result = act(state, c.action);
+        expect(result.ok, `${c.nodeId}: ${result.ok ? "" : result.reason}`).toBe(true);
+        if (result.ok) expect(result.run.turns.at(-1)!.player).toEqual({ kind: "sprint", nodeId: c.nodeId });
+      }
+    }
+  });
+
+  it("make a sprint a guard can hear raise Suspicious, as noise, and log it as a sprint for the Debrief", () => {
+    // Along the quiet route, the first offered sprint a guard is close enough to hear.
+    let run = start();
+    let heard: RunState | null = null;
+    for (const step of QUIET_ROUTE) {
+      for (const c of sprintChoices(run)) {
+        const result = act(run, c.action);
+        if (result.ok && result.run.alarmEvents.some((e) => e.cause.kind === "noise")) {
+          heard = result.run;
+          break;
+        }
+      }
+      if (heard || run.status !== "playing") break;
+      run = press(run, [keyOf(run, step)]);
+    }
+    expect(heard, "some sprint on the quiet route is within a guard's hearing").not.toBeNull();
+    const event = heard!.alarmEvents.find((e) => e.cause.kind === "noise")!;
+    expect(event.to).toBe("suspicious");
+    expect(heard!.turns.at(-1)!.player.kind).toBe("sprint");
+  });
+
+  it("leave a node behind a locked door out of the sprints until the door is open", () => {
+    let run = start();
+    for (const step of QUIET_ROUTE.slice(0, 4)) run = press(run, [keyOf(run, step)]);
+    expect(run.playerNode).toBe("dc-mid");
+    expect(sprintChoices(run).map((c) => c.nodeId)).not.toContain("rr-door");
+    run = press(run, [keyFor(run, "dc-east")]);
+    const pick = String(choices(run).find((c) => c.kind === "pick")!.key);
+    run = press(run, [pick, pick, keyFor(run, "dc-mid")]);
+    expect(sprintChoices(run).map((c) => c.nodeId)).toContain("rr-door");
+  });
+
+  it("map a number in sprint mode to that sprint, and say so in the turn's line", () => {
+    const run = start();
+    const action = actionForKey("1", run, "sprint");
+    expect(action).toEqual({ kind: "sprint", to: "dc-west", via: F1_DEMO.freightLiftWait });
+    expect(actionForKey("2", run, "sprint")).toBeNull();
+    const after = play(run, [action!]);
+    expect(after.playerNode).toBe("dc-west");
+    expect(describeTurn(placed, run, after)).toBe("You sprint to the Dock Corridor.");
   });
 
   it("play the crew's quiet route by keys alone, Calm all the way, to a win, and then take no keys", () => {

@@ -73,7 +73,6 @@ timezone, for example `America/Toronto`.
   event.** This harness repo predates the event, so it cannot be the
   submission repo. At hacking start, the product is built in a fresh public
   repo with the harness tooling copied in.
-- The project must be built during the hackathon.
 - Teams of up to four.
 - **CoStar's data covers Houston, TX and Los Angeles, CA only**, and its API
   keys are handed out at the event. An entry must use at least two of the

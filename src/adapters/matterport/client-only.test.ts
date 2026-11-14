@@ -33,7 +33,7 @@ function isClientModule(source: string): boolean {
 function violation(file: string, source: string): string | null {
   const imports = [...source.matchAll(SPECIFIER)].map((m) => m[1]).filter((s) => targetsAdapter(file, s));
   if (imports.length === 0 || isClientModule(source)) return null;
-  return `${path.relative(srcDir, file)} imports ${imports.join(", ")} but is not a "use client" module`;
+  return `${path.relative(srcDir, file).split(path.sep).join("/")} imports ${imports.join(", ")} but is not a "use client" module`;
 }
 
 function sourceFiles(dir: string): string[] {

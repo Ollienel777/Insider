@@ -1,5 +1,6 @@
 {
   "buildingId": "F1",
+  "missionId": "romaine-1974",
   "securityProfile": {
     "era": "analog",
     "guardCount": 4,
@@ -447,7 +448,7 @@
       "layer": "fiction",
       "field": "mission.inspiredBy",
       "value": "The Summa Corporation burglary, 7000 Romaine St, Hollywood, June 5, 1974",
-      "rule": "Picked from the LA library; inspired by The Summa Corporation burglary, 7000 Romaine St, Hollywood (June 5, 1974), staged in a comparable building"
+      "rule": "The mission the player chose; inspired by The Summa Corporation burglary, 7000 Romaine St, Hollywood (June 5, 1974), staged in a comparable building"
     }
   ]
 }

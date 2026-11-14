@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { ScriptedChatModel } from "@/adapters/llm";
 import { LevelManifest } from "@/domain";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import { POST } from "../../app/api/crew/route";
 import { briefCrew, CREW_PROMPT_HEAD, crewContext, crewMessages, loadCrewRecording, routeOrder } from "./index";
 
@@ -51,7 +51,8 @@ describe("routeOrder", () => {
 describe("the crew's prompt", () => {
   it("carries the manifest's zone ids and names, the guard roster and the alarm, and nothing of the floor", () => {
     const context = crewContext(manifest);
-    expect(Object.keys(context).sort()).toEqual(["alarm", "buildingId", "guards", "mission", "objective", "zones"]);
+    expect(Object.keys(context).sort()).toEqual(["alarm", "buildingId", "guards", "mission", "objective", "security", "zones"]);
+    expect(context.security).toEqual({ era: "analog", cameraKind: "analog-sweep", cameraCount: 2, lockKind: "key" });
     expect(context.guards).toEqual(["G1", "G2", "G3", "G4"]);
     for (const zone of context.zones) expect(Object.keys(zone).sort()).toEqual(["id", "name"]);
     expect(context.zones.map((z) => z.id)).toContain("objective");
@@ -61,6 +62,11 @@ describe("the crew's prompt", () => {
     expect(text).toContain(CREW_PROMPT_HEAD);
     for (const token of floorTokens()) expect(text, token).not.toMatch(new RegExp(`\\b${token}\\b`));
     for (const word of ["sightline", "adjacen", "edges", '"x"', '"y"']) expect(text).not.toContain(word);
+
+    // It knows the camera count, not where a camera is, so it is not asked to say what one covers (#30, R1-N2).
+    const system = crewMessages(context, DEMO_ORDER)[0].content;
+    expect(system).not.toMatch(/Camera C\d covers/);
+    expect(system).toMatch(/never say which camera\s+watches a zone/);
   });
 });
 

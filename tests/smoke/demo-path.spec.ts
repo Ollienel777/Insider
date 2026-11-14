@@ -1,7 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// The demo path (SPEC §2 beats 1 to 7, §6 step 6, issue #25): one walk across
-// every screen on the production build in fake mode, the way the presenter
+// The demo path (SPEC §2, §6 step 6, issues #25 and #113): one walk from the
+// map to the Debrief and back into a fresh run (Drill Mode is on hold and
+// keeps its own spec), on the production build in fake mode, the way the presenter
 // drives it, at the demo's 1440×900. Each beat waits on what the judge sees,
 // asserts it, and saves a screenshot to test-results/demo-path/. The
 // per-screen specs cover each screen's details; this one proves the screens
@@ -27,7 +28,7 @@ test.use({ viewport: { width: 1440, height: 900 } });
 
 const shot = (page: Page, name: string) => page.screenshot({ path: `test-results/demo-path/${name}.png` });
 const storedLog = (page: Page): Promise<Log> =>
-  page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1") ?? "null"));
+  page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1:romaine-1974") ?? "null"));
 
 /** Presses the number the board shows on the neighbour `nodeId`, and waits for the turn it plays. */
 async function moveTo(page: Page, nodeId: string) {
@@ -39,7 +40,7 @@ async function moveTo(page: Page, nodeId: string) {
   await expect(page.getByTestId("player-piece")).toHaveAttribute("data-node", nodeId);
 }
 
-test("the demo path: beats 1 to 7 on F1, in fake mode", async ({ page }) => {
+test("the demo path: map to Debrief and Try again on F1, in fake mode", async ({ page }) => {
   // The walk takes about 25-30 s in the gate, and Playwright's default test
   // timeout is 30 s: with another gate on the 2-vCPU VM it ran out at 31-33 s
   // (#82). Its budget is #25's "under 90 seconds on CI". A broken beat still
@@ -67,7 +68,7 @@ test("the demo path: beats 1 to 7 on F1, in fake mode", async ({ page }) => {
   await page.getByRole("link", { name: "Scout this building" }).click();
 
   // Beat 2: Scout. The aerial of the picked building, with its tagged entries.
-  await expect(page).toHaveURL(/\/b\/F1\/scout$/);
+  await expect(page).toHaveURL(/\/b\/F1\/scout\?m=romaine-1974$/);
   await expect(page.getByTestId("building-slot")).toHaveText("Halvorsen Tower · Los Angeles");
   const canvas = page.getByTestId("aerial-canvas");
   await expect(canvas).toBeVisible();
@@ -79,22 +80,27 @@ test("the demo path: beats 1 to 7 on F1, in fake mode", async ({ page }) => {
   await page.getByRole("link", { name: "Plan the job" }).click();
 
   // Beat 3: the level is built from the data. The replay fills the Data → Level table.
-  await expect(page).toHaveURL(/\/b\/F1\/dossier$/);
+  await expect(page).toHaveURL(/\/b\/F1\/dossier\?m=romaine-1974$/);
   const dossier = page.getByTestId("dossier");
   await expect(dossier).toHaveAttribute("data-done", "true", { timeout: 10_000 });
   const table = page.getByTestId("data-to-level");
+  // The table opens with why F1 was cast for the mission (beat 4, #119).
+  await expect(table.getByTestId("provenance-row").first()).toHaveAttribute("data-rule", "cast");
+  await expect(table.locator('[data-rule="cast"]')).toContainText(
+    "Cast because: built 1974, Class A, floor 22 on the market, dock on the aerial",
+  );
   const era = table.locator('[data-rule="era"]');
   await expect(era).toHaveAttribute("data-shown", "true");
   await expect(era).toContainText("1974");
   await expect(era).toContainText("Analog era");
   await expect(table.locator('[data-rule="guards"]')).toContainText("4 guards");
-  await expect(table.locator('[data-rule="dock"]')).toContainText("Entry and exit");
+  await expect(table.locator('[data-rule="dock"]')).toContainText("Always offered as a way in and out");
   await expect(page.getByTestId("briefing").getByRole("heading", { name: "The Romaine Street Papers" })).toBeVisible();
   await shot(page, "beat-3-dossier");
   await page.getByRole("link", { name: "Brief the crew" }).click();
 
   // Beat 4: brief the crew. A numbered plan, a warning naming a camera, the ghost path.
-  await expect(page).toHaveURL(/\/b\/F1\/plan$/);
+  await expect(page).toHaveURL(/\/b\/F1\/plan\?m=romaine-1974$/);
   await expect(page.getByTestId("plan-board")).toBeVisible();
   await page.getByTestId("crew-order").fill(DEMO_ORDER);
   await page.getByRole("button", { name: "Brief the crew" }).click();
@@ -107,7 +113,7 @@ test("the demo path: beats 1 to 7 on F1, in fake mode", async ({ page }) => {
   await page.getByRole("link", { name: "Start the run" }).click();
 
   // Beat 5: the run. The level's four guards and two cameras, and the crew's plan carried over.
-  await expect(page).toHaveURL(/\/b\/F1\/run$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/b\/F1\/run\?m=romaine-1974$/, { timeout: 15_000 });
   await expect(page.getByTestId("run-board")).toBeVisible();
   await expect(page.getByTestId("guard-piece")).toHaveCount(4);
   await expect(page.getByTestId("camera-piece")).toHaveText(["C1", "C2"]);
@@ -176,7 +182,7 @@ test("the demo path: beats 1 to 7 on F1, in fake mode", async ({ page }) => {
   await page.getByRole("link", { name: "See the debrief" }).click();
 
   // Beat 6: the debrief, true to the log the run left.
-  await expect(page).toHaveURL(/\/b\/F1\/debrief$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/b\/F1\/debrief\?m=romaine-1974$/, { timeout: 15_000 });
   await expect(page.getByTestId("replay-board")).toBeVisible();
   await expect(page.getByTestId("debrief-outcome")).toHaveAttribute("data-status", "caught");
   await expect(page.getByTestId("debrief-grade")).toHaveText("D");
@@ -209,18 +215,14 @@ test("the demo path: beats 1 to 7 on F1, in fake mode", async ({ page }) => {
   await expect(page.getByTestId("replay-board")).toHaveAttribute("data-frame", String(log.turns.length));
   await expect(page.getByTestId("player-piece")).toHaveAttribute("data-node", last.player.nodeId);
   await shot(page, "beat-6-debrief");
-  await page.getByRole("link", { name: "Run the drill" }).click();
 
-  // Beat 7: Drill Mode. Same building; the evacuation plays out to a time to clear.
-  await expect(page).toHaveURL(/\/b\/F1\/drill$/, { timeout: 15_000 });
-  await expect(page.getByTestId("drill-board")).toBeVisible();
-  const time = page.getByTestId("drill-time");
-  await expect(time).toHaveAttribute("data-phase", "done", { timeout: 12_000 });
-  await expect(time).toHaveAttribute("aria-label", /^\d[\d,]* s$/);
-  await expect(page.getByText("Time to clear", { exact: true })).toBeVisible();
-  const blocked = await page.getByTestId("blocked-stair").getAttribute("data-label");
-  expect(blocked).toBeTruthy();
-  await expect(page.getByTestId("blocked-stair-name")).toHaveText(`${blocked} blocked`);
-  await expect(page.locator('[data-testid="zone-row"][data-cleared="false"]')).toHaveCount(0);
-  await shot(page, "beat-7-drill");
+  // The heist ends at the Debrief (#113; Drill Mode is on hold, SPEC Q8, and
+  // keeps its own assertion in drill.spec.ts): Try again opens a fresh run.
+  await expect(page.getByRole("link", { name: "Run the drill" })).toHaveCount(0);
+  await page.getByTestId("debrief-try-again").click();
+  await expect(page).toHaveURL(/\/b\/F1\/run\?m=romaine-1974$/, { timeout: 15_000 });
+  await expect(page.getByTestId("turn")).toHaveText("0");
+  await expect(page.getByTestId("player-piece")).toHaveAttribute("data-node", "fl-car");
+  await expect(page.getByTestId("alarm-banner")).toHaveAttribute("data-state", "calm");
+  await shot(page, "beat-7-try-again");
 });
