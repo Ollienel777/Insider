@@ -53,25 +53,37 @@ export function freePort() {
   });
 }
 
+/** GitHub Actions: a fresh runner, the one place a gate is sure to be alone. */
+export function onGitHubActions(base = process.env) {
+  return base.GITHUB_ACTIONS === "true";
+}
+
 /**
- * The smoke's port. An explicit PORT wins. CI keeps 3100: a runner is a fresh
- * machine with one gate on it. Otherwise another gate may hold 3100 (two
- * worktrees, two agents on the VM), so ask the OS for a free port. Windows
- * hands out ephemeral ports in order and Linux picks them at random, so two
- * gates get different ones with high probability, not by guarantee. Probing
- * upward from 3100 instead would let both see 3100 free and collide.
+ * The port settled without asking the OS, or null. An explicit PORT wins.
+ * GitHub Actions keeps 3100: each runner is a fresh machine with one gate on
+ * it. `CI` alone is not enough, since cloud sessions and VMs set it too, and
+ * two gates may share one of those.
+ */
+export function fixedPort(base = process.env) {
+  if (base.PORT) return base.PORT;
+  if (onGitHubActions(base)) return DEFAULT_PORT;
+  return null;
+}
+
+/**
+ * The smoke's port: the fixed one, else a free one from the OS, since another
+ * gate may hold 3100 (two worktrees, two agents on the VM). Windows hands out
+ * ephemeral ports in order and Linux picks them at random, so two gates get
+ * different ones with high probability, not by guarantee. Probing upward from
+ * 3100 instead would let both see 3100 free and collide.
  */
 export async function pickPort(base = process.env, find = freePort) {
-  if (base.PORT) return base.PORT;
-  if (isCI(base)) return DEFAULT_PORT;
-  return find();
+  return fixedPort(base) ?? find();
 }
 
 /** The port as the gate's first line reports it, before any is picked. */
 export function portLabel(base = process.env) {
-  if (base.PORT) return base.PORT;
-  if (isCI(base)) return DEFAULT_PORT;
-  return "a free one, picked before the smoke";
+  return fixedPort(base) ?? "a free one, picked before the smoke";
 }
 
 /** The environment every step runs with. PORT is left as the caller set it. */
@@ -197,8 +209,10 @@ function run(command, args, { top, env }) {
   }
 }
 
-export function steps(top, env) {
+/** `exec` and `find` are seams for tests; the gate passes neither. */
+export function steps(top, env, { exec = run, find = freePort } = {}) {
   const ci = isCI();
+  const run = exec;
   const sh = (command, ...args) => () => run(command, args, { top, env });
   return [
     { id: "0", name: "locate", run: () => checkAlias(top) },
@@ -229,7 +243,7 @@ export function steps(top, env) {
       id: "6",
       name: "smoke",
       run: async () => {
-        const smokeEnv = await resolveEnv(env);
+        const smokeEnv = await resolveEnv(env, find);
         console.log(`gate: smoke on PORT=${smokeEnv.PORT}`);
         run("npm", ["run", "smoke"], { top, env: smokeEnv });
       },

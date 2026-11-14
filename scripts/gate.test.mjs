@@ -7,8 +7,8 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
-import { FAKE_ENV, GateError, checkNextRoot, freePort, gateEnv, pickPort, portLabel, resolveEnv } from "./gate.mjs";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { FAKE_ENV, GateError, checkNextRoot, freePort, gateEnv, pickPort, portLabel, resolveEnv, steps } from "./gate.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.dirname(here);
@@ -236,20 +236,21 @@ describe("resolveEnv", () => {
     expect(env.PORT).toBeUndefined();
   });
 
-  it("keeps an explicit PORT, and 3100 in CI", async () => {
+  it("keeps an explicit PORT, and 3100 on GitHub Actions", async () => {
     const never = () => {
       throw new Error("should not look for a free port");
     };
     expect((await resolveEnv(gateEnv({ PORT: "3147" }), never)).PORT).toBe("3147");
-    expect((await resolveEnv(gateEnv({ CI: "true" }), never)).PORT).toBe("3100");
+    expect((await resolveEnv(gateEnv({ CI: "true", GITHUB_ACTIONS: "true" }), never)).PORT).toBe("3100");
   });
 });
 
 describe("portLabel", () => {
   it("names the port before any is picked", () => {
     expect(portLabel({ PORT: "3147" })).toBe("3147");
-    expect(portLabel({ CI: "true" })).toBe("3100");
+    expect(portLabel({ CI: "true", GITHUB_ACTIONS: "true" })).toBe("3100");
     expect(portLabel({})).toBe("a free one, picked before the smoke");
+    expect(portLabel({ CI: "1" })).toBe("a free one, picked before the smoke");
   });
 });
 
@@ -263,13 +264,15 @@ describe("pickPort", () => {
     expect(await pickPort({ PORT: "3147", CI: "true" }, never)).toBe("3147");
   });
 
-  it("keeps 3100 in CI, as before", async () => {
-    expect(await pickPort({ CI: "true" }, never)).toBe("3100");
+  it("keeps 3100 on GitHub Actions, as before", async () => {
+    expect(await pickPort({ CI: "true", GITHUB_ACTIONS: "true" }, never)).toBe("3100");
   });
 
-  it("asks for a free port outside CI, CI=false included", async () => {
+  it("asks for a free port everywhere else, CI=1 included (cloud sessions set it)", async () => {
     const find = async () => "45678";
     expect(await pickPort({}, find)).toBe("45678");
+    expect(await pickPort({ CI: "1" }, find)).toBe("45678");
+    expect(await pickPort({ CI: "true", GITHUB_ACTIONS: "false" }, find)).toBe("45678");
     expect(await pickPort({ CI: "false" }, find)).toBe("45678");
     expect(await pickPort({ CI: "0" }, find)).toBe("45678");
   });
@@ -288,6 +291,24 @@ describe("pickPort", () => {
     } finally {
       await new Promise((resolve) => holder.close(resolve));
     }
+  });
+});
+
+describe("steps: the smoke", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("runs the smoke with the port it logs", async () => {
+    const calls = [];
+    const exec = (command, args, opts) => calls.push({ command, args, env: opts.env });
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const env = gateEnv({ CI: "1" });
+    const smoke = steps("/nowhere", env, { exec, find: async () => "45678" }).find((s) => s.name === "smoke");
+    await smoke.run();
+    expect(log).toHaveBeenCalledWith("gate: smoke on PORT=45678");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].args).toEqual(["run", "smoke"]);
+    expect(calls[0].env.PORT).toBe("45678");
+    expect(calls[0].env.HEIST_MODE).toBe("fake");
   });
 });
 
