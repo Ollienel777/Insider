@@ -72,9 +72,24 @@ export function clearRunLog(buildingId: string, storage?: Pick<Storage, "removeI
   clearStored(buildingId, storage, missionId);
 }
 
-/** The stored log for `buildingId`, or null when there is none, it no longer parses, or storage is blocked. */
-export function loadRunLog(buildingId: string, storage?: Pick<Storage, "getItem">, missionId?: string | null): RunLog | null {
-  if (scanned.has(buildingId)) return inMemory.get(runLogKey(buildingId, missionId)) ?? null;
+/**
+ * The stored log for `buildingId`, or null when there is none, it no longer parses, or storage is blocked.
+ * `memoryOnly` (a CoStar kit building, #95) reads only the log held in memory and removes a stored one.
+ */
+export function loadRunLog(
+  buildingId: string,
+  storage?: Pick<Storage, "getItem"> & Partial<Pick<Storage, "removeItem">>,
+  missionId?: string | null,
+  memoryOnly = false,
+): RunLog | null {
+  if (memoryOnly) {
+    try {
+      (storage ?? browserStorage())?.removeItem?.(runLogKey(buildingId, missionId));
+    } catch {
+      // As with a save.
+    }
+  }
+  if (memoryOnly || scanned.has(buildingId)) return inMemory.get(runLogKey(buildingId, missionId)) ?? null;
   try {
     const raw = (storage ?? browserStorage())?.getItem(runLogKey(buildingId, missionId));
     if (!raw) return null;

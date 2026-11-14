@@ -1,6 +1,6 @@
 "use client";
 
-import { RotateCcw, SkipForward } from "lucide-react";
+import { ChevronRight, RotateCcw, SkipForward } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useReducedMotion } from "@/components/drill/use-reduced-motion";
@@ -20,6 +20,8 @@ import type { CastPinData } from "./pins";
 import { castSchedule, countLeft, pinState, rowsLanded, startElapsed, type PinState } from "./replay";
 import type { MassingView } from "@/components/scout/massing";
 import { scoutHref } from "./scout-href";
+import { ShowcaseCard } from "./showcase-card";
+import type { ShowcaseCast } from "@/lib/showcase-cast";
 
 const LAYER_ORDER = Object.keys(LAYERS) as Layer[];
 
@@ -33,6 +35,11 @@ export interface CastScreenProps {
   scoutable: string[];
   /** One massing view per finalist with a fixture aerial, for its card's thumbnail. */
   thumbnails?: Record<string, MassingView>;
+  /**
+   * The showcase kit building the mission is cast onto (issue 103), live only:
+   * shown over the finalists and picked for "Scout it" until another is.
+   */
+  showcase?: ShowcaseCast | null;
   /** Start with everything shown, as Skip does. For tests. */
   startComplete?: boolean;
 }
@@ -72,7 +79,9 @@ export function reasonLabel(model: string | undefined): string {
  * its Scout with the mission. Skip shows everything at once; Replay starts it
  * again; under reduced motion it starts whole.
  */
-export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, startComplete = false }: CastScreenProps) {
+export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, showcase = null, startComplete = false }: CastScreenProps) {
+  // The showcase building, when the mission has one, is the cast: picked from the start.
+  const showcaseId = showcase?.id ?? null;
   const { funnel, finalists, trace } = result;
   const schedule = useMemo(() => castSchedule(trace, funnel.length), [trace, funnel.length]);
   const [clock, setElapsed] = useState(startComplete ? Number.POSITIVE_INFINITY : 0);
@@ -80,7 +89,7 @@ export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, 
   const reducedMotion = useReducedMotion();
   // Until Replay is pressed, reduced motion (DESIGN.md: streams appear whole) starts at the end.
   const elapsed = runId === 0 ? Math.max(clock, startElapsed(startComplete, reducedMotion)) : clock;
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(showcaseId);
   const [city, switchCity] = useCityTab(mission.city);
   const frame = useRef<number | null>(null);
   const done = elapsed >= schedule.end;
@@ -111,10 +120,10 @@ export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, 
     setElapsed(Number.POSITIVE_INFINITY);
   }, []);
   const replay = useCallback(() => {
-    setSelectedId(null);
+    setSelectedId(showcaseId);
     setElapsed(0);
     setRunId((n) => n + 1);
-  }, []);
+  }, [showcaseId]);
 
   const view = traceView(trace, (i) => elapsed >= schedule.events[i], "casting-director");
   const control = done ? (
@@ -131,6 +140,10 @@ export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, 
 
   const finalistIds = new Set(finalists.map((c) => c.id));
   const selected = cardsShown ? (finalists.find((c) => c.id === selectedId) ?? null) : null;
+  const showcasePicked = cardsShown && showcase !== null && selectedId === showcase.id;
+  // What "Scout it" acts on: the showcase building or a finalist, and whether it has pages to scout.
+  const picked = showcasePicked ? showcase : selected;
+  const canScout = showcasePicked || (selected !== null && scoutable.includes(selected.id));
   const inCity = pins.filter((p) => p.city === city);
   const states = new Map(inCity.map((p) => [p.id, pinState(p.outAt, landed)]));
   const left = inCity.filter((p) => states.get(p.id) === "in");
@@ -149,6 +162,26 @@ export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, 
   ]
     .filter(Boolean)
     .join(" · ");
+
+  const finalistList = (
+    <ol className="mt-3 grid gap-4 md:grid-cols-3">
+      {finalists.map((c, i) => (
+        <li key={c.id} className="min-w-0">
+          <Reveal shown={cardsShown} className="h-full">
+            <FinalistCard
+              candidate={c}
+              rank={i + 1}
+              selected={c.id === selected?.id}
+              scoutable={scoutable.includes(c.id)}
+              reasonLabel={reasonLabel(trace.model)}
+              thumbnail={thumbnails[c.id]}
+              onSelect={setSelectedId}
+            />
+          </Reveal>
+        </li>
+      ))}
+    </ol>
+  );
 
   // DOM order is reading and focus order: the mission and the run first (the
   // page's h1), then the map and the finalists, then the one action.
@@ -202,32 +235,46 @@ export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, 
           </div>
         </section>
 
+        {showcase ? (
+          <section
+            aria-labelledby="showcase-title"
+            data-testid="showcase"
+            className="shrink-0 border-t border-border bg-surface-1 px-4 pt-3 pb-4 md:px-6"
+          >
+            <h2 id="showcase-title" className="label-caps text-text-3">
+              Cast · this mission&apos;s showcase building
+            </h2>
+            <Reveal shown={cardsShown} className="mt-3">
+              <ShowcaseCard showcase={showcase} missionId={mission.id} selected={showcasePicked} onSelect={setSelectedId} />
+            </Reveal>
+          </section>
+        ) : null}
+
         <section
           aria-labelledby="finalists-title"
           data-testid="finalists"
           data-shown={cardsShown}
           className="shrink-0 border-t border-border bg-surface-1 px-4 pt-3 pb-4 md:px-6"
         >
-          <h2 id="finalists-title" className="label-caps text-text-3">
-            Three finalists · pick one to scout
-          </h2>
-          <ol className="mt-3 grid gap-4 md:grid-cols-3">
-            {finalists.map((c, i) => (
-              <li key={c.id} className="min-w-0">
-                <Reveal shown={cardsShown} className="h-full">
-                  <FinalistCard
-                    candidate={c}
-                    rank={i + 1}
-                    selected={c.id === selected?.id}
-                    scoutable={scoutable.includes(c.id)}
-                    reasonLabel={reasonLabel(trace.model)}
-                    thumbnail={thumbnails[c.id]}
-                    onSelect={setSelectedId}
-                  />
-                </Reveal>
-              </li>
-            ))}
-          </ol>
+          {showcase ? (
+            // The showcase is the cast, so the funnel's finalists fold away under it and the map keeps its height.
+            <details data-testid="finalists-fold" className="group/finalists">
+              <summary className="inline-flex h-10 cursor-pointer list-none items-center gap-1 rounded-sm text-text-3 hover:text-text-1 [&::-webkit-details-marker]:hidden">
+                <ChevronRight aria-hidden className="size-4 stroke-[1.5] transition-transform duration-fast group-open/finalists:rotate-90" />
+                <h2 id="finalists-title" className="label-caps">
+                  Or one of the funnel&apos;s three finalists
+                </h2>
+              </summary>
+              {finalistList}
+            </details>
+          ) : (
+            <>
+              <h2 id="finalists-title" className="label-caps text-text-3">
+                Three finalists · pick one to scout
+              </h2>
+              {finalistList}
+            </>
+          )}
           {/* SPEC §1, taste rules: the reasons speak of locks and cameras, so the mission cards' line stands here too. */}
           <p data-testid="cast-disclaimer" className="mt-3 text-sm text-text-2">
             {MISSION_DISCLAIMER}
@@ -237,15 +284,15 @@ export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, 
 
       <div className="flex flex-col gap-2 border-t border-border bg-surface-1 p-4 lg:col-start-2 lg:row-start-2 lg:border-l [&>*]:w-full">
         <p id="selection" data-testid="selection" aria-live="polite" className="text-sm text-text-2">
-          {selected ? (
-            scoutable.includes(selected.id) ? (
+          {picked ? (
+            canScout ? (
               <>
-                <span className="text-text-1">{selected.name}</span>, {selected.neighbourhood}
+                <span className="text-text-1">{picked.name}</span>, {picked.neighbourhood}
               </>
             ) : (
               <>
                 <span className="label-caps text-text-3">Level in prep</span>{" "}
-                <span className="text-text-1">{selected.name}</span> has no floor yet. Pick another finalist.
+                <span className="text-text-1">{picked.name}</span> has no floor yet. Pick another finalist.
               </>
             )
           ) : cardsShown ? (
@@ -254,8 +301,8 @@ export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, 
             "Replaying the Casting Director's run."
           )}
         </p>
-        {selected && scoutable.includes(selected.id) ? (
-          <Link href={scoutHref(selected.id, mission.id)} className={buttonVariants({ variant: "primary" })}>
+        {picked && canScout ? (
+          <Link href={scoutHref(picked.id, mission.id)} className={buttonVariants({ variant: "primary" })}>
             Scout it
           </Link>
         ) : (

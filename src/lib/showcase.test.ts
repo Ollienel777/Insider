@@ -6,7 +6,7 @@ import { warmShowcase } from "@/agents/builder/warm-showcase";
 import { readCachedLevel } from "@/agents/builder/cache";
 import type { CoStarAdapter } from "@/adapters/costar/types";
 import type { Building } from "@/domain";
-import { parseShowcase, showcaseIds, showcaseMission } from "./showcase";
+import { parseShowcase, showcaseBuilding, showcaseIds, showcaseMission } from "./showcase";
 
 const f1 = FIXTURE_BUILDINGS.find((b) => b.id === "F1")!;
 // Fictional kit buildings: F1's fields under kit-style ids.
@@ -35,6 +35,14 @@ describe("SHOWCASE_LEVELS (#93)", () => {
     expect(showcaseIds({})).toBeNull();
     expect(showcaseMission("900001", {})).toBeNull();
     expect(showcaseMission("900001", { SHOWCASE_LEVELS: "900001:romaine-1974" })).toBe("romaine-1974");
+  });
+
+  it("finds a mission's showcase building on the list, the first pair that names it (#103)", () => {
+    const env = { SHOWCASE_LEVELS: "900001:romaine-1974,900002:sunset-1986,900003:romaine-1974" };
+    expect(showcaseBuilding("romaine-1974", env)).toBe("900001");
+    expect(showcaseBuilding("sunset-1986", env)).toBe("900002");
+    expect(showcaseBuilding("night-desk", env)).toBeNull();
+    expect(showcaseBuilding("romaine-1974", {})).toBeNull();
   });
 
   it("shows only the showcase's kit buildings, by list and by id", async () => {

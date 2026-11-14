@@ -29,6 +29,8 @@ export interface DossierScreenProps {
   rows: DataToLevelRow[];
   mission: BriefedMission;
   trace: BuildTrace;
+  /** For a CoStar kit building: where its level comes from (`recordLabel`, #95). A fixture building has none. */
+  recordLabel?: string | null;
   /** Start with everything shown, as Skip does. For tests and reduced motion. */
   startComplete?: boolean;
 }
@@ -44,7 +46,7 @@ export const DISCLAIMER = "Security shown is game fiction derived from building 
  * once; Replay starts it again.
  */
 export function DossierScreen(props: DossierScreenProps) {
-  const { buildingId, name, place, facts, rows, mission, trace, startComplete = false } = props;
+  const { buildingId, name, place, facts, rows, mission, trace, recordLabel = null, startComplete = false } = props;
   const schedule = useMemo(() => replaySchedule(trace, rows.length), [trace, rows.length]);
   const [elapsed, setElapsed] = useState(startComplete ? Number.POSITIVE_INFINITY : 0);
   const [runId, setRunId] = useState(0);
@@ -118,6 +120,11 @@ export function DossierScreen(props: DossierScreenProps) {
               <p className="label-caps text-text-3">Dossier · {buildingId}</p>
               <h1 className="mt-2 text-2xl font-semibold text-text-1">{name}</h1>
               <p className="mt-1 text-sm text-text-2">{place}</p>
+              {recordLabel ? (
+                <p data-testid="record-label" className="mt-3 inline-block rounded-sm border border-border px-1.5 py-0.5 label-caps text-text-2">
+                  {recordLabel}
+                </p>
+              ) : null}
             </header>
 
             <section aria-labelledby="facts-title">

@@ -35,6 +35,7 @@ export default async function PlanPage({
       manifest={cached?.manifest ?? null}
       heistMode={process.env.HEIST_MODE}
       warmModel={configuredModes(process.env).llm === "live"}
+      source={building.source}
     />
   );
 }
