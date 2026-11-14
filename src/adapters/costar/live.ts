@@ -4,7 +4,7 @@
 // Not exercised against CoStar: there is no key yet. Its unit tests run it on
 // a stubbed `fetch`.
 import type { Building, City } from "@/domain";
-import { ENDPOINTS, propertyQuery, spaceQuery, toAvailableSpace, toBuilding, unwrapItem, unwrapList } from "./mapping";
+import { ENDPOINTS, KIT_FILES, propertyQuery, spaceQuery, toAvailableSpace, toBuilding, unwrapItem, unwrapList } from "./mapping";
 import type { CoStarAdapter } from "./types";
 
 export interface LiveCoStarConfig {
@@ -18,6 +18,18 @@ export class CoStarNotConfiguredError extends Error {
   constructor(missing: string[]) {
     super(`CoStar live adapter not configured: ${missing.join(" and ")} missing`);
     this.name = "CoStarNotConfiguredError";
+  }
+}
+
+/**
+ * The live inventory search reads CoStar's data kit, whose field names are
+ * not yet known (#27). Thrown under `withFallback`, it trips the breaker and
+ * the fixture inventory answers.
+ */
+export class CoStarKitNotMappedError extends Error {
+  constructor() {
+    super(`CoStar: the kit inventory search is not mapped yet (${Object.values(KIT_FILES).join(", ")} in COSTAR_KIT_DIR; #27)`);
+    this.name = "CoStarKitNotMappedError";
   }
 }
 
@@ -67,6 +79,9 @@ export function createLiveCoStar(config: LiveCoStarConfig): CoStarAdapter {
     async getAvailableSpace(id: string) {
       const rows = await spacesOf(id);
       return rows === null ? null : toAvailableSpace(rows);
+    },
+    async searchInventory() {
+      throw new CoStarKitNotMappedError();
     },
   };
 }

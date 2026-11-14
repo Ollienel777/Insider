@@ -11,6 +11,18 @@
 import { z } from "zod";
 import { AvailableSpace, Building, type City } from "@/domain";
 
+/**
+ * The only kit files the casting search may read, relative to
+ * `COSTAR_KIT_DIR` (SPEC §4.5): buildings, space for lease or sale, and the
+ * join to Matterport models. Their fields are not pinned until the kit's
+ * `schemas/` are read (#27), so nothing maps them yet.
+ */
+export const KIT_FILES = {
+  properties: "data/commercial-property.jsonl",
+  listings: "data/commercial-listing-summary.jsonl",
+  scans: "commercial-properties.csv",
+} as const;
+
 /** Request paths, relative to `COSTAR_API_BASE`. */
 export const ENDPOINTS = {
   properties: "/properties",
