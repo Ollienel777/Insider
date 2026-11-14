@@ -1,0 +1,434 @@
+# Build spec: Heist Anywhere
+
+The source is `hackathon/DECISION.md` (Heist Anywhere, v3). Where this spec and
+the builder's notes at the top of that file disagree, the notes win. The
+builder's standing instruction is to **build as much as possible with no API
+keys**. So everything below runs keyless on fixture-backed fakes, and live
+mode is something extra that switches on per service once a key exists.
+
+Clock (from `hackathon/EVENT.md`, converted with `harness utc`):
+
+| moment | local | UTC |
+|---|---|---|
+| hacking started | 2026-11-13 02:55 America/New_York | 2026-11-13T07:55Z |
+| feature freeze | 2026-11-15 01:48 America/New_York | 2026-11-15T06:48Z |
+| submission deadline (estimate) | 2026-11-15 09:00 America/New_York | 2026-11-15T14:00Z |
+
+---
+
+## 1. The product
+
+**One-liner.** A turn-based stealth game whose levels are built by an AI agent
+from real Houston and LA buildings: CoStar's record sets the security era, the
+guard force and the quiet and crowded zones, Vexcel's aerials set the ways in
+and out, and Matterport's scan points are the board. Click any guard, camera
+or locked door to see which data put it there.
+
+**Users.**
+- **The player** (the Entertainment track's user): someone who wants a
+  story-driven heist level set in a real building, played in a browser
+  tab in ten minutes.
+- **The fire safety director** (CoStar's "switched on Monday" user): LA's
+  municipal code and Houston's fire code require high-rise drills (yearly in
+  LA, every six months in Houston, per `ideation/round-5/research-heist-fit.md`
+  §5). **Drill Mode** runs the same engine on the same building as an
+  evacuation drill plan: headcount from CoStar's occupied area, stairs from
+  the scan graph, one stair blocked as the scenario. It produces a printable
+  drill plan and record. What makes it different from scan-based VR training
+  (RSET): no setup, no headset, built from data CoStar already holds, in
+  about a minute.
+
+**The story a judge hears.** "Pick any building in LA. The agent reads it.
+1974 means key locks and analog cameras that sweep. Class A means four guards.
+Floor 22 is mostly vacant, so it is dark and quiet. The dock on the aerial
+is your way in. You play a heist inspired by a real one: the 1974 Summa
+Corporation burglary. Brief your crew in plain English, they push back. Trip a
+camera, and the AI security chief re-plans in front of you, and you can read
+why. Then the same engine, same building, runs the fire drill the building
+owes the fire department every year."
+
+**Taste rules (binding).**
+- No current tenants and no members of the public appear anywhere. The game
+  never shows tenant names, even though CoStar holds them; the CoStar adapter
+  does not request tenant fields.
+- Missions are drawn from documented, non-violent corporate history, or are
+  fictional and say so. Each mission card carries an "Inspired by" line with
+  the date and a source, plus "Staged in a comparable building. Security shown
+  is game fiction derived from building class and era, not this building's."
+- Nothing claims to describe a real building's security. Guard posts, cameras
+  and locks are always generated from the rules in §4.3, never from imagery.
+
+## 2. The demo script (2 minutes)
+
+One presenter drives; a judge is invited to pick the building and make the
+fatal move. The demo runs on `main` in whichever mode the rehearsal proved:
+live where keys exist, fake elsewhere. Fake mode is the fallback for every
+beat and must look like the real thing (§7).
+
+| # | time | beat | screen | behaviour | fallback |
+|---|---|---|---|---|---|
+| 1 | 0:00–0:12 | **The hook and the map.** "Every building in LA can be a heist level." | Map (`/`) | A dark map of LA with five prepared buildings as pins. Each pin shows three layer dots (CoStar, Vexcel, Matterport). Hovering a pin shows year built, class and stories. | Fixture buildings; the map tiles are a bundled static basemap image, so no tile server is needed. |
+| 2 | 0:12–0:25 | **Scout.** The judge picks a building; the aerial turns around the real roof, lot and dock. | Scout (`/b/[id]/scout`) | Four oblique views (N, E, S, W) plus the ortho cross-fade as the presenter drags or presses ← →. Tagged entries (dock, garage ramp, roof hatch, lobby) appear as labelled markers. "Plan the job" is the primary action. | Fake Vexcel: a massing render of the building's footprint and height with the same tags. |
+| 3 | 0:25–0:42 | **The level is built from the data.** | Dossier (`/b/[id]/dossier`) | The Level Builder's run replays as a streamed checklist (its todos, subagent tasks and tool calls) in about 6 seconds, and the dossier fills in: CoStar facts, then the **Data → Level** table (year built 1974 → "Analog era: key locks, sweeping CCTV"; Class A → "4 guards, tight rounds"; floor 22 mostly available (suites 2202–2210) → "staged on 22, quiet zones"; dock on aerial → "entry and exit"), then the Game Master's mission briefing. | The run is a cached manifest plus its recorded trace, so this beat never waits on a model. "Rebuild live" is off the demo path. |
+| 4 | 0:42–0:57 | **Brief the crew.** One plain-English order. | Plan (`/b/[id]/plan`) | The presenter types "Go in through the dock, wait for the 2 am round to pass, take the records room." The crew answers within 3 s with a numbered plan, drawn as a ghost path on the board, and **pushes back**: "Camera C2 covers the dock corridor every other turn. Wait one turn at the freight lift." | Fake LLM: keyword-routed recorded crew replies; timeout at 4 s falls back to them with a "recorded reply" chip. |
+| 5 | 0:57–1:27 | **The run, and the wow beat.** | Run (`/b/[id]/run`) | The isometric board. The player hops node to node; guards move after. The judge is handed the mouse and steps into a camera cone. **WOW:** the alarm jumps to Alert, guards immediately start converging (deterministic), and the Security Chief's re-plan streams into the side panel: "Lost them by the freight lift. G3 holds the dock. G1 and G2 sweep east to west. Lock the records room." Guards visibly change routes to match. The presenter clicks a guard: the **Why card** opens ("Posted at the dock because the aerial shows the only truck-height door; the 4th guard comes from Class A"). | Fake Chief: recorded orders per alarm transition, then a deterministic template. Guards never wait for the model. |
+| 6 | 1:27–1:42 | **Debrief.** | Debrief (`/b/[id]/debrief`) | Grade (time, noise, detections), a scrubbable replay of the player's path and every guard's path, and the Chief's decisions as a timeline with each rationale. | Pure client state; no service involved. |
+| 7 | 1:42–2:00 | **Drill Mode: the Monday answer.** "Same engine, same building." | Drill (`/b/[id]/drill`) | One click. Occupants appear in occupied suites (count from CoStar's occupied area), stair B is blocked as the scenario, and the evacuation plays out at speed. The report shows time to clear, the bottleneck, and warden posts, with "Print drill plan". | Deterministic simulation; the narrative paragraph has a recorded fake. |
+
+**Every beat runs on fakes in CI**: the smoke test (§6) walks beats 1 to 7.
+
+## 3. Prize requirements
+
+| prize | requirement (quoted) | source | how it is met, visibly | tickets |
+|---|---|---|---|---|
+| Entertainment (main track) | "Creatively and uniquely incorporate entertainment and media. Examples: story-telling apps, interactive projects…" | `tracks/prizes.md` | A playable heist loop with a Game Master briefing and historical missions (beats 3 to 6) | D11, D15, D17, D20 |
+| Main judging | creativity, utility, charity, avidity, unweighted | `EVENT.md` | Charity: Drill Mode serves building-occupant safety (beat 7). Avidity: polish (M4) and the write-up (M5) | D21, D22, D34–D36, D40 |
+| CoStar | "uses at least two of the three layers and gets something out of the combination" | `tracks/prizes.md` | All three: CoStar sets era, guards and zones; Vexcel sets entries; Matterport sets the board. The Why card and the Layer lens show which layer produced each element | D12, D19, D31 |
+| CoStar | "agentic: reasons, plans and takes action; not a chat wrapper over a property record" | same | The Level Builder deep agent's visible plan and subagent trace (beat 3); the Chief re-planning live (beat 5); the crew pushing back (beat 4) | D11, D15, D16, D18, D30 |
+| CoStar | "solves a real problem for a real person"; 25% "would someone want this switched on Monday?" | same | Drill Mode's drill plan and record for a fire safety director (beat 7) | D21, D22, D32 |
+| CoStar | "spatial and visual understanding, not only text" | same | The aerial scout, the isometric board with cones and sightlines, the drill flow view | D14, D17, D21 |
+| CoStar | "The data is required" (real data) | same | Live CoStar, Vexcel and Matterport adapters, each with a fake | D25, D26, D27 |
+| LangChain | "Build a deepagent (LangChain's `deepagents` library) for any use case." | `tracks/prizes.md` | The Level Builder is a `deepagents` agent (`createDeepAgent`) with planning (todos), two subagents and its own tools. Its trace is shown in the product, and the README points to the code | D11, D30, D29, D39 |
+| Amazon | "applications that reason, plan, take action and adapt" | `tracks/prizes.md` | The Chief adapts between runs: it reads a summary of the player's previous runs and changes its posture, saying so in its rationale | D33 |
+| Amazon | "Must include: a working prototype or demo, a clear use case and target user, basic documentation, a presentation or pitch" | same | The app; the README's user and use-case section; `DEMO.md`; `devpost.md` | D39, D40, D41 |
+
+## 4. Architecture
+
+One Next.js app (App Router, TypeScript). The game engine runs in the browser.
+Server route handlers hold the keys and talk to CoStar, Vexcel and the model.
+Matterport runs only in the browser (terms, §4.5).
+
+```
+browser                                     server (route handlers)
+───────                                     ───────────────────────
+Map ─ Scout ─ Dossier ─ Plan ─ Run ─ Debrief ─ Drill
+   │       │       │       │      │                 /api/buildings          → CoStarAdapter
+   │       │       │       │      │                 /api/buildings/[id]/aerial → VexcelAdapter
+   │       │       │       │      │                 /api/levels/[id]        → cached manifest (+trace)
+   │       │       │       │      │                 /api/levels/[id]/build  → LevelBuilder (deepagents), SSE
+   │       │       │       │      │                 /api/crew               → Crew (one structured call)
+   │       │       │       │      │                 /api/chief              → Chief (one structured call)
+   │       │       │       │      │                 /api/drill/narrative    → one structured call
+   │       │       │       │      └─ engine (pure TS): turns, guards, detection, alarm, replay
+   │       │       │       └─ placer: manifest roles → nodes on the FloorGraph
+   │       └─ MatterportAdapter (browser): FloorGraph from Showcase SDK, or fixture
+   └─ all LLM calls go through LlmAdapter: fake | anthropic | bedrock (off)
+```
+
+### 4.1 Data model (`src/domain/`, zod schemas, the single source of types)
+
+- **Building**: `id`, `name`, `city` (`LA` | `Houston`), `neighbourhood`,
+  `lat`, `lng`, `yearBuilt`, `buildingClass` (`A` | `B` | `C`), `stories`,
+  `rbaSf`, `typicalFloorSf`, `availableSpace: {floor, suite, sf}[]`,
+  `layers: {costar, vexcel, matterport: boolean}`, `matterportModelId?`,
+  `source: "costar" | "fixture"`. No tenant fields exist in the type.
+- **Aerial**: `views: {dir: "N"|"E"|"S"|"W"|"ortho", url, width, height}[]`,
+  `entries: {id, kind: "dock"|"garage"|"lobby"|"roof"|"service", label, view, x, y, note}[]`,
+  `footprint: [lng, lat][]`, `heightM`, `source`.
+- **FloorGraph** (held in browser memory only in live mode): `nodes: {id, x, y, roomId, tags: ("stair"|"lift"|"entry")[]}[]`,
+  `edges: {a, b, door?: {id, lockable}}[]`, `rooms: {id, label, rect}[]`,
+  `sightlines: Record<nodeId, nodeId[]>`, `source`.
+- **LevelManifest** (cached, server side): `buildingId`, `securityProfile`
+  (era, guard count, patrol tempo, camera kind, lock kind), `zones: {role: "quiet"|"crowded"|"secure"|"objective"|"entry", rule, provenance}[]`,
+  `entries` (chosen from Vexcel tags), `mission` (title, type `heist` |
+  `prevent`, inspiredBy {event, date, sourceUrl}, briefing, objective,
+  exitCondition), and **`provenance: {elementRole, layer, field, value, rule}[]`**,
+  which is what every Why card reads. It holds CoStar- and Vexcel-derived
+  values and fiction only, never Matterport data.
+- **RunLog**: every turn's player action, guard positions, alarm state, Chief
+  orders and rationale. It feeds Debrief, and the summary the Chief adapts
+  from (D33). Kept in `localStorage`.
+
+### 4.2 The hard part: a level that is visibly made of the data, and a live re-plan that never stalls
+
+Two things decide the demo, and both live in deterministic code with the
+model on top:
+
+1. **The rules table** (`src/level/rules.ts`, D12). It maps fields to level
+   parameters deterministically, and each output carries a provenance entry.
+   The deep agent calls it as a tool instead of inventing difficulty, so the
+   numbers are stable and explainable, and the agent's job is choosing,
+   justifying and writing.
+2. **The turn engine** (`src/engine/`, D9, D10). The engine is authoritative.
+   Model output (crew plans, Chief orders) is parsed against a schema and
+   clamped to legal moves; anything unknown is dropped. Guards are not
+   chatbots, so there is nothing to talk past, which answers "can I tell the
+   guard I'm the janitor?" (DECISION risk 3).
+
+### 4.3 The rules table (initial values; D12 owns them)
+
+| input (layer, field) | rule | output |
+|---|---|---|
+| CoStar `yearBuilt` < 1980 | Analog era | key locks (pickable, 2 turns), analog CCTV that sweeps (covers alternate halves each turn), guard rounds on a fixed loop |
+| 1980–1999 | Card and coax | magstripe readers (needs a cloned card, found in the level), PTZ cameras on a 3-turn cycle |
+| 2000–2014 | Networked | prox badge readers, fixed IP cameras, motion sensors in secure zones |
+| ≥ 2015 | Smart | badge plus PIN, IP cameras with analytics (a sighting raises the alarm one extra step), door-held alarms |
+| CoStar `buildingClass` A / B / C | guard force | 4 / 3 / 2 guards; patrol tempo 1 / 1 / 2 turns per hop |
+| CoStar `availableSpace` on the staged floor | vacancy | available suites become **quiet zones**: dark, unpatrolled, sound carries 1 node further. Occupied suites become **crowded zones**: night cleaners who raise Suspicious if they see the player |
+| CoStar `stories` and `availableSpace` across floors | staging floor | the floor with the most available area is staged (the quietest night) and named in the briefing |
+| Vexcel entries | routes in and out | each tag becomes an entry node candidate; the dock and the roof are always offered; the lobby carries a desk guard |
+| Matterport sweeps and rooms | the board | nodes, edges and rooms; doors where an edge crosses rooms; sightlines from same-room line of sight |
+
+### 4.4 Agents
+
+| agent | how it runs | model calls on the demo path | output |
+|---|---|---|---|
+| **Level Builder** | `deepagents` (`createDeepAgent`) with todos, the subagents `data-analyst` (reads CoStar and Vexcel through tools, calls `derive_security_profile`) and `game-master` (picks the mission from the mission library for the building's city and era, writes the briefing), and tools `get_building`, `get_available_space`, `get_aerial_entries`, `derive_security_profile`, `list_missions`, `write_manifest` | **none**: it runs ahead, per building, and its manifest and trace are cached in `data/levels/` | `LevelManifest` and a trace (todos, subagent tasks, tool calls, timings) |
+| **Crew** | one structured call (`withStructuredOutput`, zod) | one per order, at most 3 s, timeout 4 s | `{steps: {zoneId, action}[], pushback, confidence}`. A deterministic validator (D16) checks the steps against the board and adds the concrete warning (camera, turn) |
+| **Security Chief** | one structured call | one per alarm-state change, at most 4 s; guards move deterministically meanwhile | `{orders: {guardId, intent: hold|sweep|converge|block, zoneId}[], lockZones, rationale ≤ 280 chars}` |
+| **Drill narrator** | one structured call | one per drill | scenario paragraph and three recommendations |
+
+**`deepagents` in a keyless TypeScript stack (decision).** The Level Builder
+uses the JS package `deepagents` (npm; `createDeepAgent`, the port of the
+Python library) inside the Next.js server, so there is one deployable and one
+gate. Keyless, it runs on **`ScriptedChatModel`** (`src/adapters/llm/scripted.ts`),
+a LangChain `BaseChatModel` that supports `bindTools` and replays a recorded
+script of assistant messages, tool calls included, per building. The deep
+agent's graph, its todos, its subagent dispatch and **its tools all run for
+real** against the fake adapters: CI exercises the actual agent, not a
+stub. Live, the same code runs on `ChatAnthropic`. The JS port's parity with
+Python is unverified (`ideation/research/sponsor-langchain.md`), so D11 opens
+with a 30-minute check; if `createDeepAgent` in JS lacks todos or subagents, D11
+records it on the ticket and the fallback is a Python `deepagents` sidecar
+(FastAPI, one route), the alternative passed over here because it means two
+runtimes, two installs and twice the gate memory on a 3.7 GB VM.
+
+### 4.5 External services: every one behind an adapter with a fake
+
+| service | adapter | live implementation | fake (fixtures in `fixtures/`) |
+|---|---|---|---|
+| Model | `src/adapters/llm/` | Anthropic API via `@langchain/anthropic` (primary). Bedrock via `@langchain/aws` `ChatBedrockConverse`, present but refused unless `BEDROCK_ENABLED=1` | `ScriptedChatModel` for the builder; keyword-routed recorded replies for the crew; per-transition recorded orders and a deterministic template for the Chief; recorded drill narratives |
+| CoStar | `src/adapters/costar/` | the event toolkit's OpenAPI service (or MCP), field mapping in one file | five fixture buildings, §7 |
+| Vexcel | `src/adapters/vexcel/` | obliques, ortho and entry tags from the event toolkit; imagery proxied, never stored in the repo | a massing render per building (footprint polygon plus height, drawn in Three.js) with hand-placed entry tags |
+| Matterport | `src/adapters/matterport/` (browser only) | Showcase SDK: `Sweep.data` and `Room.data` → `FloorGraph`, in memory; an "Inside view" panel follows the player's sweep | a hand-authored floor per building (`fixtures/floors/F*.json`), authored as fiction, so no Matterport content is involved |
+
+**Matterport terms (DECISION risk 2).** Until the sponsor says yes in writing,
+in live mode: the `FloorGraph` is built in the browser on each load and never
+sent to the server, persisted, or sent to a model. The Crew and the Chief
+receive zone ids and the game-fiction names the manifest gave them, the
+guard roster and the alarm state, never node coordinates or adjacency. The
+placer (D13) maps manifest roles onto nodes in the browser. The cached
+manifest holds no Matterport data. A written yes would let the crew see
+zone adjacency (Q2).
+
+**Latency (DECISION risk 3).** No model call blocks a frame. The builder runs
+ahead; crew and Chief calls are single structured calls with low `max_tokens`
+(400) and a 4 s timeout that falls back to the fake with a visible chip.
+Guards always move on the engine's own decision first.
+
+### 4.6 Missions (`fixtures/missions.json`, D11 and D37)
+
+| id | city | type | title | inspired by |
+|---|---|---|---|---|
+| `romaine-1974` | LA | heist | The Romaine Street Papers | Summa Corporation burglary, 7000 Romaine St, June 5, 1974 (https://www.cia.gov/stories/story/the-exposing-of-project-azorian) |
+| `sunset-1986` | LA | heist | Hole in the Ground | First Interstate Bank tunnel burglary, Sunset Blvd, 1986 (https://lareviewofbooks.org/short-takes/l-four-locations-bank-robbery-capital-world) |
+| `night-desk` | LA | prevent | The Night Desk | fictional, labelled as such |
+| `paper-trail-2001` | Houston | prevent | Paper Trail | the Andersen document shredding, Oct 23 – Nov 9, 2001 (https://en.wikipedia.org/wiki/1400_Smith_Street) |
+| `syntactic-2019` | Houston | prevent | Syntactic | the Trelleborg syntactic-foam trade-secret case, 2019 (https://worldoil.com/news/2019/7/30/prolific-chinese-theft-ring-targeted-deepwater-drilling-technologies/) |
+
+Off-limits: any event with violence or victims (the North Hollywood shootout,
+the Norco robbery, the Dunbar Armored robbery).
+
+## 5. Stack, conventions and areas
+
+- **Stack:** Node 22, TypeScript (strict), Next.js (App Router), Tailwind with
+  CSS-variable tokens, shadcn/ui, `lucide-react`, `motion`; Three.js through
+  `@react-three/fiber` and `@react-three/drei` for the board, the massing
+  render and the drill view; MapLibre GL is **not** used: the map is a static
+  basemap image with projected pins (no tile server to fail). zod for every
+  schema. Vitest for unit tests, Playwright for the smoke. `deepagents`,
+  `langchain`, `@langchain/core`, `@langchain/anthropic`, `@langchain/aws`.
+  No database: manifests are JSON files in `data/levels/`, run logs in
+  `localStorage`.
+- **Layout:** `src/app/` routes; `src/domain/` schemas; `src/adapters/<service>/{index,live,fake}.ts`;
+  `src/level/` rules and placer; `src/engine/`; `src/agents/` (builder, crew,
+  chief, drill); `src/components/<area>/`; `fixtures/`; `data/levels/`;
+  `scripts/`; `tests/` (unit beside code as `*.test.ts`; smoke in `tests/smoke/`).
+- **Conventions:** pure engine code takes a seed and never reads the clock or
+  `Math.random`; every adapter's `index.ts` picks live or fake from the
+  environment and exports one interface; UI uses tokens only (DESIGN.md);
+  no `any` in `src/domain/`; every screen designs its empty, loading and error
+  states.
+- **Repo hygiene:** `.gitattributes` forces LF for `*.sh` and `*.mjs` and marks
+  `fixtures/**/*.png`, `*.jpg` and `*.glb` binary. Each worktree runs its own
+  `npm ci`; nothing is installed globally or shared.
+
+**Areas** (one `area:` label per screen or module):
+
+| label | covers |
+|---|---|
+| `area:gate` | `scripts/gate.mjs`, CI workflow, Playwright smoke, lint and tsconfig |
+| `area:shell` | tokens, root layout, top bar, step rail, mode chip |
+| `area:map` | `/` |
+| `area:scout` | `/b/[id]/scout` |
+| `area:dossier` | `/b/[id]/dossier`, build trace view |
+| `area:plan` | `/b/[id]/plan`, crew UI |
+| `area:run` | `/b/[id]/run` UI: board render, side panel, Why card |
+| `area:debrief` | `/b/[id]/debrief` |
+| `area:drill` | `/b/[id]/drill`, drill simulation, report |
+| `area:engine` | `src/engine/` |
+| `area:level` | `src/level/` rules and placer |
+| `area:domain` | `src/domain/` schemas |
+| `area:agent-builder` | `src/agents/builder/` |
+| `area:agent-crew` | `src/agents/crew/` |
+| `area:agent-chief` | `src/agents/chief/` |
+| `area:adapter-llm` | `src/adapters/llm/` |
+| `area:adapter-costar` | `src/adapters/costar/` |
+| `area:adapter-vexcel` | `src/adapters/vexcel/` |
+| `area:adapter-matterport` | `src/adapters/matterport/` |
+| `area:fixtures` | `fixtures/`, `data/levels/` |
+| `area:docs` | `README.md`, `hackathon/submission/` |
+
+## 6. The gate
+
+**`npm run gate`** runs `node scripts/gate.mjs`, which uses only Node
+built-ins (so it runs before install) and executes these steps in order,
+stopping at the first failure with that step's name and exit code:
+
+0. **Locate.** `top = realpath(git rev-parse --show-toplevel)`. The package
+   the gate runs is `realpath(dirname(package.json next to scripts/))`; it must
+   equal `top`. After install it also resolves the app's own engine entry
+   (`src/engine/index.ts`) the way Vitest's `@/` alias does, and fails unless
+   its realpath starts with `top + "/src/"` and contains none of
+   `/node_modules/`, `/.next/`, `/dist/`, `/.claude/` other than inside `top`
+   itself (a worktree's `top` is under `.claude/worktrees/`; the check is on the
+   path relative to `top`). This catches a gate that tests the main checkout
+   or an installed copy.
+1. **Install.** `npm ci`, then `npx playwright install chromium` (CI adds
+   `--with-deps`).
+2. **Lint.** `npm run lint` (ESLint flat config).
+3. **Typecheck.** `npm run typecheck` (`tsc --noEmit`).
+4. **Test.** `npm run test` (`vitest run`).
+5. **Build.** `npm run build` with `HEIST_MODE=fake` and
+   `NODE_OPTIONS=--max-old-space-size=1536` (the VM has 3.7 GB, and two gates
+   may run at once).
+6. **Smoke.** `npm run smoke`: Playwright starts `next start` on
+   `PORT` (default 3100) with `reuseExistingServer: false`, in fake mode, and
+   **asserts outcomes on the demo path**: the map lists five buildings; the
+   demo building's dossier shows "1974" and "Analog era" and four guards; the
+   crew's reply contains a warning naming a camera; a scripted move sequence
+   on the run screen raises the alarm to Alert and the Chief's rationale
+   appears; debrief shows a grade; drill shows a time to clear. Each
+   milestone ticket extends it; D1's version asserts the shell renders the
+   product name and the fake-mode chip.
+
+**Fake mode is forced**: the gate sets `HEIST_MODE=fake` and every
+per-service mode to `fake`, whatever `.env.local` says.
+
+**`.claude/**` is excluded from every glob**: ESLint `ignores`, `tsconfig.json`
+`exclude`, Vitest `exclude`, Playwright `testIgnore`, Tailwind `content`
+(it lists `src/**` only), and `next.config` output tracing excludes.
+
+**CI** (`.github/workflows/gate.yml`): `on: pull_request` (no `paths` filter)
+and `push: branches: [main]`. One job on `ubuntu-latest`, Node 22, runs
+`npm run gate`. Concurrency:
+
+```yaml
+concurrency:
+  group: gate-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+```
+
+A superseded PR run is cancelled; a push to `main` never is.
+
+## 7. Environment
+
+Names only; `.env.example` lists every one with an empty value. Nothing is
+required: with no `.env.local` the app runs fully in fake mode.
+
+| variable | meaning | default |
+|---|---|---|
+| `HEIST_MODE` | `live` turns on live mode where keys exist; anything else is fake | `fake` |
+| `LLM_MODE`, `COSTAR_MODE`, `VEXCEL_MODE`, `NEXT_PUBLIC_MATTERPORT_MODE` | per-service override, `fake` or `live` | `HEIST_MODE` |
+| `LLM_PROVIDER` | `anthropic` or `bedrock` | `anthropic` |
+| `ANTHROPIC_API_KEY` | Anthropic key | — |
+| `ANTHROPIC_MODEL_FAST` | crew, Chief and drill | `claude-sonnet-4-6` (D28 confirms) |
+| `ANTHROPIC_MODEL_BUILDER` | the Level Builder | `claude-sonnet-4-6` |
+| `BEDROCK_ENABLED` | `1` allows Bedrock calls | unset |
+| `AWS_REGION`, `BEDROCK_MODEL_ID` | Bedrock | `us-east-1`, `us.anthropic.claude-sonnet-4-6` |
+| `LLM_TIMEOUT_MS` | crew and Chief timeout before the fake answers | `4000` |
+| `COSTAR_API_BASE`, `COSTAR_API_KEY` | CoStar toolkit | — |
+| `VEXCEL_API_BASE`, `VEXCEL_API_KEY` | Vexcel | — |
+| `NEXT_PUBLIC_MATTERPORT_SDK_KEY` | Showcase SDK key (domain-bound, browser) | — |
+| `PORT` | server port, also the smoke test's | `3100` |
+
+**How fake mode works.** Each adapter's `index.ts` reads its mode once. In live
+mode with a key missing, it uses the fake and the top bar's mode chip says
+which service is on fixtures ("CoStar: fixtures"). The chip is always visible,
+so a judge is never misled about which data is live.
+
+**Fixtures look real** (judges see them). Five fixture buildings, each an
+invented name at a plausible block in a real neighbourhood, with values
+typical of its era and class, and `source: "fixture"` shown on screen:
+
+| id | name | city, neighbourhood | built | class | stories | role |
+|---|---|---|---|---|---|---|
+| F1 | Halvorsen Tower | LA, Bunker Hill | 1974 | A | 42 | **demo building**, `romaine-1974` |
+| F2 | Figueroa Exchange | LA, Financial District | 1989 | A | 52 | `sunset-1986` |
+| F3 | Meridian on Wilshire | LA, Westlake | 2017 | A | 30 | `night-desk` |
+| F4 | Smith Street Center | Houston, Downtown | 1983 | A | 50 | `paper-trail-2001` |
+| F5 | Westchase Commons | Houston, Westchase | 2008 | B | 6 | `syntactic-2019` |
+
+Each needs realistic `availableSpace` rows (suite numbers, square feet), a
+floor of 24–32 nodes over 8–12 rooms with labels a floor really has (freight
+lift lobby, records room, server closet, open office 2210…), and an aerial
+with four to five tagged entries. Live keys replace them building by building.
+
+## 8. Milestones
+
+| milestone | exit criterion | target |
+|---|---|---|
+| **M0 Skeleton** | the gate green in CI; tokens and the app shell; domain schemas; all four adapters with fakes; the map listing the fixture buildings; the smoke opening the map | hacking start + 5 h (2026-11-13T13:00Z) |
+| **M1 Demo path** | beats 1 to 7 work end to end on fakes, and the smoke walks them | + 18 h (2026-11-14T02:00Z) |
+| **M2 Wow** | the Chief re-plan and the crew run live on Anthropic within the latency budget; live CoStar, Vexcel and Matterport where keys and answers exist; every fallback still works | + 28 h (2026-11-14T12:00Z) |
+| **M3 Prizes** | every row of §3 visibly met | + 36 h (2026-11-14T20:00Z) |
+| **M4 Polish** | every demo screen passes the `ui-craft` rubric at 1440×900 | feature freeze (2026-11-15T06:48Z) |
+| **M5 Submission** | `SUBMIT.md`'s materials | deadline − 1 h (2026-11-15T13:00Z) |
+
+## 9. The cut list, in order (first cut first)
+
+1. A linked campaign (stretch in DECISION.md).
+2. Co-op Inside + Overwatch ("should" in DECISION.md; not ticketed until M3 is done).
+3. Live rebuild of a level from the UI (the cached manifest and trace stay).
+4. Fixture buildings F2 to F5 and their missions (F1 alone carries the demo).
+5. Live Vexcel (the massing render stays).
+6. Drill plan print export (D32).
+7. The Chief adapting between runs (D33); this drops the Amazon "adapt" line.
+8. Live Matterport (the fixture floor stays the board).
+
+Never cut: the rules table and Why card (CoStar's 30%), the deepagents Level
+Builder (LangChain), the Chief re-plan (the wow), Drill Mode's report (the
+Monday answer).
+
+## 10. Risks and spikes
+
+| risk | answer |
+|---|---|
+| CoStar data reads as decoration (DECISION risk 1) | The rules table makes each field change a visible thing on the board, the dossier's Data → Level table states the mapping, the Why card ties each guard, camera and lock back to its field, and the Layer lens tints every element by its layer |
+| Matterport terms (risk 2) | §4.5: browser-only graph, no caching, no scan data to a model; fixture floors are hand-authored fiction |
+| A 20 s agent loop on stage; LLM guards talked past (risk 3) | Builder cached ahead; one structured call per crew order and per alarm change, 4 s timeout with fake fallback; deterministic engine authoritative; no talking to guards |
+| No usefulness answer (risk 4) | Drill Mode as a drill plan and record for a fire safety director, from data CoStar already has. Overlap with RSET is answered by zero setup and no headset. The vacant-suite broker level was passed over (one anecdote of demand) |
+| AI Game Master is a saturated archetype (risk 5) | The Game Master is one subagent writing a briefing; the product is the data-built level and the re-planning Chief. The pitch never leads with "AI story" |
+| deepagents JS lacks parity | D11's first 30 minutes check it; fallback a Python sidecar (§4.4) |
+| Event keys late or sandbox-only | everything works on fakes; live is per service |
+| Vexcel imagery may not be shown publicly | imagery is proxied at runtime, never committed; fake massing render in the repo and video if needed (Q3) |
+| Opus 4.6 weak at tool calls in LangChain's eval | the builder defaults to Sonnet 4.6; D29 measures |
+| A 3.7 GB VM | one deployable, `--max-old-space-size=1536`, chromium only |
+
+**Spikes:** D11's parity check (30 min); D29, a live deepagents run on
+Anthropic once a key exists (30 min); D26's first step, whether the event's
+Matterport key reaches the Houston and LA scans (15 min).
+
+## 11. Open questions
+
+Each blocks only the tickets named; everything else proceeds on fakes.
+
+| # | question | who answers | blocks |
+|---|---|---|---|
+| Q1 | Which CoStar fields does the toolkit expose (year built, class, stories, available space by floor and suite), and through OpenAPI or MCP? | CoStar on Discord | D25 |
+| Q2 | Are the Matterport keys production-scoped to the Houston and LA scans, and is there a written yes for caching derived graphs and sending scan-derived data to an outside model? Without it, D26 ships under the §4.5 restrictions | Matterport/CoStar on site, in writing | D26 |
+| Q3 | What do the Vexcel keys include (obliques, ortho, entry detection), and may the imagery appear in a public repo and video? | Vexcel on site | D27; the video plan in D41 |
+| Q4 | The Anthropic API key, in `.env.local` and the repo's Actions secrets | the builder | D28, D29 |
+| Q5 | May CoStar records appear on screen in a public demo video? | CoStar | D41 |
+| Q6 | The overnight defaults in DECISION.md (provider, latency approach, Matterport stance, prize targets, the 2-minute slot), and this spec's choice of Drill Mode over a broker mode, stand unless the builder overrules them | the builder | none unless overruled |
+| Q7 | The real start and deadline (EVENT.md marks them as estimates) | the builder, from the hacker guide | none; moves the freeze and M5 |
