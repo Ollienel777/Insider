@@ -482,3 +482,15 @@ test("a click on the mute or lens button leaves Space to the board, not the butt
   await mute.click();
   await expect(mute).toHaveAttribute("aria-pressed", "false");
 });
+
+test("the mute button and the play mode switch never cover each other, at 1440 and at phone width (#101 review)", async ({ page }) => {
+  for (const size of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(size);
+    await page.goto("/b/F1/run");
+    await expect(board(page)).toBeVisible();
+    const mute = (await page.getByTestId("mute-toggle").boundingBox())!;
+    const mode = (await page.getByTestId("play-mode").boundingBox())!;
+    const apart = mute.x + mute.width <= mode.x || mode.x + mode.width <= mute.x || mute.y + mute.height <= mode.y || mode.y + mode.height <= mute.y;
+    expect(apart, `${size.width}px: mute ${JSON.stringify(mute)} vs mode ${JSON.stringify(mode)}`).toBe(true);
+  }
+});
