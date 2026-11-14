@@ -141,6 +141,7 @@ describe("suggestFix", () => {
     const bad = { change: { kind: "move-camera", elementId: "C9", to: "dock-corridor" }, rationale: "Move C9." };
     const dropped = await suggestFix({ buildingId: "F1", summary }, { selection: liveSelection(bad) });
     expect(dropped).toMatchObject({
+      recorded: false,
       source: "template",
       fix: fixTemplate(manifest, summary),
       dropped: { change: bad.change, reason: '"C9" is not a camera of this level' },

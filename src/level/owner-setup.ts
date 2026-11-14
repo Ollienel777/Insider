@@ -6,19 +6,23 @@
 //
 // Only the security changes: the entries, zones and objective still come from
 // the manifest through the placer, as the spec has it ("the floor graph and
-// entries are unchanged"). The generated cleaners are dropped too: the setup
-// says who watches the floor, and its staffed desks take their place. Every
+// entries are unchanged"). The generated cleaners are replaced too: the setup
+// says who watches the floor, with its own cleaners and staffed desks. Every
 // element the setup places carries owner provenance (`layer: "owner"`), so a
-// Why card says the owner put it there and nothing reads as data-derived.
+// Why card says the owner put it there and nothing reads as data-derived,
+// except the elements the setup lists as still generated: those keep the
+// data's provenance, and play as the rules table places them on each seed, so
+// the generated security converted to a setup plays the generated level.
 //
 // It runs in the browser beside the placer, so a live Matterport floor never
 // leaves the page (SPEC §4.5). Pure: no I/O, no clock, no randomness; the
 // inputs are never mutated.
 "use client";
 
-import type { CameraKind, FloorGraph, LevelManifest } from "@/domain";
+import type { CameraKind, FloorGraph, LevelManifest, Provenance } from "@/domain";
 import type { Compass, OwnerCameraKind, OwnerDoorLock, OwnerProvenance, OwnerSetup } from "@/domain/owner-setup";
-import type { CameraSpec, GuardSpec, Level } from "@/engine";
+import { compileBoard, type CameraSpec, type GuardSpec, type Level } from "@/engine";
+import { roundOf } from "@/engine/autoplay";
 import { placeLevel, type PlacedCamera, type PlacedGuard, type PlacedLevel, type PlacedLock } from "./placer";
 
 // ---- validation ---------------------------------------------------------------
@@ -30,6 +34,8 @@ export type OwnerSetupErrorCode =
   | "round-broken"
   | "post-off-round"
   | "camera-off-floor"
+  | "cleaner-off-floor"
+  | "generated-unknown"
   | "desk-off-floor"
   | "unknown-door"
   | "door-not-lockable"
@@ -60,6 +66,17 @@ export function validateOwnerSetup(setup: OwnerSetup, floor: FloorGraph): OwnerS
   duplicates(setup.guards.map((g) => g.id), "guard", (id) => `guard:${id}`);
   duplicates(setup.cameras.map((c) => c.id), "camera", (id) => `camera:${id}`);
   duplicates(setup.desks, "desk on node", (id) => `desk:${id}`);
+  duplicates((setup.cleaners ?? []).map((c) => c.id), "cleaner", (id) => `cleaner:${id}`);
+
+  // A loop: each node a neighbour of the next, and the last of the first (for two nodes, the same edge).
+  const loop = (round: readonly string[], role: string, who: string) =>
+    round.forEach((id, i) => {
+      const next = round[(i + 1) % round.length];
+      if (round.length === 1 || (i === round.length - 1 && round.length === 2)) return;
+      if (!linked.has(`${id} ${next}`)) {
+        add("round-broken", role, `${who} round is not a connected loop: "${id}" and "${next}" are not neighbours`);
+      }
+    });
 
   for (const guard of setup.guards) {
     const role = `guard:${guard.id}`;
@@ -74,20 +91,29 @@ export function validateOwnerSetup(setup: OwnerSetup, floor: FloorGraph): OwnerS
     if (!guard.round.includes(guard.post)) {
       add("post-off-round", role, `Guard ${guard.id}'s post "${guard.post}" is not on its round`);
     }
-    if (guard.round.length === 1) continue;
-    // A loop: each node a neighbour of the next, and the last of the first (for two nodes, the same edge).
-    guard.round.forEach((id, i) => {
-      const next = guard.round[(i + 1) % guard.round.length];
-      if (i === guard.round.length - 1 && guard.round.length === 2) return;
-      if (!linked.has(`${id} ${next}`)) {
-        add("round-broken", role, `Guard ${guard.id}'s round is not a connected loop: "${id}" and "${next}" are not neighbours`);
-      }
-    });
+    loop(guard.round, role, `Guard ${guard.id}'s`);
+  }
+
+  for (const cleaner of setup.cleaners ?? []) {
+    const role = `cleaner:${cleaner.id}`;
+    if (cleaner.round.length === 0) {
+      add("cleaner-off-floor", role, `Cleaner ${cleaner.id} stands on no node`);
+      continue;
+    }
+    const off = cleaner.round.filter((id) => !nodes.has(id));
+    for (const id of new Set(off)) {
+      add("cleaner-off-floor", role, `Cleaner ${cleaner.id}'s round passes "${id}", which is not a node of this floor`);
+    }
+    if (off.length === 0) loop(cleaner.round, role, `Cleaner ${cleaner.id}'s`);
   }
 
   for (const camera of setup.cameras) {
+    const role = `camera:${camera.id}`;
     if (!nodes.has(camera.node)) {
-      add("camera-off-floor", `camera:${camera.id}`, `Camera ${camera.id} is mounted over "${camera.node}", which is not a node of this floor`);
+      add("camera-off-floor", role, `Camera ${camera.id} is mounted over "${camera.node}", which is not a node of this floor`);
+    }
+    for (const id of new Set((camera.cover ?? []).filter((n) => !nodes.has(n)))) {
+      add("camera-off-floor", role, `Camera ${camera.id} covers "${id}", which is not a node of this floor`);
     }
   }
 
@@ -102,6 +128,22 @@ export function validateOwnerSetup(setup: OwnerSetup, floor: FloorGraph): OwnerS
   for (const desk of new Set(setup.desks)) {
     if (!nodes.has(desk)) add("desk-off-floor", `desk:${desk}`, `The staffed desk at "${desk}" is not on a node of this floor`);
   }
+
+  // The generated list names only elements the setup has.
+  const has = {
+    guards: new Set(setup.guards.map((g) => g.id)),
+    cameras: new Set(setup.cameras.map((c) => c.id)),
+    cleaners: new Set((setup.cleaners ?? []).map((c) => c.id)),
+    doors: new Set(Object.entries(setup.doors).flatMap(([id, lock]) => (lock === "open" ? [] : [id]))),
+  };
+  const what = { guards: "guard", cameras: "camera", cleaners: "cleaner", doors: "locked door" } as const;
+  for (const list of ["guards", "cameras", "cleaners", "doors"] as const) {
+    for (const id of new Set(setup.generated?.[list] ?? [])) {
+      if (!has[list].has(id)) {
+        add("generated-unknown", `generated:${id}`, `The setup lists ${what[list]} "${id}" as generated, but has no such ${what[list]}`);
+      }
+    }
+  }
   return errors;
 }
 
@@ -113,6 +155,14 @@ export const OWNER_RULE = "Placed by the owner's setup";
 /** Picks to open a locked door, by what locks it. A key lock is SPEC §4.3's 2; a badge reader's 3 is Owner Mode's own (§4.3 gives readers no pick time). */
 export const OWNER_PICK_TURNS: Readonly<Record<Exclude<OwnerDoorLock, "open">, number>> = { key: 2, badge: 3 };
 
+/** The owner's kind for each engine kind the rules table places. */
+export const OWNER_KIND_OF: Readonly<Record<CameraKind, OwnerCameraKind>> = {
+  "analog-sweep": "sweeping",
+  ptz: "ptz",
+  "fixed-ip": "fixed",
+  "ip-analytics": "fixed",
+};
+
 /** The engine's camera kind for each kind the owner picks from. */
 export const OWNER_CAMERA_KIND: Readonly<Record<OwnerCameraKind, CameraKind>> = {
   sweeping: "analog-sweep",
@@ -120,9 +170,10 @@ export const OWNER_CAMERA_KIND: Readonly<Record<OwnerCameraKind, CameraKind>> = 
   fixed: "fixed-ip",
 };
 
-type Owned<T> = Omit<T, "provenance"> & { provenance: readonly OwnerProvenance[] };
+/** The owner's provenance, or, for an element still as generated, the data's. */
+type Owned<T> = Omit<T, "provenance"> & { provenance: readonly (OwnerProvenance | Provenance)[] };
 
-export interface OwnerPlacedGuard extends Owned<Omit<PlacedGuard, "post">> {
+export interface OwnerPlacedGuard extends Owned<PlacedGuard> {
   /** Turns per hop, from the setup. */
   tempo: number;
 }
@@ -138,6 +189,18 @@ export interface OwnerPlacedLock extends Owned<Omit<PlacedLock, "zoneId">> {
   zoneId: string | null;
 }
 
+export interface OwnerPlacedCleaner {
+  id: string;
+  /** The zone its first waypoint is in, or "" when that node is in no placed zone. */
+  zoneId: string;
+  roomId: string;
+  /** The placer's rule for a cleaner still as generated; "" for the owner's own. */
+  rule: string;
+  /** Waypoints, as the engine's cleaner patrol: it starts on the first. */
+  patrol: readonly string[];
+  provenance: readonly (OwnerProvenance | Provenance)[];
+}
+
 export interface OwnerPlacedDesk {
   /** The desk's watcher in the engine: a cleaner that never moves. */
   id: string;
@@ -149,11 +212,10 @@ export interface OwnerPlacedDesk {
 /** The placer's level with the owner's security in it. Entries, zones and the objective are the placer's. */
 export interface OwnerPlacedLevel extends Omit<PlacedLevel, "guards" | "cameras" | "locks" | "cleaners"> {
   setupName: string;
-  /** Always empty: the placer's generated cleaners are dropped, and the setup's staffed desks are its only staff. */
-  cleaners: readonly [];
   guards: readonly OwnerPlacedGuard[];
   cameras: readonly OwnerPlacedCamera[];
   locks: readonly OwnerPlacedLock[];
+  cleaners: readonly OwnerPlacedCleaner[];
   desks: readonly OwnerPlacedDesk[];
 }
 
@@ -199,6 +261,14 @@ export function cameraCover(floor: FloorGraph, node: string, facing: Compass, ki
     .map((n) => n.id);
 }
 
+/** True when `a` is `b` begun at another point: the same loop. */
+function sameLoop(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.length === 0 || a.some((_, k) => b.every((id, i) => a[(i + k) % a.length] === id));
+}
+
+const sameCover = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((id, i) => id === b[i]);
+
 /** Moves from `from` to every node it reaches. */
 function hopsFrom(floor: FloorGraph, from: string): Map<string, number> {
   const adj = new Map<string, string[]>(floor.nodes.map((n) => [n.id, []]));
@@ -223,8 +293,10 @@ function hopsFrom(floor: FloorGraph, from: string): Map<string, number> {
  * The manifest's level on `floor` with the owner's security in place of the
  * rules table's. Returns every validation problem instead when the setup does
  * not fit the floor or names another building. The seed varies only what it
- * varies in a generated run (the engine's tie-breaks); the owner's guards
- * start on their posts.
+ * varies in a generated run: the engine's tie-breaks, and where a walker still
+ * listed as generated starts its round (where the rules table starts it). The
+ * owner's own guards start on their posts. A guard's `retime` then starts it
+ * that many nodes further back, on every seed, as the engine's retime does.
  */
 export function applyOwnerSetup(manifest: LevelManifest, floor: FloorGraph, setup: OwnerSetup, seed: number): OwnerSetupResult {
   const errors = validateOwnerSetup(setup, floor);
@@ -243,26 +315,79 @@ export function applyOwnerSetup(manifest: LevelManifest, floor: FloorGraph, setu
     { elementRole, layer: "owner", field, value: setup.name, rule: OWNER_RULE },
   ];
 
+  const generated = {
+    guards: new Set(setup.generated?.guards ?? []),
+    cameras: new Set(setup.generated?.cameras ?? []),
+    cleaners: new Set(setup.generated?.cleaners ?? []),
+    doors: new Set(setup.generated?.doors ?? []),
+  };
+  const baseBoard = compileBoard(base.level);
+  /** The rules table's walk for a walker listed as generated, when it walks the same loop as the setup's. */
+  const asGenerated = (patrol: readonly string[] | undefined, round: readonly string[]) =>
+    patrol && sameLoop(roundOf(baseBoard, patrol), round) ? patrol : null;
+  /**
+   * The patrol `by` turns later, exactly as the engine's retime (`applyFix`)
+   * makes it: the round as it walks it from this night's start, begun `by`
+   * nodes further back. Null when there is nothing to retime.
+   */
+  const retime = (patrol: readonly string[], by: number): string[] | null => {
+    const walked = roundOf(baseBoard, patrol);
+    if (by === 0 || walked.length < 2 || by % walked.length === 0) return null;
+    const at = ((-by % walked.length) + walked.length) % walked.length;
+    return [...walked.slice(at), ...walked.slice(0, at)];
+  };
+
   const guards: OwnerPlacedGuard[] = setup.guards.map((g) => {
     // The guard starts on its post and walks the round on from there.
     const at = g.round.indexOf(g.post);
-    const patrol = at < 0 ? [g.post] : [...g.round.slice(at), ...g.round.slice(0, at)];
-    return { id: g.id, roomId: roomOf.get(g.post)!, patrol, tempo: g.tempo, provenance: owner(`guard:${g.id}`, `guards.${g.id}`) };
+    const round = at < 0 ? [g.post] : [...g.round.slice(at), ...g.round.slice(0, at)];
+    const from = generated.guards.has(g.id) ? base.guards.find((b) => b.id === g.id) : undefined;
+    const kept = from && asGenerated(from.patrol, round) ? from : null;
+    const walk = kept ? kept.patrol : round;
+    const retimed = retime(walk, g.retime ?? 0);
+    return {
+      id: g.id,
+      roomId: kept ? kept.roomId : roomOf.get(g.post)!,
+      patrol: retimed ?? walk,
+      ...(kept?.post && { post: kept.post }),
+      tempo: g.tempo,
+      // A retime is the setup's, not the data's: even a generated guard's timing is then the owner's.
+      provenance: kept && !retimed ? kept.provenance : owner(`guard:${g.id}`, `guards.${g.id}`),
+    };
+  });
+
+  const cleaners: OwnerPlacedCleaner[] = (setup.cleaners ?? []).map((c) => {
+    const from = generated.cleaners.has(c.id) ? base.level.cleaners?.find((b) => b.id === c.id) : undefined;
+    const kept = asGenerated(from?.patrol, c.round);
+    // A generated cleaner walks a crowded zone: that zone's data says why it is there.
+    const zone = kept ? base.zones.find((z) => z.role === "crowded" && z.nodes.includes(kept[0])) : undefined;
+    const patrol = kept ?? c.round;
+    return {
+      id: c.id,
+      zoneId: (kept && base.cleaners.find((b) => b.id === c.id)?.zoneId) || (base.zones.find((z) => z.nodes.includes(patrol[0]))?.zoneId ?? ""),
+      roomId: roomOf.get(c.round[0])!,
+      rule: (kept && base.cleaners.find((b) => b.id === c.id)?.rule) || "",
+      patrol,
+      provenance: kept && zone ? zone.provenance : owner(`cleaner:${c.id}`, `cleaners.${c.id}`),
+    };
   });
 
   const fromStart = hopsFrom(floor, base.level.start);
   const sightFromStart = new Set(floor.sightlines[base.level.start] ?? []);
   const cameras: OwnerPlacedCamera[] = setup.cameras.map((c) => {
-    const cover = cameraCover(floor, c.node, c.facing, c.kind);
+    const cover = c.cover ? [...c.cover] : cameraCover(floor, c.node, c.facing, c.kind);
+    const from = generated.cameras.has(c.id) ? base.cameras.find((b) => b.id === c.id) : undefined;
+    // Still as generated: the same cover and kind, so the rules table's camera, with its phase and provenance.
+    const kept = from && OWNER_KIND_OF[from.kind] === c.kind && sameCover(from.cover, cover) ? from : null;
     const first = [...cover].sort((a, b) => (fromStart.get(a) ?? Infinity) - (fromStart.get(b) ?? Infinity) || a.localeCompare(b))[0];
     return {
       id: c.id,
-      kind: OWNER_CAMERA_KIND[c.kind],
+      kind: kept ? kept.kind : OWNER_CAMERA_KIND[c.kind],
       cover,
-      phase: 0,
+      phase: kept ? kept.phase : 0,
       facing: c.facing,
       approach: { nodeId: first, hops: fromStart.get(first) ?? 0, visibleFromStart: sightFromStart.has(first) },
-      provenance: owner(`camera:${c.id}`, `cameras.${c.id}`),
+      provenance: kept ? kept.provenance : owner(`camera:${c.id}`, `cameras.${c.id}`),
     };
   });
 
@@ -272,37 +397,44 @@ export function applyOwnerSetup(manifest: LevelManifest, floor: FloorGraph, setu
     .map(({ doorId, lock }) => {
       const ends = floor.edges.filter((e) => e.door?.id === doorId).flatMap((e) => [e.a, e.b]);
       const closes = base.zones.find((z) => ends.filter((id) => z.nodes.includes(id)).length === 1);
+      // Still as generated: the rules table's lock, its pick turns and why it is there.
+      const from = generated.doors.has(doorId) ? base.locks.find((l) => l.doorId === doorId) : undefined;
       return {
         doorId,
         lock,
-        pickTurns: OWNER_PICK_TURNS[lock],
-        zoneId: closes?.zoneId ?? null,
-        provenance: owner(`lock:${doorId}`, `doors.${doorId}`),
+        pickTurns: from ? base.level.pickTurns : OWNER_PICK_TURNS[lock],
+        zoneId: from?.zoneId ?? closes?.zoneId ?? null,
+        provenance: from ? from.provenance : owner(`lock:${doorId}`, `doors.${doorId}`),
       };
     });
 
-  const desks: OwnerPlacedDesk[] = setup.desks.map((nodeId, i) => ({
-    id: `D${i + 1}`,
-    nodeId,
-    roomId: roomOf.get(nodeId)!,
-    provenance: owner(`desk:${nodeId}`, `desks.${nodeId}`),
-  }));
+  // Each desk's watcher takes the next D id no cleaner has.
+  const taken = new Set(cleaners.map((c) => c.id));
+  const desks: OwnerPlacedDesk[] = setup.desks.map((nodeId) => {
+    let n = 1;
+    while (taken.has(`D${n}`)) n++;
+    taken.add(`D${n}`);
+    return { id: `D${n}`, nodeId, roomId: roomOf.get(nodeId)!, provenance: owner(`desk:${nodeId}`, `desks.${nodeId}`) };
+  });
 
   const level: Level = {
     ...base.level,
     lockedDoors: locks.map((l) => l.doorId),
-    pickTurns: OWNER_PICK_TURNS.key,
+    pickTurns: base.level.pickTurns,
     doorPickTurns: Object.fromEntries(locks.map((l) => [l.doorId, l.pickTurns])),
     guards: guards.map((g): GuardSpec => ({ id: g.id, patrol: g.patrol })),
     guardTempo: Object.fromEntries(guards.map((g) => [g.id, g.tempo])),
     cameras: cameras.map(({ id, kind, cover, phase }): CameraSpec => ({ id, kind, cover, phase })),
-    cleaners: desks.map((d): GuardSpec => ({ id: d.id, patrol: [d.nodeId] })),
+    cleaners: [
+      ...cleaners.map((c): GuardSpec => ({ id: c.id, patrol: c.patrol })),
+      ...desks.map((d): GuardSpec => ({ id: d.id, patrol: [d.nodeId] })),
+    ],
   };
 
   // The placer's own security misses are not this level's: only its entries' and zones' stay.
   const unplaced = base.unplaced.filter((u) => !/^(guard|camera|lock|cleaner):/.test(u.elementRole));
   return {
     ok: true,
-    placed: { ...base, level, setupName: setup.name, guards, cameras, locks, desks, cleaners: [], unplaced },
+    placed: { ...base, level, setupName: setup.name, guards, cameras, locks, cleaners, desks, unplaced },
   };
 }
