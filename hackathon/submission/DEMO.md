@@ -49,7 +49,7 @@ not beats.
 Screen: the map at `/`, Los Angeles tab open, nothing selected.
 
 1. Say: **"Every heist in history needed a building. We build the level from
-   the building's own data."**
+   a building's data."**
 2. Click the row **Halvorsen Tower** (Bunker Hill · 1974 · Class A · 42
    stories). Its pin turns amber.
 3. Say: **"Halvorsen Tower. A fixture building, shaped like a CoStar record."**
@@ -84,10 +84,10 @@ Screen: the Level Builder replays its recorded run (about 6 s) beside the
 **Data → Level** table, then the mission briefing, *The Romaine Street
 Papers*.
 
-1. While it fills, say: **"A deep agent reads the record and builds the
-   level. Built 1974: analog era, key locks, sweeping cameras. Class A: four
-   guards. Floor 22 mostly vacant: quiet suites. The dock on the aerial: the
-   way in."**
+1. While it fills, say: **"A deep agent built this level; this is its
+   recorded run. Built 1974: analog era, key locks, sweeping cameras. Class A:
+   four guards. Floor 22 mostly vacant: quiet suites. The dock on the aerial:
+   the way in."**
 2. Point at the briefing's "Inspired by" line: the Summa Corporation
    burglary, June 5, 1974.
 3. Click **Brief the crew**.
@@ -104,9 +104,9 @@ the demo (checklist).
    `Go in through the dock, wait for the 2 am round to pass, take the records room.`
 2. Press **Enter** (or click **Brief the crew**).
 3. The crew's four-step plan appears, drawn on the board, with the
-   **Recorded** chip. Say: **"The crew answers with a plan, checks it on the
-   board, and pushes back: camera C2 catches us in the dock corridor on the
-   way out."**
+   **Recorded** chip. Say: **"The crew's reply is recorded, as the chip says.
+   The board checks its plan: camera C2 catches us in the dock corridor on
+   the way out."**
 4. Click **Start the run**.
 
 Fallback: if no plan appears within 4 s, click **Start the run** anyway. The
@@ -124,13 +124,15 @@ mark the moves.
    do the same. Do not press **S** (sprint mode).
 3. The alarm jumps to **Alert**. The status line reads "C2 saw you in the
    Dock Corridor. The guards are converging."
-4. The Security Chief's orders stream into the side panel (about 2 s). Say:
-   **"The AI security chief re-plans, and you can read why. The guards'
-   routes follow its orders."**
+4. The Security Chief's orders stream into the side panel (about 2 s), under
+   the **Recorded** label. Say: **"The security chief re-plans, and you can
+   read why. Recorded orders, as the label says. The guards' routes follow
+   them."**
 5. Click the guard **G4** on the board. The Why card opens. Say: **"Every
    guard says which data put it there: the dock on the aerial, and Class A
    gives the fourth guard."**
-6. Press **Esc**, then **W** twice. You are caught.
+6. Press **Esc**, then **W** until the outcome shows (usually two presses).
+   You are caught.
 7. Click **See the debrief**.
 
 Fallback: if the judge clicks the wrong ring, click **Restart** (top of the
@@ -147,8 +149,9 @@ timeline.
 1. Drag the **Turn** slider back to the start, then forward.
 2. Say: **"The debrief replays every move, yours and the guards', with each
    of the Chief's decisions and its reason."**
-3. Close: **"Every guard, camera and lock you saw came from a rule on the
-   building's data, and the Why card shows which."**
+3. Close: **"Every guard, camera and lock came from a rule on the building's
+   data, and the Why card shows which. It's game fiction, not this building's
+   real security."**
 
 The demo ends on the Debrief. Do not click **Try again** (the primary
 button): it sends you back to the Run and starts it again.
