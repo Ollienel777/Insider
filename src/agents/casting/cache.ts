@@ -7,7 +7,7 @@
 // outside the tracked files: no kit record, nor anything derived from one, is
 // ever committed (SPEC §4.5), and the writer refuses to put one in
 // data/casting/.
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { demoStateDir } from "@/lib/demo-epoch";
 import { CastingResult } from "@/domain";
@@ -26,9 +26,21 @@ const file = (dir: string, id: string) => path.join(dir, `${id}.json`);
 export const isFixtureResult = (result: CastingResult): boolean =>
   result.source === "fixture" && result.trace.liveData !== true && result.finalists.every((c) => c.source === "fixture");
 
+/** A shortlist file that could not be read at all (not one that failed its schema). */
+export class CastingReadError extends Error {
+  readonly code: string | undefined;
+  constructor(file: string, cause: unknown) {
+    const code = (cause as NodeJS.ErrnoException).code;
+    super(`cannot read ${file}${code ? ` (${code})` : ""}`, { cause });
+    this.name = "CastingReadError";
+    this.code = code;
+  }
+}
+
 /**
  * The cached shortlist from the first directory that has one, `null` when
- * none does, or an error when a file fails its schema.
+ * none does, a CastingReadError when a file cannot be read, or an error
+ * when a file fails its schema.
  */
 export async function readCachedCasting(id: string, dirs: readonly string[] = [CASTING_DIR]): Promise<CastingResult | null> {
   if (!isMissionId(id)) return null;
@@ -38,7 +50,7 @@ export async function readCachedCasting(id: string, dirs: readonly string[] = [C
       raw = await readFile(file(dir, id), "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-      throw error;
+      throw new CastingReadError(file(dir, id), error);
     }
     const result = CastingResult.parse(JSON.parse(raw));
     if (result.missionId !== id) throw new Error(`${file(dir, id)} holds mission ${result.missionId}`);
@@ -52,10 +64,12 @@ export async function writeCachedCasting(result: CastingResult, dir: string = CA
   const id = result.missionId;
   if (!isMissionId(id)) throw new Error(`invalid mission id "${id}"`);
   const parsed = CastingResult.parse(result);
-  if (path.resolve(/*turbopackIgnore: true*/ dir) === CASTING_DIR && !isFixtureResult(parsed)) {
+  await mkdir(dir, { recursive: true });
+  // Real paths on both sides, so a symlink to data/casting/ is refused too.
+  const real = (p: string) => realpath(/*turbopackIgnore: true*/ p).catch(() => path.resolve(/*turbopackIgnore: true*/ p));
+  if ((await real(dir)) === (await real(CASTING_DIR)) && !isFixtureResult(parsed)) {
     throw new Error(`${id}: a shortlist cast on live data never goes in data/casting/; write it to ${liveCastingDir()}`);
   }
-  await mkdir(dir, { recursive: true });
   await writeFile(file(dir, id), `${JSON.stringify(parsed, null, 2)}\n`);
   return file(dir, id);
 }

@@ -1,11 +1,13 @@
 // The Casting Director on deepagents, keyless: the deep agent's graph, todos,
 // subagent dispatch and tools all run for real against the fake adapters;
 // only the model's turns are recorded (fixtures/llm/scripts/casting-*.json).
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createFakeCoStar } from "@/adapters/costar/fake";
+import { DEFAULT_SUBAGENT_PROMPT } from "deepagents";
+import { createFakeCoStar, FIXTURE_INVENTORY } from "@/adapters/costar/fake";
+import { passes } from "@/adapters/costar/search";
 import { createFakeVexcel } from "@/adapters/vexcel/fake";
 import { loadScript, ScriptedChatModel } from "@/adapters/llm";
 import type { ScriptInput } from "@/adapters/llm/scripted";
@@ -15,6 +17,7 @@ import expected from "../../../fixtures/inventory-finalists.json";
 import { CASTING_DIR, readCachedCasting, writeCachedCasting } from "./cache";
 import { castMission, CastingError, type CastMission } from "./director";
 import { DIRECTOR_PROMPT, SCOUT_PROMPT } from "./prompts";
+import { type CastRun, directorTools, scoutTools } from "./tools";
 
 const MISSION_IDS = MISSIONS.map((m) => m.id);
 
@@ -106,6 +109,15 @@ describe("castMission on the recorded scripts, every mission", () => {
     expect(tools.at(-1)).toMatchObject({ agent: "casting-director", label: "write_shortlist" });
   });
 
+  it.each(MISSION_IDS)("%s: the scout's scripted answer quotes the funnel counts the search returned", async (id) => {
+    const script = await loadScript(`casting-${id}`);
+    const answer = script.agents.find((a) => a.agent === "location-scout")!.turns.at(-1)!.content;
+    const funnel = /^Funnel: (.*?)\. Left:/.exec(answer)?.[1];
+    expect(funnel, "the answer opens with the funnel").toBeDefined();
+    const quoted = [...funnel!.matchAll(/(?:^|-> )(\d+)/g)].map((m) => Number(m[1]));
+    expect(quoted).toEqual(runs.get(id)!.cast.result.funnel.map((s) => s.count));
+  });
+
   describe("the cached shortlists in data/casting/", () => {
     it.each(MISSION_IDS)("%s is what a fake run writes today, timings aside (rerun npm run cast when this fails)", async (id) => {
       const cached = await readCachedCasting(id);
@@ -132,6 +144,43 @@ describe("the deep agent's subagents", () => {
     expect(task).toBeDefined();
     const listed = [...task!.description.matchAll(/^- ([\w-]+):/gm)].map((m) => m[1]);
     expect(listed).toEqual(["general-purpose", "location-scout"]);
+  });
+
+  it("leaves general-purpose read-only: it can read the mission, never search or write the shortlist", async () => {
+    const calls: { agent: string; tools: string[] }[] = [];
+    class Spy extends ScriptedChatModel {
+      override async _generate(...args: Parameters<ScriptedChatModel["_generate"]>) {
+        const answer = await super._generate(...args);
+        const tools = (args[1].tools ?? []).map((t) => (t as { name?: string }).name ?? "");
+        calls.push({ agent: this.calls.at(-1)!.agent, tools });
+        return answer;
+      }
+    }
+    const model = new Spy({
+      script: {
+        id: "general-purpose",
+        agents: [
+          {
+            agent: "casting-director",
+            systemIncludes: DIRECTOR_PROMPT.split("\n")[0],
+            turns: [
+              { toolCalls: [{ name: "task", args: { subagent_type: "general-purpose", description: "Read romaine-1974." } }] },
+              { content: "Stopping." },
+            ],
+          },
+          { agent: "general-purpose", systemIncludes: DEFAULT_SUBAGENT_PROMPT, turns: [{ content: "Read it." }] },
+        ],
+      },
+    });
+    const error = await castMission("romaine-1974", { model }).catch((e) => e);
+    expect(error).toBeInstanceOf(CastingError);
+    const gp = calls.filter((c) => c.agent === "general-purpose");
+    expect(gp).toHaveLength(1);
+    expect(gp[0].tools).toContain("get_mission");
+    for (const name of ["write_shortlist", "search_inventory", "get_candidate", "get_aerial_entries", "task"]) {
+      expect(gp[0].tools, name).not.toContain(name);
+    }
+    expect(error.trace.events).toEqual([expect.objectContaining({ kind: "subagent", agent: "general-purpose", status: "completed" })]);
   });
 
   it("gives each agent a system prompt the scripts can tell apart", () => {
@@ -161,6 +210,8 @@ describe("live data stays out of the trace (SPEC §4.5)", () => {
     await expect(writeCachedCasting(cast.result, CASTING_DIR)).rejects.toThrow(/never goes in data\/casting/);
     const dir = mkdtempSync(path.join(tmpdir(), "casting-"));
     try {
+      symlinkSync(CASTING_DIR, path.join(dir, "linked"));
+      await expect(writeCachedCasting(cast.result, path.join(dir, "linked"))).rejects.toThrow(/never goes in data\/casting/);
       await writeCachedCasting(cast.result, dir);
       expect(JSON.parse(readFileSync(path.join(dir, "night-desk.json"), "utf8")).trace.liveData).toBe(true);
     } finally {
@@ -177,6 +228,50 @@ describe("live data stays out of the trace (SPEC §4.5)", () => {
     withheld((error as CastingError).trace);
     const failed = (error as CastingError).trace.events.filter((e) => e.status === "failed").map((e) => e.label);
     expect(failed).toEqual(expect.arrayContaining(["get_candidate", "write_shortlist"]));
+  });
+});
+
+describe("write_shortlist's refusals", () => {
+  const romaine = MISSIONS.find((m) => m.id === "romaine-1974")!;
+
+  /** A run with `filters` of romaine-1974's casting applied through the scout's own tool. */
+  async function applied(filters: number) {
+    const mission = { ...structuredClone(romaine), casting: romaine.casting.slice(0, filters) };
+    const run: CastRun = { mission, costar: createFakeCoStar(), vexcel: createFakeVexcel(), inventory: FIXTURE_INVENTORY, applied: [] };
+    const search = scoutTools(run).find((t) => t.name === "search_inventory")!;
+    for (const f of mission.casting) await search.invoke({ missionId: mission.id, filter: f.kind });
+    const write = directorTools(run).find((t) => t.name === "write_shortlist")!;
+    const shortlist = (ids: string[]) =>
+      write.invoke({ missionId: mission.id, finalists: ids.map((id) => ({ id, reason: `${id} fits` })) });
+    return { run, shortlist };
+  }
+
+  it("writes the three survivors, and refuses an id the funnel dropped or a duplicate", async () => {
+    const { run, shortlist } = await applied(romaine.casting.length);
+    await expect(shortlist(["F1", "L01", "F2"])).rejects.toThrow(/F2 is not among the candidates left/);
+    await expect(shortlist(["F1", "L01", "L01"])).rejects.toThrow(/three different properties/);
+    expect(run.shortlist).toBeUndefined();
+    await shortlist(["F1", "L01", "L02"]);
+    expect(run.shortlist?.finalists.map((c) => c.id)).toEqual(["F1", "L01", "L02"]);
+  });
+
+  it("refuses 2 or 4 finalists", async () => {
+    const { run, shortlist } = await applied(romaine.casting.length);
+    await expect(shortlist(["F1", "L01"])).rejects.toThrow();
+    await expect(shortlist(["F1", "L01", "L02", "F2"])).rejects.toThrow();
+    expect(run.shortlist).toBeUndefined();
+  });
+
+  it("refuses a survivor outside the last step's top five", async () => {
+    // Four of romaine-1974's filters leave more than five properties.
+    const { run, shortlist } = await applied(4);
+    const step = run.search!.steps.at(-1)!;
+    const top = step.top.map((c) => c.id);
+    const survivors = FIXTURE_INVENTORY.filter((p) => run.applied.every((f) => passes(p, f))).map((p) => p.id);
+    expect(survivors).toHaveLength(step.count);
+    const outside = survivors.find((id) => !top.includes(id));
+    expect(outside, "a survivor outside the top five").toBeDefined();
+    await expect(shortlist([top[0], top[1], outside!])).rejects.toThrow(new RegExp(`${outside} is not among the candidates left`));
   });
 });
 

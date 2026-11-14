@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { resetCoStar } from "@/adapters/costar";
 import { readCachedCasting } from "@/agents/casting/cache";
 import { CastingResult } from "@/domain";
 import expected from "../../../../../fixtures/inventory-finalists.json";
@@ -41,6 +42,64 @@ describe("GET /api/cast/[missionId]", () => {
       expect(response.status, id).toBe(400);
       expect(await response.json()).toEqual({ error: "invalid mission id" });
     }
+  });
+});
+
+describe("GET /api/cast/[missionId] with CoStar live", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "cast-live-"));
+  const committed = JSON.parse(readFileSync(path.join(process.cwd(), "data", "casting", "romaine-1974.json"), "utf8"));
+  let errors: ReturnType<typeof vi.spyOn>;
+
+  beforeAll(() => {
+    vi.stubEnv("COSTAR_MODE", "live");
+    vi.stubEnv("COSTAR_API_BASE", "http://costar.invalid");
+    vi.stubEnv("COSTAR_API_KEY", "test-key");
+    resetCoStar();
+    errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+  afterAll(() => {
+    vi.stubEnv("COSTAR_MODE", "fake");
+    resetCoStar();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const served = async () => {
+    const response = await get("romaine-1974");
+    expect(response.status).toBe(200);
+    return CastingResult.parse(await response.json());
+  };
+
+  it("serves the state dir's shortlist first", async () => {
+    const state = path.join(root, "hit");
+    mkdirSync(path.join(state, "casting"), { recursive: true });
+    const live = { ...committed, funnel: committed.funnel.slice(0, 2) };
+    writeFileSync(path.join(state, "casting", "romaine-1974.json"), JSON.stringify(live));
+    vi.stubEnv("HEIST_STATE_DIR", state);
+    expect((await served()).funnel).toHaveLength(2);
+  });
+
+  it("falls back to data/casting/ when the state dir has no shortlist", async () => {
+    vi.stubEnv("HEIST_STATE_DIR", path.join(root, "empty"));
+    expect(await served()).toEqual(CastingResult.parse(committed));
+  });
+
+  it("falls back to data/casting/ when the state dir cannot be read, and logs it", async () => {
+    const notADir = path.join(root, "a-file");
+    writeFileSync(notADir, "");
+    vi.stubEnv("HEIST_STATE_DIR", notADir);
+    errors.mockClear();
+    expect(await served()).toEqual(CastingResult.parse(committed));
+    expect(errors).toHaveBeenCalledWith(expect.stringMatching(/live shortlist cannot be read \(ENOTDIR\)/));
+  });
+
+  it("answers 500 for a state-dir shortlist that is there but fails its schema", async () => {
+    const state = path.join(root, "bad");
+    mkdirSync(path.join(state, "casting"), { recursive: true });
+    writeFileSync(path.join(state, "casting", "romaine-1974.json"), JSON.stringify({ missionId: "romaine-1974" }));
+    vi.stubEnv("HEIST_STATE_DIR", state);
+    const response = await get("romaine-1974");
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "the cached shortlist for this mission is invalid" });
   });
 });
 

@@ -2,6 +2,7 @@
 export { castMission, CastingError, CASTING_SUBAGENTS, scriptName, type CastMission, type CastOptions } from "./director";
 export {
   CASTING_DIR,
+  CastingReadError,
   isFixtureResult,
   isMissionId,
   liveCastingDir,
