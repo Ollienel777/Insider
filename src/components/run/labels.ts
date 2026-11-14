@@ -13,7 +13,7 @@
 // disc and choice ring, a pawn's body, a camera's housing) it avoids: of the spots
 // clear of every label, it takes the first that covers the fewest marks.
 import type { FloorGraph } from "@/domain";
-import { LABEL_FONT, roomLabelFit, roomLabelMatrix, type LabelSlot, type Matrix, type Point } from "./iso";
+import { LABEL_FONT, roomLabelFit, roomLabelMatrix, type Frame, type LabelSlot, type Matrix, type Point } from "./iso";
 
 export type Quad = readonly [Point, Point, Point, Point];
 
@@ -89,6 +89,15 @@ export function matrixBox(m: Matrix, chars: number, font: number): Quad {
   const top = GLYPH.top * font;
   const bottom = GLYPH.bottom * font;
   return [at(0, top), at(width, top), at(width, bottom), at(0, bottom)];
+}
+
+/** How far `p` stands from the nearest point of an upright box `q`: 0 when inside it. */
+export function boxReach(q: Quad, p: Point): number {
+  const xs = q.map((c) => c.x);
+  const ys = q.map((c) => c.y);
+  const dx = Math.max(Math.min(...xs) - p.x, 0, p.x - Math.max(...xs));
+  const dy = Math.max(Math.min(...ys) - p.y, 0, p.y - Math.max(...ys));
+  return Math.hypot(dx, dy);
 }
 
 const clearOf = (q: Quad, quads: readonly Quad[]) => !quads.some((t) => quadsOverlap(q, t));
@@ -171,30 +180,76 @@ export interface RoomLabel {
   quad: Quad;
 }
 
+/** A room this narrow (in floor units) or narrower is a corridor: one row of nodes, end to end. */
+const CORRIDOR_WIDTH = 4;
+
+/**
+ * Whether a room's back edge (the one its label runs along) is the floor's
+ * outer wall: no other room's tile lies against any of it.
+ */
+export function backEdgeIsOuter(room: Pick<FloorGraph["rooms"][number], "id" | "rect">, rooms: FloorGraph["rooms"]): boolean {
+  const r = room.rect;
+  const alongX = r.w >= r.h;
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
+  return !rooms.some((o) => {
+    if (o.id === room.id) return false;
+    const q = o.rect;
+    return alongX
+      ? near(q.y + q.h, r.y) && q.x < r.x + r.w && q.x + q.w > r.x
+      : near(q.x + q.w, r.x) && q.y < r.y + r.h && q.y + q.h > r.y;
+  });
+}
+
 /**
  * Each room's name on its tile, by `choose`: along the back edge where it
  * fits whole (the default), else slid along it, else along the front edge,
- * else smaller.
+ * else smaller. Then a corridor whose back edge is the floor's outer wall,
+ * when every spot on its tile covers a node or a pawn (#83 R1-N2: at the wow
+ * beat they all stand on it), takes its name just outside that edge instead:
+ * the first spot there, largest first, inside `frame` and clear of every label
+ * in `outside` and of the names placed so far. Its nodes and pawns are not
+ * checked there: a pawn's head on the corridor can still reach over it (on F1,
+ * one standing at dc-mid or dc-east). Without `outside` no name goes outside,
+ * so the other rooms keep the places they had.
  */
 export function placeRoomLabels(
   floor: Pick<FloorGraph, "rooms">,
   label: (roomLabel: string) => string,
   taken: Taken,
+  outside?: Taken,
+  /** The board's frame (`frameOf`): a name outside its wall must still lie inside it. */
+  frame?: Frame,
 ): RoomLabel[] {
+  const inFrame = (q: Quad) =>
+    !frame || q.every((p) => p.x >= frame.minX && p.x <= frame.minX + frame.width && p.y >= frame.minY && p.y <= frame.minY + frame.height);
+  const names: Quad[] = [];
   return floor.rooms.map((room) => {
     const text = label(room.label);
-    const { edge, em } = roomLabelFit(room.rect, text.length);
-    const slots: LabelSlot[] = [];
-    for (const scale of [1, 0.85]) {
-      const slack = edge - 0.6 - em * scale * text.length * GLYPH.advance;
-      for (const side of ["back", "front"] as const) {
-        for (let shift = 0; shift <= slack + 1e-9; shift += 0.25) slots.push({ side, shift, scale });
+    const candidates = (sides: readonly LabelSlot["side"][]) => {
+      const { edge, em } = roomLabelFit(room.rect, text.length);
+      const slots: LabelSlot[] = [];
+      for (const scale of [1, 0.85]) {
+        const slack = edge - 0.6 - em * scale * text.length * GLYPH.advance;
+        for (const side of sides) {
+          for (let shift = 0; shift <= slack + 1e-9; shift += 0.25) slots.push({ side, shift, scale });
+        }
+      }
+      return slots.map((slot) => {
+        const matrix = roomLabelMatrix(room.rect, text.length, slot);
+        return { roomId: room.id, text, matrix, quad: matrixBox(matrix, text.length, LABEL_FONT) };
+      });
+    };
+    let chosen = choose(candidates(["back", "front"]), taken);
+    const covered = taken.marks.some((m) => quadsOverlap(chosen.quad, m));
+    const corridor = Math.min(room.rect.w, room.rect.h) <= CORRIDOR_WIDTH && backEdgeIsOuter(room, floor.rooms);
+    if (outside && covered && corridor) {
+      const out = candidates(["outside"]).find((c) => inFrame(c.quad) && clearOf(c.quad, outside.text) && clearOf(c.quad, names));
+      if (out) {
+        taken.text[taken.text.lastIndexOf(chosen.quad)] = out.quad;
+        chosen = out;
       }
     }
-    const candidates = slots.map((slot) => {
-      const matrix = roomLabelMatrix(room.rect, text.length, slot);
-      return { roomId: room.id, text, matrix, quad: matrixBox(matrix, text.length, LABEL_FONT) };
-    });
-    return choose(candidates, taken);
+    names.push(chosen.quad);
+    return chosen;
   });
 }
