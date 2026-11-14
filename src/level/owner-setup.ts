@@ -187,7 +187,11 @@ export interface OwnerPlacedLock extends Owned<Omit<PlacedLock, "zoneId">> {
 
 export interface OwnerPlacedCleaner {
   id: string;
+  /** The zone its first waypoint is in, or "" when that node is in no placed zone. */
+  zoneId: string;
   roomId: string;
+  /** The placer's rule for a cleaner still as generated; "" for the owner's own. */
+  rule: string;
   /** Waypoints, as the engine's cleaner patrol: it starts on the first. */
   patrol: readonly string[];
   provenance: readonly (OwnerProvenance | Provenance)[];
@@ -338,10 +342,13 @@ export function applyOwnerSetup(manifest: LevelManifest, floor: FloorGraph, setu
     const kept = asGenerated(from?.patrol, c.round);
     // A generated cleaner walks a crowded zone: that zone's data says why it is there.
     const zone = kept ? base.zones.find((z) => z.role === "crowded" && z.nodes.includes(kept[0])) : undefined;
+    const patrol = kept ?? c.round;
     return {
       id: c.id,
+      zoneId: (kept && base.cleaners.find((b) => b.id === c.id)?.zoneId) || (base.zones.find((z) => z.nodes.includes(patrol[0]))?.zoneId ?? ""),
       roomId: roomOf.get(c.round[0])!,
-      patrol: kept ?? c.round,
+      rule: (kept && base.cleaners.find((b) => b.id === c.id)?.rule) || "",
+      patrol,
       provenance: kept && zone ? zone.provenance : owner(`cleaner:${c.id}`, `cleaners.${c.id}`),
     };
   });
