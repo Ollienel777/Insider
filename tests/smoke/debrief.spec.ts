@@ -168,13 +168,26 @@ test("beat 5 to 6: caught after the wow beat, the debrief says so, with the Chie
   await expect(late.getByTestId("chief-decision-source")).toHaveText("Recorded");
   expect(log.lateChief!.chiefSource).toBe("recorded");
 
-  // At 1440×900 the whole debrief fits without scrolling the panel: the late answer moved no guard,
-  // so its rationale and rows stay folded under its note, and open on a click.
-  const panelBody = page.locator("aside > div").first();
-  expect(await panelBody.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(0);
-  await expect(late.getByTestId("chief-decision-late")).toBeInViewport();
+  // At 1440×900 the late answer's note and Try again are in view without scrolling the panel: the
+  // late answer moved no guard, so its rationale and rows stay folded under its note. Checked by
+  // where they sit, not by the panel's exact height, so a font that wraps one line more passes.
+  const panelBody = page.getByTestId("panel-body");
+  const note = late.getByTestId("chief-decision-late");
+  await expect
+    .poll(async () => {
+      const [panel, box] = await Promise.all([panelBody.boundingBox(), note.boundingBox()]);
+      return !!panel && !!box && box.y >= panel.y && box.y + box.height <= panel.y + panel.height;
+    })
+    .toBe(true);
+  await expect(page.getByTestId("debrief-try-again")).toBeInViewport({ ratio: 1 });
   await expect(late.getByTestId("chief-decision-rationale")).toBeHidden();
   await expect(late.getByTestId("chief-decision-order").first()).toBeHidden();
+  // It opens from the keyboard and by a click.
+  await late.locator("summary").focus();
+  await page.keyboard.press("Enter");
+  await expect(late.getByTestId("chief-decision-rationale")).toBeVisible();
+  await late.getByTestId("chief-decision-late").click();
+  await expect(late.getByTestId("chief-decision-rationale")).toBeHidden();
   await late.getByTestId("chief-decision-late").click();
   await expect(late.getByTestId("chief-decision-rationale")).toBeVisible();
   await expect(late.getByTestId("chief-decision-order").first()).toBeVisible();

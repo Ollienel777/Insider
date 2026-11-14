@@ -560,17 +560,14 @@ function LateDecision({ decision }: { decision: Decision }) {
   return (
     <details data-testid="chief-decision-late-body" className="group">
       <summary
-        title={orders > 0 ? "Show what it ordered" : "Show what it said"}
         className="-ml-2 flex min-h-10 cursor-pointer list-none items-start gap-1 rounded-sm px-2 text-sm text-text-2 hover:bg-surface-3 hover:text-text-1 [&::-webkit-details-marker]:hidden"
       >
         <ChevronRight
           aria-hidden
-          className="mt-0.5 size-4 shrink-0 stroke-[1.5] text-text-1 transition-transform duration-fast ease-out group-open:rotate-90"
+          className="mt-0.5 size-4 shrink-0 stroke-[1.5] text-text-2 transition-transform duration-fast ease-out group-open:rotate-90"
         />
-        <span>
-          <span data-testid="chief-decision-late">{LATE_NOTE}</span>
-          <span className="sr-only"> {orders > 0 ? "Show what it ordered." : "Show what it said."}</span>
-        </span>
+        {/* A native disclosure: a screen reader already says whether it is open, so no "Show…" hint. */}
+        <span data-testid="chief-decision-late">{LATE_NOTE}</span>
       </summary>
       <div className="flex flex-col gap-1.5 pt-1.5">
         <Rationale decision={decision} />
