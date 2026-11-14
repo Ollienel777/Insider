@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { FAKE_ENV, GateError, checkNextRoot, freePort, gateEnv, pickPort } from "./gate.mjs";
+import { FAKE_ENV, GateError, checkNextRoot, freePort, gateEnv, pickPort, portLabel, resolveEnv } from "./gate.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.dirname(here);
@@ -220,10 +220,36 @@ describe("gateEnv", () => {
     for (const name of Object.keys(FAKE_ENV)) expect(env[name]).toBe("fake");
   });
 
-  it("uses the port it is given, defaults to 3100, and keeps one the caller set", () => {
-    expect(gateEnv({}).PORT).toBe("3100");
-    expect(gateEnv({}, "41234").PORT).toBe("41234");
-    expect(gateEnv({ PORT: "3101" }, "41234").PORT).toBe("3101");
+  it("leaves PORT as the caller set it, or unset", () => {
+    expect(gateEnv({}).PORT).toBeUndefined();
+    expect(gateEnv({ PORT: "3101" }).PORT).toBe("3101");
+  });
+});
+
+describe("resolveEnv", () => {
+  it("puts the picked port into the smoke's environment and keeps the rest", async () => {
+    const env = gateEnv({ OTHER: "x" });
+    const smoke = await resolveEnv(env, async () => "45678");
+    expect(smoke.PORT).toBe("45678");
+    expect(smoke.OTHER).toBe("x");
+    expect(smoke.HEIST_MODE).toBe("fake");
+    expect(env.PORT).toBeUndefined();
+  });
+
+  it("keeps an explicit PORT, and 3100 in CI", async () => {
+    const never = () => {
+      throw new Error("should not look for a free port");
+    };
+    expect((await resolveEnv(gateEnv({ PORT: "3147" }), never)).PORT).toBe("3147");
+    expect((await resolveEnv(gateEnv({ CI: "true" }), never)).PORT).toBe("3100");
+  });
+});
+
+describe("portLabel", () => {
+  it("names the port before any is picked", () => {
+    expect(portLabel({ PORT: "3147" })).toBe("3147");
+    expect(portLabel({ CI: "true" })).toBe("3100");
+    expect(portLabel({})).toBe("a free one, picked before the smoke");
   });
 });
 
@@ -252,7 +278,10 @@ describe("pickPort", () => {
     const first = await freePort();
     expect(Number(first)).toBeGreaterThan(0);
     const holder = net.createServer();
-    await new Promise((resolve) => holder.listen(Number(first), "127.0.0.1", resolve));
+    await new Promise((resolve, reject) => {
+      holder.once("error", reject);
+      holder.listen(Number(first), "127.0.0.1", resolve);
+    });
     try {
       const second = await freePort();
       expect(second).not.toBe(first);

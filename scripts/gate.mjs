@@ -54,12 +54,12 @@ export function freePort() {
 }
 
 /**
- * The port the build, start and smoke steps share. An explicit PORT wins. CI
- * keeps 3100: a runner is a fresh machine with one gate on it. Otherwise
- * another gate may hold 3100 (two worktrees, two agents on the VM), so ask the
- * OS for a free port. It hands out ephemeral ports in turn, so two gates
- * started together get different ones; probing upward from 3100 would let
- * both see 3100 free at the start and collide at the smoke minutes later.
+ * The smoke's port. An explicit PORT wins. CI keeps 3100: a runner is a fresh
+ * machine with one gate on it. Otherwise another gate may hold 3100 (two
+ * worktrees, two agents on the VM), so ask the OS for a free port. Windows
+ * hands out ephemeral ports in order and Linux picks them at random, so two
+ * gates get different ones with high probability, not by guarantee. Probing
+ * upward from 3100 instead would let both see 3100 free and collide.
  */
 export async function pickPort(base = process.env, find = freePort) {
   if (base.PORT) return base.PORT;
@@ -67,14 +67,29 @@ export async function pickPort(base = process.env, find = freePort) {
   return find();
 }
 
-/** The environment every step runs with. */
-export function gateEnv(base = process.env, port = DEFAULT_PORT) {
+/** The port as the gate's first line reports it, before any is picked. */
+export function portLabel(base = process.env) {
+  if (base.PORT) return base.PORT;
+  if (isCI(base)) return DEFAULT_PORT;
+  return "a free one, picked before the smoke";
+}
+
+/** The environment every step runs with. PORT is left as the caller set it. */
+export function gateEnv(base = process.env) {
   return {
     ...base,
     ...FAKE_ENV,
-    PORT: base.PORT || port,
     NEXT_TELEMETRY_DISABLED: "1",
   };
+}
+
+/**
+ * The smoke's environment: `env` with PORT settled. It is picked just before
+ * the smoke rather than at the start, so the port is free when `next start`
+ * binds it (`next build` does not read PORT).
+ */
+export async function resolveEnv(env, find = freePort) {
+  return { ...env, PORT: await pickPort(env, find) };
 }
 
 // .native returns the on-disk case (a drive letter on Windows, for one).
@@ -210,7 +225,15 @@ export function steps(top, env) {
         checkNextRoot(top);
       },
     },
-    { id: "6", name: "smoke", run: sh("npm", "run", "smoke") },
+    {
+      id: "6",
+      name: "smoke",
+      run: async () => {
+        const smokeEnv = await resolveEnv(env);
+        console.log(`gate: smoke on PORT=${smokeEnv.PORT}`);
+        run("npm", ["run", "smoke"], { top, env: smokeEnv });
+      },
+    },
   ];
 }
 
@@ -228,20 +251,15 @@ export async function main(argv = process.argv.slice(2)) {
   } catch (error) {
     return fail("0", "locate", error, results);
   }
-  let env;
-  try {
-    env = gateEnv(process.env, await pickPort());
-  } catch (error) {
-    return fail("0", "locate (free port)", error, results);
-  }
-  console.log(`gate: testing ${top} (PORT=${env.PORT}, every service on fixtures)`);
+  const env = gateEnv();
+  console.log(`gate: testing ${top} (PORT=${portLabel(env)}, every service on fixtures)`);
   let list = steps(top, env);
   if (only === "locate") list = list.filter((s) => s.name.startsWith("locate"));
   for (const step of list) {
     console.log(`\ngate: step ${step.id} ${step.name}`);
     const started = Date.now();
     try {
-      step.run();
+      await step.run();
     } catch (error) {
       return fail(step.id, step.name, error, results);
     }
