@@ -14,9 +14,12 @@ import { ownerZones } from "./owner-batch";
 import { OwnerBoard, type Selection } from "./owner-board";
 import {
   addCamera,
+  addCleaner,
   addGuard,
   boardOf,
+  extendCleanerRound,
   extendRound,
+  moveCleaner,
   moveGuard,
   playable,
   problemsOf,
@@ -255,7 +258,7 @@ export function OwnerReady({
           <div className="flex h-12 shrink-0 items-center px-6">
             <p className="text-sm text-text-2">
               {view === "setup"
-                ? "Click a guard, camera, door or desk to change it, or pick a tool to add one."
+                ? "Click a guard, cleaner, camera, door or desk to change it, or pick a tool to add one."
                 : "The crew plays each strategy on ten nights: different rounds, sweeps and nerve."}
             </p>
           </div>
@@ -312,17 +315,24 @@ export function OwnerReady({
 
   function onNode(nodeId: string) {
     const setup = draft.setup;
-    if (tool === "move" && selection && (selection.kind === "guard" || selection.kind === "camera")) {
-      edit(selection.kind === "guard" ? moveGuard(setup, selection.id, nodeId) : updateCamera(setup, selection.id, { node: nodeId }));
+    if (tool === "move" && selection && (selection.kind === "guard" || selection.kind === "cleaner" || selection.kind === "camera")) {
+      edit(
+        selection.kind === "guard"
+          ? moveGuard(setup, selection.id, nodeId)
+          : selection.kind === "cleaner"
+            ? moveCleaner(setup, selection.id, nodeId)
+            : updateCamera(setup, selection.id, { node: nodeId }),
+      );
       setTool("select");
       return;
     }
-    if (tool === "round" && selection?.kind === "guard") {
-      edit(extendRound(setup, selection.id, nodeId));
+    if (tool === "round" && (selection?.kind === "guard" || selection?.kind === "cleaner")) {
+      edit(selection.kind === "guard" ? extendRound(setup, selection.id, nodeId) : extendCleanerRound(setup, selection.id, nodeId));
       return;
     }
-    if (tool === "guard" || tool === "camera") {
-      const added = tool === "guard" ? addGuard(setup, nodeId, generated.level.patrolTempo) : addCamera(setup, nodeId);
+    if (tool === "guard" || tool === "cleaner" || tool === "camera") {
+      const added =
+        tool === "guard" ? addGuard(setup, nodeId, generated.level.patrolTempo) : tool === "cleaner" ? addCleaner(setup, nodeId) : addCamera(setup, nodeId);
       edit(added.setup);
       setSelection({ kind: tool, id: added.id });
       setTool("select");
@@ -335,11 +345,14 @@ export function OwnerReady({
       setTool("select");
       return;
     }
-    // Select: a guard posted here (the next one on each click), a camera mounted here, or a desk.
-    const here = setup.guards.filter((g) => g.post === nodeId);
+    // Select: a guard posted here or a cleaner starting here (the next one on each click), a camera mounted here, or a desk.
+    const here: Selection[] = [
+      ...setup.guards.filter((g) => g.post === nodeId).map((g) => ({ kind: "guard" as const, id: g.id })),
+      ...(setup.cleaners ?? []).filter((c) => c.round[0] === nodeId).map((c) => ({ kind: "cleaner" as const, id: c.id })),
+    ];
     if (here.length > 0) {
-      const at = selection?.kind === "guard" ? here.findIndex((g) => g.id === selection.id) : -1;
-      setSelection({ kind: "guard", id: here[(at + 1) % here.length].id });
+      const at = here.findIndex((w) => w!.kind === selection?.kind && w!.id === selection.id);
+      setSelection(here[(at + 1) % here.length]);
       return;
     }
     const camera = setup.cameras.find((c) => c.node === nodeId);

@@ -108,6 +108,12 @@ describe("validateOwnerSetup", () => {
     ]);
   });
 
+  it("names a cleaner on no node", () => {
+    expect(validateOwnerSetup(variant({ cleaners: [{ id: "K1", round: [] }] }), floor())).toEqual([
+      { code: "cleaner-off-floor", elementRole: "cleaner:K1", reason: "Cleaner K1 stands on no node" },
+    ]);
+  });
+
   it("checks the cleaners, a camera's kept cover and the generated list", () => {
     expect(codes(variant({ cleaners: [{ id: "K1", round: ["o-west", "o-north", "o-south"] }], generated: { cleaners: ["K1"] } }))).toEqual([]);
     const setup = variant({
