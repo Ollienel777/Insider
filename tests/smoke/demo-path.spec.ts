@@ -24,7 +24,7 @@ interface Log {
   lateChief?: { turn: number };
 }
 
-// The Casting Director's own reason for F1, from its cached shortlist (#117).
+// The Casting Director's own reason for F1, from its cached shortlist (#24).
 const F1_REASON = (
   JSON.parse(readFileSync(path.join(process.cwd(), "data", "casting", "romaine-1974.json"), "utf8")) as {
     finalists: { id: string; reason: string }[];

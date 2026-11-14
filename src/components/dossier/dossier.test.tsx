@@ -28,7 +28,7 @@ const building = FIXTURE_BUILDINGS.find((b) => b.id === "F1")!;
 const romaine = findMission("romaine-1974")!;
 const finalist = (await castFinalist(romaine, "F1"))!;
 const cast = { candidate: finalist.candidate, mission: romaine, derived: finalist.source === "derived" };
-/** The Casting Director's cached shortlist for the mission, read straight from disk (#117). */
+/** The Casting Director's cached shortlist for the mission, read straight from disk (#24). */
 const shortlist = JSON.parse(readFileSync(path.join(root, "data", "casting", "romaine-1974.json"), "utf8")) as {
   finalists: { id: string; reason: string }[];
 };
@@ -77,7 +77,7 @@ describe("the Data → Level table for F1", () => {
     expect(dataToLevelRows(manifest).map((r) => r.id)).not.toContain("cast");
   });
 
-  it("reads F1's finalist, reason included, from the Casting Director's cached shortlist (#117)", async () => {
+  it("reads F1's finalist, reason included, from the Casting Director's cached shortlist (#24)", async () => {
     const cached = await castingResult("romaine-1974");
     expect(cached).not.toBeNull();
     expect(finalist.source).toBe("shortlist");
