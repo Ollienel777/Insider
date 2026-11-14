@@ -46,7 +46,7 @@ export async function readCachedLevel(
   }
   const manifest = LevelManifest.parse(JSON.parse(raw[0]));
   if (manifest.buildingId !== buildingId || manifest.missionId !== missionId) {
-    throw new Error(`${paths.manifest} holds ${levelKey(manifest.buildingId, manifest.missionId)}`);
+    throw new Error(`level file ${levelKey(buildingId, missionId)} holds ${levelKey(manifest.buildingId, manifest.missionId)}`);
   }
   return { manifest, trace: BuildTrace.parse(JSON.parse(raw[1])) };
 }

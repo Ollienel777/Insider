@@ -8,6 +8,7 @@ import { findMission } from "@/agents/builder/missions";
 import { castFinalist, castingResult } from "@/lib/cast-because";
 import { castBecauseRow, dataToLevelRows, suiteRange } from "./data-to-level";
 import { DISCLAIMER, DossierScreen } from "./dossier-screen";
+import { DossierUnavailable } from "./dossier-unavailable";
 import { StepDetail, TraceList } from "./trace-list";
 import { dossierFacts } from "./facts";
 import {
@@ -395,5 +396,12 @@ describe("the trace banner (S1)", () => {
       "A replay of a run recorded on live data, with model turns from anthropic claude-opus-5-5. Nothing on this screen calls a model.",
     );
     expect(traceBanner({})).toBe("A replay of a run recorded on fixtures. Nothing on this screen calls a model.");
+  });
+});
+
+describe("DossierUnavailable", () => {
+  it("names the building and mission to build, in build:levels' own form", () => {
+    const html = renderToStaticMarkup(<DossierUnavailable buildingId="F1" missionId="romaine-1974" name="X" reason="missing" />);
+    expect(html).toContain("npm run build:levels -- F1:romaine-1974");
   });
 });

@@ -55,7 +55,7 @@ for (const arg of ids) {
     const scriptPath = path.join(RECORDED_DIR, `${name}.json`);
     await writeFile(scriptPath, `${JSON.stringify(script, null, 2)}\n`);
     const written = await writeCachedLevel(level, RECORDED_DIR);
-    if (id === "F1") recordedF1 = true;
+    if (id === "F1" && missionId === defaultMissionId("F1")) recordedF1 = true;
 
     const perAgent = script.agents.map((a) => `${a.agent} ${a.turns.length}`).join(", ");
     const failedTools = level.trace.events.filter((e) => e.status === "failed").map((e) => `${e.agent}/${e.label}`);
@@ -71,7 +71,7 @@ for (const arg of ids) {
     }
   }
 }
-// A fresh F1 recording replaces the stale pre-#119 one, so the two never sit side by side.
+// A fresh recording of F1's default mission replaces the stale pre-#119 one, so the two never sit side by side.
 if (recordedF1) {
   await rm(path.join(RECORDED_DIR, "pre-119"), { recursive: true, force: true });
   console.log("removed the stale pre-#119 recording, fixtures/llm/recorded/pre-119/");
