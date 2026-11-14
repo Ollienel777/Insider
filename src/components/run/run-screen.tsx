@@ -423,6 +423,18 @@ export function RunScreen({
   // A kit building's label, once the board is placed: it names the scan only when the board stands on it.
   const placedOn = load.status === "ready" ? placedFloor(load.floor.source) : null;
   const label = placedOn ? recordLabel(source, placedOn) : null;
+  const record =
+    label && placedOn ? (
+      <span
+        data-testid="record-label"
+        title={label}
+        className="flex min-w-0 rounded-sm border border-border px-1.5 py-0.5 label-caps text-text-2 md:shrink-0"
+      >
+        {/* On a narrow screen the record part gives way first: the floor is the part that matters. */}
+        <span className="truncate">{RECORD_LABEL}</span>
+        <span className="shrink-0 whitespace-pre">{` · ${floorLabel(placedOn)}`}</span>
+      </span>
+    ) : null;
   /** The board is still being set up. A board that will not come (no floor, an error) is not loading. */
   const settingUp = load.status === "loading" || (load.status === "ready" && !run);
 
@@ -436,6 +448,7 @@ export function RunScreen({
       onTake={() => play({ kind: "take" })}
       onRestart={restart}
       canRestart={run !== null && run.turn > 0}
+      record={record}
       bar={
           <div className="flex h-14 shrink-0 items-center gap-3 px-6">
             <span className="flex items-center gap-2 label-caps text-text-2">
@@ -448,17 +461,8 @@ export function RunScreen({
                 </span>
               )}
             </span>
-            {label && placedOn ? (
-              <span
-                data-testid="record-label"
-                title={label}
-                className="flex min-w-0 rounded-sm border border-border px-1.5 py-0.5 label-caps text-text-2 md:shrink-0"
-              >
-                {/* On a narrow screen the record part gives way first: the floor is the part that matters. */}
-                <span className="truncate">{RECORD_LABEL}</span>
-                <span className="shrink-0 whitespace-pre">{` · ${floorLabel(placedOn)}`}</span>
-              </span>
-            ) : null}
+            {/* Closed with the bar in Live, where the HUD carries it instead: one label on the page. */}
+            {open ? record : null}
             <span aria-hidden className="h-4 w-px bg-border" />
             <span className="truncate text-sm text-text-1">{manifest?.mission.title}</span>
             <div className="ml-auto flex items-center gap-2">
