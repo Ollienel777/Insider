@@ -5,7 +5,7 @@
 // fixture floor, and by an opaque `area-N` on a scanned (Matterport) floor,
 // so no scan id or label leaves the browser. Orders come back in those ids
 // and are mapped to the engine's before the engine clamps them.
-import { ChiefRequest, type ChiefAnswer, type ChiefHistory } from "@/agents/chief/request";
+import { ChiefRequest, strayHistoryIds, type ChiefAnswer, type ChiefHistory } from "@/agents/chief/request";
 import { ChiefOrders } from "@/domain";
 import { compileBoard, zoneOf, type AlarmEvent, type RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
@@ -62,6 +62,14 @@ export function chiefRequest(
   history: ChiefHistory | null = null,
 ): ChiefRequest {
   const chiefId = (engineId: string) => zones.toChief.get(engineId) ?? engineId;
+  const guards = run.guards.map((g) => ({
+    id: g.id,
+    zoneId: chiefId(zoneOf(run.board, g.nodeId).zoneId),
+    intent: g.target?.intent ?? "patrol",
+  }));
+  // A summary naming an id this request does not carry would fail the parse: the run goes on without it.
+  const fits =
+    history && strayHistoryIds(history, new Set(zones.zones.map((z) => z.id)), new Set(guards.map((g) => g.id))).length === 0;
   return ChiefRequest.parse({
     buildingId,
     transition: {
@@ -71,13 +79,9 @@ export function chiefRequest(
       cause: { kind: event.cause.kind, ...(event.cause.id && { id: event.cause.id }) },
     },
     lastKnownZone: event.lastKnownZone === null ? null : chiefId(event.lastKnownZone),
-    guards: run.guards.map((g) => ({
-      id: g.id,
-      zoneId: chiefId(zoneOf(run.board, g.nodeId).zoneId),
-      intent: g.target?.intent ?? "patrol",
-    })),
+    guards,
     zones: zones.zones,
-    ...(history && { history }),
+    ...(history && fits && { history }),
   });
 }
 

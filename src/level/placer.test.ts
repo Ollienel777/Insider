@@ -159,6 +159,19 @@ describe("placeLevel on F1 from the cached manifest", () => {
     }
   });
 
+  it("keeps a quiet route and a guard on a round with the watch post of a second run (#35)", () => {
+    for (const seed of SEEDS) {
+      const p = placeLevel(manifest(), floor(), seed, undefined, { watchEntry: "dock-N" });
+      expect(p.watch, `seed ${seed}`).not.toBeNull();
+      expect(p.guards.some((g) => g.post === undefined && g.patrol.length > 1), `seed ${seed}`).toBe(true);
+      const route = quietRoute(p);
+      expect(route, `seed ${seed}`).not.toBeNull();
+      const run = play(createRun(p.level), route!);
+      expect(run.alarmEvents, `seed ${seed}`).toEqual([]);
+      expect(run.status, `seed ${seed}`).toBe("won");
+    }
+  });
+
   it("has no quiet route when there is no time for one, or every node of the corridor is watched", () => {
     expect(quietRoute(placed, 10)).toBeNull();
     const m = manifest();

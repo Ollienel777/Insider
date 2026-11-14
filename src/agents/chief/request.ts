@@ -44,6 +44,24 @@ export const ChiefHistory = z.strictObject({
 });
 export type ChiefHistory = z.infer<typeof ChiefHistory>;
 
+/**
+ * The ids `history` names that the request itself does not: a zone missing
+ * from `zones`, a posted guard missing from `guards`. History ids reach the
+ * live prompt, so the request holds them to the ids it already carries.
+ */
+export function strayHistoryIds(
+  history: ChiefHistory,
+  zoneIds: ReadonlySet<string>,
+  guardIds: ReadonlySet<string>,
+): string[] {
+  const zones = [...history.entries, ...history.exits, ...history.detectedZones].map((z) => z.zoneId);
+  if (history.posted) zones.push(history.posted.zoneId);
+  return [
+    ...zones.filter((id) => !zoneIds.has(id)),
+    ...(history.posted && !guardIds.has(history.posted.guardId) ? [history.posted.guardId] : []),
+  ];
+}
+
 export const ChiefRequest = z.strictObject({
   buildingId: ShortId,
   transition: ChiefTransition,
@@ -57,6 +75,13 @@ export const ChiefRequest = z.strictObject({
   zones: z.array(z.strictObject({ id: ShortId, name: ShortName })).min(1).max(64),
   /** The player's earlier runs here; sent only with a run's first transition, and only when there were any. */
   history: ChiefHistory.optional(),
+}).superRefine((request, ctx) => {
+  if (!request.history) return;
+  const zoneIds = new Set(request.zones.map((z) => z.id));
+  const guardIds = new Set(request.guards.map((g) => g.id));
+  for (const id of strayHistoryIds(request.history, zoneIds, guardIds)) {
+    ctx.addIssue({ code: "custom", path: ["history"], message: `history names ${JSON.stringify(id)}, which the request does not` });
+  }
 });
 export type ChiefRequest = z.infer<typeof ChiefRequest>;
 

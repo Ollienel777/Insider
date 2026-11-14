@@ -28,6 +28,12 @@ async function trip(page: Page) {
   await expect(page.getByTestId("alarm-banner")).toHaveAttribute("data-state", "alert");
 }
 
+/** Waits out the alarm until the guards catch the player. */
+async function caught(page: Page) {
+  for (let i = 0; i < 12 && (await page.getByTestId("run-outcome").count()) === 0; i++) await page.keyboard.press("w");
+  await expect(page.getByTestId("run-outcome")).toHaveAttribute("data-status", "caught");
+}
+
 test("a second run of F1 by the dock: G3 starts posted nearer it, the Chief says so, and Forget restores the default", async ({ page }) => {
   await open(page);
   await expect(page.getByTestId("forget-history")).toHaveCount(0);
@@ -36,8 +42,7 @@ test("a second run of F1 by the dock: G3 starts posted nearer it, the Chief says
   const rationale = page.getByTestId("chief-rationale");
   await expect(rationale).toHaveAttribute("data-done", "true", { timeout: 4_000 });
   await expect(rationale).not.toContainText("starts there tonight");
-  for (let i = 0; i < 12 && (await page.getByTestId("run-outcome").count()) === 0; i++) await page.keyboard.press("w");
-  await expect(page.getByTestId("run-outcome")).toHaveAttribute("data-status", "caught");
+  await caught(page);
 
   // The second run: G3 stands elsewhere, and the first rationale names the dock and G3.
   await open(page);
@@ -48,9 +53,39 @@ test("a second run of F1 by the dock: G3 starts posted nearer it, the Chief says
   await expect(rationale).toHaveAttribute("data-done", "true", { timeout: 4_000 });
   await expect(rationale).toContainText("They used the loading dock before. G3 starts there tonight.");
 
+  // Mid-run, forgetting would throw the run away: it waits for the start or the end.
+  await expect(page.getByTestId("forget-history")).toBeDisabled();
+  await page.getByRole("button", { name: "Restart" }).click();
+  await expect(page.getByTestId("turn")).toHaveText("0");
+
   // Forgetting the history places the level again in its default posture.
   await page.getByTestId("forget-history").click();
   await expect(page.getByTestId("forget-history")).toHaveCount(0);
   await expect(page.getByTestId("turn")).toHaveText("0");
   await expect(g3(page)).toHaveAttribute("data-node", defaultG3!);
+});
+
+test("the Plan board and the Debrief's replay stand the guards where the second run placed them", async ({ page }) => {
+  await open(page);
+  const defaultG3 = await g3(page).getAttribute("data-node");
+  await trip(page);
+  await caught(page);
+
+  await open(page);
+  const adaptedG3 = await g3(page).getAttribute("data-node");
+  expect(adaptedG3).not.toBe(defaultG3);
+  await trip(page);
+  await caught(page);
+
+  // The Debrief replays the board the run was played on, from its first frame.
+  await page.goto("/b/F1/debrief");
+  await expect(page.getByTestId("replay-board")).toBeVisible();
+  await page.getByTestId("replay-slider").fill("0");
+  await expect(page.getByTestId("replay-board")).toHaveAttribute("data-frame", "0");
+  await expect(g3(page)).toHaveAttribute("data-node", adaptedG3!);
+
+  // The crew plans on the board they will run.
+  await page.goto("/b/F1/plan");
+  await expect(page.getByTestId("plan-board")).toBeVisible();
+  await expect(g3(page)).toHaveAttribute("data-node", adaptedG3!);
 });

@@ -80,6 +80,8 @@ export function RunScreen({
   const chiefSources = useRef(new Map<number, ChiefAnswer["source"]>());
   /** The Chief's answer that landed after the run ended, if one did. */
   const lateChief = useRef<LateChief | null>(null);
+  /** The way in the placed level's watch post stands near (#35), logged so the Debrief places the same board. */
+  const watchEntry = useRef<string | undefined>(undefined);
 
   /**
    * Puts a fresh run on the board, on opening and on Restart: no Chief call
@@ -96,7 +98,7 @@ export function RunScreen({
     const fresh = createRun(level);
     latestRun.current = fresh;
     setRun(fresh);
-    saveRunLog(runLogOf(fresh, chiefSources.current));
+    saveRunLog(runLogOf(fresh, chiefSources.current, null, watchEntry.current));
   }, []);
 
   useEffect(() => {
@@ -115,6 +117,7 @@ export function RunScreen({
           const history = loadRunHistory(building.id);
           const placed = placeLevel(manifest, floor, RUN_SEED, undefined, postureOf(history));
           setLoad({ status: "ready", placed, live: floor.source === "matterport", history });
+          watchEntry.current = placed.watch?.entryId;
           startRun(placed.level);
           setStatus(`You're in at the ${placed.entries[0].label.toLowerCase()}. Pick a number to move.`);
         },
@@ -174,7 +177,7 @@ export function RunScreen({
             // still shows it, marked late, but no guard moves on it. The log keeps it as a late
             // decision, so the Debrief lists every re-plan the player watched.
             lateChief.current = { turn: current.turn, chief: orders, chiefSource: answer.source };
-            saveRunLog(runLogOf(current, chiefSources.current, lateChief.current));
+            saveRunLog(runLogOf(current, chiefSources.current, lateChief.current, watchEntry.current));
             setChief({ status: "ready", seq, answer, applied: result, late: true });
             return;
           }
@@ -183,7 +186,7 @@ export function RunScreen({
           chiefSources.current.set(result.run.turn, answer.source);
           latestRun.current = result.run;
           setRun(result.run);
-          saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current));
+          saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current, watchEntry.current));
           setChief({ status: "ready", seq, answer, applied: result });
         },
         (error: unknown) => {
@@ -210,7 +213,7 @@ export function RunScreen({
       // A run that just ended joins the history; the next visit's guards start from it.
       const record = run.status === "playing" ? runRecordOf(result.run) : null;
       if (record) appendRunHistory(building.id, record);
-      saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current));
+      saveRunLog(runLogOf(result.run, chiefSources.current, lateChief.current, watchEntry.current));
     },
     [placed, run, callChief, building.id],
   );
@@ -223,6 +226,10 @@ export function RunScreen({
   /** Forgets the earlier runs and places the level again, in its default posture. */
   const forgetHistory = useCallback(() => {
     clearRunHistory(building.id);
+    // No run on the board until the level is placed again: no key plays the old one meanwhile.
+    latestRun.current = null;
+    setRun(null);
+    setLoad({ status: "loading" });
     setAttempt((a) => a + 1);
   }, [building.id]);
 
@@ -281,7 +288,13 @@ export function RunScreen({
             <span className="truncate text-sm text-text-1">{manifest?.mission.title}</span>
             <div className="ml-auto flex items-center gap-2">
               {history && history.length > 0 ? (
-                <Button variant="ghost" onClick={forgetHistory} data-testid="forget-history">
+                <Button
+                  variant="ghost"
+                  onClick={forgetHistory}
+                  // Mid-run it would throw the run away: it waits for the start or the end.
+                  disabled={!run || (run.turn > 0 && run.status === "playing")}
+                  data-testid="forget-history"
+                >
                   Forget {history.length === 1 ? "1 earlier run" : `${history.length} earlier runs`}
                 </Button>
               ) : null}

@@ -6,6 +6,7 @@ import { getMatterport } from "@/adapters/matterport";
 import { BoardView } from "@/components/run/board-view";
 import { saveCrewPlan } from "@/components/run/crew-plan-store";
 import { LensLegend, LensToggle, useLayerLens } from "@/components/run/layer-lens";
+import { loadRunHistory, postureOf } from "@/components/run/run-history";
 import { RUN_SEED, type RunBuilding } from "@/components/run/run-screen";
 import { BuildingScreen } from "@/components/shell/building-screen";
 import { LayerDot } from "@/components/shell/layer-dot";
@@ -66,7 +67,9 @@ export function PlanScreen({
       .then((floor) => {
         if (!live) return;
         if (!floor) return setLoad({ status: "no-floor" });
-        setLoad({ status: "ready", placed: placeLevel(manifest, floor, RUN_SEED), live: floor.source === "matterport" });
+        // The same posture the Run screen places with (#35), so the board the crew plans on is the one they run.
+        const posture = postureOf(loadRunHistory(building.id));
+        setLoad({ status: "ready", placed: placeLevel(manifest, floor, RUN_SEED, undefined, posture), live: floor.source === "matterport" });
       }, fail)
       .catch(fail);
     return () => {

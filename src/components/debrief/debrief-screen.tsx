@@ -74,7 +74,7 @@ export function DebriefScreen({
         if (!live) return;
         if (!floor) return setLoad({ status: "no-floor" });
         try {
-          const placed = placeLevel(manifest, floor, log.seed);
+          const placed = placeLevel(manifest, floor, log.seed, undefined, { watchEntry: log.watchEntry });
           setLoad({ status: "ready", placed, debrief: debriefOf(placed, log) });
         } catch (error) {
           if (error instanceof UnreadableLog) setLoad({ status: "empty", reason: "unreadable" });

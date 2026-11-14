@@ -254,8 +254,11 @@ async function railToDebrief(page: Page) {
   await expect(page).toHaveURL(/\/b\/F1\/debrief$/, { timeout: 15_000 });
 }
 
-/** The board is on turn 0, and the log in storage is that run's: no turns, nothing pending, nothing late. */
-async function expectFreshRun(page: Page) {
+/**
+ * The board is on turn 0, and the log in storage is that run's: no turns, nothing pending, nothing late.
+ * A visit after a finished run places the level with that history's posture (#35), and logs it as `watchEntry`.
+ */
+async function expectFreshRun(page: Page, watchEntry?: string) {
   await expect(page.getByTestId("run-board")).toBeVisible();
   await expect(page.getByTestId("turn")).toHaveText("0");
   await expect.poll(async () => storedLog(page)).toEqual({
@@ -265,6 +268,7 @@ async function expectFreshRun(page: Page) {
     turns: [],
     status: "playing",
     alarmEvents: [],
+    ...(watchEntry && { watchEntry }),
   });
 }
 
@@ -295,7 +299,7 @@ test("Restart after a capture, before the late answer lands: the log is the new 
   await expectNotStarted(page);
   // Its link goes back to the run, and a first move makes it a run the debrief shows.
   await page.getByTestId("debrief-empty").getByRole("link", { name: "Back to the run" }).click();
-  await expectFreshRun(page);
+  await expectFreshRun(page, "dock-N");
   await pressFor(page, "fl-lobby");
   await expect.poll(async () => (await storedLog(page)).turns.length).toBe(1);
   await railToDebrief(page);
@@ -327,7 +331,7 @@ test("a fresh visit to the Run screen replaces a finished run's log with its own
   await expect.poll(async () => (await storedLog(page)).status).toBe("caught");
 
   await page.goto("/b/F1/run");
-  await expectFreshRun(page);
+  await expectFreshRun(page, "dock-N");
   await page.goto("/b/F1/debrief");
   await expectNotStarted(page);
 });
