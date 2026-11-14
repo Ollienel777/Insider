@@ -99,7 +99,7 @@ the browser.
   Crew plans and Chief orders are parsed against a zod schema and clamped to
   legal moves, and guards move on the engine's own decision before any model
   answers. Every model call on the demo path is a single structured call with
-  a 4 s timeout and a recorded fallback.
+  a 4 s timeout and a recorded or rule-based fallback.
 - **Every external service sits behind an adapter with a fake.** CoStar,
   Vexcel, Matterport and the model each have a live adapter and a
   fixture-backed fake, chosen from the environment. The live adapters are
@@ -125,9 +125,11 @@ lists each sponsor's technology and the exact files that use it.
   that produced it, and showing it on a click, took the rules table, the Why
   card and the Layer lens.
 - **Saying only what is true.** The README went through seven review rounds
-  ([#81](https://github.com/Ollienel777/heist-anywhere/pull/81)), and four
-  false claims were caught, each taken from the plan or from one layer of the
-  code rather than the whole path.
+  ([#81](https://github.com/Ollienel777/heist-anywhere/pull/81)), and the
+  claims the reviews found untrue against the code were corrected before it
+  merged. One, taken from the plan, said the live Vexcel path proxies
+  imagery; the code has no proxy, and the README now says it passes Vexcel's
+  image URLs through.
 
 ## Accomplishments that we're proud of
 
@@ -194,9 +196,14 @@ Each prize's requirement, evidence and status:
 
 ## Use of AI
 
-This project was built by an autonomous Claude Code build loop. A person on
-the team chose the idea, made the decisions the loop raised, and merged the
-changes the loop may not merge itself, such as its CI workflow. The loop's
+The idea came from an autonomous Claude ideation loop, run before the event in
+a separate repository: its Claude agents generated candidate ideas, then
+ranked and red-teamed them over several rounds into a shortlist. A person on
+the team chose one idea from that shortlist.
+
+The project was then built by an autonomous Claude Code build loop. The person
+made the decisions the loop raised, and merged the changes the loop may not
+merge itself, such as its CI workflow. The loop's
 Claude agents wrote the product's code, tests and docs, as pull requests that
 separate Claude reviewer agents reviewed before they merged.
 
