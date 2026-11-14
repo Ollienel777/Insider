@@ -18,7 +18,8 @@
     "check:floor": "node scripts/check-floor.mjs",
     "demo:reset": "node scripts/demo-reset.mjs",
     "build:levels": "node scripts/run-ts.mjs scripts/build-levels.mts",
-    "cast": "node scripts/run-ts.mjs scripts/cast.mts"
+    "cast": "node scripts/run-ts.mjs scripts/cast.mts",
+    "record:builds": "node scripts/run-ts.mjs scripts/record-builds.mts"
   },
   "dependencies": {
     "@langchain/anthropic": "1.6.4",

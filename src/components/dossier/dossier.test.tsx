@@ -73,8 +73,32 @@ describe("the Data → Level table for F1", () => {
     });
   });
 
-  it("has a row for the dock entry, from the aerial", () => {
-    expect(row("dock")).toMatchObject({ layer: "vexcel", value: "dock-N", result: "Entry and exit" });
+  it("has a row for the dock entry, showing the recorded field and value, not the entry's id", () => {
+    const dock = manifest.entries.find((e) => e.kind === "dock")!;
+    const recorded = manifest.provenance.find((p) => p.elementRole === `entry:${dock.id}`)!;
+    expect(row("dock")).toMatchObject({ layer: recorded.layer, field: recorded.field, value: String(recorded.value) });
+    expect(row("dock")).toMatchObject({ field: "entries.kind", value: "dock", result: "Always offered as a way in and out" });
+  });
+
+  it("derives the dock row's result from its recorded rule, not a fixed phrase", () => {
+    const reworded = LevelManifest.parse({
+      ...manifest,
+      provenance: manifest.provenance.map((p) =>
+        p.elementRole === "entry:dock-N"
+          ? { ...p, rule: 'The aerial tags "Loading dock" (dock): a loading dock is the crew\'s way out only' }
+          : p,
+      ),
+    });
+    expect(dataToLevelRows(reworded).find((r) => r.id === "dock")?.result).toBe("The crew's way out only");
+  });
+
+  it("shows the dock row's value as rendered on the screen, equal to the record", () => {
+    const recorded = manifest.provenance.find((p) => p.elementRole === "entry:dock-N")!;
+    const html = screen(true);
+    const dockRow = /<tr[^>]*data-rule="dock"[\s\S]*?<\/tr>/.exec(html)![0];
+    const cells = [...dockRow.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => textOf(m[1]).trim());
+    expect(cells[1]).toBe(recorded.field);
+    expect(cells[2]).toBe(String(recorded.value));
   });
 
   it("reads each row from the manifest's provenance, not a fixed list", () => {

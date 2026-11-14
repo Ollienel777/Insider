@@ -150,8 +150,15 @@ export function RunScreen({
       const controller = new AbortController();
       pendingChief.current = controller;
       latestSeq.current = seq;
+      let request: ReturnType<typeof chiefRequest>;
+      try {
+        request = chiefRequest(building.id, placed, zones, state, state.alarmEvents[seq]);
+      } catch (error) {
+        // A board the request can't carry: the panel says so, and the turn (and its log) goes on.
+        setChief({ status: "error", seq, message: error instanceof Error ? error.message : String(error) });
+        return;
+      }
       setChief({ status: "pending", seq });
-      const request = chiefRequest(building.id, placed, zones, state, state.alarmEvents[seq]);
       askChief(request, { signal: controller.signal }).then(
         (answer) => {
           // A newer alarm event has its own call out; this answer is stale.
