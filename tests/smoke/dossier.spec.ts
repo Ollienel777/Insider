@@ -5,8 +5,8 @@ import { expect, test } from "@playwright/test";
 
 test("the dossier replays the trace and fills in 1974, Analog era and 4 guards", async ({ page }) => {
   // It watches the whole replay, which plays at its own pace: 6.1 s alone, up to 7.9 s with the CPU
-  // oversubscribed twice over (#84). 60 s leaves room for the loaded 2-vCPU VM, as #69 sized; a
-  // stalled replay still fails on its own 8 s waits, not on this.
+  // oversubscribed twice over (#84). 60 s is #69's size, not measured on the 2-vCPU VM; a stalled
+  // replay still fails on its own 8 s waits, not on this.
   test.setTimeout(60_000);
   await page.goto("/b/F1/dossier");
   await expect(page.getByTestId("trace-header")).toContainText(
@@ -96,7 +96,7 @@ test("a trace row opens on its recorded input and output, by mouse and by keyboa
 });
 
 test("Replay starts again from the top, with the header and the CoStar record in view at 1440x900", async ({ page }) => {
-  // It plays the replay through before pressing Replay: 5.9 s alone, up to 8.2 s with the CPU
+  // It plays the replay through before pressing Replay: up to 6.4 s alone, 8.2 s with the CPU
   // oversubscribed twice over (#84). 60 s as above; a stalled replay fails on its own 15 s wait.
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1440, height: 900 });
