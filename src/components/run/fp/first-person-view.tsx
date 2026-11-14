@@ -332,7 +332,7 @@ export default function FirstPersonView({ placed, run, objective, onAct, onUnava
       ) : null}
 
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-between px-6 py-3">
-        <div className="flex items-start gap-4">
+        <div className="flex flex-col items-start gap-2">
           <div data-testid="fp-alarm" data-state={run.alarm} className={cn("rounded-sm border-l-2 bg-surface-1 px-3 py-2 shadow-e-1", alarm.bar)}>
             <p className="label-caps text-text-3">
               Alarm · turn <span className="font-mono text-text-1">{run.turn}</span>

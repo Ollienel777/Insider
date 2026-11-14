@@ -37,10 +37,13 @@ const VIEWS: readonly { view: RunView; label: string; hint: string; icon: Lucide
 ];
 
 /**
- * The view switch: two buttons, one pressed. It sits over the top-right
- * corner of the board's area, clear of the board's top bar, which is full at
- * 1280 px. Nothing shows on a floor from a live scan, or on a phone showing
- * the board: first person needs a keyboard.
+ * The view switch: two buttons, one pressed. It sits over the top of the
+ * board's area, towards the right, clear of the board's top bar, which is
+ * full at 1280 px. The corners are spoken for: the mute button (#104) has
+ * the top right one (`top-2 right-8`, about 70 px wide), the play mode switch
+ * and the turn timer (#105) the bottom two, so this stands 128 px in from the
+ * right edge, on the mute button's line. Nothing shows on a floor from a live
+ * scan, or on a phone showing the board: first person needs a keyboard.
  */
 export function ViewSwitch({ state, floor, className }: { state: RunViewState; floor: FloorGraph; className?: string }) {
   if (floor.source !== "fixture") return null;
@@ -51,7 +54,7 @@ export function ViewSwitch({ state, floor, className }: { state: RunViewState; f
       data-testid="run-view"
       data-view={state.view}
       className={cn(
-        "absolute top-3 z-10 flex rounded-sm bg-surface-1 shadow-e-1 max-md:left-3 md:right-6",
+        "absolute top-2 z-10 flex rounded-sm bg-surface-1 shadow-e-1 max-md:left-3 md:right-32",
         // A phone is not offered first person, but one that remembers it keeps the way back to the board.
         state.view === "board" ? "max-md:hidden" : null,
         className,
