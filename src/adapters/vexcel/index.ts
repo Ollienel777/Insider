@@ -1,11 +1,14 @@
 // Picks the live or the fake Vexcel adapter from the environment (SPEC §7)
 // and exports the one interface. Live needs `VEXCEL_MODE` (or `HEIST_MODE`)
 // set to `live` *and* both `VEXCEL_API_BASE` and `VEXCEL_API_KEY`; with
-// either missing it falls back to the massing fixtures and says so. A live
-// call that fails is answered by the massing too, and from then on Vexcel
-// stays on fixtures (`Breaker`); the selection then carries that `fallback`.
+// either missing it falls back to the massing fixtures and says so. A
+// building Vexcel has no coverage for, or whose imagery fails on its own, is
+// answered by its massing while Vexcel stays live for the rest (the route
+// adds `noCoverageFallback`). A failure of the network, a redirect, or
+// several buildings failing in a row trips the breaker instead: from then on
+// Vexcel stays on fixtures (`Breaker`), and the selection carries that `fallback`.
 import { syncDemoEpoch } from "@/lib/demo-epoch";
-import { withFallback, type Fallback } from "@/lib/fallback";
+import { fallbackMessage, withFallback, type Fallback } from "@/lib/fallback";
 import { missingForLive, serviceModes, type ServiceMode } from "@/lib/mode";
 import { resetServerSlot, serverSlot } from "@/lib/server-breakers";
 import { createFakeVexcel } from "./fake";
@@ -24,6 +27,15 @@ export interface VexcelSelection {
   reason: string;
   /** Set once a live call has failed and the fixtures took over. */
   fallback?: Fallback;
+}
+
+/**
+ * The fallback for one building served as its massing while Vexcel is live.
+ * Its id is the building's, so the browser toasts it once a session however
+ * often the Scout loads it, and the mode chip stops saying live.
+ */
+export function noCoverageFallback(buildingId: string): Fallback {
+  return { service: "vexcel", id: `vexcel-no-scan-${buildingId}`, message: fallbackMessage("vexcel", "no-scan") };
 }
 
 export function selectVexcel(env: Env): VexcelSelection {
@@ -49,8 +61,8 @@ export function selectVexcel(env: Env): VexcelSelection {
   });
   return {
     adapter: {
-      // A building Vexcel has no coverage for gets its massing, and Vexcel
-      // stays live for the rest: no coverage is not a failure.
+      // A building Vexcel has no coverage for, or that failed on its own,
+      // gets its massing, and Vexcel stays live for the rest.
       getAerial: async (id) => (await live.getAerial(id)) ?? fake.getAerial(id),
       getImage: (id, dir) => live.getImage(id, dir),
     },

@@ -12,7 +12,9 @@ export function imageSize(bytes: Uint8Array): ImageSize | null {
   // PNG: the signature, then IHDR's width and height, big-endian.
   if (b.length >= 24 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
     const view = new DataView(b.buffer, b.byteOffset, b.byteLength);
-    return { width: view.getUint32(16), height: view.getUint32(20), contentType: "image/png" };
+    const width = view.getUint32(16);
+    const height = view.getUint32(20);
+    return width > 0 && height > 0 ? { width, height, contentType: "image/png" } : null;
   }
   // JPEG: walk the segments to the first start-of-frame.
   if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8) {

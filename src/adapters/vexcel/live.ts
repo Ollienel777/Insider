@@ -39,6 +39,12 @@ export interface LiveVexcelConfig {
   cacheSize?: number;
   now?: () => number;
   warn?: (message: string) => void;
+  /**
+   * How many different buildings may fail in a row before the failure is
+   * taken for the service's and the breaker trips. Below it, a building that
+   * fails gets its massing and Vexcel stays live for the rest.
+   */
+  failureLimit?: number;
 }
 
 /** A non-2xx answer from Vexcel. */
@@ -94,26 +100,82 @@ export function createLiveVexcel(config: LiveVexcelConfig): VexcelAdapter {
   const cacheSize = config.cacheSize ?? 6;
   const now = config.now ?? Date.now;
   const warn = config.warn ?? ((message: string) => console.warn(message));
+  const failureLimit = config.failureLimit ?? 3;
 
   const held = new Map<string, Held>();
   const loading = new Map<string, Promise<Held>>();
 
+  /**
+   * Failures that are about the service, not one building: the request never
+   * got an answer (network, timeout) or Vexcel redirected it. These trip the
+   * breaker; anything else is one building's problem (`load`'s caller).
+   */
+  const serviceLevel = new WeakSet<object>();
+  /** Buildings that failed since the last one that loaded; at `failureLimit`, the breaker trips. */
+  const failedSince = new Set<string>();
+
+  const isServiceLevel = (error: unknown) => typeof error === "object" && error !== null && serviceLevel.has(error);
+
   async function get(request: VexcelRequest): Promise<Response> {
-    const response = await doFetch(`${base}/${request.path}?${request.params}`, {
-      headers: { "X-API-KEY": key! },
-      signal: AbortSignal.timeout(timeoutMs),
-      cache: "no-store",
-    });
+    let response: Response;
+    try {
+      response = await doFetch(`${base}/${request.path}?${request.params}`, {
+        headers: { "X-API-KEY": key! },
+        signal: AbortSignal.timeout(timeoutMs),
+        cache: "no-store",
+        // Never follow a redirect: fetch would carry X-API-KEY to the new
+        // host (it strips only Authorization, Cookie and Proxy-Authorization).
+        redirect: "manual",
+      });
+    } catch (error) {
+      if (error && typeof error === "object") serviceLevel.add(error);
+      throw error;
+    }
+    if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
+      await response.body?.cancel().catch(() => {});
+      const error = new Error(`Vexcel: GET ${request.path} redirected (${response.status}); redirects are refused`);
+      serviceLevel.add(error);
+      throw error;
+    }
     if (!response.ok) throw new VexcelHttpError(request.path, response.status);
     return response;
   }
 
+  /** The body, read only up to `MAX_IMAGE_BYTES`: past that the download is cancelled. */
+  async function readCapped(response: Response, what: string): Promise<ArrayBuffer> {
+    const header = response.headers.get("content-length");
+    // A malformed length is ignored: the count below holds the limit either way.
+    const declared = header && /^\d+$/.test(header.trim()) ? Number(header) : null;
+    if (declared !== null && declared > MAX_IMAGE_BYTES) {
+      await response.body?.cancel().catch(() => {});
+      throw new Error(`Vexcel: ${what} is ${declared} bytes, over the limit`);
+    }
+    if (!response.body) return new ArrayBuffer(0);
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_IMAGE_BYTES) {
+        await reader.cancel().catch(() => {});
+        throw new Error(`Vexcel: ${what} is over ${MAX_IMAGE_BYTES} bytes, over the limit`);
+      }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(total);
+    let at = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, at);
+      at += chunk.byteLength;
+    }
+    return bytes.buffer;
+  }
+
   async function image(dir: ViewDir, request: VexcelRequest) {
     const response = await get(request);
-    const declared = Number(response.headers.get("content-length") ?? 0);
-    if (declared > MAX_IMAGE_BYTES) throw new Error(`Vexcel: ${request.path} for ${dir} is ${declared} bytes, over the limit`);
-    const bytes = await response.arrayBuffer();
-    if (bytes.byteLength > MAX_IMAGE_BYTES) throw new Error(`Vexcel: ${request.path} for ${dir} is ${bytes.byteLength} bytes, over the limit`);
+    const bytes = await readCapped(response, `${request.path} for ${dir}`);
     const size = imageSize(new Uint8Array(bytes));
     if (!size) throw new Error(`Vexcel: ${request.path} for ${dir} is not a JPEG or PNG`);
     return { dir, bytes, ...size };
@@ -149,6 +211,9 @@ export function createLiveVexcel(config: LiveVexcelConfig): VexcelAdapter {
       const orthoFailure = settled[0].status === "rejected" ? settled[0].reason : null;
       const refused = orthoFailure instanceof VexcelHttpError && orthoFailure.status >= 400 && orthoFailure.status < 500;
       if (obliques.length === 0 && refused) return noCoverage(buildingId);
+      // Every view failed: if it was the network or a redirect, say so, so the breaker trips.
+      const service = settled.find((s) => s.status === "rejected" && isServiceLevel(s.reason));
+      if (service?.status === "rejected") throw service.reason;
       throw new Error(`Vexcel: no imagery for ${buildingId}`);
     }
 
@@ -206,6 +271,8 @@ export function createLiveVexcel(config: LiveVexcelConfig): VexcelAdapter {
       }
     }
     const result = await pending;
+    // Vexcel answered: earlier buildings' failures were theirs, not the service's.
+    failedSince.clear();
     held.set(buildingId, result);
     // Least recently used goes first.
     while (held.size > cacheSize) held.delete(held.keys().next().value!);
@@ -213,8 +280,20 @@ export function createLiveVexcel(config: LiveVexcelConfig): VexcelAdapter {
   }
 
   return {
+    // A failure is one building's (its massing stands in, Vexcel stays live)
+    // unless it is the network's or a redirect, or `failureLimit` buildings
+    // failed in a row: then it throws, and the breaker puts Vexcel on fixtures.
     async getAerial(buildingId) {
-      const result = await hold(buildingId);
+      let result: Held | null;
+      try {
+        result = await hold(buildingId);
+      } catch (error) {
+        if (isServiceLevel(error)) throw error;
+        failedSince.add(buildingId);
+        if (failedSince.size >= failureLimit) throw error;
+        warn(`Vexcel: ${buildingId} failed (${(error as Error)?.message ?? error}); it gets the massing, Vexcel stays live`);
+        return null;
+      }
       if (!result) return null;
       touch(buildingId, result);
       return result.aerial ? structuredClone(result.aerial) : null;

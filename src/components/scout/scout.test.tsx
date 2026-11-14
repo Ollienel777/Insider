@@ -1,11 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FIXTURE_BUILDINGS } from "@/adapters/costar/fake";
+import { noCoverageFallback } from "@/adapters/vexcel";
 import { FIXTURE_AERIALS } from "@/adapters/vexcel/fake";
 import { orthoBounds, placeOnOrtho } from "@/adapters/vexcel/mapping";
 import { buildImageViews, buildMassing, entryFace, FRAME, LABEL_GAP, layoutLabels, stepView, VIEW_ORDER } from "./massing";
 import { MassingSvg } from "./massing-view";
-import { ScoutPanel, ScoutScreen, scoutViews } from "./scout-screen";
+import { fetchAerial, ScoutPanel, ScoutScreen, scoutViews } from "./scout-screen";
+import { getStatus, resetStatus } from "@/lib/demo-status";
 import { Aerial } from "@/domain";
 
 const storiesOf = (id: string) => FIXTURE_BUILDINGS.find((b) => b.id === id)!.stories;
@@ -266,5 +268,27 @@ describe("the Scout on a live aerial", () => {
     expect(html.match(/data-testid="aerial-view"/g)).toHaveLength(5);
     expect(html).toContain('data-view="N"');
     expect(html).toContain("Vexcel · massing");
+  });
+});
+
+describe("fetchAerial and the mode chip", () => {
+  const answer = (body: unknown) => vi.fn(async () => Response.json(body));
+  const f1 = structuredClone(FIXTURE_AERIALS.get("F1")!);
+  const photos = { ...f1, entries: [], views: [{ dir: "ortho", url: "/api/buildings/F1/aerial/ortho", width: 1600, height: 1000 }], source: "vexcel" };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetStatus();
+  });
+
+  it("switches Vexcel to fixtures for a massing served live, and back to live when photos come", async () => {
+    vi.stubGlobal("fetch", answer({ mode: "live", aerial: f1, fallback: noCoverageFallback("F1") }));
+    const massing = await fetchAerial("F1", new AbortController().signal);
+    expect(massing).toMatchObject({ status: "ready", live: false });
+    expect(getStatus().fellBack.has("vexcel")).toBe(true);
+
+    vi.stubGlobal("fetch", answer({ mode: "live", aerial: photos }));
+    expect(await fetchAerial("F2", new AbortController().signal)).toMatchObject({ status: "ready", live: true });
+    expect(getStatus().fellBack.has("vexcel")).toBe(false);
   });
 });

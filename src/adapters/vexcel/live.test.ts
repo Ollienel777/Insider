@@ -186,6 +186,10 @@ describe("imageSize", () => {
     expect(imageSize(jpeg(970, 609))).toEqual({ width: 970, height: 609, contentType: "image/jpeg" });
     expect(imageSize(new TextEncoder().encode('{"error":"nope"}'))).toBeNull();
     expect(imageSize(new Uint8Array([0xff, 0xd8, 0x00]))).toBeNull();
+    // A zero side is no image, in a PNG as in a JPEG.
+    expect(imageSize(png(0, 705))).toBeNull();
+    expect(imageSize(png(960, 0))).toBeNull();
+    expect(imageSize(jpeg(0, 609))).toBeNull();
   });
 
   it("walks past 0xFF fill bytes and the markers that carry no length", () => {
@@ -268,12 +272,69 @@ describe("the live Vexcel adapter (stubbed fetch, no key)", () => {
     expect(warn).toHaveBeenCalledWith(`Vexcel: ${F1.entries.length} entries of F1 dropped (no ortho to place them on)`);
   });
 
-  it("throws, so the breaker serves the massing, when Vexcel fails rather than lacks coverage", async () => {
-    await expect(live(stub({ fail: { "oriented/collections": 503 } }).fetch).getAerial("F1")).rejects.toThrow(
-      "Vexcel: GET oriented/collections answered 503",
-    );
+  it("answers null, logged, when one building fails on its own: its massing stands in, Vexcel stays live", async () => {
+    const warn = vi.fn();
+    expect(await live(stub({ fail: { "oriented/collections": 503 } }).fetch, { warn }).getAerial("F1")).toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("F1 failed (Vexcel: GET oriented/collections answered 503)"));
     const broken = stub({ fail: { "ortho/extract": 500 }, collections: { features: [] } });
-    await expect(live(broken.fetch).getAerial("F1")).rejects.toThrow("Vexcel: no imagery for F1");
+    expect(await live(broken.fetch, { warn }).getAerial("F1")).toBeNull();
+    // A collections answer in a shape the mapping refuses is that building's too.
+    expect(await live(stub({ collections: { features: "nope" } }).fetch, { warn }).getAerial("F1")).toBeNull();
+  });
+
+  it("does not hold a building's failure: the next ask tries Vexcel again", async () => {
+    let failing = true;
+    const ok = stub();
+    const fetch = (async (input: string | URL | Request, init?: RequestInit) =>
+      failing ? new Response("{}", { status: 503 }) : ok.fetch(input, init)) as typeof globalThis.fetch;
+    const adapter = live(fetch);
+    expect(await adapter.getAerial("F1")).toBeNull();
+    failing = false;
+    expect((await adapter.getAerial("F1"))?.source).toBe("vexcel");
+  });
+
+  it("throws, so the breaker trips, once several buildings fail in a row", async () => {
+    const any = async (id: string) => (["F1", "F2", "F3"].includes(id) ? structuredClone(F1) : null);
+    const adapter = live(stub({ fail: { "oriented/collections": 503 } }).fetch, { massing: any });
+    expect(await adapter.getAerial("F1")).toBeNull();
+    // The same building again is not a second failure of the service.
+    expect(await adapter.getAerial("F1")).toBeNull();
+    expect(await adapter.getAerial("F2")).toBeNull();
+    await expect(adapter.getAerial("F3")).rejects.toThrow("Vexcel: GET oriented/collections answered 503");
+  });
+
+  it("starts the count again once a building loads", async () => {
+    const any = async (id: string) => (id === "BAD1" || id === "BAD2" || id === "F1" ? structuredClone(F1) : null);
+    let bad = true;
+    const ok = stub();
+    const fetch = (async (input: string | URL | Request, init?: RequestInit) =>
+      bad ? new Response("{}", { status: 500 }) : ok.fetch(input, init)) as typeof globalThis.fetch;
+    const adapter = live(fetch, { massing: any, failureLimit: 2 });
+    expect(await adapter.getAerial("BAD1")).toBeNull();
+    bad = false;
+    expect((await adapter.getAerial("F1"))?.source).toBe("vexcel");
+    bad = true;
+    expect(await adapter.getAerial("BAD2")).toBeNull();
+  });
+
+  it("throws at once, so the breaker trips, when the network fails or times out", async () => {
+    const down = (async () => {
+      throw new TypeError("fetch failed");
+    }) as typeof globalThis.fetch;
+    await expect(live(down).getAerial("F1")).rejects.toThrow("fetch failed");
+    const slow = (async () => {
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    }) as typeof globalThis.fetch;
+    await expect(live(slow).getAerial("F1")).rejects.toMatchObject({ name: "TimeoutError" });
+  });
+
+  it("throws, so the breaker trips, when every view failed on the network", async () => {
+    const ok = stub();
+    const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (new URL(String(input)).pathname.endsWith("oriented/collections")) return ok.fetch(input, init);
+      throw new TypeError("fetch failed");
+    }) as typeof globalThis.fetch;
+    await expect(live(fetch).getAerial("F1")).rejects.toThrow("fetch failed");
   });
 
   it("answers null for a building Vexcel has no coverage for, without throwing", async () => {
@@ -293,6 +354,94 @@ describe("the live Vexcel adapter (stubbed fetch, no key)", () => {
     // Vexcel's own 1038x651 is within the tolerance.
     const real = (await live(stub({ ortho: { width: 1038, height: 651 } }).fetch).getAerial("F1"))!;
     expect(real.entries.map((e) => e.id)).toEqual(F1.entries.map((e) => e.id));
+  });
+
+  it("never follows a redirect: asks with redirect manual, and a 3xx fails without a second request", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(input), init });
+      return new Response(null, { status: 302, headers: { location: "https://elsewhere.invalid/steal" } });
+    }) as typeof globalThis.fetch;
+    // A redirect is the service's problem, not one building's: it throws, and the breaker trips.
+    await expect(live(fetch).getAerial("F1")).rejects.toThrow("redirects are refused");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].init?.redirect).toBe("manual");
+    expect(calls.some((c) => c.url.includes("elsewhere"))).toBe(false);
+  });
+
+  it("refuses a redirect on an image too, and every view redirected trips the breaker", async () => {
+    const ok = stub();
+    const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (new URL(String(input)).pathname.endsWith("oriented/collections")) return ok.fetch(input, init);
+      return new Response(null, { status: 307, headers: { location: "https://elsewhere.invalid/" } });
+    }) as typeof globalThis.fetch;
+    await expect(live(fetch).getAerial("F1")).rejects.toThrow("redirects are refused");
+  });
+
+  it("carries no key to another host when a real server redirects (Node's own fetch)", async () => {
+    const { createServer } = await import("node:http");
+    const seen: (string | undefined)[] = [];
+    const other = createServer((req, res) => {
+      seen.push(req.headers["x-api-key"] as string | undefined);
+      res.end("{}");
+    });
+    await new Promise<void>((done) => other.listen(0, "127.0.0.1", done));
+    const otherPort = (other.address() as { port: number }).port;
+    const first = createServer((_req, res) => {
+      res.writeHead(302, { location: `http://127.0.0.1:${otherPort}/v2/oriented/collections` });
+      res.end();
+    });
+    await new Promise<void>((done) => first.listen(0, "localhost", done));
+    const firstPort = (first.address() as { port: number }).port;
+    try {
+      const adapter = createLiveVexcel({ base: `http://localhost:${firstPort}/v2/`, key: "test-key", massing, warn: () => {} });
+      await expect(adapter.getAerial("F1")).rejects.toThrow("redirects are refused");
+      expect(seen).toEqual([]);
+    } finally {
+      await new Promise((done) => first.close(done));
+      await new Promise((done) => other.close(done));
+    }
+  });
+
+  it("stops reading an image with no declared length once it passes 8 MB, and cancels the download", async () => {
+    const MB = 1024 * 1024;
+    let pulled = 0;
+    let cancelled = false;
+    const head = png(960, 700);
+    const ok = stub();
+    const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.searchParams.get("product-type") !== "oblique-north") return ok.fetch(input, init);
+      // 64 MB on offer, a megabyte at a time, with no content-length.
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (pulled === 64) return controller.close();
+          controller.enqueue(pulled === 0 ? Uint8Array.from({ length: MB }, (_, i) => head[i] ?? 0) : new Uint8Array(MB));
+          pulled += 1;
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+      return new Response(body, { headers: { "content-type": "image/png" } });
+    }) as typeof globalThis.fetch;
+    const warn = vi.fn();
+    const aerial = (await live(fetch, { warn }).getAerial("F1"))!;
+    expect(aerial.views.map((v) => v.dir)).toEqual(["N", "E", "W", "ortho"]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("over the limit"));
+    expect(cancelled).toBe(true);
+    // Read past the limit by at most the stream's read-ahead, never the whole 64 MB.
+    expect(pulled).toBeLessThanOrEqual(MAX_IMAGE_BYTES / MB + 3);
+  });
+
+  it("ignores a malformed content-length and still holds the limit by counting", async () => {
+    const ok = stub();
+    const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const response = await ok.fetch(input, init);
+      if (!new URL(String(input)).pathname.endsWith("ortho/extract")) return response;
+      return new Response(await response.arrayBuffer(), { headers: { "content-type": "image/jpeg", "content-length": "abc" } });
+    }) as typeof globalThis.fetch;
+    expect((await live(fetch).getAerial("F1"))!.views.map((v) => v.dir)).toContain("ortho");
   });
 
   it("refuses an image that declares more than 8 MB", async () => {

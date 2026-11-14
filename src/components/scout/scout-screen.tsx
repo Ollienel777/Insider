@@ -8,7 +8,8 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Aerial, type AerialEntry, type Building, type ViewDir } from "@/domain";
 import { cityName } from "@/lib/cities";
-import { noteResponse } from "@/lib/demo-status";
+import { fallbackOf } from "@/lib/fallback";
+import { noteResponse, reportLive } from "@/lib/demo-status";
 import { cn } from "@/lib/utils";
 import {
   buildImageViews,
@@ -221,7 +222,10 @@ export async function fetchAerial(id: string, signal: AbortSignal): Promise<Load
   const parsed = Aerial.safeParse(body.aerial);
   if (!parsed.success) return { status: "error", message: "The aerial came back in a shape the Scout can't draw." };
   // Live only when the photos came back: a building Vexcel has no coverage for is drawn as its massing.
-  return { status: "ready", aerial: parsed.data, live: body.mode === "live" && parsed.data.source === "vexcel" };
+  const live = body.mode === "live" && parsed.data.source === "vexcel";
+  // An earlier building's massing switched the chip to fixtures; these photos switch it back.
+  if (live && !fallbackOf(body)) reportLive("vexcel");
+  return { status: "ready", aerial: parsed.data, live };
 }
 
 /**

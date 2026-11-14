@@ -1,8 +1,9 @@
 // GET /api/buildings/[id]/aerial: the building's aerial for the Scout screen
 // (SPEC §4). The response says which adapter answered (`mode`), so the UI can
 // show whether this is a fixture massing or live imagery, and carries
-// `fallback` once a live failure has put Vexcel on fixtures.
-import { getVexcel } from "@/adapters/vexcel";
+// `fallback` once a live failure has put Vexcel on fixtures, or when Vexcel is
+// live but this building is served as its massing (no coverage).
+import { getVexcel, noCoverageFallback } from "@/adapters/vexcel";
 import { forcedFromRequest } from "@/lib/mode";
 
 /** What the browser is told when the aerial fails; the cause stays in the server log. */
@@ -19,7 +20,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     if (!aerial) {
       return Response.json({ mode, error: `no aerial for building "${id}"` }, { status: 404 });
     }
-    return Response.json({ mode, aerial, ...(fallback && { fallback }) });
+    // Live, but this building came back as its massing: the chip must not say live over it.
+    const served = fallback ?? (mode === "live" && aerial.source !== "vexcel" ? noCoverageFallback(id) : undefined);
+    return Response.json({ mode, aerial, ...(served && { fallback: served }) });
   } catch (error) {
     // A schema error would dump field paths and values; none of that is for the browser.
     console.error(`GET /api/buildings/${JSON.stringify(id)}/aerial failed:`, error);
