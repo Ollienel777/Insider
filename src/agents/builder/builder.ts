@@ -9,7 +9,7 @@
 // model's turns are recorded. Live, the same agent runs on the builder model
 // from the LLM adapter.
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { createDeepAgent } from "deepagents";
+import { createDeepAgent, GENERAL_PURPOSE_SUBAGENT } from "deepagents";
 import { todoListMiddleware } from "langchain";
 import { getCoStar } from "@/adapters/costar";
 import { getChatModelSelection, loadScript, type Script } from "@/adapters/llm";
@@ -61,8 +61,9 @@ async function resolveModel(buildingId: string, options: BuildOptions): Promise<
           "fake mode cannot build it",
       );
     }
-    // Say plainly what ran: no language model, only the recorded script (#17, R1-M5).
-    return { model: selection.model, label: `ScriptedChatModel (script ${script.id}, no LLM)` };
+    // Say plainly what ran: no language model; the model's turns are the
+    // script's, replayed by ScriptedChatModel (#17, R1-M5).
+    return { model: selection.model, label: `scripted (${script.id}), no LLM ran` };
   }
   const id = (selection.model as { model?: unknown }).model;
   return { model: selection.model, label: `${selection.provider}${typeof id === "string" ? ` ${id}` : ""}` };
@@ -88,6 +89,15 @@ export async function buildLevel(buildingId: string, options: BuildOptions = {})
     // the builder passes it explicitly (#53).
     middleware: [todoListMiddleware(), recorder.middleware("level-builder")],
     subagents: [
+      // deepagents adds this subagent to every deep agent unless one of that
+      // name is passed, and offers no switch for these models. Passed here as
+      // its own default (first, where deepagents puts it), it gets the
+      // recorder, so a dispatch to it shows in the trace by name (R1-M2).
+      {
+        ...GENERAL_PURPOSE_SUBAGENT,
+        tools: builderTools(run),
+        middleware: [recorder.middleware("general-purpose")],
+      },
       {
         name: "data-analyst",
         description: SUBAGENT_DESCRIPTIONS["data-analyst"],

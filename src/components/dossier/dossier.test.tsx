@@ -6,6 +6,7 @@ import { FIXTURE_BUILDINGS } from "@/adapters/costar/fake";
 import { BuildTrace, LevelManifest, type BuildTraceEvent } from "@/domain";
 import { dataToLevelRows, suiteRange } from "./data-to-level";
 import { DISCLAIMER, DossierScreen } from "./dossier-screen";
+import { StepDetail, TraceList } from "./trace-list";
 import { dossierFacts } from "./facts";
 import {
   formatRecordedAt,
@@ -157,16 +158,16 @@ describe("the replay", () => {
   });
 });
 
-describe("the Recorded run header", () => {
-  it("says it is a recorded run, when, and on what: a script, no LLM", () => {
+describe("the Recorded replay header", () => {
+  it("says it is a recorded replay, when, and whose model turns: a script's, no LLM (R1-M5)", () => {
     expect(recordedRunHeader(trace)).toMatch(
-      /^Recorded run · [A-Z][a-z]{2} \d{1,2}, \d{4}, \d\d:\d\d UTC · ScriptedChatModel \(script builder-F1, no LLM\)$/,
+      /^Recorded replay · [A-Z][a-z]{2} \d{1,2}, \d{4}, \d\d:\d\d UTC · model turns: scripted \(builder-F1\), no LLM ran$/,
     );
     expect(formatRecordedAt("2026-11-13T11:39:34.402Z")).toBe("Nov 13, 2026, 11:39 UTC");
   });
 
   it("says so when the trace did not record either", () => {
-    expect(recordedRunHeader({})).toBe("Recorded run · time not recorded · model not recorded");
+    expect(recordedRunHeader({})).toBe("Recorded replay · time not recorded · model turns: not recorded");
   });
 });
 
@@ -200,7 +201,7 @@ describe("DossierScreen", () => {
     expect(html).toMatch(/<a[^>]*href="\/b\/F1\/plan"[^>]*>Brief the crew<\/a>/);
   });
 
-  it("heads the trace with the Recorded run line and says nothing here calls a model", () => {
+  it("heads the trace with the Recorded replay line and says nothing here calls a model", () => {
     const text = textOf(screen(true));
     expect(text).toContain(recordedRunHeader(trace));
     expect(text).toContain("Nothing on this screen calls a model.");
@@ -224,4 +225,75 @@ it("replays a trace with no subagents", () => {
   expect(view.steps).toHaveLength(1);
   expect(view.steps[0].depth).toBe(0);
   expect(replaySchedule(small, 2).rows).toHaveLength(2);
+});
+
+describe("the trace's rows (#79)", () => {
+  const html = screen(true);
+  const stepOf = (label: string) => traceView(trace, () => true).steps.find((s) => s.label === label)!;
+
+  it("are buttons, collapsed until opened, each naming the panel it opens", () => {
+    const toggles = html.match(/<button[^>]*data-testid="trace-step-toggle"[^>]*>/g) ?? [];
+    expect(toggles).toHaveLength(8);
+    for (const toggle of toggles) {
+      expect(toggle).toContain('type="button"');
+      expect(toggle).toContain('aria-expanded="false"');
+      expect(toggle).toMatch(/aria-controls="[^"]+"/);
+    }
+    expect(html).not.toContain('data-testid="trace-step-detail"');
+  });
+
+  it("name the subagent each task ran", () => {
+    expect(html.match(/data-testid="trace-subagent">([^<]+)</g)?.map((m) => m.split(">")[1].slice(0, -1))).toEqual([
+      "data-analyst",
+      "game-master",
+    ]);
+  });
+
+  it("open on a tool's recorded input and output, as text", () => {
+    const text = textOf(renderToStaticMarkup(<StepDetail id="d" step={stepOf("get_building")} />));
+    expect(text).toContain("Input");
+    expect(text).toContain('"buildingId": "F1"');
+    expect(text).toContain("Output");
+    expect(text).toContain('"name": "Halvorsen Tower"');
+  });
+
+  it("open on a task's brief and its subagent's answer", () => {
+    const task = traceView(trace, () => true).steps.find((s) => s.kind === "subagent")!;
+    const text = textOf(renderToStaticMarkup(<StepDetail id="d" step={task} />));
+    expect(text).toContain("Brief");
+    expect(text).toContain("Answer Built 1974");
+  });
+
+  it("render recorded text as text, never as HTML", () => {
+    const step = { ...stepOf("get_building"), output: "<img src=x onerror=alert(1)>" };
+    const markup = renderToStaticMarkup(<StepDetail id="d" step={step} />);
+    expect(markup).not.toContain("<img");
+    expect(markup).toContain("&lt;img src=x onerror=alert(1)&gt;");
+  });
+
+  it("tell a failed subagent run from a tool error (R1-M1)", () => {
+    const failed: BuildTraceEvent[] = [
+      { atMs: 0, kind: "subagent", agent: "general-purpose", label: "Look around", status: "failed", durationMs: 4, output: "Error: run failed" },
+      { atMs: 1, kind: "tool", agent: "level-builder", label: "write_manifest", status: "failed", durationMs: 1, output: "Error: no profile" },
+    ];
+    const view = traceView({ buildingId: "F1", events: failed }, () => true);
+    const list = textOf(renderToStaticMarkup(<TraceList view={view} header="h" control={null} />));
+    expect(list).toContain("task general-purpose subagent failed");
+    expect(list).toContain("write_manifest tool error");
+    expect(list.match(/subagent failed/g)).toHaveLength(1);
+    expect(list.match(/tool error/g)).toHaveLength(1);
+    const [task, tool] = view.steps.map((step) => textOf(renderToStaticMarkup(<StepDetail id="d" step={step} />)));
+    expect(task).toContain("Subagent run failed Error: run failed");
+    expect(tool).toContain("Tool error Error: no profile");
+  });
+
+  it("show deepagents' general-purpose subagent by name when it runs (R1-M2)", () => {
+    const events: BuildTraceEvent[] = [
+      { atMs: 0, kind: "subagent", agent: "general-purpose", label: "Look around", status: "completed", durationMs: 4 },
+      { atMs: 1, kind: "tool", agent: "general-purpose", label: "write_manifest", status: "completed", durationMs: 1 },
+    ];
+    const view = traceView({ buildingId: "F1", events }, () => true);
+    expect(view.steps.map((s) => s.depth)).toEqual([0, 1]);
+    expect(textOf(renderToStaticMarkup(<TraceList view={view} header="h" control={null} />))).toContain("task general-purpose");
+  });
 });

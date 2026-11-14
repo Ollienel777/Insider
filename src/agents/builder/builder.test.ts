@@ -3,6 +3,7 @@
 // only the model's turns are recorded (fixtures/llm/scripts/builder-F1.json).
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { DEFAULT_SUBAGENT_PROMPT } from "deepagents";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createFakeCoStar } from "@/adapters/costar/fake";
 import { loadScript, ScriptedChatModel } from "@/adapters/llm";
@@ -155,6 +156,13 @@ describe("buildLevel(F1) on the recorded script", () => {
     ]);
     expect(tools.every((t) => t.status === "completed" && typeof t.durationMs === "number")).toBe(true);
 
+    // Each task and tool keeps what went in and what came back (#79).
+    const getBuilding = tools.find((t) => t.label === "get_building")!;
+    expect(JSON.parse(getBuilding.input!)).toEqual({ buildingId: "F1" });
+    expect(getBuilding.output).toContain('"name": "Halvorsen Tower"');
+    expect(tasks[0].input).toBe(tasks[0].label);
+    expect(tasks[0].output).toMatch(/^Built 1974/);
+
     // In start order, and each subagent's tools inside its own task.
     const at = events.map((e) => e.atMs);
     expect(at).toEqual([...at].sort((a, b) => a - b));
@@ -169,7 +177,7 @@ describe("the cached F1 level in data/levels/", () => {
   it("is what the builder writes today (rerun npm run build:levels -- F1 when this fails)", async () => {
     const fresh = await buildLevel("F1");
     expect(read("F1.json")).toEqual(fresh.manifest);
-    expect(fresh.trace.model).toBe("ScriptedChatModel (script builder-F1, no LLM)");
+    expect(fresh.trace.model).toBe("scripted (builder-F1), no LLM ran");
   });
 
   it("has a trace with a todo list, both subagents and five tool calls", () => {
@@ -231,6 +239,42 @@ describe("the builder's guard rails", () => {
     });
     const error = (await buildLevel("F1", { model }).catch((e: unknown) => e)) as LevelBuildError;
     expect(error.trace.events.map((e) => e.status)).toEqual(["failed"]);
+  });
+
+  // deepagents' own subagent, under the prompt it ships with (R1-M2).
+  const generalPurpose = (turns: ScriptInput["agents"][number]["turns"]): ScriptInput["agents"][number] => ({
+    agent: "general-purpose",
+    systemIncludes: DEFAULT_SUBAGENT_PROMPT,
+    turns,
+  });
+  const dispatchGeneralPurpose = {
+    toolCalls: [{ name: "task", args: { subagent_type: "general-purpose", description: "Look around F1." } }],
+  };
+
+  it("shows a dispatch to deepagents' general-purpose subagent, and its tool calls, under its name", async () => {
+    const script = builder([dispatchGeneralPurpose, { content: "Giving up." }]);
+    script.agents.push(
+      generalPurpose([
+        { toolCalls: [{ name: "write_manifest", args: { buildingId: "F1", missionId: "romaine-1974", briefing: "Go.", objective: { name: "R", rule: "Take" } } }] },
+        { content: "Could not write it." },
+      ]),
+    );
+    const error = (await buildLevel("F1", { model: new ScriptedChatModel({ script }) }).catch((e: unknown) => e)) as LevelBuildError;
+    expect(error.trace.events).toEqual([
+      expect.objectContaining({ kind: "subagent", agent: "general-purpose", status: "completed", output: "Could not write it." }),
+      expect.objectContaining({ kind: "tool", agent: "general-purpose", label: "write_manifest", status: "failed" }),
+    ]);
+  });
+
+  it("records a subagent whose run fails as a failed subagent run, not a tool error (R1-M1)", async () => {
+    const script = builder([dispatchGeneralPurpose, { content: "Giving up." }]);
+    // Its one turn calls a tool it does not have, so the subagent's run throws.
+    script.agents.push(generalPurpose([{ toolCalls: [{ name: "no_such_tool", args: {} }] }]));
+    const error = (await buildLevel("F1", { model: new ScriptedChatModel({ script }) }).catch((e: unknown) => e)) as LevelBuildError;
+    expect(error.trace.events).toEqual([
+      expect.objectContaining({ kind: "subagent", agent: "general-purpose", status: "failed" }),
+    ]);
+    expect(error.trace.events[0].output).toMatch(/^Error: the general-purpose subagent's run failed: /);
   });
 
   it("fails clearly in fake mode when a building has no recorded script", async () => {

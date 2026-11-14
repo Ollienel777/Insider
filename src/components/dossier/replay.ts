@@ -72,6 +72,9 @@ export interface StepView {
   /** Running until the replay moves past it, then the recorded status. */
   status: TodoStatus;
   durationMs?: number;
+  /** The recorded input and output, shown when the row is expanded. */
+  input?: string;
+  output?: string;
   /** 1 for a tool a subagent called, under its task. */
   depth: 0 | 1;
 }
@@ -106,6 +109,8 @@ export function traceView(trace: BuildTrace, shown: (index: number) => boolean):
       shown: visible,
       status: event.status,
       durationMs: event.durationMs,
+      input: event.input,
+      output: event.output,
       depth: event.kind === "tool" && event.agent !== "level-builder" ? 1 : 0,
     });
   });
@@ -132,9 +137,13 @@ export function formatRecordedAt(iso: string | undefined): string {
   return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}, ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
 }
 
-/** The TraceList's header line (#17, R1-M2): "Recorded run · <timestamp> · <model>". */
+/**
+ * The TraceList's header line (#17, R1-M2, R1-M5): "Recorded replay ·
+ * <timestamp> · model turns: <what produced them>". The screen replays; the
+ * model label says whose turns were recorded.
+ */
 export function recordedRunHeader(trace: Pick<BuildTrace, "recordedAt" | "model">): string {
-  return ["Recorded run", formatRecordedAt(trace.recordedAt), trace.model ?? "model not recorded"].join(" · ");
+  return ["Recorded replay", formatRecordedAt(trace.recordedAt), `model turns: ${trace.model ?? "not recorded"}`].join(" · ");
 }
 
 /** "3 ms", "1.2 s". */

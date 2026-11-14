@@ -1,12 +1,12 @@
-import { Circle, CircleCheck, CircleDashed, CircleX, GitBranch, LoaderCircle, Wrench } from "lucide-react";
-import { Fragment, type ReactNode } from "react";
+import { ChevronDown, Circle, CircleCheck, CircleDashed, CircleX, GitBranch, LoaderCircle, Wrench } from "lucide-react";
+import { Fragment, useId, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { formatDuration, type StepView, type TodoStatus, type TraceView } from "./replay";
 import { Reveal } from "./reveal";
 
 interface TraceListProps {
   view: TraceView;
-  /** "Recorded run · <timestamp> · <model>" (#17, R1-M2). */
+  /** "Recorded replay · <timestamp> · model turns: <model>" (#17, R1-M2, R1-M5). */
   header: string;
   /** Skip or Replay, beside the header. */
   control: ReactNode;
@@ -16,7 +16,9 @@ interface TraceListProps {
  * The Level Builder's run as the dossier replays it (DESIGN.md, Dossier): the
  * plan's todos tick, subagent tasks indent their own tool calls, and tool
  * calls read in mono with their recorded duration. Every row is laid out
- * from the start under a skeleton, so the list holds its height.
+ * from the start under a skeleton, so the list holds its height. A shown
+ * task or tool row is a button that opens what it was given and what it
+ * returned, as recorded (#79).
  */
 export function TraceList({ view, header, control }: TraceListProps) {
   return (
@@ -94,30 +96,47 @@ function TodoIcon({ status }: { status: TodoStatus }) {
 }
 
 function StepRow({ step }: { step: StepView }) {
+  const [open, setOpen] = useState(false);
+  const detailId = useId();
   const running = step.status === "in_progress";
   const failed = step.status === "failed";
-  if (step.kind === "subagent") {
+  const subagent = step.kind === "subagent";
+  const toggle = {
+    type: "button" as const,
+    "aria-expanded": open,
+    "aria-controls": detailId,
+    "data-testid": "trace-step-toggle",
+    onClick: () => setOpen((o) => !o),
+    className: "flex w-full cursor-pointer gap-2 rounded-sm text-left hover:bg-surface-3",
+  };
+  const detail = open ? <StepDetail id={detailId} step={step} /> : null;
+  if (subagent) {
     return (
       <li data-testid="trace-step" data-kind="subagent" data-shown={step.shown} data-status={step.status} className="py-1.5 text-sm">
         <Reveal shown={step.shown}>
-        <div className="flex gap-2">
+        <button {...toggle}>
         {running ? (
           <LoaderCircle aria-label="running" className={cn(ICON, "animate-spin text-accent")} />
         ) : (
           <GitBranch aria-label="subagent task" className={cn(ICON, failed ? "text-danger" : "text-text-2")} />
         )}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-2">
+        <span className="block min-w-0 flex-1">
+          <span className="flex items-baseline justify-between gap-2">
             <span className="font-mono text-text-1">
-              <span className="text-text-2">task</span> {step.agent}
+              <span className="text-text-2">task</span> <span data-testid="trace-subagent">{step.agent}</span>
             </span>
-            <Duration step={step} />
-          </div>
-          <p className="mt-0.5 line-clamp-2 text-text-2" title={step.label}>
+            <span className="flex shrink-0 items-baseline gap-2">
+              {failed ? <span className="font-mono text-xs text-danger">subagent failed</span> : null}
+              <Duration step={step} />
+              <Chevron open={open} />
+            </span>
+          </span>
+          <span className="mt-0.5 line-clamp-2 text-text-2" title={step.label}>
             {step.label}
-          </p>
-        </div>
-        </div>
+          </span>
+        </span>
+        </button>
+        {detail}
         </Reveal>
       </li>
     );
@@ -131,13 +150,61 @@ function StepRow({ step }: { step: StepView }) {
       className={cn("py-1.5 text-sm", step.depth === 1 && "pl-6")}
     >
       <Reveal shown={step.shown} skeleton="bar">
-      <span className="flex items-center gap-2">
+      <button {...toggle} className={cn(toggle.className, "items-center")}>
       <Wrench aria-hidden className={cn("size-4 shrink-0 stroke-[1.5]", failed ? "text-danger" : "text-text-3")} />
       <span className="min-w-0 flex-1 truncate font-mono text-text-1">{step.label}</span>
+      {failed ? <span className="shrink-0 font-mono text-xs text-danger">tool error</span> : null}
       <Duration step={step} />
-      </span>
+      <Chevron open={open} />
+      </button>
+      {detail}
       </Reveal>
     </li>
+  );
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <ChevronDown
+      aria-hidden
+      className={cn("size-4 shrink-0 self-center stroke-[1.5] text-text-3 transition-transform duration-fast", open && "rotate-180")}
+    />
+  );
+}
+
+/**
+ * What a row was given and what it returned, as the trace recorded them:
+ * plain text, never HTML, each cut at record time to 2,000 characters and
+ * scrolled here past 160px.
+ */
+export function StepDetail({ id, step }: { id: string; step: StepView }) {
+  const subagent = step.kind === "subagent";
+  const failed = step.status === "failed";
+  const outputLabel = failed ? (subagent ? "Subagent run failed" : "Tool error") : subagent ? "Answer" : "Output";
+  return (
+    <div id={id} data-testid="trace-step-detail" className={cn("mt-2 flex flex-col gap-3 rounded-sm border border-border bg-surface-2 p-3", subagent && "ml-6")}>
+      <RecordedText label={subagent ? "Brief" : "Input"} text={step.input} />
+      <RecordedText label={outputLabel} text={step.output} danger={failed} />
+    </div>
+  );
+}
+
+function RecordedText({ label, text, danger = false }: { label: string; text?: string; danger?: boolean }) {
+  return (
+    <div>
+      <p className={cn("label-caps", danger ? "text-danger" : "text-text-3")}>{label}</p>
+      {text === undefined ? (
+        <p className="mt-1 text-xs text-text-2">Not recorded.</p>
+      ) : (
+        <pre
+          tabIndex={0}
+          aria-label={label}
+          className="mt-1 max-h-40 overflow-auto font-mono text-xs break-words whitespace-pre-wrap text-text-1"
+        >
+          {text}
+        </pre>
+      )}
+    </div>
   );
 }
 
