@@ -14,7 +14,8 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "smoke": "playwright test",
-    "gate": "node scripts/gate.mjs"
+    "gate": "node scripts/gate.mjs",
+    "check:floor": "node scripts/check-floor.mjs"
   },
   "dependencies": {
     "class-variance-authority": "0.7.1",
