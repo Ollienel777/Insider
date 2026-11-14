@@ -36,3 +36,18 @@ export function nextStep(current: StepSegment): (typeof STEPS)[number] | undefin
   const index = STEPS.findIndex((step) => step.segment === current);
   return STEPS[index + 1];
 }
+
+/**
+ * A building from the CoStar data kit (`source: "costar"`) has facts and no
+ * level: nothing builds one for it, so only Scout and the Dossier's facts
+ * exist. Every other step is a 404 for it, and the screens must not offer one.
+ */
+export function isFactsOnly(source: string | undefined): boolean {
+  return source === "costar";
+}
+
+/** The steps a facts-only building has. */
+export const FACTS_ONLY_STEPS: readonly StepSegment[] = ["scout", "dossier"];
+
+/** Why a facts-only building offers no further step, in the map's "Facts only" wording. */
+export const FACTS_ONLY_NOTE = "Facts only: no level is built for this building.";

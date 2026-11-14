@@ -5,7 +5,7 @@ export type MapBuilding = Pick<
   Building,
   "id" | "name" | "city" | "neighbourhood" | "lat" | "lng" | "yearBuilt" | "buildingClass" | "stories" | "layers" | "source"
 > & {
-  /** False until the building has a level (src/lib/levels.ts); the map shows it as "Level in prep". */
+  /** False until the building has a level (src/lib/levels.ts); the map shows it as "Level in prep" (a kit building: "Facts only"). */
   levelReady: boolean;
 };
 

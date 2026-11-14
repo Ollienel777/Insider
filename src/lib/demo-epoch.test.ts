@@ -103,9 +103,8 @@ describe("reading the epoch on the server", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.stubEnv("HEIST_MODE", "");
     vi.stubEnv("COSTAR_MODE", "live");
-    vi.stubEnv("COSTAR_API_BASE", "https://costar.test/api");
-    vi.stubEnv("COSTAR_API_KEY", "test-key");
-    vi.stubGlobal("fetch", async () => Promise.reject(new TypeError("fetch failed")));
+    // A kit directory that does not exist: the first CoStar call fails.
+    vi.stubEnv("COSTAR_KIT_DIR", path.join(dir, "no-kit"));
     resetCoStar();
 
     syncDemoEpoch(dir);

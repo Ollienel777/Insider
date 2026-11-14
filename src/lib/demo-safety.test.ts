@@ -3,6 +3,8 @@
 // the mode chip says the service is on fixtures and the beat still answers.
 // No keys exist: every live path runs on stubs and on variables set here.
 // Nothing here reaches the network.
+import os from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCoStar, resetCoStar } from "@/adapters/costar";
 import { createFakeMatterport } from "@/adapters/matterport/fake";
@@ -18,7 +20,8 @@ import { getStatus, initStatus, noteResponse, reportFallback, reportLive, resetS
 import type { Fallback } from "./fallback";
 import { configuredModes, FORCE_COOKIE, modeChip, serviceModes, type ServiceModes } from "./mode";
 
-const LIVE_COSTAR = { COSTAR_MODE: "live", COSTAR_API_BASE: "https://costar.test/api", COSTAR_API_KEY: "test-key" };
+// A kit directory that does not exist: live CoStar fails on its first call.
+const LIVE_COSTAR = { COSTAR_MODE: "live", COSTAR_KIT_DIR: path.join(os.tmpdir(), "heist-no-costar-kit") };
 const LIVE_VEXCEL = { VEXCEL_MODE: "live", VEXCEL_API_BASE: "https://vexcel.test/api", VEXCEL_API_KEY: "test-key" };
 
 function stubEnv(env: Record<string, string>) {
@@ -62,8 +65,8 @@ afterEach(() => {
 });
 
 describe("CoStar", () => {
-  it("live without COSTAR_API_KEY: the chip says fixtures and the map still lists five buildings", async () => {
-    stubEnv({ COSTAR_MODE: "live", COSTAR_API_BASE: LIVE_COSTAR.COSTAR_API_BASE });
+  it("live without COSTAR_KIT_DIR: the chip says fixtures and the map still lists five buildings", async () => {
+    stubEnv({ COSTAR_MODE: "live", COSTAR_KIT_DIR: "" });
     // The switch alone says live; what CoStar serves is fixtures (the #50 note).
     expect(serviceModes(process.env).costar).toBe("live");
     expect(configuredModes(process.env).costar).toBe("fake");
@@ -78,7 +81,6 @@ describe("CoStar", () => {
 
   it("live with a failing call: the fixtures answer, the chip switches, one fallback names CoStar, and CoStar stays on fixtures", async () => {
     stubEnv(LIVE_COSTAR);
-    const fetch = deadNetwork();
     expect(getCoStar().mode).toBe("live");
 
     const response = await buildings();
@@ -95,10 +97,8 @@ describe("CoStar", () => {
     expect(chip.onFixtures).toContain("CoStar");
     expect(getStatus().toasts).toEqual([body.fallback]);
 
-    // The breaker holds: the next request goes straight to the fixtures.
-    const calls = fetch.mock.calls.length;
+    // The breaker holds: the next request goes straight to the fixtures, with the same fallback.
     const again = (await (await buildings()).json()) as { fallback?: Fallback };
-    expect(fetch.mock.calls.length).toBe(calls);
     expect(again.fallback?.id).toBe(body.fallback!.id);
     noteResponse(again);
     expect(getStatus().toasts).toHaveLength(1);

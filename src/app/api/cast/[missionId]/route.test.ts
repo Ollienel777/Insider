@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { resetCoStar } from "@/adapters/costar";
+import { getCoStar, resetCoStar } from "@/adapters/costar";
 import { readCachedCasting } from "@/agents/casting/cache";
 import { CastingResult } from "@/domain";
 import expected from "../../../../../fixtures/inventory-finalists.json";
@@ -68,8 +68,9 @@ describe("GET /api/cast/[missionId] with CoStar live", () => {
 
   beforeAll(() => {
     vi.stubEnv("COSTAR_MODE", "live");
-    vi.stubEnv("COSTAR_API_BASE", "http://costar.invalid");
-    vi.stubEnv("COSTAR_API_KEY", "test-key");
+    // Live CoStar needs only the kit directory; the route never reads the
+    // kit, so a path that does not exist is enough.
+    vi.stubEnv("COSTAR_KIT_DIR", path.join(root, "no-kit"));
     resetCoStar();
     errors = vi.spyOn(console, "error").mockImplementation(() => {});
   });
@@ -84,6 +85,10 @@ describe("GET /api/cast/[missionId] with CoStar live", () => {
     expect(response.status).toBe(200);
     return CastingResult.parse(await response.json());
   };
+
+  it("really is live CoStar", () => {
+    expect(getCoStar().mode).toBe("live");
+  });
 
   it("serves the state dir's shortlist first", async () => {
     const state = path.join(root, "hit");
