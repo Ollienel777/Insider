@@ -2,15 +2,16 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useState, type KeyboardEvent } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Fragment, useState, type KeyboardEvent, type ReactNode } from "react";
 import { LAYERS, LayerDot, type Layer } from "@/components/shell/layer-dot";
 import { BuildingScreen } from "@/components/shell/building-screen";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { City } from "@/domain";
 import { cityName } from "@/lib/cities";
 import { cn } from "@/lib/utils";
-import { ATTRIBUTION, BASEMAPS, project } from "./basemap";
+import { buildingHref } from "@/lib/building-href";
+import { aspect, ATTRIBUTION, BASEMAPS, placeIn, project, type Bounds } from "./basemap";
 import { MapPin } from "./map-pin";
 import type { MapBuilding } from "./types";
 
@@ -19,8 +20,8 @@ const CITIES = City.options;
 interface MapScreenProps {
   /** Every city's buildings, from the CoStar adapter. */
   buildings: MapBuilding[];
-  /** The city whose tab opens first (`?city=`). */
-  initialCity: City;
+  /** The tab with no `?city=` in the address (and outside the router). */
+  defaultCity: City;
 }
 
 /**
@@ -29,13 +30,8 @@ interface MapScreenProps {
  * building". Selecting a pin or a row selects both; hovering either shows the
  * pin's card.
  */
-export function MapScreen({ buildings, initialCity }: MapScreenProps) {
-  // The address is the one record of the open tab, so the tab follows it
-  // both ways: a tab click writes `?city=`, and any navigation (the wordmark
-  // to `/`, Back, a shared link) moves the tab. Outside the router (unit
-  // tests) the page's `initialCity` stands in.
-  const params = useSearchParams();
-  const city = params ? cityFromParam(params.get("city")) : initialCity;
+export function MapScreen({ buildings, defaultCity }: MapScreenProps) {
+  const [city, writeCity] = useCityTab(defaultCity);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
@@ -45,9 +41,7 @@ export function MapScreen({ buildings, initialCity }: MapScreenProps) {
 
   function switchCity(next: City) {
     setHoveredId(null);
-    // Next keeps useSearchParams in step with the History API, so writing the
-    // address is what switches the tab; a reload or a shared link opens it.
-    window.history.replaceState(null, "", next === "LA" ? "/" : `/?city=${next}`);
+    writeCity(next);
   }
 
   return (
@@ -57,10 +51,18 @@ export function MapScreen({ buildings, initialCity }: MapScreenProps) {
         <MapView
           city={city}
           buildings={inCity}
-          selectedId={selected?.id ?? null}
-          cardId={cardId}
-          onSelect={setSelectedId}
-          onHover={setHoveredId}
+          caption={`${cityName(city)} · ${inCity.length} ${inCity.length === 1 ? "building" : "buildings"}`}
+          pin={(building, x, y) => (
+            <MapPin
+              building={building}
+              x={x}
+              y={y}
+              selected={building.id === selected?.id}
+              showCard={building.id === cardId}
+              onSelect={setSelectedId}
+              onHover={setHoveredId}
+            />
+          )}
         />
       }
       panel={
@@ -106,7 +108,7 @@ export function MapScreen({ buildings, initialCity }: MapScreenProps) {
             )}
           </p>
           {selected ? (
-            <Link href={`/b/${encodeURIComponent(selected.id)}/scout`} className={buttonVariants({ variant: "primary" })}>
+            <Link href={buildingHref(selected.id, "scout", null /* no mission picked on the map: Scout redirects to its own */)} className={buttonVariants({ variant: "primary" })}>
               Scout this building
             </Link>
           ) : (
@@ -120,10 +122,36 @@ export function MapScreen({ buildings, initialCity }: MapScreenProps) {
   );
 }
 
-/** `?city=` as a city; anything missing or unknown is LA, as the page reads it. */
-export function cityFromParam(value: string | null): City {
+/** `?city=` as a city; anything missing or unknown is the screen's default. */
+export function cityFromParam(value: string | null | undefined, fallback: City = "LA"): City {
   const parsed = City.safeParse(value);
-  return parsed.success ? parsed.data : "LA";
+  return parsed.success ? parsed.data : fallback;
+}
+
+/**
+ * The address that opens `city`'s tab on the route at `pathname`: the route
+ * itself for its default city, else with `?city=`. Whatever route the map is
+ * on (the map, the cast screen), a tab click keeps the address there.
+ */
+export function cityHref(pathname: string, city: City, defaultCity: City): string {
+  return city === defaultCity ? pathname : `${pathname}?city=${city}`;
+}
+
+/**
+ * The open city tab and a way to switch it. The address is the one record of
+ * the open tab, so the tab follows it both ways: a tab click writes `?city=`
+ * on the current route, and any navigation (Back, a shared link) moves the
+ * tab. Outside the router (unit tests) `defaultCity` stands in.
+ */
+export function useCityTab(defaultCity: City): [City, (next: City) => void] {
+  const params = useSearchParams();
+  const pathname = usePathname();
+  const city = cityFromParam(params?.get("city"), defaultCity);
+  // Next keeps useSearchParams in step with the History API, so writing the
+  // address is what switches the tab; a reload or a shared link opens it.
+  const write = (next: City) =>
+    window.history.replaceState(null, "", cityHref(pathname ?? window.location.pathname, next, defaultCity));
+  return [city, write];
 }
 
 function countByCity(buildings: MapBuilding[]): Record<City, number> {
@@ -133,7 +161,7 @@ function countByCity(buildings: MapBuilding[]): Record<City, number> {
 }
 
 /** LA / Houston as tabs (WAI-ARIA tabs: arrow keys move between them). */
-function CityTabs({ city, onChange, counts }: { city: City; onChange: (c: City) => void; counts: Record<City, number> }) {
+export function CityTabs({ city, onChange, counts }: { city: City; onChange: (c: City) => void; counts: Record<City, number> }) {
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
@@ -235,30 +263,63 @@ function EmptyCity({ city, onSwitchCity }: { city: City; onSwitchCity: (c: City)
   );
 }
 
-interface MapViewProps {
+interface MapViewProps<B extends Pick<MapBuilding, "id" | "lat" | "lng">> {
   city: City;
-  buildings: MapBuilding[];
-  selectedId: string | null;
-  cardId: string | null;
-  onSelect: (id: string) => void;
-  onHover: (id: string | null) => void;
+  buildings: B[];
+  /** The mono caps line over the map's top-left corner. */
+  caption: ReactNode;
+  /** Draws one building's pin at (`x`, `y`), fractions of the map's box. */
+  pin: (building: B, x: number, y: number) => ReactNode;
+  /**
+   * Show all of this view (`fitView`: the basemap, widened when a pin that
+   * must show is off it), fitted inside the area with the basemap at its
+   * place in it, so nothing in it is cropped. By default the basemap covers
+   * the area, cropping its edges to fill it.
+   */
+  view?: Bounds;
 }
+
+/**
+ * Behind a fitted view: the basemap's ground with a faint grid in its
+ * street-line tone, so the area past the street map's edge reads as the
+ * same map beyond its streets, not as missing tiles. No streets are drawn.
+ */
+const BEYOND_STREETS = {
+  backgroundColor: "var(--n-950)",
+  backgroundImage:
+    "linear-gradient(to right, var(--n-800) 1px, transparent 1px), linear-gradient(to bottom, var(--n-800) 1px, transparent 1px)",
+  backgroundSize: "48px 48px",
+} as const;
 
 /**
  * The basemap, scaled to cover the visual area (like `object-fit: cover`) in
  * a box with the image's aspect ratio, so a pin placed at a fraction of the
  * box lands on the right street at every viewport.
  */
-function MapView({ city, buildings, selectedId, cardId, onSelect, onHover }: MapViewProps) {
+export function MapView<B extends Pick<MapBuilding, "id" | "lat" | "lng">>({ city, buildings, caption, pin, view }: MapViewProps<B>) {
   const basemap = BASEMAPS[city];
-  const ratio = basemap.width / basemap.height;
+  const fitted = view !== undefined;
+  const bounds = fitted ? view : basemap.bounds;
+  const ratio = fitted ? aspect(view) : basemap.width / basemap.height;
+  const image = fitted ? placeIn(view, basemap.bounds) : null;
   return (
-    <div className="absolute inset-0 overflow-hidden [container-type:size]">
+    <div className="absolute inset-0 overflow-hidden [container-type:size]" style={fitted ? BEYOND_STREETS : undefined}>
       <div
         data-testid="basemap"
         className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
-        style={{ width: `max(100cqw, calc(100cqh * ${ratio}))`, aspectRatio: `${basemap.width} / ${basemap.height}` }}
+        data-fitted={fitted || undefined}
+        style={{
+          // Cover the area with the basemap; or fit a wider view inside it, on
+          // the grid (BEYOND_STREETS) that marks everything past the streets.
+          width: fitted ? `min(100cqw, calc(100cqh * ${ratio}))` : `max(100cqw, calc(100cqh * ${ratio}))`,
+          aspectRatio: fitted ? String(ratio) : `${basemap.width} / ${basemap.height}`,
+        }}
       >
+        <div
+          // The street map's edge, so the grid around it reads as beyond it.
+          className={cn("absolute", image && "ring-1 ring-border-strong")}
+          style={image ? { left: `${image.left}%`, top: `${image.top}%`, width: `${image.width}%`, height: `${image.height}%` } : { inset: 0 }}
+        >
         <Image
           key={city}
           src={basemap.file}
@@ -269,24 +330,14 @@ function MapView({ city, buildings, selectedId, cardId, onSelect, onHover }: Map
           sizes="100vw"
           className="select-none animate-in fade-in-0 duration-base"
         />
+        </div>
         {buildings.map((building) => {
-          const { x, y } = project(basemap.bounds, building.lat, building.lng);
-          return (
-            <MapPin
-              key={building.id}
-              building={building}
-              x={x}
-              y={y}
-              selected={building.id === selectedId}
-              showCard={building.id === cardId}
-              onSelect={onSelect}
-              onHover={onHover}
-            />
-          );
+          const { x, y } = project(bounds, building.lat, building.lng);
+          return <Fragment key={building.id}>{pin(building, x, y)}</Fragment>;
         })}
       </div>
       <p data-testid="map-caption" className="pointer-events-none absolute top-4 left-6 label-caps text-text-2">
-        {cityName(city)} · {buildings.length} {buildings.length === 1 ? "building" : "buildings"}
+        {caption}
       </p>
       <div className="absolute bottom-0 left-0 flex items-center gap-4 px-6 py-3 max-md:hidden" aria-label="Layers" role="group">
         {(Object.keys(LAYERS) as Layer[]).map((layer) => (

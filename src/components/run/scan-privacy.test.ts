@@ -1,4 +1,4 @@
-// SPEC §4.5 on a board built from a live Matterport scan (issue 28): nothing
+// SPEC §4.5 on a board built from a live Matterport scan (issue 3): nothing
 // derived from the scan is written to storage or sent in a request body. The
 // scanned board here is F1's fixture floor marked as a scan, so every node id
 // stands in for a sweep id and every room for a scanned room.
@@ -7,7 +7,7 @@ import { F1_DEMO, FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { LevelManifest, type FloorGraph } from "@/domain";
 import { act, createRun, type Action, type RunState } from "@/engine";
 import { placeLevel } from "@/level/placer";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import { chiefRequest, chiefZones } from "./chief-request";
 import { clearRunLog, keepRunLogInMemory, loadRunLog, runLogKey, runLogOf, saveRunLog } from "./run-log-store";
 import { boardOn, RUN_SEED } from "./run-screen";

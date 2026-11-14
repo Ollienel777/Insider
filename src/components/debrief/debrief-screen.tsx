@@ -6,10 +6,13 @@ import { getMatterport } from "@/adapters/matterport";
 import { ALARM_STYLE } from "@/components/run/alarm-banner";
 import { loadRunLog } from "@/components/run/run-log-store";
 import { BuildingScreen } from "@/components/shell/building-screen";
+import { buildingHref } from "@/lib/building-href";
+import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Building, LevelManifest, RunLog } from "@/domain";
+import { placeOrFixture } from "@/components/run/scan-fallback";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
 import { debriefOf, LATE_NOTE, notStarted, UnreadableLog, type Debrief, type Decision } from "./debrief";
@@ -60,6 +63,7 @@ export function DebriefScreen({
 }) {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
+  const missionId = useMissionId();
 
   useEffect(() => {
     let live = true;
@@ -67,7 +71,7 @@ export function DebriefScreen({
       if (live) setLoad({ status: "error", message: error instanceof Error ? error.message : String(error) });
     };
     // Storage is the browser's: read it after mount.
-    const log: RunLog | null = loadRunLog(building.id);
+    const log: RunLog | null = loadRunLog(building.id, undefined, missionId);
     if (!log || !manifest || notStarted(log)) {
       // No cached manifest is the building with no level, not a missing run.
       const next: Load = !manifest ? { status: "no-floor" } : { status: "empty", reason: log ? "not-started" : "none" };
@@ -80,13 +84,19 @@ export function DebriefScreen({
     const matterport = getMatterport(heistMode);
     matterport.adapter
       .loadFloor(building)
-      .then((floor) => {
+      .then(async (floor) => {
         if (!live) return;
         if (!floor) return setLoad({ status: "no-floor" });
         try {
-          const placed = placeLevel(manifest, floor, log.seed);
-          setLoad({ status: "ready", placed, debrief: debriefOf(placed, log) });
+          // A scan the level can't be placed on was played on the fixture floor (as on Run): replay it there.
+          const ready = await placeOrFixture(building, floor, (on) => {
+            const placed = placeLevel(manifest, on, log.seed, undefined, { watchEntry: log.watchEntry });
+            return { placed, debrief: debriefOf(placed, log) };
+          });
+          if (!live) return;
+          setLoad(ready ? { status: "ready", ...ready } : { status: "no-floor" });
         } catch (error) {
+          if (!live) return;
           if (error instanceof UnreadableLog) setLoad({ status: "empty", reason: "unreadable" });
           else fail(error);
         }
@@ -95,9 +105,9 @@ export function DebriefScreen({
     return () => {
       live = false;
     };
-  }, [building, manifest, heistMode, attempt]);
+  }, [building, manifest, heistMode, attempt, missionId]);
 
-  const runHref = `/b/${encodeURIComponent(building.id)}/run`;
+  const runHref = buildingHref(building.id, "run", missionId);
 
   if (load.status === "ready") {
     // Keyed on the log it reads, so a reload that brings a shorter log starts its scrubber afresh.
@@ -129,9 +139,9 @@ export function DebriefScreen({
         testId="debrief-no-floor"
         label="No floor yet"
         title="This building has no board to replay on yet."
-        body="Only Halvorsen Tower has a floor plan so far. Pick it on the map to play the run."
+        body="Only the Los Angeles buildings have a floor plan so far. Pick one on the map to play the run."
         action={
-          <Link href="/" className={buttonVariants({ variant: "secondary" })}>
+          <Link href="/map" className={buttonVariants({ variant: "secondary" })}>
             Back to the map
           </Link>
         }
@@ -285,7 +295,7 @@ function DebriefReady({
             </>
           )}
           <Link
-            href="/"
+            href="/map"
             data-testid="debrief-to-map"
             className={cn(buttonVariants({ variant: "ghost" }), "w-full")}
           >

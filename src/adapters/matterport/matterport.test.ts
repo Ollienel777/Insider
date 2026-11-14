@@ -239,7 +239,7 @@ describe("selectMatterport (the mode switch)", () => {
   });
 });
 
-describe("the dev-only model override (issue 28)", () => {
+describe("the dev-only model override (issue 3)", () => {
   const VAR = "NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE";
 
   it("points every building at a bare model id, outside production", () => {
@@ -270,7 +270,7 @@ describe("the dev-only model override (issue 28)", () => {
   });
 });
 
-describe("the fixture fallback names a timeout as one (issue 28)", () => {
+describe("the fixture fallback names a timeout as one (issue 3)", () => {
   it("says Matterport didn't answer in time when the live load timed out", async () => {
     const timeout = Object.assign(new Error("the Showcase connection did not arrive within 20000 ms"), { name: "TimeoutError" });
     const messages: string[] = [];

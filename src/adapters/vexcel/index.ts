@@ -1,18 +1,21 @@
 // Picks the live or the fake Vexcel adapter from the environment (SPEC §7)
 // and exports the one interface. Live needs `VEXCEL_MODE` (or `HEIST_MODE`)
 // set to `live` *and* both `VEXCEL_API_BASE` and `VEXCEL_API_KEY`; with
-// either missing it falls back to the massing fixtures and says so. A live
-// call that fails is answered by the massing too, and from then on Vexcel
-// stays on fixtures (`Breaker`); the selection then carries that `fallback`.
+// either missing it falls back to the massing fixtures and says so. A
+// building Vexcel has no coverage for, or whose imagery fails on its own, is
+// answered by its massing while Vexcel stays live for the rest (the route
+// adds `noCoverageFallback`). A failure of the network, a redirect, or
+// several buildings failing in a row trips the breaker instead: from then on
+// Vexcel stays on fixtures (`Breaker`), and the selection carries that `fallback`.
 import { syncDemoEpoch } from "@/lib/demo-epoch";
-import { withFallback, type Fallback } from "@/lib/fallback";
+import { fallbackMessage, withFallback, type Fallback } from "@/lib/fallback";
 import { missingForLive, serviceModes, type ServiceMode } from "@/lib/mode";
 import { resetServerSlot, serverSlot } from "@/lib/server-breakers";
-import { createFakeVexcel, fixtureLocation } from "./fake";
+import { createFakeVexcel } from "./fake";
 import { createLiveVexcel } from "./live";
 import type { VexcelAdapter } from "./types";
 
-export type { VexcelAdapter } from "./types";
+export type { AerialImage, VexcelAdapter } from "./types";
 
 type Env = Record<string, string | undefined>;
 
@@ -24,6 +27,15 @@ export interface VexcelSelection {
   reason: string;
   /** Set once a live call has failed and the fixtures took over. */
   fallback?: Fallback;
+}
+
+/**
+ * The fallback for one building served as its massing while Vexcel is live.
+ * Its id is the building's, so the browser toasts it once a session however
+ * often the Scout loads it, and the mode chip stops saying live.
+ */
+export function noCoverageFallback(buildingId: string): Fallback {
+  return { service: "vexcel", id: `vexcel-no-scan-${buildingId}`, message: fallbackMessage("vexcel", "no-scan") };
 }
 
 export function selectVexcel(env: Env): VexcelSelection {
@@ -39,14 +51,21 @@ export function selectVexcel(env: Env): VexcelSelection {
       reason: `Vexcel: fixtures (live mode, but ${missing.join(" and ")} not set)`,
     };
   }
+  // Live imagery is fetched at the fixture massing's own block, and the
+  // massing's hand-placed entries are pinned onto it, until the CoStar kit
+  // can say where a real building stands (issue 29).
+  const live = createLiveVexcel({
+    base: env.VEXCEL_API_BASE,
+    key: env.VEXCEL_API_KEY,
+    massing: (id) => fake.getAerial(id),
+  });
   return {
-    // Live imagery is fetched at the fixture building's own block until the
-    // CoStar adapter can say where a building stands.
-    adapter: createLiveVexcel({
-      base: env.VEXCEL_API_BASE,
-      key: env.VEXCEL_API_KEY,
-      locate: async (id) => fixtureLocation(id),
-    }),
+    adapter: {
+      // A building Vexcel has no coverage for, or that failed on its own,
+      // gets its massing, and Vexcel stays live for the rest.
+      getAerial: async (id) => (await live.getAerial(id)) ?? fake.getAerial(id),
+      getImage: (id, dir) => live.getImage(id, dir),
+    },
     mode: "live",
     reason: "Vexcel: live",
   };

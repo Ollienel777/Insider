@@ -113,6 +113,23 @@ export function noScanFallback(buildingId: string): Fallback {
 }
 
 /**
+ * The fallback for a scan the level can't be placed on (no entry, no room for
+ * the objective): the board goes to the fixture floor. Once per building.
+ */
+export function unplaceableFallback(buildingId: string): Fallback {
+  return {
+    service: "matterport",
+    id: `matterport-unplaceable-${buildingId}`,
+    message: fallbackMessage("matterport", "unplaceable"),
+  };
+}
+
+/** The building's fixture floor, for a scan the level can't be placed on. */
+export function fixtureFloor(building: Pick<Building, "id" | "matterportModelId">) {
+  return fake.loadFloor(building);
+}
+
+/**
  * `live` guarded: a load that throws, or that comes back with no floor, is
  * answered by `fake`'s fixture floor, and `onFallback` hears of it; a
  * building with no scan (no `matterportModelId`) is too, with its own

@@ -178,7 +178,7 @@ describe("toFloorGraph (mapping.ts)", () => {
   });
 });
 
-describe("game-fiction labels for unlabelled rooms (issue 28)", () => {
+describe("game-fiction labels for unlabelled rooms (issue 3)", () => {
   it("names a room by its floor area", () => {
     expect([1, 3.99, 4, 11.9, 12, 29.9, 30, 79.9, 80, 400].map(fictionLabel)).toEqual([
       "Closet",

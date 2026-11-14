@@ -136,6 +136,11 @@ test("at Alert, clicking a guard on a numbered neighbour opens its card and neve
 });
 
 test("after a click and Esc, the quiet route by keys still takes the files with Space and wins (R3-C1)", async ({ page }) => {
+  // It plays the quiet route by keys: 1.0 s alone, 3.9 s with the gate
+  // pinned to one CPU, and up to 31 s in a full smoke run on the loaded 2-vCPU
+  // VM, against the 30 s default (#85). 60 s is about twice the worst seen; a
+  // broken step still fails on its own wait, not on this.
+  test.setTimeout(60_000);
   await open(page, "/b/F1/run", "run-board");
   const board = page.getByTestId("run-board");
   await target(page, "guard:G4").click();
@@ -180,6 +185,11 @@ test("after a click and Esc, the quiet route by keys still takes the files with 
 });
 
 test("Space opens the card on a piece Tab put in focus, and Esc hands focus back to it", async ({ page }) => {
+  // It tabs piece by piece until G4 has focus: 1.0 s alone, 3.4 s with the gate
+  // pinned to one CPU, and up to 31 s in a full smoke run on the loaded 2-vCPU
+  // VM, against the 30 s default (#85). 60 s is about twice the worst seen; a
+  // broken step still fails on its own wait, not on this.
+  test.setTimeout(60_000);
   await open(page, "/b/F1/run", "run-board");
   const g4 = target(page, "guard:G4");
   await page.locator("body").focus();
@@ -198,6 +208,11 @@ test("Space opens the card on a piece Tab put in focus, and Esc hands focus back
 test("Space does one thing: after Tab, Enter and Esc on G4, the quiet route by keys takes the files and leaves the card shut (#68)", async ({
   page,
 }) => {
+  // It plays the quiet route by keys: 1.7 s alone, 5.3 s with the gate
+  // pinned to one CPU, and up to 31 s in a full smoke run on the loaded 2-vCPU
+  // VM, against the 30 s default (#85). 60 s is about twice the worst seen; a
+  // broken step still fails on its own wait, not on this.
+  test.setTimeout(60_000);
   await open(page, "/b/F1/run", "run-board");
   const board = page.getByTestId("run-board");
   const g4 = target(page, "guard:G4");
@@ -236,6 +251,11 @@ test("Space does one thing: after Tab, Enter and Esc on G4, the quiet route by k
 test("Space on a piece Tab put in focus opens its card and plays no turn, even where it could take the files (#68)", async ({
   page,
 }) => {
+  // It tabs to a piece and plays to the files: 1.6 s alone, 5.4 s with the gate
+  // pinned to one CPU, and up to 31 s in a full smoke run on the loaded 2-vCPU
+  // VM, against the 30 s default (#85). 60 s is about twice the worst seen; a
+  // broken step still fails on its own wait, not on this.
+  test.setTimeout(60_000);
   await open(page, "/b/F1/run", "run-board");
   const board = page.getByTestId("run-board");
   const keyFor = async (node: string) =>

@@ -84,7 +84,7 @@ const MIN_SIDE = 0.5;
 
 /**
  * Game-fiction names for a room the scan left unlabelled, by floor area in
- * square metres (issue 28): the first band the area falls under. The board
+ * square metres (issue 3): the first band the area falls under. The board
  * needs a name to print and the crew a name to say; these say how big a room
  * is, never what the scan says it is.
  */

@@ -5,7 +5,9 @@ import { expect, test } from "@playwright/test";
 
 test("the dossier replays the trace and fills in 1974, Analog era and 4 guards", async ({ page }) => {
   await page.goto("/b/F1/dossier");
-  await expect(page.getByTestId("trace-header")).toContainText(/^Recorded run · .+ UTC · ScriptedChatModel/);
+  await expect(page.getByTestId("trace-header")).toContainText(
+    /^Recorded replay · .+ UTC · model turns: scripted \(builder-F1-romaine-1974\), no LLM ran$/,
+  );
   await expect(page.getByText("Nothing on this screen calls a model.")).toBeVisible();
 
   // It starts under skeletons and fills as the replay plays.
@@ -55,6 +57,40 @@ test("Skip shows everything at once, and the skeletons held each block's height"
   expect(after.briefing?.height).toBe(before.briefing?.height);
 });
 
+test("a trace row opens on its recorded input and output, by mouse and by keyboard (#79)", async ({ page }) => {
+  await page.goto("/b/F1/dossier");
+  await expect(page.getByTestId("trace-todo").first()).not.toHaveAttribute("data-status", "unseen");
+  await page.getByRole("button", { name: "Skip" }).click();
+  const steps = page.getByTestId("trace-step");
+  await expect(steps.and(page.locator('[data-kind="subagent"]')).getByTestId("trace-subagent")).toHaveText([
+    "data-analyst",
+    "game-master",
+  ]);
+  await expect(page.getByTestId("trace-subagents")).toHaveText("Available: general-purpose · data-analyst · game-master");
+
+  // By mouse: get_building opens on its arguments and the record it returned.
+  const tool = steps.filter({ hasText: "get_building" }).getByTestId("trace-step-toggle");
+  await expect(tool).toHaveAttribute("aria-expanded", "false");
+  await tool.click();
+  await expect(tool).toHaveAttribute("aria-expanded", "true");
+  const detail = page.locator(`[id="${await tool.getAttribute("aria-controls")}"]`);
+  await expect(detail).toContainText('"buildingId": "F1"');
+  await expect(detail).toContainText('"name": "Halvorsen Tower"');
+  await tool.click();
+  await expect(tool).toHaveAttribute("aria-expanded", "false");
+  await expect(detail).toHaveCount(0);
+
+  // By keyboard: Enter opens the data-analyst task on its answer, Space closes it.
+  const analyst = steps.filter({ hasText: "data-analyst" }).and(page.locator('[data-kind="subagent"]'));
+  const task = analyst.getByTestId("trace-step-toggle");
+  await task.focus();
+  await page.keyboard.press("Enter");
+  await expect(task).toHaveAttribute("aria-expanded", "true");
+  await expect(analyst.getByTestId("trace-step-detail")).toContainText("Built 1974");
+  await page.keyboard.press("Space");
+  await expect(task).toHaveAttribute("aria-expanded", "false");
+});
+
 test("Replay starts again from the top, with the header and the CoStar record in view at 1440x900", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/b/F1/dossier");
@@ -73,5 +109,5 @@ test("Replay starts again from the top, with the header and the CoStar record in
 test("Brief the crew goes to the plan", async ({ page }) => {
   await page.goto("/b/F1/dossier");
   await page.getByRole("link", { name: "Brief the crew" }).click();
-  await expect(page).toHaveURL(/\/b\/F1\/plan$/);
+  await expect(page).toHaveURL(/\/b\/F1\/plan\?m=romaine-1974$/);
 });

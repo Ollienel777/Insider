@@ -42,6 +42,7 @@ test("the blocked stair is struck through on the board and named in the report",
 });
 
 test("the narrative streams in after the playback, with the recorded chip", async ({ page }) => {
+  test.setTimeout(60_000); // the playback, then the stream: 12 s alone, up to 31 s on the loaded VM (#85)
   await open(page);
   const narrative = page.getByTestId("drill-narrative");
   await expect(narrative.getByTestId("narrative-skeleton")).toBeVisible();

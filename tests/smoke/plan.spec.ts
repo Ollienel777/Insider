@@ -41,7 +41,7 @@ test("beat 4: the demo order gets numbered steps, a C2 warning with its turn, an
   await expect(page.getByTestId("ghost-sighting")).toHaveCount(1);
 
   await page.getByRole("link", { name: "Start the run" }).click();
-  await expect(page).toHaveURL(/\/b\/F1\/run$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/b\/F1\/run\?m=romaine-1974$/, { timeout: 15_000 });
 });
 
 test("Enter sends the order, and a lobby plan's off-floor zones are dropped and noted", async ({ page }) => {
@@ -53,6 +53,6 @@ test("Enter sends the order, and a lobby plan's off-floor zones are dropped and 
 });
 
 test("a building with no level yet says so", async ({ page }) => {
-  await page.goto("/b/F2/plan");
+  await page.goto("/b/F4/plan");
   await expect(page.getByTestId("board-empty")).toContainText("This building's level isn't ready yet.");
 });

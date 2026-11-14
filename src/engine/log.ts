@@ -3,6 +3,14 @@
 import type { ChiefOrders, PlayerActionKind, RunLog, RunTurn } from "@/domain";
 import type { GuardState, RunState } from "./state";
 
+/**
+ * The rules the engine plays by, stamped on every log it writes so the Debrief
+ * reads an old log by the engine that wrote it. 2: the Chief's orders and locks
+ * given at Calm are dropped (#94). A log without it was played under rules 1,
+ * which applied them at any alarm.
+ */
+export const RUN_RULES = 2;
+
 /** The log entry for a turn that ended in this position; `chief` is the orders that arrived before it. */
 export function turnEntry(
   turn: number,
@@ -28,6 +36,7 @@ export function toRunLog(run: RunState): RunLog {
     buildingId,
     missionId,
     seed,
+    rules: RUN_RULES,
     turns: [...run.turns],
     status: run.status,
     alarmEvents: run.alarmEvents.map((e) => ({ ...e, cause: { ...e.cause } })),
