@@ -233,7 +233,10 @@ describe("live data stays out of the trace (SPEC §4.5)", () => {
     await expect(writeCachedCasting(cast.result, CASTING_DIR)).rejects.toThrow(/never goes in data\/casting/);
     const dir = mkdtempSync(path.join(tmpdir(), "casting-"));
     try {
-      symlinkSync(CASTING_DIR, path.join(dir, "linked"));
+      // A directory junction on Windows (no admin or Developer Mode needed),
+      // a plain symlink elsewhere: realpath resolves both, and the type is
+      // ignored off Windows.
+      symlinkSync(CASTING_DIR, path.join(dir, "linked"), "junction");
       await expect(writeCachedCasting(cast.result, path.join(dir, "linked"))).rejects.toThrow(/never goes in data\/casting/);
       await writeCachedCasting(cast.result, dir);
       expect(JSON.parse(readFileSync(path.join(dir, "night-desk.json"), "utf8")).trace.liveData).toBe(true);

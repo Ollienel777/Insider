@@ -8,6 +8,22 @@ import { CastingResult } from "@/domain";
 import expected from "../../../../../fixtures/inventory-finalists.json";
 import { GET } from "./route";
 
+// A path under a regular file fails with ENOTDIR on Linux and macOS but
+// ENOENT on Windows, so the unreadable state dir is simulated: any read
+// below `unreadable` rejects with the ENOTDIR error POSIX gives.
+const unreadable = vi.hoisted(() => ({ dir: undefined as string | undefined }));
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const fs = await importOriginal<typeof import("node:fs/promises")>();
+  const readFile = ((file: Parameters<typeof fs.readFile>[0], ...rest: unknown[]) => {
+    const { dir } = unreadable;
+    if (dir && typeof file === "string" && file.startsWith(dir)) {
+      return Promise.reject(Object.assign(new Error(`ENOTDIR: not a directory, open '${file}'`), { code: "ENOTDIR" }));
+    }
+    return (fs.readFile as (...args: unknown[]) => Promise<unknown>)(file, ...rest);
+  }) as typeof fs.readFile;
+  return { ...fs, default: { ...fs, readFile }, readFile };
+});
+
 const get = (missionId: string) =>
   GET(new Request(`http://localhost/api/cast/${missionId}`), { params: Promise.resolve({ missionId }) });
 
@@ -88,7 +104,12 @@ describe("GET /api/cast/[missionId] with CoStar live", () => {
     writeFileSync(notADir, "");
     vi.stubEnv("HEIST_STATE_DIR", notADir);
     errors.mockClear();
-    expect(await served()).toEqual(CastingResult.parse(committed));
+    unreadable.dir = notADir + path.sep;
+    try {
+      expect(await served()).toEqual(CastingResult.parse(committed));
+    } finally {
+      unreadable.dir = undefined;
+    }
     expect(errors).toHaveBeenCalledWith(expect.stringMatching(/live shortlist cannot be read \(ENOTDIR\)/));
   });
 
