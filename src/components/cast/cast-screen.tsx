@@ -167,6 +167,7 @@ export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, 
           control={control}
           title="Casting Director"
           wrapLongParts
+          expandable={false}
           banner={castNotice(result.source)}
           afterPlan={<Funnel funnel={funnel} landed={landed} source={result.source} />}
         />
