@@ -13,6 +13,7 @@ import {
   FloorGraph,
   LevelManifest,
   Mission,
+  PlayerAction,
   RunLog,
 } from "@/domain";
 
@@ -400,6 +401,16 @@ describe("FloorGraph references", () => {
   it("rejects duplicate node ids", () => {
     const nodes = [...floor.nodes, floor.nodes[0]];
     expect(FloorGraph.safeParse({ ...floor, nodes }).success).toBe(false);
+  });
+});
+
+describe("PlayerAction", () => {
+  it("accepts a sprint, the engine's two-hop move", () => {
+    expect(PlayerAction.safeParse({ kind: "sprint", nodeId: "n3" }).success).toBe(true);
+  });
+
+  it("rejects an action kind the engine does not have", () => {
+    expect(PlayerAction.safeParse({ kind: "teleport", nodeId: "n3" }).success).toBe(false);
   });
 });
 

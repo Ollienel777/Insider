@@ -7,7 +7,8 @@ import { Id } from "./common";
 export const AlarmState = z.enum(["calm", "suspicious", "alert", "lockdown"]);
 export type AlarmState = z.infer<typeof AlarmState>;
 
-export const PlayerActionKind = z.enum(["move", "wait", "pick", "use", "take", "exit"]);
+/** `sprint` covers two hops in one turn. */
+export const PlayerActionKind = z.enum(["move", "sprint", "wait", "pick", "use", "take", "exit"]);
 export type PlayerActionKind = z.infer<typeof PlayerActionKind>;
 
 /** What the player did this turn, and the node they ended it on. */
