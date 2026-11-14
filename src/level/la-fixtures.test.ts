@@ -8,6 +8,8 @@ import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { CrewPlan, LevelManifest } from "@/domain";
 import { act, createRun, shortestPath, type Action, type RunState } from "@/engine";
+import f1Cached from "../../data/levels/F1.romaine-1974.json";
+import crewF1 from "../../fixtures/llm/crew-F1.json";
 import f2Cached from "../../data/levels/F2.sunset-1986.json";
 import f3Cached from "../../data/levels/F3.night-desk.json";
 import crewF2 from "../../fixtures/llm/crew-F2.json";
@@ -283,43 +285,6 @@ describe.each(CASES)("$id on its fixture floor", (c) => {
     }
   });
 
-  it("opens every crew reply where the run starts, and names in the exit line the level's exits and no other way (#85)", () => {
-    // The aerial entries a text names, by the names the recorded texts use for them.
-    const named = (text: string) =>
-      Object.entries(c.entryNames)
-        .filter(([, names]) => names.some((n) => text.toLowerCase().includes(n)))
-        .map(([id]) => id)
-        .sort();
-    const start = placed.entries[0];
-    const entryIds = new Set(manifest().entries.map((e) => e.id));
-    for (const r of c.crew.replies) {
-      const [first, ...rest] = CrewPlan.parse(r.plan).steps;
-      // The board walks every plan from the start, so a plan that opens anywhere else is not the one played.
-      expect(first.zoneId, r.id).toBe(start.entryId);
-      expect(named(first.action), `${r.id}: ${first.action}`).toEqual([start.entryId]);
-      // A later step to an entry says which one it walks to, and no other.
-      for (const step of rest.filter((s) => entryIds.has(s.zoneId))) {
-        expect(named(step.action), `${r.id}: ${step.action}`).toEqual([step.zoneId]);
-      }
-      // A reply the board catches warns about the camera or guard that does it, not another.
-      const plan = CrewPlan.parse(r.plan);
-      const caughtBy = validatePlan(placed, plan).warnings[0]?.text.match(/\b[CG]\d+\b/)?.[0];
-      if (caughtBy) {
-        const said = [plan.pushback, ...plan.steps.map((s) => s.action)].join(" ");
-        expect(said, `${r.id} is caught by ${caughtBy}`).toMatch(new RegExp(`\\b${caughtBy}\\b`));
-      }
-    }
-    // The exit line names each exit the Run screen's plan lists ("Out by the …"), and nothing else.
-    const exits = placed.entries.filter((e) => placed.level.exits.includes(e.nodeId)).map((e) => e.entryId);
-    const exitLine = manifest().mission.exitCondition;
-    expect(named(exitLine)).toEqual([...exits].sort());
-    // Nor any entry that is not an exit, by its label or its kind ("the service lift" is the dock's).
-    for (const entry of manifest().entries.filter((e) => !exits.includes(e.id))) {
-      expect(exitLine.toLowerCase(), entry.id).not.toContain(entry.label.toLowerCase());
-      expect(exitLine.toLowerCase(), entry.id).not.toMatch(new RegExp(`\\b${entry.kind}\\b(?! lift)`));
-    }
-  });
-
   it("puts each guard and camera a recorded crew or Chief text places where that text says (#39 review)", () => {
     // Each crew reply's and Chief turn's own text, by its id; a claim is checked against that text alone.
     const recording = ChiefRecording.parse(c.chief);
@@ -354,6 +319,83 @@ describe.each(CASES)("$id on its fixture floor", (c) => {
       let rest = text;
       for (const cl of c.claims.filter((x) => x.text === id)) rest = rest.split(cl.phrase).join(" ");
       expect(rest.match(/\b[cg]\d+\b/gi) ?? [], `${id} names a guard or camera outside its claims`).toEqual([]);
+    }
+  });
+});
+
+/** The three LA buildings' recorded crew replies and exit lines, against the board each is played on (#85, #89). */
+const OPENINGS: {
+  id: "F1" | "F2" | "F3";
+  cached: unknown;
+  crew: { replies: { id: string; plan: unknown }[] };
+  /** Every name the recorded texts give each aerial entry, placed or not, as a crew step would say it. */
+  entryNames: Record<string, string[]>;
+  /** The exit line names the level's exits ("exits"), or offers any entry and leaves the list to the Run screen ("any"). */
+  exitLine: "exits" | "any";
+}[] = [
+  {
+    id: "F1",
+    cached: f1Cached,
+    crew: crewF1,
+    entryNames: {
+      "dock-N": ["loading dock", "freight lift"],
+      roof: ["roof hatch", "east stair"],
+      "garage-E": ["garage"],
+      "lobby-S": ["lobby"],
+      "exit-W": ["stair b"],
+    },
+    exitLine: "any",
+  },
+  { ...CASES[0], exitLine: "exits" },
+  { ...CASES[1], exitLine: "exits" },
+];
+
+describe.each(OPENINGS)("$id's crew replies and exit line", (c) => {
+  const manifest = () => LevelManifest.parse(structuredClone(c.cached));
+  const placed = placeLevel(manifest(), structuredClone(FIXTURE_FLOORS[c.id]), RUN_SEED);
+  const entryIds = new Set(manifest().entries.map((e) => e.id));
+  // The aerial entries a text names, by the names the recorded texts use for them.
+  const named = (text: string) =>
+    Object.entries(c.entryNames)
+      .filter(([, names]) => names.some((n) => text.toLowerCase().includes(n)))
+      .map(([id]) => id)
+      .sort();
+
+  it.each(c.crew.replies.map((r) => [r.id, CrewPlan.parse(r.plan)] as const))(
+    "opens %s where the run starts, and warns about what catches it",
+    (_, plan) => {
+      const start = placed.entries[0];
+      const [first, ...rest] = plan.steps;
+      // The board walks every plan from the start, so a plan that opens anywhere else is not the one played.
+      expect(first.zoneId).toBe(start.entryId);
+      expect(named(first.action), first.action).toEqual([start.entryId]);
+      // A later step to an entry names no other entry ("Back out the way you came" names none).
+      for (const step of rest.filter((s) => entryIds.has(s.zoneId))) {
+        expect(named(step.action).filter((id) => id !== step.zoneId), step.action).toEqual([]);
+      }
+      // A reply the board catches warns about the camera or guard that does it, not another.
+      const caughtBy = validatePlan(placed, plan).warnings[0]?.text.match(/\b[CG]\d+\b/)?.[0];
+      if (caughtBy) {
+        const said = [plan.pushback, ...plan.steps.map((s) => s.action)].join(" ");
+        expect(said, `caught by ${caughtBy}`).toMatch(new RegExp(`\\b${caughtBy}\\b`));
+      }
+    },
+  );
+
+  it("names in the exit line the level's exits and no other way", () => {
+    const exits = placed.entries.filter((e) => placed.level.exits.includes(e.nodeId)).map((e) => e.entryId);
+    const exitLine = manifest().mission.exitCondition;
+    if (c.exitLine === "exits") {
+      // Each exit the Run screen's plan lists ("Out by the …"), and nothing else.
+      expect(named(exitLine)).toEqual([...exits].sort());
+    } else {
+      expect(exitLine).toMatch(/\bany entry\b/);
+      expect(named(exitLine)).toEqual([]);
+    }
+    // Nor any entry that is not an exit, by its label or its kind ("the service lift" is the dock's).
+    for (const entry of manifest().entries.filter((e) => !exits.includes(e.id))) {
+      expect(exitLine.toLowerCase(), entry.id).not.toContain(entry.label.toLowerCase());
+      expect(exitLine.toLowerCase(), entry.id).not.toMatch(new RegExp(`\\b${entry.kind}\\b(?! lift)`));
     }
   });
 });

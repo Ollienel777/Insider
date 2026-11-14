@@ -126,12 +126,10 @@ describe("validatePlan on the other recorded replies", () => {
 
   it("drops zones that are not on the floor, and notes each one", () => {
     const checked = validatePlan(placed, reply("lobby"));
-    expect(checked.dropped.map((d) => [d.number, d.zoneId])).toEqual([
-      [1, "lobby-S"],
-      [3, "lobby-S"],
-    ]);
+    // The lobby reply opens at the dock, where the run starts, and names the lobby as its way out (#89).
+    expect(checked.dropped.map((d) => [d.number, d.zoneId])).toEqual([[3, "lobby-S"]]);
     expect(checked.dropped[0].reason).toBe('"lobby-S" is not a zone on this floor');
-    expect(checked.steps.map((s) => s.zoneId)).toEqual(["objective"]);
+    expect(checked.steps.map((s) => s.zoneId)).toEqual(["dock-N", "objective"]);
     expect(checked.advice).not.toBeNull();
   });
 
