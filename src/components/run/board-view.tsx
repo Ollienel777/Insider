@@ -12,11 +12,24 @@ const DISC = { rx: 13, ry: 7.5 };
 /** How far apart, in board units, pieces sharing a node stand. */
 const SHARE_GAP = 36;
 
+/** A plan drawn over the board (the Plan screen, #19): its path, and marks on nodes. */
+export interface GhostPlan {
+  /** Nodes in order, the start first: drawn in the accent at 50%. */
+  path: readonly string[];
+  /** Where the plan is seen (`--warning`), and where the advice waits (neutral). */
+  marks: readonly { nodeId: string; kind: "sighting" | "wait"; label: string }[];
+}
+
 interface BoardViewProps {
   placed: PlacedLevel;
   run: RunState;
   choices: readonly Choice[];
   onChoose: (choice: Choice) => void;
+  /** The plan to draw over the board, at full emphasis. */
+  ghost?: GhostPlan | null;
+  /** The board at reduced emphasis, under a plan (DESIGN.md, Plan). */
+  reduced?: boolean;
+  testId?: string;
 }
 
 /**
@@ -27,7 +40,15 @@ interface BoardViewProps {
  * can move to. Pieces hop with a CSS transition: the player in `--t-base`,
  * the guards in `--t-slow` once the player has landed.
  */
-export function BoardView({ placed, run, choices, onChoose }: BoardViewProps) {
+export function BoardView({
+  placed,
+  run,
+  choices,
+  onChoose,
+  ghost = null,
+  reduced = false,
+  testId = "run-board",
+}: BoardViewProps) {
   const { floor } = placed.level;
   const frame = useMemo(() => frameOf(floor), [floor]);
   const at = (id: string): Point => {
@@ -55,7 +76,7 @@ export function BoardView({ placed, run, choices, onChoose }: BoardViewProps) {
 
   return (
     <svg
-      data-testid="run-board"
+      data-testid={testId}
       data-alarm={alarm}
       data-turn={run.turn}
       viewBox={`${round(frame.minX)} ${round(frame.minY)} ${round(frame.width)} ${round(frame.height)}`}
@@ -64,6 +85,7 @@ export function BoardView({ placed, run, choices, onChoose }: BoardViewProps) {
       role="group"
       aria-label={`Floor plan, turn ${run.turn}`}
     >
+      <g data-testid="board-base" opacity={reduced ? 0.55 : undefined}>
       {/* Rooms: a low tile each, its two front faces darker. */}
       <g aria-hidden>
         {floor.rooms.map((room) => {
@@ -277,6 +299,9 @@ export function BoardView({ placed, run, choices, onChoose }: BoardViewProps) {
             />
           ),
         )}
+      </g>
+
+      {ghost ? <GhostPath ghost={ghost} at={at} /> : null}
 
       {/* The numbered neighbours: click or press the number. */}
       <g>
@@ -291,6 +316,64 @@ export function BoardView({ placed, run, choices, onChoose }: BoardViewProps) {
         ))}
       </g>
     </svg>
+  );
+}
+
+/** The plan's ghost path in the accent at 50%, with a ring where it is seen and one where the advice waits. */
+function GhostPath({ ghost, at }: { ghost: GhostPlan; at: (id: string) => Point }) {
+  return (
+    <g data-testid="ghost-plan" aria-hidden>
+      {ghost.path.length > 1 ? (
+        <polyline
+          data-testid="ghost-path"
+          data-nodes={ghost.path.join(" ")}
+          points={pointsAttr(ghost.path.map(at))}
+          fill="none"
+          style={{ stroke: "var(--accent)" }}
+          strokeOpacity="0.5"
+          strokeWidth="4"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+      ) : null}
+      {ghost.marks.map((mark, i) => {
+        const p = at(mark.nodeId);
+        const sighting = mark.kind === "sighting";
+        const colour = sighting ? "var(--warning)" : "var(--n-100)";
+        return (
+          <g
+            key={`${mark.kind}-${mark.nodeId}-${i}`}
+            data-testid={sighting ? "ghost-sighting" : "ghost-wait"}
+            data-node={mark.nodeId}
+          >
+            <ellipse
+              cx={round(p.x)}
+              cy={round(p.y)}
+              rx={DISC.rx + 7}
+              ry={DISC.ry + 4}
+              fill="none"
+              style={{ stroke: colour }}
+              strokeWidth="2"
+              strokeDasharray={sighting ? undefined : "3 3"}
+            />
+            <text
+              x={round(p.x + DISC.rx + 10)}
+              y={round(p.y + (sighting ? -DISC.ry - 6 : DISC.ry + 16))}
+              className="font-mono"
+              fontSize="11"
+              fontWeight="500"
+              letterSpacing="0.06em"
+              paintOrder="stroke"
+              strokeWidth="4"
+              strokeLinejoin="round"
+              style={{ fill: colour, stroke: "var(--n-950)" }}
+            >
+              {mark.label}
+            </text>
+          </g>
+        );
+      })}
+    </g>
   );
 }
 

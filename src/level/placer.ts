@@ -30,6 +30,10 @@ import type {
 } from "@/domain";
 import { DEFAULT_HEARING, type CameraSpec, type GuardSpec, type Level } from "@/engine";
 
+// The quiet route is computed from a placement (quiet-route.ts); it is
+// exported here too, since the placer owns it (#15, #19).
+export { quietRoute } from "./quiet-route";
+
 // ---- what the placer returns ------------------------------------------------
 
 /** A camera as the engine takes it, with its phase always set. */

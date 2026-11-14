@@ -1,0 +1,99 @@
+{
+  "buildingId": "F1",
+  "note": "Recorded crew replies for Halvorsen Tower, keyword-routed by src/agents/crew/recorded.ts. The first reply whose keyword set all occur in the order answers; the last, with no keywords, is the default. Zone ids are the cached manifest's (data/levels/F1.json).",
+  "replies": [
+    {
+      "id": "dock-wait",
+      "when": [["dock", "wait"], ["wait"]],
+      "plan": {
+        "steps": [
+          { "zoneId": "dock-N", "action": "Up from the loading dock on the freight lift" },
+          { "zoneId": "dock-N", "action": "Wait one turn at the freight lift for the 02:00 round to pass" },
+          { "zoneId": "objective", "action": "Down the dock corridor, pick the records room door, two turns, and take the files" },
+          { "zoneId": "dock-N", "action": "Back out the way you came" }
+        ],
+        "pushback": "C2 sweeps the dock corridor every other turn. Your wait at the freight lift gets you past it going in, but not coming out: with the files, wait one more turn at the records door before you cross back, or C2 has you in the corridor.",
+        "confidence": 0.7
+      }
+    },
+    {
+      "id": "roof",
+      "when": [["roof"]],
+      "plan": {
+        "steps": [
+          { "zoneId": "roof", "action": "Down the east stair from the roof hatch" },
+          { "zoneId": "objective", "action": "Along the main corridor and through office 2210, pick the records room door and take the files" },
+          { "zoneId": "roof", "action": "Back up to the roof" }
+        ],
+        "pushback": "The roof is the long way round. The main corridor between the east stair and the records room is where the rounds walk. The dock is shorter and only a camera watches it.",
+        "confidence": 0.4
+      }
+    },
+    {
+      "id": "lobby",
+      "when": [["lobby"]],
+      "plan": {
+        "steps": [
+          { "zoneId": "lobby-S", "action": "In through the main lobby" },
+          { "zoneId": "objective", "action": "Pick the records room door and take the files" },
+          { "zoneId": "lobby-S", "action": "Out through the lobby" }
+        ],
+        "pushback": "The lobby has a desk guard all night. If you go that way, you walk past them twice.",
+        "confidence": 0.3
+      }
+    },
+    {
+      "id": "garage",
+      "when": [["garage"]],
+      "plan": {
+        "steps": [
+          { "zoneId": "garage-E", "action": "Up the garage ramp" },
+          { "zoneId": "objective", "action": "Pick the records room door and take the files" },
+          { "zoneId": "garage-E", "action": "Back down the ramp" }
+        ],
+        "pushback": "The garage ramp comes up on the east side, and I can't promise it reaches floor 22.",
+        "confidence": 0.35
+      }
+    },
+    {
+      "id": "quiet",
+      "when": [["quiet"]],
+      "plan": {
+        "steps": [
+          { "zoneId": "dock-N", "action": "Up from the loading dock on the freight lift" },
+          { "zoneId": "quiet-2210", "action": "Hold one turn in the dark of open office 2210" },
+          { "zoneId": "objective", "action": "Pick the records room door and take the files" },
+          { "zoneId": "dock-N", "action": "Back out the way you came" }
+        ],
+        "pushback": "Office 2210 is vacant and dark, but sound carries further in an empty room. Don't pick a lock in there.",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "dock",
+      "when": [["dock"]],
+      "plan": {
+        "steps": [
+          { "zoneId": "dock-N", "action": "Up from the loading dock on the freight lift" },
+          { "zoneId": "objective", "action": "Down the dock corridor, pick the records room door and take the files" },
+          { "zoneId": "dock-N", "action": "Back out the way you came" }
+        ],
+        "pushback": "Camera C2 covers the dock corridor every other turn. Wait one turn at the freight lift.",
+        "confidence": 0.6
+      }
+    },
+    {
+      "id": "default",
+      "when": [],
+      "plan": {
+        "steps": [
+          { "zoneId": "dock-N", "action": "Up from the loading dock on the freight lift" },
+          { "zoneId": "objective", "action": "Pick the records room door and take the files" },
+          { "zoneId": "dock-N", "action": "Back out the way you came" }
+        ],
+        "pushback": "You didn't say how you want in, so it's the dock: it's the shortest way to the records room. Camera C2 covers the dock corridor every other turn.",
+        "confidence": 0.5
+      }
+    }
+  ]
+}

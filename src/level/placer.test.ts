@@ -6,6 +6,7 @@ import { type FloorGraph, LevelManifest } from "@/domain";
 import { act, type Action, compileBoard, createRun, DEFAULT_HEARING, type RunState, watched } from "@/engine";
 import cached from "../../data/levels/F1.json";
 import { ENTRY_CLEARANCE, placeLevel, PlacementError, type PlacedLevel } from "./placer";
+import { quietRoute } from "./quiet-route";
 
 const manifest = (): LevelManifest => LevelManifest.parse(structuredClone(cached));
 const floor = (): FloorGraph => structuredClone(FIXTURE_FLOORS.F1);
@@ -23,7 +24,8 @@ function play(run: RunState, actions: readonly Action[]): RunState {
 }
 
 /**
- * The crew's plan on F1: wait one turn at the freight lift, so C2 is on its
+ * The quiet route on F1, as `quietRoute` computes it from the placement and
+ * the crew's advice reads it: wait one turn at the freight lift, so C2 is on its
  * other half when the player enters the corridor; pick the records door from
  * dc-east, out of C2's cover; and on the way out wait once at dc-east so the
  * corridor is on the safe half again.
@@ -145,13 +147,23 @@ describe("placeLevel on F1 from the cached manifest", () => {
     }
   });
 
-  it("has a quiet route from the dock to the files and back out, the crew's plan (beat 4)", () => {
+  it("has a quiet route from the dock to the files and back out, the crew's advice (beat 4)", () => {
     for (const seed of SEEDS) {
-      const run = play(createRun(placeF1(seed).level), QUIET_ROUTE);
+      const p = placeF1(seed);
+      const route = quietRoute(p);
+      expect(route, `seed ${seed}`).toEqual(QUIET_ROUTE);
+      const run = play(createRun(p.level), route!);
       expect(run.alarmEvents, `seed ${seed}`).toEqual([]);
       expect(new Set(run.turns.map((t) => t.alarm)), `seed ${seed}`).toEqual(new Set(["calm"]));
       expect(run.status, `seed ${seed}`).toBe("won");
     }
+  });
+
+  it("has no quiet route when there is no time for one, or every node of the corridor is watched", () => {
+    expect(quietRoute(placed, 10)).toBeNull();
+    const m = manifest();
+    m.securityProfile.cameraKind = "fixed-ip";
+    expect(quietRoute(placeLevel(m, floor(), SEED))).toBeNull();
   });
 
   it("starts no guard's round within two moves of an entry node", () => {
