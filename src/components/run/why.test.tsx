@@ -8,6 +8,7 @@ import { F1_DEMO, FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { LevelManifest, type Provenance } from "@/domain";
 import { applyChiefOrders, createRun } from "@/engine";
 import { placeLevel } from "@/level/placer";
+import { recordNote } from "@/lib/record-label";
 import cached from "../../../data/levels/F1.romaine-1974.json";
 import { BoardView } from "./board-view";
 import { frameOf } from "./iso";
@@ -178,6 +179,14 @@ describe("WhyCard", () => {
       ]);
       expect(html.includes('data-testid="why-placement"')).toBe(target.placement !== null);
     }
+  });
+
+  it("adds the real-record line only when given one: a kit building's card, never a fixture's (#95)", () => {
+    const target = whyTarget(placed, "guard:G4")!;
+    expect(renderToStaticMarkup(<WhyCard target={target} onClose={() => {}} />)).not.toContain('data-testid="why-record"');
+    const html = renderToStaticMarkup(<WhyCard target={target} note={recordNote("costar", target.provenance)} onClose={() => {}} />);
+    expect(html).toContain('data-testid="why-record"');
+    expect(html).toContain("From its real CoStar record: buildingClass");
   });
 
   it("is a labelled, non-modal dialog with a close button", () => {

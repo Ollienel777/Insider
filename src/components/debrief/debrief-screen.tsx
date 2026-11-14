@@ -58,10 +58,13 @@ export function DebriefScreen({
   building,
   manifest,
   heistMode,
+  source,
 }: {
   building: DebriefBuilding;
   manifest: LevelManifest | null;
   heistMode?: string;
+  /** The building's source: a CoStar kit building's log is only ever in memory, and one stored before #95 is removed (#95). */
+  source: Building["source"];
 }) {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
@@ -73,7 +76,7 @@ export function DebriefScreen({
       if (live) setLoad({ status: "error", message: error instanceof Error ? error.message : String(error) });
     };
     // Storage is the browser's: read it after mount.
-    const log: RunLog | null = loadRunLog(building.id, undefined, missionId);
+    const log: RunLog | null = loadRunLog(building.id, undefined, missionId, source === "costar");
     if (!log || !manifest || notStarted(log)) {
       // No cached manifest is the building with no level, not a missing run.
       const next: Load = !manifest ? { status: "no-floor" } : { status: "empty", reason: log ? "not-started" : "none" };
@@ -107,7 +110,7 @@ export function DebriefScreen({
     return () => {
       live = false;
     };
-  }, [building, manifest, heistMode, attempt, missionId]);
+  }, [building, manifest, heistMode, attempt, missionId, source]);
 
   const runHref = buildingHref(building.id, "run", missionId);
 

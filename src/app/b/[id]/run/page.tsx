@@ -34,6 +34,7 @@ export default async function RunPage({
       building={{ id: building.id, name: building.name, matterportModelId: building.matterportModelId }}
       manifest={cached?.manifest ?? null}
       heistMode={process.env.HEIST_MODE}
+      source={building.source}
     />
   );
 }

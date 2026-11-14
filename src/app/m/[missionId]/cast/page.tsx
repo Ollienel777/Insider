@@ -13,6 +13,7 @@ import { FallbackReport } from "@/components/shell/demo-safety";
 import type { CastingResult } from "@/domain";
 import { findBuilding } from "@/lib/building";
 import { forcedServices } from "@/lib/forced-server";
+import { showcaseCast } from "@/lib/showcase-cast";
 
 // The cast screen (SPEC §2 beat 2): the mission's cached shortlist and the
 // trace the Casting Director recorded, read the way GET /api/cast/[missionId]
@@ -41,7 +42,8 @@ async function readShortlist(missionId: string, live: boolean): Promise<CastingR
 }
 
 async function Cast({ mission }: { mission: (typeof MISSIONS)[number] }) {
-  const forced = (await forcedServices()).has("costar");
+  const forcedSet = await forcedServices();
+  const forced = forcedSet.has("costar");
   const costar = getCoStar({ forced });
   const fallback = <FallbackReport fallback={costar.fallback} />;
 
@@ -73,16 +75,20 @@ async function Cast({ mission }: { mission: (typeof MISSIONS)[number] }) {
   const scoutable = (
     await Promise.all(result.finalists.map(async (c) => ((await findBuilding(c.id).catch(() => null)) ? c.id : null)))
   ).filter((id): id is string => id !== null);
+  // Live, a mission on the showcase list is cast onto its kit building (issue 103).
+  const showcase = await showcaseCast(mission, { forced, modelForced: forcedSet.has("llm") });
 
   return (
     <>
-      {fallback}
+      {/* Read again: a kit call above may have tripped the breaker since. */}
+      <FallbackReport fallback={getCoStar({ forced }).fallback} />
       <CastScreen
         mission={{ id: mission.id, title: mission.title, city: mission.city, type: mission.type }}
         result={{ ...result, trace: clientTrace(result.trace) }}
         pins={pins}
         scoutable={scoutable}
         thumbnails={castThumbnails(result.finalists, FIXTURE_AERIALS)}
+        showcase={showcase}
       />
     </>
   );

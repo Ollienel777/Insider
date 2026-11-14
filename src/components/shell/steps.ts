@@ -51,3 +51,10 @@ export const FACTS_ONLY_STEPS: readonly StepSegment[] = ["scout", "dossier"];
 
 /** Why a facts-only building offers no further step, in the map's "Facts only" wording. */
 export const FACTS_ONLY_NOTE = "Facts only: no level is built for this building.";
+
+/** Why a kit building's level can't be built while the model is forced to fixtures; the Dossier's and the cast card's wording. */
+export const MODEL_FORCED_NOTE =
+  "The model is forced to fixtures in the demo settings, so the Level Builder can't build this level. Turn the model back on there to build it.";
+
+/** Why a kit building's level can't be built while the model is configured on fixtures; the Dossier's and the cast card's wording. */
+export const MODEL_FIXTURES_NOTE = "The model is on fixtures, so the Level Builder can't build this level here. It needs the live model.";

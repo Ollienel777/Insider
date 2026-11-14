@@ -301,6 +301,24 @@ describe("the Recorded replay header", () => {
 });
 
 describe("DossierScreen", () => {
+  it("labels a kit building's real record under its name, and a fixture building not at all (#95)", () => {
+    expect(screen(true)).not.toContain('data-testid="record-label"');
+    const kit = renderToStaticMarkup(
+      <DossierScreen
+        buildingId="900101"
+        name="Testwood Exchange"
+        place="Testville, Los Angeles"
+        facts={dossierFacts(building)}
+        rows={rows}
+        mission={manifest.mission}
+        trace={trace}
+        recordLabel="Real CoStar record"
+        startComplete
+      />,
+    );
+    expect(kit).toMatch(/data-testid="record-label"[^>]*>Real CoStar record</);
+  });
+
   it("starts with every block under a skeleton, so nothing is read before it plays", () => {
     const html = screen(false);
     expect(html).toContain('data-testid="skip"');
