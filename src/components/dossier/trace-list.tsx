@@ -14,6 +14,14 @@ interface TraceListProps {
   banner: string;
   /** The subagents the builder could dispatch, as the trace recorded them. */
   subagents?: string[];
+  /** The agent whose run this is. */
+  title?: string;
+  /** Shown between the plan and the subagents and tools (the cast screen's funnel). */
+  afterPlan?: ReactNode;
+  /** Let a header part over 40 characters wrap inside itself (a long model name in a narrow panel). */
+  wrapLongParts?: boolean;
+  /** Rows open on their recorded input and output. Off where the payloads never reach the browser (the cast screen). */
+  expandable?: boolean;
 }
 
 /**
@@ -24,13 +32,23 @@ interface TraceListProps {
  * task or tool row is a button that opens what it was given and what it
  * returned, as recorded (#79).
  */
-export function TraceList({ view, header, control, banner, subagents }: TraceListProps) {
+export function TraceList({
+  view,
+  header,
+  control,
+  banner,
+  subagents,
+  title = "Level Builder",
+  afterPlan,
+  wrapLongParts = false,
+  expandable = true,
+}: TraceListProps) {
   return (
     <section aria-labelledby="trace-title" data-testid="trace-list" className="flex flex-col gap-4">
       <div>
         <div className="flex items-center justify-between gap-3">
           <h2 id="trace-title" className="text-lg font-semibold text-text-1">
-            Level Builder
+            {title}
           </h2>
           {control}
         </div>
@@ -38,7 +56,7 @@ export function TraceList({ view, header, control, banner, subagents }: TraceLis
             {/* Each part keeps together, so a line breaks only between parts. */}
             {header.split(" · ").map((part, i, parts) => (
               <Fragment key={part}>
-                <span className="whitespace-nowrap">
+                <span className={wrapLongParts && part.length > 40 ? "break-words" : "whitespace-nowrap"}>
                   {part}
                   {i < parts.length - 1 ? " ·" : null}
                 </span>
@@ -72,6 +90,8 @@ export function TraceList({ view, header, control, banner, subagents }: TraceLis
         </ol>
       </div>
 
+      {afterPlan}
+
       <div>
         <h3 className="label-caps text-text-3">Subagents and tools</h3>
         {subagents?.length ? (
@@ -87,7 +107,7 @@ export function TraceList({ view, header, control, banner, subagents }: TraceLis
         ) : null}
         <ol aria-label="Subagents and tools" className="mt-2 flex flex-col">
           {view.steps.map((step) => (
-            <StepRow key={step.index} step={step} />
+            <StepRow key={step.index} step={step} expandable={expandable} />
           ))}
         </ol>
       </div>
@@ -110,7 +130,7 @@ function TodoIcon({ status }: { status: TodoStatus }) {
   }
 }
 
-function StepRow({ step }: { step: StepView }) {
+function StepRow({ step, expandable }: { step: StepView; expandable: boolean }) {
   const [open, setOpen] = useState(false);
   const detailId = useId();
   const running = step.status === "in_progress";
@@ -124,12 +144,16 @@ function StepRow({ step }: { step: StepView }) {
     onClick: () => setOpen((o) => !o),
     className: "flex w-full cursor-pointer gap-2 rounded-sm text-left hover:bg-surface-3",
   };
-  const detail = open ? <StepDetail id={detailId} step={step} /> : null;
+  const detail = expandable && open ? <StepDetail id={detailId} step={step} /> : null;
+  // Without payloads to open, a row is plain text, as before rows opened (#79).
+  const Row = expandable ? "button" : "div";
+  const rowProps = expandable ? toggle : { className: "flex w-full gap-2 text-left" };
+  const chevron = expandable ? <Chevron open={open} /> : null;
   if (subagent) {
     return (
       <li data-testid="trace-step" data-kind="subagent" data-shown={step.shown} data-status={step.status} className="py-1.5 text-sm">
         <Reveal shown={step.shown}>
-        <button {...toggle}>
+        <Row {...rowProps}>
         {running ? (
           <LoaderCircle aria-label="running" className={cn(ICON, "animate-spin text-accent")} />
         ) : (
@@ -145,14 +169,14 @@ function StepRow({ step }: { step: StepView }) {
                 <span className="font-mono text-xs text-danger">{step.failure === "returned" ? "task error" : "subagent failed"}</span>
               ) : null}
               <Duration step={step} />
-              <Chevron open={open} />
+              {chevron}
             </span>
           </span>
           <span className="mt-0.5 line-clamp-2 text-text-2" title={step.label}>
             {step.label}
           </span>
         </span>
-        </button>
+        </Row>
         {detail}
         </Reveal>
       </li>
@@ -167,13 +191,13 @@ function StepRow({ step }: { step: StepView }) {
       className={cn("py-1.5 text-sm", step.depth === 1 && "pl-6")}
     >
       <Reveal shown={step.shown} skeleton="bar">
-      <button {...toggle} className={cn(toggle.className, "items-center")}>
+      <Row {...rowProps} className={cn(rowProps.className, "items-center")}>
       <Wrench aria-hidden className={cn("size-4 shrink-0 stroke-[1.5]", failed ? "text-danger" : "text-text-3")} />
       <span className="min-w-0 flex-1 truncate font-mono text-text-1">{step.label}</span>
       {failed ? <span className="shrink-0 font-mono text-xs text-danger">tool error</span> : null}
       <Duration step={step} />
-      <Chevron open={open} />
-      </button>
+      {chevron}
+      </Row>
       {detail}
       </Reveal>
     </li>

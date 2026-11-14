@@ -185,7 +185,7 @@ test("beat 5 to 6: caught after the wow beat, the debrief says so, with the Chie
   // The heist ends here (#113): no hand-over to the drill, and Try again opens a fresh run.
   await expect(page.getByRole("link", { name: "Run the drill" })).toHaveCount(0);
   await expect(page.getByTestId("try-again-line")).toHaveText("Same floor, same rounds. Try another way in.");
-  await expect(page.getByTestId("debrief-to-map")).toHaveAttribute("href", "/");
+  await expect(page.getByTestId("debrief-to-map")).toHaveAttribute("href", "/map");
   await page.getByTestId("debrief-try-again").click();
   await expect(page).toHaveURL(/\/b\/F1\/run\?m=romaine-1974$/, { timeout: 15_000 });
   await expectFreshRun(page);
@@ -268,6 +268,7 @@ async function expectFreshRun(page: Page) {
     buildingId: "F1",
     missionId: expect.any(String),
     seed: 7,
+    rules: 2,
     turns: [],
     status: "playing",
     alarmEvents: [],
@@ -319,7 +320,7 @@ test('"Start the run over" from a mid-run debrief: the debrief opened next shows
   // A run left mid-way has no Try again: "Start the run over" says what the link does.
   await expect(page.getByTestId("debrief-try-again")).toHaveCount(0);
   await expect(page.getByTestId("try-again-line")).toHaveCount(0);
-  await expect(page.getByTestId("debrief-to-map")).toHaveAttribute("href", "/");
+  await expect(page.getByTestId("debrief-to-map")).toHaveAttribute("href", "/map");
 
   await page.getByTestId("debrief-run-again").click();
   await expect(page).toHaveURL(/\/b\/F1\/run\?m=romaine-1974$/, { timeout: 15_000 });

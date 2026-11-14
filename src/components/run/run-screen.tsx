@@ -320,7 +320,7 @@ export function RunScreen({
                 title="This building's level isn't ready yet."
                 body="Only Halvorsen Tower has a board so far. Pick it on the map to play the run."
                 action={
-                  <Link href="/" className={buttonVariants({ variant: "secondary" })}>
+                  <Link href="/map" className={buttonVariants({ variant: "secondary" })}>
                     Back to the map
                   </Link>
                 }

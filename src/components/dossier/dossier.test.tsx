@@ -28,6 +28,13 @@ const building = FIXTURE_BUILDINGS.find((b) => b.id === "F1")!;
 const romaine = findMission("romaine-1974")!;
 const finalist = (await castFinalist(romaine, "F1"))!;
 const cast = { candidate: finalist.candidate, mission: romaine, derived: finalist.source === "derived" };
+/** The Casting Director's cached shortlist for the mission, read straight from disk (#24). */
+const shortlist = JSON.parse(readFileSync(path.join(root, "data", "casting", "romaine-1974.json"), "utf8")) as {
+  finalists: { id: string; reason: string }[];
+};
+const agentReason = shortlist.finalists.find((c) => c.id === "F1")!.reason;
+/** A directory with no shortlist in it, so the derived path runs whatever `data/casting/` holds. */
+const NO_SHORTLIST = path.join(root, "data", "casting", "none-cached-here");
 const rows = dataToLevelRows(manifest, cast);
 
 const screen = (startComplete: boolean) =>
@@ -63,17 +70,31 @@ describe("the Data → Level table for F1", () => {
       layer: "costar",
       field: "casting",
       value: "romaine-1974",
-      rule: "Cast for The Romaine Street Papers (derived from its casting filters)",
-      result: "Cast because: built 1974, Class A, floor 22 on the market, dock on the aerial",
+      rule: "Cast for The Romaine Street Papers",
+      result: `Cast because: ${agentReason}`,
     });
+    expect(agentReason).not.toMatch(/^built 1974/);
     expect(dataToLevelRows(manifest).map((r) => r.id)).not.toContain("cast");
   });
 
-  it("derives the reason from the fixture inventory until the Casting Director's shortlist is cached (#117)", async () => {
-    expect(await castingResult("romaine-1974")).toBeNull();
-    expect(finalist.source).toBe("derived");
-    expect(finalist.candidate).toMatchObject({ id: "F1", vacantFloor: { floor: 22 } });
-    expect(finalist.candidate.fit.map((f) => f.criterion)).toEqual(romaine.casting.map((f) => f.label));
+  it("reads F1's finalist, reason included, from the Casting Director's cached shortlist (#24)", async () => {
+    const cached = await castingResult("romaine-1974");
+    expect(cached).not.toBeNull();
+    expect(finalist.source).toBe("shortlist");
+    expect(finalist.candidate).toEqual(cached!.finalists.find((c) => c.id === "F1"));
+    expect(finalist.candidate).toMatchObject({ id: "F1", vacantFloor: { floor: 22 }, reason: agentReason });
+  });
+
+  it("derives the reason from the fixture inventory when no shortlist is cached", async () => {
+    expect(await castingResult("romaine-1974", NO_SHORTLIST)).toBeNull();
+    const derived = (await castFinalist(romaine, "F1", NO_SHORTLIST))!;
+    expect(derived.source).toBe("derived");
+    expect(derived.candidate).toMatchObject({ id: "F1", vacantFloor: { floor: 22 } });
+    expect(derived.candidate.fit.map((f) => f.criterion)).toEqual(romaine.casting.map((f) => f.label));
+    expect(castBecauseRow({ candidate: derived.candidate, mission: romaine, derived: true })).toMatchObject({
+      rule: "Cast for The Romaine Street Papers (derived from its casting filters)",
+      result: "Cast because: built 1974, Class A, floor 22 on the market, dock on the aerial",
+    });
     // A shortlist's finalist reads straight through, its reason the agent's own.
     expect(castBecauseRow({ candidate: { id: "F1", reason: "the agent's words" }, mission: romaine, derived: false })).toMatchObject({
       rule: "Cast for The Romaine Street Papers",
@@ -245,7 +266,7 @@ describe("DossierScreen", () => {
     const text = textOf(html);
     expect(html).not.toContain('data-testid="skeleton"');
     expect(html).toContain('data-testid="replay"');
-    for (const expected of ["Cast because: built 1974, Class A, floor 22 on the market, dock on the aerial", "1974", "Analog era: key locks, sweeping CCTV", "4 guards, tight rounds", "Staged on 22"]) {
+    for (const expected of [`Cast because: ${agentReason}`, "1974", "Analog era: key locks, sweeping CCTV", "4 guards, tight rounds", "Staged on 22"]) {
       expect(text).toContain(expected);
     }
     expect(text).toContain("The Romaine Street Papers");
