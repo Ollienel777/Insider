@@ -6,7 +6,7 @@
 // draws around it. Nothing is drawn over the player, and nothing is read
 // from it (SPEC §4.5).
 import { Moon } from "lucide-react";
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef, type MouseEvent, type RefObject } from "react";
 import type { InsideView } from "@/adapters/matterport";
 import { LayerDot } from "@/components/shell/layer-dot";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,16 @@ export type ScanLook = "after-hours" | "as-scanned";
 export const FOLLOWS_LINE = "The scan at your spot. It follows each hop.";
 /** What the stage says when the player does not open. */
 export const FAILED_LINE = "The scan's player didn't open. The board still plays on the scan.";
+
+/**
+ * After a click or a tap the keys go back to the run, as with the Live
+ * controls: a button that kept the focus would take the next Space, and Space
+ * is the key that takes the objective. A button pressed from the keyboard
+ * keeps its focus.
+ */
+export function releaseFocus(event: MouseEvent<HTMLButtonElement>) {
+  if (event.detail > 0) event.currentTarget.blur();
+}
 
 /** The Matterport source chip, as the board's own header writes it. */
 function SourceChip() {
@@ -66,7 +76,10 @@ export function ScanHead({
         data-testid="scan-look"
         aria-pressed={afterHours}
         title={afterHours ? "Show the scan as scanned" : "Show the scan after hours"}
-        onClick={() => onLook(afterHours ? "as-scanned" : "after-hours")}
+        onClick={(event) => {
+          releaseFocus(event);
+          onLook(afterHours ? "as-scanned" : "after-hours");
+        }}
         className={cn(
           "ml-auto inline-flex h-10 shrink-0 items-center gap-2 rounded-sm border px-3 text-sm font-medium select-none",
           "transition-colors duration-fast ease-out",
@@ -194,7 +207,13 @@ export function ScanFailed({ onRetry }: { onRetry: () => void }) {
     >
       <SourceChip />
       <p className="min-w-0 flex-1 basis-64 text-sm text-text-1">{FAILED_LINE}</p>
-      <Button data-testid="inside-retry" onClick={onRetry}>
+      <Button
+        data-testid="inside-retry"
+        onClick={(event) => {
+          releaseFocus(event);
+          onRetry();
+        }}
+      >
         Try again
       </Button>
     </div>

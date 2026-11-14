@@ -51,7 +51,15 @@ function find(node: ReactNode, match: (props: Record<string, unknown>) => boolea
   return find(node.props.children as ReactNode, match);
 }
 
-const press = (element: ReactElement<Record<string, unknown>> | null) => (element!.props.onClick as () => void)();
+/**
+ * A press of `element`: by the mouse (`detail` 1, as a click reports) or from the keyboard (0).
+ * Returns the button's `blur`, so a test can see whether the focus was let go.
+ */
+function press(element: ReactElement<Record<string, unknown>> | null, detail = 1) {
+  const blur = vi.fn();
+  (element!.props.onClick as (event: unknown) => void)({ detail, currentTarget: { blur } });
+  return blur;
+}
 
 const live = () =>
   text(
@@ -258,6 +266,21 @@ describe("room for the controls laid over the board's area", () => {
   it("keeps the failed line and Try again clear of that corner too", () => {
     const failed = renderToStaticMarkup(<ScanFailed onRetry={() => {}} />);
     expect(failed.match(/data-status="failed" class="([^"]*)"/)![1].split(" ")).toContain("pr-24");
+  });
+});
+
+// Space takes the objective, and a focused button would take the Space instead: after a click the
+// stage's buttons let the focus go, as the Live controls do. Pressed from the keyboard they keep it.
+describe("the stage's buttons give the keys back to the run", () => {
+  const buttons: readonly [string, () => ReactElement<Record<string, unknown>> | null][] = [
+    ["the stage switch", () => find(StageSwitch({ mode: "split", onChoose: () => {} }), (props) => props["data-mode"] === "scan")],
+    ["the after-hours toggle", () => find(ScanHead({ room: "Lobby", look: "after-hours", onLook: () => {} }), (props) => props["data-testid"] === "scan-look")],
+    ["Try again", () => find(ScanFailed({ onRetry: () => {} }), (props) => props["data-testid"] === "inside-retry")],
+  ];
+
+  it.each(buttons)("%s lets the focus go after a click, and keeps it when pressed from the keyboard", (_name, button) => {
+    expect(press(button(), 1)).toHaveBeenCalledTimes(1);
+    expect(press(button(), 0)).not.toHaveBeenCalled();
   });
 });
 

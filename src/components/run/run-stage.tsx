@@ -11,7 +11,7 @@ import { useCallback, useState, type ReactNode } from "react";
 import type { InsideView } from "@/adapters/matterport";
 import { cn } from "@/lib/utils";
 import type { InsideStatus } from "./inside-view";
-import { FOLLOWS_LINE, ScanFailed, ScanHead, ScanPane, type ScanLook } from "./scan-pane";
+import { FOLLOWS_LINE, releaseFocus, ScanFailed, ScanHead, ScanPane, type ScanLook } from "./scan-pane";
 import { loadStageMode, saveStageMode, STAGE_MODES, type StageMode } from "./stage-store";
 
 export const STAGE_LABEL: Readonly<Record<StageMode, string>> = { split: "Split", board: "Board", scan: "Scan" };
@@ -42,7 +42,10 @@ export function StageSwitch({ mode, onChoose }: { mode: StageMode; onChoose: (mo
           type="button"
           data-mode={option}
           aria-pressed={mode === option}
-          onClick={() => onChoose(option)}
+          onClick={(event) => {
+            releaseFocus(event);
+            onChoose(option);
+          }}
           className={cn(
             "inline-flex h-10 items-center rounded-sm border px-3 text-sm font-medium select-none",
             "transition-colors duration-fast ease-out",
