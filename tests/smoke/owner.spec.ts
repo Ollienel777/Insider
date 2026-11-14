@@ -64,6 +64,7 @@ test("Debrief to Owner Mode: 50 attempts, the Chief's fix, before and after", as
   await expect(page.getByTestId("owner-after-count")).toHaveAttribute("data-escaped", "0");
   await expect(page.getByTestId("owner-after-count")).toHaveAttribute("data-total", "50");
   await expect(page.getByTestId("owner-changed")).toContainText("17 fewer got out");
+  await page.getByTestId("owner-compare").scrollIntoViewIfNeeded();
   await shot(page, "before-after");
 
   // Save the fixed setup: it stays on this device and opens in the editor.
