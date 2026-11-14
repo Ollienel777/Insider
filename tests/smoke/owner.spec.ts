@@ -31,7 +31,7 @@ test("Debrief to Owner Mode: 50 attempts, the Chief's fix, before and after", as
     "Made-up setup on a fixture building. Real setups stay on this device.",
   );
   await expect(page.getByTestId("owner-setup")).toHaveAttribute("data-state", "untouched");
-  await expect(page.getByTestId("owner-setup-counts")).toHaveText("4 guards · 2 cameras · 2 locked doors · 0 desks");
+  await expect(page.getByTestId("owner-setup-counts")).toHaveText("4 guards · 0 cleaners · 2 cameras · 2 locked doors · 0 desks");
   await expect(page.getByTestId("owner-problems-none")).toBeVisible();
   await expect(page.getByTestId("owner-saved-empty")).toBeVisible();
   await shot(page, "setup");
@@ -96,4 +96,24 @@ test("the editor names a broken round, and blocks the run until it is fixed", as
   await page.getByTestId("owner-round-done").click();
   await expect(page.getByTestId("owner-problems-none")).toBeVisible();
   await expect(page.getByTestId("owner-run")).toBeEnabled();
+});
+
+test("the editor adds a night cleaner and moves it", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/b/F1/owner");
+  await expect(page.getByTestId("owner-board")).toBeVisible();
+
+  await page.getByTestId("owner-tool").locator('[data-value="cleaner"]').click();
+  await page.locator('[data-owner-node="o-west"]').click({ force: true });
+  await expect(page.getByTestId("owner-inspector")).toHaveAttribute("data-selected", "cleaner:K1");
+  await expect(page.getByTestId("owner-setup-counts")).toContainText("1 cleaner");
+  await expect(page.getByTestId("owner-selected-ring")).toHaveAttribute("data-node", "o-west");
+
+  // Move it to a corridor node: it stays there, and the setup still plays.
+  await page.getByTestId("owner-move").click();
+  await page.locator('[data-owner-node="mc-2"]').click({ force: true });
+  await expect(page.getByTestId("owner-selected-ring")).toHaveAttribute("data-node", "mc-2");
+  await expect(page.getByTestId("owner-problems-none")).toBeVisible();
+  await expect(page.getByTestId("owner-run")).toBeEnabled();
+  await shot(page, "editor-cleaner");
 });

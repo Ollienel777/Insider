@@ -96,6 +96,10 @@ export function validateOwnerSetup(setup: OwnerSetup, floor: FloorGraph): OwnerS
 
   for (const cleaner of setup.cleaners ?? []) {
     const role = `cleaner:${cleaner.id}`;
+    if (cleaner.round.length === 0) {
+      add("cleaner-off-floor", role, `Cleaner ${cleaner.id} stands on no node`);
+      continue;
+    }
     const off = cleaner.round.filter((id) => !nodes.has(id));
     for (const id of new Set(off)) {
       add("cleaner-off-floor", role, `Cleaner ${cleaner.id}'s round passes "${id}", which is not a node of this floor`);

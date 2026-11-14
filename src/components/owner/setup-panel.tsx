@@ -9,13 +9,16 @@ import { cn } from "@/lib/utils";
 import type { Selection } from "./owner-board";
 import {
   CAMERA_KINDS,
+  clearCleanerRound,
   clearRound,
   COMPASS,
   DOOR_LOCKS,
   removeCamera,
+  removeCleaner,
   removeGuard,
   setDoor,
   setTempo,
+  startCleanerRound,
   startRound,
   toggleDesk,
   updateCamera,
@@ -29,8 +32,8 @@ export interface Draft {
   state: "untouched" | "editing" | "saved" | "save-failed";
 }
 
-/** What a click on a node does: select, add, or work the selected guard or camera. */
-export type Tool = "select" | "guard" | "camera" | "desk" | "move" | "round";
+/** What a click on a node does: select, add, or work the selected guard, cleaner or camera. */
+export type Tool = "select" | "guard" | "cleaner" | "camera" | "desk" | "move" | "round";
 
 const STATE_CHIP: Record<Draft["state"], { label: string; className: string }> = {
   untouched: { label: "Starting point", className: "text-text-2" },
@@ -43,12 +46,13 @@ const LOCK_LABEL: Record<OwnerDoorLock, string> = { key: "Key lock", badge: "Bad
 const KIND_LABEL = { sweeping: "Sweeping", ptz: "PTZ cycle", fixed: "Fixed" } as const;
 
 const TOOL_HINT: Record<Tool, string> = {
-  select: "Click a guard, camera, door or desk on the board.",
+  select: "Click a guard, cleaner, camera, door or desk on the board.",
   guard: "Click a node to post a new guard there.",
+  cleaner: "Click a node to start a night cleaner there.",
   camera: "Click a node to mount a new camera over it.",
   desk: "Click a node to put a staffed desk there.",
   move: "Click the node to move it to.",
-  round: "Click the next node of the round, each a neighbour of the last. Close the loop beside the post. Click the last node again to take it off.",
+  round: "Click the next node of the round, each a neighbour of the last. Close the loop beside where it starts. Click the last node again to take it off.",
 };
 
 /**
@@ -119,7 +123,7 @@ export function SetupPanel({
           />
         </label>
         <p data-testid="owner-setup-counts" className="font-mono text-sm text-text-2 tabular-nums">
-          {count(setup.guards.length, "guard")} · {count(setup.cameras.length, "camera")} · {count(locked, "locked door")} ·{" "}
+          {count(setup.guards.length, "guard")} · {count(setup.cleaners?.length ?? 0, "cleaner")} · {count(setup.cameras.length, "camera")} · {count(locked, "locked door")} ·{" "}
           {count(setup.desks.length, "desk")}
         </p>
         <p data-testid="owner-setup-note" className="text-sm text-text-2">
@@ -188,6 +192,7 @@ export function SetupPanel({
           options={[
             ["select", "Select"],
             ["guard", "Guard"],
+            ["cleaner", "Cleaner"],
             ["camera", "Camera"],
             ["desk", "Desk"],
           ]}
@@ -248,7 +253,7 @@ export function SetupPanel({
 
 function selectionOf(role: string): Selection {
   const [kind, id] = [role.slice(0, role.indexOf(":")), role.slice(role.indexOf(":") + 1)];
-  return kind === "guard" || kind === "camera" || kind === "door" || kind === "desk" ? { kind, id } : null;
+  return kind === "guard" || kind === "cleaner" || kind === "camera" || kind === "door" || kind === "desk" ? { kind, id } : null;
 }
 
 function Inspector({
@@ -364,6 +369,63 @@ function Inspector({
         </Button>
       </>,
       `guard:${guard.id}`,
+    );
+  }
+
+  if (selection.kind === "cleaner") {
+    const cleaner = setup.cleaners?.find((c) => c.id === selection.id);
+    if (!cleaner) return null;
+    const drawing = tool === "round";
+    const start = cleaner.round[0];
+    return shell(
+      cleaner.id,
+      start === undefined
+        ? "Night cleaner, on no node"
+        : cleaner.round.length > 1
+          ? `Night cleaner on a round of ${cleaner.round.length} nodes, from the ${room(start)}`
+          : `Night cleaner, cleaning the ${room(start)} all night`,
+      <>
+        <p className="text-sm text-text-2">Walks at the building&apos;s pace. Seeing the crew makes the floor suspicious; it never gives chase.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" data-testid="owner-move" aria-pressed={tool === "move"} onClick={() => onTool(tool === "move" ? "select" : "move")}>
+            {tool === "move" ? "Cancel move" : "Move"}
+          </Button>
+          {drawing ? (
+            <Button variant="secondary" data-testid="owner-round-done" onClick={() => onTool("select")}>
+              Done drawing
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              data-testid="owner-draw-round"
+              onClick={() => {
+                onEdit(startCleanerRound(setup, cleaner.id));
+                onTool("round");
+              }}
+            >
+              Draw a round
+            </Button>
+          )}
+          {cleaner.round.length > 1 && !drawing ? (
+            <Button variant="ghost" data-testid="owner-stand-post" onClick={() => onEdit(clearCleanerRound(setup, cleaner.id))}>
+              Stay put
+            </Button>
+          ) : null}
+        </div>
+        <Button
+          variant="ghost"
+          data-testid="owner-remove"
+          className="self-start"
+          onClick={() => {
+            onEdit(removeCleaner(setup, cleaner.id));
+            onSelect(null);
+            onTool("select");
+          }}
+        >
+          Remove {cleaner.id}
+        </Button>
+      </>,
+      `cleaner:${cleaner.id}`,
     );
   }
 
