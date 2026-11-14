@@ -39,7 +39,7 @@
           { "zoneId": "objective", "action": "Pick the records room door and take the files" },
           { "zoneId": "lobby-S", "action": "Out through the main lobby" }
         ],
-        "pushback": "The run starts at the dock, so the lobby is only a way out, and I don't know that its lifts stop on 22 at night. On the way in, camera C2 covers the dock corridor every other turn.",
+        "pushback": "The run starts at the dock, so the lobby isn't a way in from here, and I don't know that its lifts stop on 22 at night. On the way in, camera C2 covers the dock corridor every other turn.",
         "confidence": 0.3
       }
     },
@@ -52,7 +52,7 @@
           { "zoneId": "objective", "action": "Pick the records room door and take the files" },
           { "zoneId": "garage-E", "action": "Out down the garage ramp" }
         ],
-        "pushback": "The run starts at the dock, so the garage ramp is only a way out, and I can't promise it reaches floor 22. On the way in, camera C2 covers the dock corridor every other turn.",
+        "pushback": "The run starts at the dock, so the garage ramp isn't a way in from here, and I can't promise it reaches floor 22. On the way in, camera C2 covers the dock corridor every other turn.",
         "confidence": 0.35
       }
     },
