@@ -1,0 +1,292 @@
+{
+  "id": "casting-syntactic-2019",
+  "agents": [
+    {
+      "agent": "casting-director",
+      "systemIncludes": "You are the Casting Director for Heist Anywhere.",
+      "turns": [
+        {
+          "content": "Reading syntactic-2019.",
+          "toolCalls": [
+            {
+              "name": "get_mission",
+              "args": {
+                "missionId": "syntactic-2019"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Syntactic: 6 casting filters. Planning.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  {
+                    "content": "Read mission syntactic-2019 and its casting needs",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Narrow the inventory with the location scout, one filter at a time",
+                    "status": "in_progress"
+                  },
+                  {
+                    "content": "Pick three finalists and write the shortlist",
+                    "status": "pending"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "The scout runs the search; the city first, the rarest needs last.",
+          "toolCalls": [
+            {
+              "name": "task",
+              "args": {
+                "subagent_type": "location-scout",
+                "description": "Mission syntactic-2019: apply its casting filters with search_inventory in this order: city, yearBuilt, propertyTypes, minVacantFloorSf, needsScan, needsEntry. Then check the candidates left with get_candidate and get_aerial_entries, and report the funnel's counts and each candidate's year, class, vacant floor and matching entries."
+              }
+            }
+          ]
+        },
+        {
+          "content": "The funnel ends with 3: F5, H13, H17.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  {
+                    "content": "Read mission syntactic-2019 and its casting needs",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Narrow the inventory with the location scout, one filter at a time",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Pick three finalists and write the shortlist",
+                    "status": "in_progress"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "Writing the shortlist, best first.",
+          "toolCalls": [
+            {
+              "name": "write_shortlist",
+              "args": {
+                "missionId": "syntactic-2019",
+                "finalists": [
+                  {
+                    "id": "F5",
+                    "reason": "A 2008 flex building in Westchase with suite 410 on the market and a dock: lab-and-office space like the foam maker's, with the most room free."
+                  },
+                  {
+                    "id": "H13",
+                    "reason": "A 1996 single-storey industrial building with 6,200 SF on the market and a dock: a plant floor where the samples would be made."
+                  },
+                  {
+                    "id": "H17",
+                    "reason": "A 2012 flex tech center with its ground floor on the market and a dock: newer networked security around a test bay."
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "Shortlist written.",
+          "toolCalls": [
+            {
+              "name": "write_todos",
+              "args": {
+                "todos": [
+                  {
+                    "content": "Read mission syntactic-2019 and its casting needs",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Narrow the inventory with the location scout, one filter at a time",
+                    "status": "completed"
+                  },
+                  {
+                    "content": "Pick three finalists and write the shortlist",
+                    "status": "completed"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "content": "Cast for syntactic-2019: Westchase Commons (F5), Sims Bayou Industrial, Building 4 (H13), Beltway Eight Tech Center (H17), best first."
+        }
+      ]
+    },
+    {
+      "agent": "location-scout",
+      "systemIncludes": "You are the location scout of the Casting Director.",
+      "turns": [
+        {
+          "content": "Reading syntactic-2019's casting filters.",
+          "toolCalls": [
+            {
+              "name": "get_mission",
+              "args": {
+                "missionId": "syntactic-2019"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: in Houston.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "syntactic-2019",
+                "filter": "city"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: built 2019 or earlier.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "syntactic-2019",
+                "filter": "yearBuilt"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: industrial or flex.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "syntactic-2019",
+                "filter": "propertyTypes"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: a floor with 2,500 SF or more on the market.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "syntactic-2019",
+                "filter": "minVacantFloorSf"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: a Matterport scan.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "syntactic-2019",
+                "filter": "needsScan"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Applying: a dock on the aerial.",
+          "toolCalls": [
+            {
+              "name": "search_inventory",
+              "args": {
+                "missionId": "syntactic-2019",
+                "filter": "needsEntry"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Westchase Commons's record.",
+          "toolCalls": [
+            {
+              "name": "get_candidate",
+              "args": {
+                "id": "F5"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Westchase Commons's ways in.",
+          "toolCalls": [
+            {
+              "name": "get_aerial_entries",
+              "args": {
+                "id": "F5"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Sims Bayou Industrial, Building 4's record.",
+          "toolCalls": [
+            {
+              "name": "get_candidate",
+              "args": {
+                "id": "H13"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Sims Bayou Industrial, Building 4's ways in.",
+          "toolCalls": [
+            {
+              "name": "get_aerial_entries",
+              "args": {
+                "id": "H13"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Beltway Eight Tech Center's record.",
+          "toolCalls": [
+            {
+              "name": "get_candidate",
+              "args": {
+                "id": "H17"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Checking Beltway Eight Tech Center's ways in.",
+          "toolCalls": [
+            {
+              "name": "get_aerial_entries",
+              "args": {
+                "id": "H17"
+              }
+            }
+          ]
+        },
+        {
+          "content": "Funnel: 61 in the inventory -> 29 (in Houston) -> 26 (built 2019 or earlier) -> 9 (industrial or flex) -> 7 (a floor with 2,500 SF or more on the market) -> 5 (a Matterport scan) -> 3 (a dock on the aerial). Left: F5 Westchase Commons: built 2008, Class B flex, floor 4 has 6,518 SF on the market, scanned, dock; H13 Sims Bayou Industrial, Building 4: built 1996, Class B industrial, floor 1 has 6,200 SF on the market, scanned, dock; H17 Beltway Eight Tech Center: built 2012, Class B flex, floor 1 has 5,940 SF on the market, scanned, dock."
+        }
+      ]
+    }
+  ]
+}
