@@ -10,9 +10,11 @@ lead put in their own security and watch an AI crew try 50 ways in.**
 Built at HackPrinceton Fall 2026. Main track: Entertainment. Special tracks:
 CoStar "AI for the Built World", LangChain "Best use of deepagents", Amazon
 "Best Practical AI Innovation". For the Amazon track: the Security Chief
-re-plans the guards on every alarm change and says why
-([`replanChief`](src/agents/chief/chief.ts)); in this repo its answers are
-recorded or rule-based, and the engine clamps its orders to legal moves ([`applyChiefOrders`](src/engine/orders.ts)). Amazon Bedrock is
+re-plans the guards and says why, once after each player action that logs
+an alarm event (a change of level, or, at Lockdown, a sighting in a new zone or
+after a turn unseen), with that action's latest event
+([`replanChief`](src/agents/chief/chief.ts)); it has run live on Claude, in
+fake mode its answers are recorded or rule-based, and the engine clamps its orders to legal moves ([`applyChiefOrders`](src/engine/orders.ts)). Amazon Bedrock is
 wired in as an alternative model provider
 ([`bedrock.ts`](src/adapters/llm/bedrock.ts)) but has never been run: there
 are no AWS credentials here.
@@ -157,7 +159,7 @@ flowchart LR
   end
 
   UI -- "order" --> CR
-  UI -- "alarm change" --> CH
+  UI -- "latest alarm event" --> CH
   UI -- "drill facts" --> NA
 ```
 
@@ -210,7 +212,9 @@ during the demo.
      rooms go by their room id and label. On a scanned floor they go as
      `area-1`, `Area 1` and so on, so no scan id or label reaches the Chief
      ([`chiefZones`](src/components/run/chief-request.ts)). The Run screen
-     calls the Chief on every alarm transition, on either kind of floor
+     calls the Chief once after each player action that logs an alarm event
+     (a change of level, or, at Lockdown, a sighting in a new zone or after a
+     turn unseen), with that action's latest event, on either kind of floor
      ([`run-screen.tsx`](src/components/run/run-screen.tsx)). So on a scanned
      floor the Chief does learn something shaped by the scan: how many
      `area-N` zones there are, and which one each guard and the last
@@ -271,8 +275,8 @@ mapped from the kit's field documentation and unit-tested on a fictional kit.
 You need Node 22.12 or later. No keys, no `.env.local`, no database.
 
 ```sh
-git clone https://github.com/Ollienel777/heist-anywhere.git
-cd heist-anywhere
+git clone https://github.com/Ollienel777/Insider.git
+cd Insider
 npm ci
 npm run dev
 ```
