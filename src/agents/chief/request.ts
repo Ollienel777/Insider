@@ -21,6 +21,29 @@ export const ChiefTransition = z.strictObject({
 });
 export type ChiefTransition = z.infer<typeof ChiefTransition>;
 
+const ZoneCount = z.strictObject({ zoneId: ShortId, count: z.int().positive().max(99) });
+
+/**
+ * What the player did on their earlier runs of this building (#35), summed in
+ * the browser from the run history it keeps: zone ids from `zones` and counts,
+ * nothing else, so no node or coordinate can ride along. `posted` is the guard
+ * the board already stood near the way in they used most, for the Chief to
+ * account for on the radio.
+ */
+export const ChiefHistory = z.strictObject({
+  runs: z.int().positive().max(99),
+  /** The ways in they started from, most used first. */
+  entries: z.array(ZoneCount).max(16),
+  /** The ways out they left by, most used first. */
+  exits: z.array(ZoneCount).max(16),
+  /** The zones where they were seen, most often first. */
+  detectedZones: z.array(ZoneCount).max(16),
+  /** Noisy turns (sprints and picks) per run, to one decimal. */
+  averageNoise: z.number().nonnegative().max(999),
+  posted: z.strictObject({ guardId: ShortId, zoneId: ShortId }).optional(),
+});
+export type ChiefHistory = z.infer<typeof ChiefHistory>;
+
 export const ChiefRequest = z.strictObject({
   buildingId: ShortId,
   transition: ChiefTransition,
@@ -32,6 +55,8 @@ export const ChiefRequest = z.strictObject({
     .max(12),
   /** The zones the Chief may name: the manifest's, the entries, and the floor's other areas. */
   zones: z.array(z.strictObject({ id: ShortId, name: ShortName })).min(1).max(64),
+  /** The player's earlier runs here; sent only with a run's first transition, and only when there were any. */
+  history: ChiefHistory.optional(),
 });
 export type ChiefRequest = z.infer<typeof ChiefRequest>;
 

@@ -75,6 +75,14 @@ export function chiefTemplate(manifest: LevelManifest, request: ChiefRequest): C
     );
   }
 
+  // Between runs (#35): the first answer says what the board already changed, ahead of the rest.
+  const posted = request.history?.posted;
+  if (posted && zones.has(posted.zoneId)) {
+    const times = request.history!.entries.find((e) => e.zoneId === posted.zoneId)?.count ?? 1;
+    const often = times === 1 ? "last time" : times === 2 ? "twice" : `${times} times`;
+    lines.unshift(`They came in by the ${name(posted.zoneId)} ${often}. ${posted.guardId} starts there tonight.`);
+  }
+
   let rationale = "";
   for (const line of lines) {
     const next = rationale ? `${rationale} ${line}` : line;

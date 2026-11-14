@@ -5,7 +5,7 @@
 // fixture floor, and by an opaque `area-N` on a scanned (Matterport) floor,
 // so no scan id or label leaves the browser. Orders come back in those ids
 // and are mapped to the engine's before the engine clamps them.
-import { ChiefRequest, type ChiefAnswer } from "@/agents/chief/request";
+import { ChiefRequest, type ChiefAnswer, type ChiefHistory } from "@/agents/chief/request";
 import { ChiefOrders } from "@/domain";
 import { compileBoard, zoneOf, type AlarmEvent, type RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
@@ -49,8 +49,18 @@ export function chiefZones(placed: PlacedLevel): ChiefZones {
   return { zones, toEngine, toChief };
 }
 
-/** The request for one alarm event: exactly the `ChiefRequest` fields, parsed so nothing more can ride along. */
-export function chiefRequest(buildingId: string, placed: PlacedLevel, zones: ChiefZones, run: RunState, event: AlarmEvent): ChiefRequest {
+/**
+ * The request for one alarm event: exactly the `ChiefRequest` fields, parsed so nothing more can ride along.
+ * `history` is the summary of earlier runs (run-history.ts), for the run's first event only.
+ */
+export function chiefRequest(
+  buildingId: string,
+  placed: PlacedLevel,
+  zones: ChiefZones,
+  run: RunState,
+  event: AlarmEvent,
+  history: ChiefHistory | null = null,
+): ChiefRequest {
   const chiefId = (engineId: string) => zones.toChief.get(engineId) ?? engineId;
   return ChiefRequest.parse({
     buildingId,
@@ -67,6 +77,7 @@ export function chiefRequest(buildingId: string, placed: PlacedLevel, zones: Chi
       intent: g.target?.intent ?? "patrol",
     })),
     zones: zones.zones,
+    ...(history && { history }),
   });
 }
 

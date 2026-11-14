@@ -98,6 +98,8 @@ export interface PlacedLevel {
   locks: readonly PlacedLock[];
   cameras: readonly PlacedCamera[];
   guards: readonly PlacedGuard[];
+  /** The guard the posture stood near a way in used before (#35); null on a default placement. */
+  watch: { guardId: string; entryId: string } | null;
   unplaced: readonly Unplaced[];
 }
 
@@ -122,6 +124,17 @@ export const ANCHORS: Readonly<Record<string, PlacementAnchors>> = Object.freeze
     objective: F1_DEMO.objective,
   },
 });
+
+/**
+ * How the guards start, beyond the manifest: the adaptation between runs
+ * (#35). `watchEntry` is an entry id the crew used before; the last guard on a
+ * round stands a post near it instead, when the floor has a node for one and
+ * at least one other guard still walks a round. An id that names no placed
+ * entry changes nothing.
+ */
+export interface Posture {
+  watchEntry?: string;
+}
 
 /** A manifest the placer cannot turn into a runnable level on this floor. */
 export class PlacementError extends Error {
@@ -172,6 +185,7 @@ const ROOM_WORDS: Partial<Record<ZoneRole, readonly string[]>> = {
  * more), off the cameras' covers, the quiet zones and the locked rooms.
  */
 const DOCK_POST_RULE = "Posted on the nearest node to the dock that keeps out of sight of the way in and out of earshot of the door to the files";
+const WATCH_POST_RULE = "Posted near the way in the crew used on earlier runs, on the nearest node to it out of sight of the way in";
 
 const CORRIDOR = /corridor|hall/i;
 const SUITE_ROOM = /suite|office/i;
@@ -291,6 +305,7 @@ export function placeLevel(
   floor: FloorGraph,
   seed: number,
   anchors: PlacementAnchors = ANCHORS[manifest.buildingId] ?? {},
+  posture: Posture = {},
 ): PlacedLevel {
   if (!Number.isInteger(seed)) throw new PlacementError(`seed ${seed} is not an integer`);
 
@@ -492,18 +507,37 @@ export function placeLevel(
   // node, every guard walks a round.
   const { guardCount } = manifest.securityProfile;
   const dock = entries.find((e) => e.kind === "dock");
+  /**
+   * The nearest node to `entry` a guard may stand a post on, other than `taken`. A watch post may stand
+   * under a camera or in earshot of the locks, since it is there to make the way used before harder.
+   */
+  const postNear = (entry: PlacedEntry, taken: ReadonlySet<string>, kind: "dock" | "watch"): string | null => {
+    const fromEntry = hops(adj, [entry.nodeId]);
+    const strict = kind === "dock";
+    const candidates = floor.nodes
+      .filter((n) => !lockedRooms.has(n.roomId) && !quietNodes.has(n.id) && !isEntry(n.id) && !(strict && covered.has(n.id)))
+      .filter((n) => !nearStart.has(n.id) && !(strict && earshot.has(n.id)) && (fromEntries.get(n.id) ?? Infinity) > ENTRY_CLEARANCE)
+      .filter((n) => !(floor.sightlines[n.id] ?? []).some((id) => nearStart.has(id)))
+      .filter((n) => fromEntry.has(n.id) && !taken.has(n.id))
+      .sort((a, b) => fromEntry.get(a.id)! - fromEntry.get(b.id)! || a.id.localeCompare(b.id));
+    return candidates[0]?.id ?? null;
+  };
   let post: { node: string; entry: PlacedEntry } | null = null;
   if (dock && guardCount >= 2) {
-    const fromDock = hops(adj, [dock.nodeId]);
-    const candidates = floor.nodes
-      .filter((n) => !lockedRooms.has(n.roomId) && !quietNodes.has(n.id) && !isEntry(n.id) && !covered.has(n.id))
-      .filter((n) => !nearStart.has(n.id) && !earshot.has(n.id) && (fromEntries.get(n.id) ?? Infinity) > ENTRY_CLEARANCE)
-      .filter((n) => !(floor.sightlines[n.id] ?? []).some((id) => nearStart.has(id)))
-      .filter((n) => fromDock.has(n.id))
-      .sort((a, b) => fromDock.get(a.id)! - fromDock.get(b.id)! || a.id.localeCompare(b.id));
-    if (candidates[0]) post = { node: candidates[0].id, entry: dock };
+    const node = postNear(dock, new Set(), "dock");
+    if (node) post = { node, entry: dock };
   }
-  const roundCount = post ? guardCount - 1 : guardCount;
+  let roundCount = post ? guardCount - 1 : guardCount;
+  // The watch post (#35): the last guard on a round stands near the way in used before, if another still walks.
+  let watch: { node: string; entry: PlacedEntry; id: string } | null = null;
+  const watched = entries.find((e) => e.entryId === posture.watchEntry);
+  if (watched && roundCount >= 2) {
+    const node = postNear(watched, new Set(post ? [post.node] : []), "watch");
+    if (node) {
+      watch = { node, entry: watched, id: `G${roundCount}` };
+      roundCount -= 1;
+    }
+  }
 
   let chains = floor.rooms
     .filter((r) => !lockedRooms.has(r.id))
@@ -512,7 +546,7 @@ export function placeLevel(
       roomId: r.id,
       chain: chainOf(
         adj,
-        (roomNodes.get(r.id) ?? []).filter((id) => !quietNodes.has(id) && !isEntry(id) && id !== post?.node),
+        (roomNodes.get(r.id) ?? []).filter((id) => !quietNodes.has(id) && !isEntry(id) && id !== post?.node && id !== watch?.node),
         fromStart,
       ),
     }))
@@ -562,6 +596,15 @@ export function placeLevel(
             : [chain[at], chain[last], chain[0]];
     guards.push({ id, roomId: route.roomId, patrol, provenance: [...provenanceOf(`guard:${id}`, "profile:guardCount"), ...tempo] });
   }
+  if (watch) {
+    guards.push({
+      id: watch.id,
+      roomId: nodeById.get(watch.node)!.roomId,
+      patrol: [watch.node],
+      post: { entryId: watch.entry.entryId, rule: WATCH_POST_RULE },
+      provenance: [...watch.entry.provenance, ...provenanceOf(`guard:${watch.id}`, "profile:guardCount")],
+    });
+  }
   if (post) {
     const id = `G${guardCount}`;
     guards.push({
@@ -604,5 +647,15 @@ export function placeLevel(
     hearing: DEFAULT_HEARING,
   };
 
-  return { level, entries, zones, objective, locks, cameras, guards, unplaced };
+  return {
+    level,
+    entries,
+    zones,
+    objective,
+    locks,
+    cameras,
+    guards,
+    watch: watch && { guardId: watch.id, entryId: watch.entry.entryId },
+    unplaced,
+  };
 }
