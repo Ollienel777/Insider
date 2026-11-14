@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getMatterport, insideViewFor } from "@/adapters/matterport";
+import { getMatterport, insideViewFor, scanModelId } from "@/adapters/matterport";
 import { buildingHref } from "@/lib/building-href";
 import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
@@ -46,7 +46,7 @@ import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postur
 import { MuteToggle, useRunSound } from "./run-sound";
 import { RunStage } from "./run-stage";
 import { placeOrFixture } from "./scan-fallback";
-import { FIRST_PERSON_PACE, FIRST_PERSON_TURN_MS, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, ViewSwitch, type HeldAction } from "./fp/run-view";
+import { FIRST_PERSON_PACE, FIRST_PERSON_TURN_MS, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, useScanPreload, ViewSwitch, type HeldAction, type ScanPreload } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -215,6 +215,17 @@ export function RunScreen({
   // Runs that stay out of storage: on a live scan, and for a kit building on any floor (`boardOn`).
   const inMemory = load.status === "ready" && load.inMemory;
   const openInside = useMemo(() => (liveScan ? insideViewFor(building, heistMode) : null), [liveScan, building, heistMode]);
+  // First person on a live scan (issue 118): its mesh starts loading as soon as the floor is the scan's.
+  const preload = useScanPreload(liveScan ? (scanModelId(building) ?? null) : null);
+  const [scanFailed, setScanFailed] = useState<string | null>(null);
+  const scan: ScanPreload | null = preload && scanFailed ? { ...preload, handle: null, failed: scanFailed } : preload;
+  const scanFailure = scan?.failed ?? null;
+  useEffect(() => {
+    if (!scanFailure || runView.view !== "first-person") return;
+    // The status line says why the board is back, once the failure is in.
+    const timer = setTimeout(() => setStatus(scanFailure), 0);
+    return () => clearTimeout(timer);
+  }, [scanFailure, runView.view]);
 
   // The crew's plan from the Plan screen, read after mount (storage is the browser's).
   const [crewPlan, setCrewPlan] = useState<StoredCrewPlan | null>(null);
@@ -319,7 +330,7 @@ export function RunScreen({
   const [playMode, setPlayMode] = usePlayMode();
   // First person (issue 115) always runs on the clock, at its own pace, and its turn is the view's
   // to choose: the next pick while E is held at a door, otherwise a wait.
-  const fpOn = placed !== null && firstPersonOn(runView, placed.level.floor);
+  const fpOn = placed !== null && firstPersonOn(runView, placed.level.floor, scan);
   const fpHeld = useRef<HeldAction | null>(null);
   const holdFp = useCallback((held: HeldAction | null) => {
     fpHeld.current = held;
@@ -506,7 +517,7 @@ export function RunScreen({
       }
       board={
           <div className="relative min-h-0 flex-1">
-            {run && placed ? <ViewSwitch state={runView} floor={placed.level.floor} /> : null}
+            {run && placed ? <ViewSwitch state={runView} floor={placed.level.floor} scan={scan} /> : null}
             {load.status === "loading" ? (
               <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
             ) : load.status === "no-floor" ? (
@@ -546,6 +557,8 @@ export function RunScreen({
                 onAct={play}
                 onHeld={holdFp}
                 paused={clock.state === "paused"}
+                scan={scan?.handle ?? null}
+                onScanFailed={setScanFailed}
                 onUnavailable={() => {
                   runView.fail();
                   setStatus(FP_UNAVAILABLE);
