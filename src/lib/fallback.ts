@@ -13,7 +13,20 @@ export interface Fallback {
   message: string;
 }
 
-export type FallbackCause = "failed" | "timeout" | "no-scan";
+export type FallbackCause = "failed" | "timeout" | "no-scan" | "unknown";
+
+/**
+ * A live service answered "no such id" for an id the fixtures know (the demo
+ * building, whose cached levels exist only under fixture ids). Thrown inside
+ * `withFallback`, it trips the breaker like any failure, so the fixtures
+ * answer and the mode chip says so.
+ */
+export class UnknownToLiveError extends Error {
+  constructor(service: Service, id: string) {
+    super(`${SERVICES[service].label} has no ${id}, the fixtures do`);
+    this.name = "UnknownToLiveError";
+  }
+}
 
 const WHAT: Record<Service, string> = {
   costar: "buildings use fixtures",
@@ -27,6 +40,7 @@ export function fallbackMessage(service: Service, cause: FallbackCause = "failed
   const label = SERVICES[service].label;
   const name = service === "llm" ? "The model" : label;
   if (cause === "no-scan") return `This building has no ${label} scan, so ${WHAT[service]}.`;
+  if (cause === "unknown") return `${name} doesn't know this building, so ${WHAT[service]}.`;
   if (cause === "timeout") return `${name} didn't answer in time, so ${WHAT[service]}.`;
   return `${name} didn't answer, so ${WHAT[service]}.`;
 }
@@ -58,8 +72,9 @@ export class Breaker {
 
   trip(error: unknown): Fallback {
     if (!this.tripped) {
-      const timeout = (error as { name?: string } | null)?.name === "TimeoutError";
-      this.tripped = newFallback(this.service, timeout ? "timeout" : "failed");
+      const name = (error as { name?: string } | null)?.name;
+      const cause = name === "TimeoutError" ? "timeout" : name === "UnknownToLiveError" ? "unknown" : "failed";
+      this.tripped = newFallback(this.service, cause);
       console.warn(`${SERVICES[this.service].label}: fixtures from now on (live call failed: ${(error as Error)?.message ?? String(error)})`);
     }
     return this.tripped;

@@ -3,9 +3,10 @@
 // set to `live` *and* both `COSTAR_API_BASE` and `COSTAR_API_KEY`; with
 // either missing it falls back to the fixtures and says so. A live call that
 // fails is answered by the fixtures too, and from then on CoStar stays on
-// fixtures (`Breaker`); the selection then carries that `fallback`.
+// fixtures (`Breaker`); the selection then carries that `fallback`. So does a
+// building live CoStar does not know but the fixtures do (`knownToFixtures`).
 import { syncDemoEpoch } from "@/lib/demo-epoch";
-import { withFallback, type Fallback } from "@/lib/fallback";
+import { UnknownToLiveError, withFallback, type Fallback } from "@/lib/fallback";
 import { missingForLive, serviceModes, type ServiceMode } from "@/lib/mode";
 import { resetServerSlot, serverSlot } from "@/lib/server-breakers";
 import { createFakeCoStar } from "./fake";
@@ -46,6 +47,25 @@ export function selectCoStar(env: Env): CoStarSelection {
   };
 }
 
+/**
+ * `live`, except that a building it answers `null` for but `fixtures` know
+ * throws `UnknownToLiveError`. Under `withFallback` that trips the breaker,
+ * so the fixture building (the demo's, whose cached levels exist only under
+ * fixture ids) is served and the mode chip reports fixtures. An id neither
+ * knows stays `null`.
+ */
+export function knownToFixtures(live: CoStarAdapter, fixtures: CoStarAdapter): CoStarAdapter {
+  async function orFixture<T>(id: string, answer: T | null, fixture: () => Promise<T | null>): Promise<T | null> {
+    if (answer === null && (await fixture()) !== null) throw new UnknownToLiveError("costar", id);
+    return answer;
+  }
+  return {
+    listBuildings: (city) => live.listBuildings(city),
+    getBuilding: async (id) => orFixture(id, await live.getBuilding(id), () => fixtures.getBuilding(id)),
+    getAvailableSpace: async (id) => orFixture(id, await live.getAvailableSpace(id), () => fixtures.getAvailableSpace(id)),
+  };
+}
+
 const fake = createFakeCoStar();
 // The breaker and the selection are process-wide (`serverSlot`), shared by
 // every bundle that loads this module: the routes, the pages and AppShell.
@@ -64,7 +84,7 @@ export function getCoStar(options: { forced?: boolean } = {}): CoStarSelection {
   if (options.forced) return { adapter: fake, mode: "fake", reason: "CoStar: fixtures (forced in demo settings)" };
   if (!slot.selected) {
     const chosen = selectCoStar(process.env);
-    slot.selected = chosen.mode === "live" ? { ...chosen, adapter: withFallback(chosen.adapter, fake, slot.breaker) } : chosen;
+    slot.selected = chosen.mode === "live" ? { ...chosen, adapter: withFallback(knownToFixtures(chosen.adapter, fake), fake, slot.breaker) } : chosen;
     console.info(slot.selected.reason);
   }
   if (slot.breaker.tripped) {
