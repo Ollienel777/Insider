@@ -27,6 +27,7 @@ function spiedAdapters() {
       listBuildings: costar.listBuildings,
       getBuilding: (id: string) => (log.push(`costar.getBuilding:${id}`), costar.getBuilding(id)),
       getAvailableSpace: (id: string) => (log.push(`costar.getAvailableSpace:${id}`), costar.getAvailableSpace(id)),
+      searchInventory: costar.searchInventory,
     },
     vexcel: { getAerial: (id: string) => (log.push(`vexcel.getAerial:${id}`), vexcel.getAerial(id)) },
   };

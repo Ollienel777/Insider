@@ -63,6 +63,7 @@ export function knownToFixtures(live: CoStarAdapter, fixtures: CoStarAdapter): C
     listBuildings: (city) => live.listBuildings(city),
     getBuilding: async (id) => orFixture(id, await live.getBuilding(id), () => fixtures.getBuilding(id)),
     getAvailableSpace: async (id) => orFixture(id, await live.getAvailableSpace(id), () => fixtures.getAvailableSpace(id)),
+    searchInventory: (filters) => live.searchInventory(filters),
   };
 }
 
