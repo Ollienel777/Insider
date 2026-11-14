@@ -11,13 +11,17 @@ import {
   addCamera,
   addNode,
   addPawn,
+  box,
+  boxReach,
   MARK_FONT,
   PAWN_SPOTS,
   PIECE_FONT,
   placeLabel,
+  quadsOverlap,
   placeRoomLabels,
   textBox,
   type LabelSpot,
+  type Quad,
   type RoomLabel,
   type Taken,
 } from "./labels";
@@ -241,8 +245,10 @@ export function BoardView({
 
   // Labels (#68). The rooms' names and everything that never moves first, once per level; then each
   // guard's id beside its pawn, and the plan's marks, each in the first spot clear of the rest.
-  const fixed = useMemo(() => fixedLabels(placed, run.board.cameras), [placed, run.board.cameras]);
-  const { pawns: pawnLabels, ghost: ghostLabels } = movingLabels(fixed, at, choices, standing, ghost);
+  const fixed = useMemo(() => fixedLabels(placed, run.board.cameras, lens), [placed, run.board.cameras, lens]);
+  // With the lens on, each guard's and cleaner's lens marks are placed too, clear of the labels.
+  const guardMarks = lensed ? (kind: "guard" | "cleaner", id: string) => layersOf(whyKey[kind](id))?.length ?? 0 : undefined;
+  const { pawns: pawnLabels, ghost: ghostLabels, marks: pawnMarks } = movingLabels(fixed, at, choices, standing, ghost, guardMarks);
 
   // Where the selected element stands, in board units: the thread starts there.
   const anchor = ((): Point | null => {
@@ -476,7 +482,7 @@ export function BoardView({
                     <LayerRings layers={layers} rx={DISC.rx + 5} ry={DISC.ry + 3} />
                     <LayerMarks
                       layers={layers}
-                      at={{ x: -DISC.rx - 10 - marksWidth(layers.length), y: -MARK.h / 2 }}
+                      at={ENTRY_MARKS}
                     />
                   </g>
                 ) : null}
@@ -505,7 +511,7 @@ export function BoardView({
               {layers ? (
                 <g transform={`translate(${round(m.x)}, ${round(m.y)})`}>
                   <LayerRings layers={layers} rx={13} ry={13} />
-                  <LayerMarks layers={layers} at={{ x: -marksWidth(layers.length) / 2, y: 18 }} />
+                  <LayerMarks layers={layers} at={lockMarksAt(layers.length)} />
                 </g>
               ) : null}
               <line
@@ -530,6 +536,7 @@ export function BoardView({
             live={camera.id === tripped}
             selected={why === whyKey.camera(camera.id)}
             layers={layersOf(whyKey.camera(camera.id))}
+            marks={false}
           />
         ))}
 
@@ -558,9 +565,28 @@ export function BoardView({
                 selected={why === whyKey[piece.kind](piece.id)}
                 layers={layersOf(whyKey[piece.kind](piece.id))}
                 labelAt={pawnLabels.get(piece.id)}
+                marksAt={pawnMarks.get(piece.id)}
               />
             ),
           )}
+
+        {/* The cameras' lens marks, above the pawns: a pawn below a camera (the player under C2 at the
+            wow beat) would otherwise hide the chip that names the trip's layer. */}
+        {placed.cameras.map((camera) => {
+          const layers = layersOf(whyKey.camera(camera.id));
+          if (!layers || layers.length === 0) return null;
+          const p = cameraAt(camera.id);
+          return (
+            <g
+              key={camera.id}
+              data-lens-marks-of={whyKey.camera(camera.id)}
+              transform={`translate(${round(p.x)}, ${round(p.y)})`}
+              aria-hidden
+            >
+              <LayerMarks layers={layers} at={cameraMarksAt(layers.length)} />
+            </g>
+          );
+        })}
         </g>
 
         {ghost ? <GhostPath ghost={ghost} at={at} spots={ghostLabels} /> : null}
@@ -736,7 +762,7 @@ function GhostPath({
         const p = at(mark.nodeId);
         const sighting = mark.kind === "sighting";
         const colour = sighting ? "var(--warning)" : "var(--n-100)";
-        const spot = spots[i] ?? ghostSpots(mark.kind)[0];
+        const spot = spots[i] ?? ghostSpots(mark.kind, mark.label.length)[0];
         return (
           <g
             key={`${mark.kind}-${mark.nodeId}-${i}`}
@@ -805,13 +831,23 @@ const PAWN_FONT = PIECE_FONT;
 /** "PICK 0/2": the PICK label beside a door's badge (`ChoiceHint`). */
 const PICK_CHARS = 8;
 
-/** A plan mark's label: right of its ring, above it for a sighting and below for a wait, then the other way, then left, then centred. */
-function ghostSpots(kind: GhostPlan["marks"][number]["kind"]): LabelSpot[] {
+/** The farthest a plan mark's glyphs stand from its node, in board units, so it reads as that node's. */
+export const GHOST_REACH = 30;
+
+/**
+ * A plan mark's label: right of its ring, above it for a sighting and below for a wait, then the
+ * other way, then left, then centred. With the Layer lens on, its marks and rings block more of
+ * those, so then also level with the node on either side, and every spot is tried nearest first:
+ * a clear spot on the far side of the node beats a farther one on the near side. None stands
+ * more than `GHOST_REACH` from the node; when none of them is clear, the label covers what the
+ * fewest of them cover rather than drift away from its node.
+ */
+function ghostSpots(kind: GhostPlan["marks"][number]["kind"], chars: number, lens = false): LabelSpot[] {
   const right = DISC.rx + 10;
   const above = -DISC.ry - 6;
   const below = DISC.ry + 16;
   const [first, second] = kind === "sighting" ? [above, below] : [below, above];
-  return [
+  const spots: LabelSpot[] = [
     { x: right, y: first, anchor: "start" },
     { x: right, y: second, anchor: "start" },
     { x: -right, y: first, anchor: "end" },
@@ -819,6 +855,11 @@ function ghostSpots(kind: GhostPlan["marks"][number]["kind"]): LabelSpot[] {
     { x: 0, y: first < 0 ? first - 6 : first + 6, anchor: "middle" },
     { x: 0, y: second < 0 ? second - 6 : second + 6, anchor: "middle" },
   ];
+  if (!lens) return spots;
+  const reach = (s: LabelSpot) => boxReach(textBox(s.x, s.y, chars, MARK_FONT, s.anchor, 0), { x: 0, y: 0 });
+  return [...spots, { x: right, y: 0, anchor: "start" as const }, { x: -right, y: 0, anchor: "end" as const }]
+    .filter((s) => reach(s) <= GHOST_REACH)
+    .sort((a, b) => reach(a) - reach(b));
 }
 
 /** Where each piece stands on the board, back to front, so a nearer pawn overlaps a farther one. */
@@ -842,6 +883,10 @@ export function standingOf(run: RunState, at: (nodeId: string) => Point) {
 export interface FixedLabels {
   rooms: RoomLabel[];
   taken: Taken;
+  /** Whether these were placed with the Layer lens on. */
+  lens: boolean;
+  /** With the lens on, the rings round the cameras, locks and entries: no plan mark covers one. */
+  rings: Quad[];
 }
 
 /**
@@ -856,7 +901,9 @@ export function movingLabels(
   choices: readonly Choice[],
   standing: readonly { kind: "guard" | "cleaner" | "player"; id: string; p: Point }[],
   ghost: GhostPlan | null,
-): { pawns: Map<string, LabelSpot>; ghost: LabelSpot[]; taken: Taken } {
+  /** With the lens on: how many lens marks each guard and cleaner carries; its marks are placed after the ids. */
+  markCount?: (kind: "guard" | "cleaner", id: string) => number,
+): { pawns: Map<string, LabelSpot>; ghost: LabelSpot[]; marks: Map<string, Point>; taken: Taken } {
   const taken: Taken = { text: [...fixed.taken.text], marks: [...fixed.taken.marks] };
   for (const c of choices) {
     const p = at(c.nodeId);
@@ -869,26 +916,37 @@ export function movingLabels(
       .filter((piece) => piece.kind !== "player")
       .map((piece) => [piece.id, placeLabel(piece.p, PAWN_SPOTS, piece.id.length, PIECE_FONT, taken)] as const),
   );
+  const lensMarks = new Map<string, Point>();
+  for (const piece of standing) {
+    const n = piece.kind !== "player" && markCount ? markCount(piece.kind, piece.id) : 0;
+    if (n > 0) lensMarks.set(piece.id, placeMarks(piece.p, n, taken));
+  }
+  // A plan mark keeps clear of the lens's rings too, so it never reads as a lock's or a camera's label.
+  taken.text.push(...fixed.rings);
   const marks = ghost
-    ? ghost.marks.map((mark) => placeLabel(at(mark.nodeId), ghostSpots(mark.kind), mark.label.length, MARK_FONT, taken))
+    ? ghost.marks.map((mark) => placeLabel(at(mark.nodeId), ghostSpots(mark.kind, mark.label.length, fixed.lens), mark.label.length, MARK_FONT, taken))
     : [];
-  return { pawns, ghost: marks, taken };
+  return { pawns, ghost: marks, marks: lensMarks, taken };
 }
 
 /**
  * The labels that never move on a placed level: each room's name, placed clear
  * of the nodes, the entry and files labels, the cameras and the PICK labels
- * (any door's far node can carry one); and those boxes, for the labels that
- * move to keep clear of.
+ * (any door's far node can carry one), and with the Layer lens on its marks;
+ * and those boxes, for the labels that move to keep clear of.
  */
-export function fixedLabels(placed: PlacedLevel, cameras: RunState["board"]["cameras"]): FixedLabels {
+export function fixedLabels(placed: PlacedLevel, cameras: RunState["board"]["cameras"], lens = false): FixedLabels {
   const { floor, objective, exits } = placed.level;
   const point = (id: string): Point => {
     const n = floor.nodes.find((node) => node.id === id)!;
     return project(n.x, n.y);
   };
   const named = [objective, ...exits.filter((id) => id !== objective)];
-  const doorNodes = new Set(floor.edges.filter((e) => e.door).flatMap((e) => [e.a, e.b]));
+  const doorNodes = (edges: typeof floor.edges) => new Set(edges.filter((e) => e.door).flatMap((e) => [e.a, e.b]));
+  const pickBox = (id: string) => {
+    const p = point(id);
+    return textBox(p.x + 16, p.y - 14, PICK_CHARS, MARK_FONT);
+  };
   // Without the nodes: the labels that move keep clear only of the ones a choice stands on.
   const taken: Taken = { text: [], marks: [] };
   for (const id of named) {
@@ -900,20 +958,127 @@ export function fixedLabels(placed: PlacedLevel, cameras: RunState["board"]["cam
     const m = cameraMount(floor, camera.parts.flat());
     addCamera(taken, project(m.x, m.y), camera.id);
   }
-  for (const id of doorNodes) {
-    const p = point(id);
-    taken.text.push(textBox(p.x + 16, p.y - 14, PICK_CHARS, MARK_FONT));
-  }
-  // The rooms' names keep clear of every node, and of a pawn standing on it, where they can: a
-  // numbered choice or a piece can stand on any of them.
+  const beforePicks = taken.text.length;
+  for (const id of doorNodes(floor.edges)) taken.text.push(pickBox(id));
+  // With the Layer lens on, its letter marks on the elements that never move (#83 R1-M1): no
+  // label covers them, the rooms' names nor the ones that move (a ghost mark's halo hid a lock's
+  // chip). With it off they are not drawn, so nothing keeps clear of them.
+  const lensMarks = lens ? fixedLensMarks(placed, cameras) : [];
+  taken.text.push(...lensMarks);
+  taken.marks.push(...lensMarks);
+  // The rooms' names keep clear of every node, and of a pawn standing on it (with its lens marks,
+  // while the lens is on), where they can: a numbered choice or a piece can stand on any of them.
   const forRooms: Taken = { text: [...taken.text], marks: [...taken.marks] };
   for (const n of floor.nodes) {
     const p = project(n.x, n.y);
     addNode(forRooms, p);
     addPawn(forRooms, p);
+    if (lens) forRooms.marks.push(markRow(p.x + PAWN_MARKS.x, p.y + PAWN_MARKS.y, LENS_LAYERS.length - 1));
   }
-  const rooms = placeRoomLabels(floor, (label) => shortLabel(label).toUpperCase(), forRooms);
-  return { rooms, taken: { text: [...taken.text, ...rooms.map((r) => r.quad)], marks: taken.marks } };
+  // Just outside a corridor's outer wall (R1-N2) only a lockable door's ends can carry a PICK
+  // label: no other door is ever picked.
+  const outside: Taken = {
+    text: [...taken.text.slice(0, beforePicks), ...[...doorNodes(floor.edges.filter((e) => e.door?.lockable))].map(pickBox), ...lensMarks],
+    marks: [],
+  };
+  const rooms = placeRoomLabels(floor, (label) => shortLabel(label).toUpperCase(), forRooms, outside, frameOf(floor));
+  return { rooms, taken: { text: [...taken.text, ...rooms.map((r) => r.quad)], marks: taken.marks }, lens, rings: lens ? fixedLensRings(placed, cameras) : [] };
+}
+
+/** Where a guard's lens marks start beside its pawn (see `Pawn`), unless the board places them elsewhere. */
+const PAWN_MARKS: Point = { x: 14, y: -28 };
+
+/**
+ * Where a guard's row of `count` lens marks goes: right of its head by default, then left of it,
+ * then beside its body, then above it; the first clear of every label `taken`, else the one
+ * covering the fewest. Its box is added to `taken`.
+ */
+function placeMarks(p: Point, count: number, taken: Taken): Point {
+  const w = marksWidth(count);
+  const spots: Point[] = [PAWN_MARKS, { x: -14 - w, y: -28 }, { x: 14, y: -10 }, { x: -14 - w, y: -10 }, { x: -w / 2, y: -62 }];
+  const boxOf = (s: Point) => markRow(p.x + s.x, p.y + s.y, count);
+  const hits = (s: Point) => taken.text.filter((t) => quadsOverlap(boxOf(s), t)).length;
+  const spot = spots.find((s) => hits(s) === 0) ?? spots.reduce((best, s) => (hits(s) < hits(best) ? s : best));
+  taken.text.push(boxOf(spot));
+  return spot;
+}
+
+/** Where a lock's lens marks start, from the middle of its door: above its bar, clear of the room's name and the PICK label. */
+function lockMarksAt(count: number): Point {
+  return { x: -marksWidth(count) / 2, y: -18 - MARK.h };
+}
+
+/** Where an entry's lens marks start, from its node: right of its rings, clear of the stair's name. */
+const ENTRY_MARKS: Point = { x: DISC.rx + 10, y: -MARK.h / 2 };
+
+/** The box a row of `count` lens marks fills from its top-left (`LayerMarks`). */
+function markRow(x: number, y: number, count: number): Quad {
+  return box(x, y, x + marksWidth(count), y + MARK.h);
+}
+
+/**
+ * The lens footprints of the cameras, the locks and the entries, where the board draws them with
+ * the lens on (`CameraPiece`, the locked doors and the nodes in `BoardView`), one per element: the
+ * box of its row of letter marks, and the box of its outermost ring with the ring's stroke.
+ */
+function fixedLensFootprints(placed: PlacedLevel, cameras: RunState["board"]["cameras"]): { marks: Quad[]; rings: Quad[] } {
+  const { floor } = placed.level;
+  const elements = lensElements(placed, placed.level.lockedDoors);
+  const count = (key: string) => elements.find((e) => e.key === key)?.layers.length ?? 0;
+  const point = (id: string): Point => {
+    const n = floor.nodes.find((node) => node.id === id)!;
+    return project(n.x, n.y);
+  };
+  const marks: Quad[] = [];
+  const rings: Quad[] = [];
+  // An ellipse `LayerRings` draws, its `n`th ring the outermost, as the box round it.
+  const ellipse = (p: Point, rx: number, ry: number, n: number) => {
+    const [x, y] = [rx + (n - 1) * 5 + 1, ry + (n - 1) * 2.5 + 1];
+    return box(p.x - x, p.y - y, p.x + x, p.y + y);
+  };
+  for (const camera of cameras) {
+    const n = count(whyKey.camera(camera.id));
+    if (n === 0) continue;
+    const m = cameraMount(floor, camera.parts.flat());
+    const p = project(m.x, m.y);
+    const at = cameraMarksAt(n);
+    marks.push(markRow(p.x + at.x, p.y + at.y, n));
+    const grow = (n - 1) * 4 + 1;
+    rings.push(box(p.x - 20 - grow, p.y - 34 - grow, p.x + 20 + grow, p.y - 10 + grow));
+  }
+  for (const edge of floor.edges) {
+    const n = edge.door ? count(whyKey.lock(edge.door.id)) : 0;
+    if (n === 0) continue;
+    const a = point(edge.a);
+    const b = point(edge.b);
+    const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const at = lockMarksAt(n);
+    marks.push(markRow(m.x + at.x, m.y + at.y, n));
+    rings.push(ellipse(m, 13, 13, n));
+  }
+  for (const entry of placed.entries) {
+    const n = count(lensKey.entry(entry.entryId));
+    if (n === 0) continue;
+    const p = point(entry.nodeId);
+    marks.push(markRow(p.x + ENTRY_MARKS.x, p.y + ENTRY_MARKS.y, n));
+    rings.push(ellipse(p, DISC.rx + 5, DISC.ry + 3, n));
+  }
+  return { marks, rings };
+}
+
+/** The lens's letter marks on the cameras, the locks and the entries (`fixedLensFootprints`). */
+export function fixedLensMarks(placed: PlacedLevel, cameras: RunState["board"]["cameras"]): Quad[] {
+  return fixedLensFootprints(placed, cameras).marks;
+}
+
+/** The lens's rings round the cameras, the locks and the entries (`fixedLensFootprints`). */
+export function fixedLensRings(placed: PlacedLevel, cameras: RunState["board"]["cameras"]): Quad[] {
+  return fixedLensFootprints(placed, cameras).rings;
+}
+
+/** Where a camera's `n` lens marks start, from its mount (`CameraPiece`, `fixedLensFootprints`). */
+function cameraMarksAt(n: number): Point {
+  return { x: 24 + (n - 1) * 4, y: -28 };
 }
 
 /** How far above its mount a camera's lens sits, in board units (see `CameraPiece`). */
@@ -922,8 +1087,9 @@ const LENS_RISE = 14;
 /**
  * A watcher's cone: a translucent wedge from the guard's node, or the
  * camera's lens, over the nodes it sees this turn (DESIGN.md: `--n-500` at
- * 20%). On the turn a watcher raised the alarm, a `--danger` wedge also runs
- * from it to where it saw the player.
+ * 20%). On the turn a watcher raised the alarm, its whole cone turns `--danger`
+ * and flashes (`.cone-flash`), and a stronger `--danger` wedge runs from it to
+ * where it saw the player.
  */
 function ConeShape({ cone, at, sighting }: { cone: Cone; at: (id: string) => Point; sighting: Point | null }) {
   const mount = project(cone.origin.x, cone.origin.y);
@@ -960,11 +1126,20 @@ function ConeShape({ cone, at, sighting }: { cone: Cone; at: (id: string) => Poi
         />
       ) : null}
       {seen.length > 0 ? (
+        // On the trip turn the whole cone is `--danger`: it flashes from 70% down to 30% (`.cone-flash`),
+        // then stays `--danger` at 30% until the next turn (DESIGN.md the wow beat, step 2).
         <polygon
+          data-testid={sighting ? "cone-tripped" : undefined}
+          className={sighting ? "cone-flash" : undefined}
           points={pointsAttr(shape)}
-          style={{ fill: camera ? "var(--n-400)" : "var(--n-500)", stroke: camera ? "var(--n-400)" : "none" }}
-          fillOpacity={camera ? 0.24 : 0.2}
-          strokeOpacity="0.5"
+          style={
+            sighting
+              ? { fill: "var(--danger)", stroke: "var(--danger)" }
+              : { fill: camera ? "var(--n-400)" : "var(--n-500)", stroke: camera ? "var(--n-400)" : "none" }
+          }
+          fillOpacity={sighting ? 0.3 : camera ? 0.24 : 0.2}
+          strokeOpacity={sighting ? 0.9 : 0.5}
+          strokeWidth={sighting ? 2 : undefined}
           strokeLinejoin="round"
         />
       ) : null}
@@ -1010,6 +1185,7 @@ export function Pawn({
   selected = false,
   layers,
   labelAt,
+  marksAt,
 }: {
   testId: string;
   label: string;
@@ -1024,6 +1200,8 @@ export function Pawn({
   layers?: readonly LensLayer[];
   /** Where its id stands beside its head, clear of the board's other labels (`placeLabels`); right of it by default. */
   labelAt?: LabelSpot;
+  /** Where its lens marks start, clear of the board's labels (`movingLabels`); right of its head by default. */
+  marksAt?: Point;
 }) {
   const body = tone === "player" ? "var(--accent)" : tone === "guard" ? "var(--n-200)" : "var(--n-400)";
   const shade = tone === "player" ? "var(--accent-active)" : tone === "guard" ? "var(--n-400)" : "var(--n-500)";
@@ -1081,7 +1259,7 @@ export function Pawn({
         </text>
       ) : null}
       {layers && layers.length > 0 ? (
-        <LayerMarks layers={layers} at={{ x: 14, y: -28 }} />
+        <LayerMarks layers={layers} at={marksAt ?? PAWN_MARKS} />
       ) : null}
     </g>
   );
@@ -1097,6 +1275,7 @@ export function CameraPiece({
   live,
   selected = false,
   layers,
+  marks = true,
 }: {
   id: string;
   at: Point;
@@ -1104,6 +1283,8 @@ export function CameraPiece({
   selected?: boolean;
   /** With the Layer lens on: its layers, as an outline round the housing and letter marks beside it. */
   layers?: readonly LensLayer[];
+  /** Whether it draws its own letter marks; the Run and Plan board draws them above the pawns instead. */
+  marks?: boolean;
 }) {
   return (
     <g
@@ -1149,10 +1330,15 @@ export function CameraPiece({
       <text x="20" y="-34" className="font-mono" fontSize="12" fontWeight="500" style={{ fill: "var(--text-1)" }}>
         {id}
       </text>
-      {layers && layers.length > 0 ? <LayerMarks layers={layers} at={{ x: 24 + (layers.length - 1) * 4, y: -28 }} /> : null}
+      {marks && layers && layers.length > 0 ? <LayerMarks layers={layers} at={cameraMarksAt(layers.length)} /> : null}
     </g>
   );
 }
+
+/** A numbered choice's hit target, from its node. */
+export const CHOICE_HIT = { x: -20, y: -20, width: 40, height: 40 } as const;
+/** A PICK choice's hit target, its badge and its label with the label's halo, from its node. */
+export const PICK_HIT = { x: -20, y: -30, width: 100, height: 50 } as const;
 
 /** A neighbour's number, a 40-unit hit target, that moves the player there (or picks its door). */
 function ChoiceHint({
@@ -1192,7 +1378,7 @@ function ChoiceHint({
       onClick={() => onChoose(choice)}
       onKeyDown={onKey}
     >
-      <rect x="-20" y="-20" width="40" height="40" fill="transparent" />
+      <rect {...CHOICE_HIT} fill="transparent" />
       <ellipse
         cx="0"
         cy="0"
@@ -1224,9 +1410,9 @@ function ChoiceHint({
       >
         {choice.key}
       </text>
-      {/* With its label, the badge's whole box is its hit area: a click anywhere on it picks and never
-          reaches the lock below (R3-M1). */}
-      {choice.kind === "pick" ? <rect x="-20" y="-26" width="100" height="46" fill="transparent" /> : null}
+      {/* With its label and the label's halo, the badge's whole box is its hit area: a click anywhere on
+          it picks and never reaches the lock below (R3-M1). */}
+      {choice.kind === "pick" ? <rect {...PICK_HIT} fill="transparent" /> : null}
       {choice.kind === "pick" ? (
         <text
           x="16"
@@ -1234,7 +1420,11 @@ function ChoiceHint({
           className="font-mono"
           fontSize="11"
           letterSpacing="0.06em"
-          style={{ fill: "var(--text-1)" }}
+          // A dark halo, so the lock's bar it sits beside never strikes through it.
+          paintOrder="stroke"
+          strokeWidth="4"
+          strokeLinejoin="round"
+          style={{ fill: "var(--text-1)", stroke: "var(--n-950)" }}
         >
           {`PICK ${choice.progress!.done}/${choice.progress!.of}`}
         </text>
