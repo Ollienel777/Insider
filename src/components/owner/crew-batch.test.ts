@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { LevelManifest, type Strategy } from "@/domain";
-import cached from "../../../data/levels/F1.json";
+import cached from "../../../data/levels/F1.romaine-1974.json";
 import recording from "../../../fixtures/llm/strategies-F1.json";
 import { askStrategies, playBatch } from "./crew-batch";
 

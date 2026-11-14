@@ -1,5 +1,5 @@
 // The browser's side of POST /api/crew (SPEC §4.5): the body is the building
-// id and the order, nothing else. The board stays in the browser; the server
+// id, the order and the mission whose level it is (issue 119), nothing else. The board stays in the browser; the server
 // reads the zones and the guard roster from its own cached manifest.
 import type { CrewAnswer } from "@/agents/crew/crew";
 import { CrewPlan } from "@/domain";
@@ -8,13 +8,14 @@ import { noteResponse } from "@/lib/demo-status";
 export interface CrewRequest {
   buildingId: string;
   order: string;
+  missionId?: string;
 }
 
 export type { CrewAnswer };
 
-/** The request body: exactly `{buildingId, order}`. */
-export function crewRequest(buildingId: string, order: string): CrewRequest {
-  return { buildingId, order: order.trim() };
+/** The request body: exactly `{buildingId, order}`, and `missionId` when known. */
+export function crewRequest(buildingId: string, order: string, missionId?: string | null): CrewRequest {
+  return { buildingId, order: order.trim(), ...(missionId && { missionId }) };
 }
 
 /** The demo's order (SPEC §2 beat 4), offered as an example under the order box. */

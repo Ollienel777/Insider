@@ -250,10 +250,10 @@ test("the crew's quiet route plays by keys to a clean exit, then offers the debr
   await expect(page.getByTestId("run-outcome")).toHaveAttribute("data-status", "won");
   await expect(banner(page)).toHaveAttribute("data-state", "calm");
   await expect(page.getByTestId("choice")).toHaveCount(0);
-  const runLog = await page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1") ?? "null"));
+  const runLog = await page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1:romaine-1974") ?? "null"));
   expect(runLog.turns).toHaveLength(17);
   await page.getByRole("link", { name: "See the debrief" }).click();
-  await expect(page).toHaveURL(/\/b\/F1\/debrief$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/b\/F1\/debrief\?m=romaine-1974$/, { timeout: 15_000 });
 });
 
 test("Restart puts the run back at the start", async ({ page }) => {
@@ -379,7 +379,7 @@ test("S sprints: the numbers mark nodes two hops on, a click sprints there in on
   await expect(page.getByTestId("run-status")).toHaveText("You sprint to the Dock Corridor.");
   await expect(hint).not.toHaveAttribute("data-on", /.*/);
   for (const c of await choices.all()) await expect(c).not.toHaveAttribute("data-kind", "sprint");
-  const kind = await page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1") ?? "null")?.turns?.at(-1)?.player?.kind);
+  const kind = await page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1:romaine-1974") ?? "null")?.turns?.at(-1)?.player?.kind);
   expect(kind).toBe("sprint");
 });
 
