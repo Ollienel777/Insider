@@ -20,11 +20,17 @@ export const LENS_COLOUR: Readonly<Record<LensLayer, string>> = {
  * The lens's on/off state, toggled by the button and by `L`. The key is left
  * alone in a text field, with a modifier held, and on auto-repeat, so typing
  * an order on the Plan screen never flips it.
+ *
+ * `keyOn` false leaves `L` alone altogether: the Run screen in Live while
+ * Details is closed (issue 100), where the lens and its button are put away
+ * and a key that flipped it would change nothing the player can see. The
+ * lens keeps the state it was left in.
  */
-export function useLayerLens(): [boolean, () => void] {
+export function useLayerLens(keyOn = true): [boolean, () => void] {
   const [on, setOn] = useState(false);
   const toggle = useCallback(() => setOn((was) => !was), []);
   useEffect(() => {
+    if (!keyOn) return;
     function onKey(event: KeyboardEvent) {
       if (event.key !== "l" && event.key !== "L") return;
       if (event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
@@ -35,7 +41,7 @@ export function useLayerLens(): [boolean, () => void] {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggle]);
+  }, [toggle, keyOn]);
   return [on, toggle];
 }
 
@@ -47,6 +53,8 @@ export function LensToggle({ on, onToggle, disabled }: { on: boolean; onToggle: 
       data-testid="lens-toggle"
       aria-pressed={on}
       aria-keyshortcuts="L"
+      // A click must not leave focus here: Space on a focused button presses it, and on Run Space takes the files.
+      onMouseDown={(event) => event.preventDefault()}
       onClick={onToggle}
       disabled={disabled}
       className={cn(
