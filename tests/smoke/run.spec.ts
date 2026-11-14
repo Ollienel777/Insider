@@ -53,6 +53,9 @@ test("/b/F1/run renders F1's floor with 4 guards and its cameras, filling the bo
   await expect(page.getByTestId("objective")).toHaveText("Take the files from the records room");
   await expect(page.locator('[data-testid="plan"] li[data-state="next"]')).toHaveText(/Pick the records room door/);
   await expect(page.getByRole("link", { name: "See the debrief" })).toHaveCount(0);
+  // The Inside view is for a live scan only: on fixtures there is no panel and no Showcase player.
+  await expect(page.getByTestId("inside-view")).toHaveCount(0);
+  await expect(page.locator('iframe[src*="matterport.com"]')).toHaveCount(0);
 });
 
 test("pressing a neighbour's number moves the player, and then the guards", async ({ page }) => {
