@@ -194,6 +194,11 @@ export type SearchStep = z.infer<typeof SearchStep>;
 /**
  * What `searchInventory(filters)` returns: `steps[0]` is the whole inventory,
  * then one step per filter in the order given, so counts never rise.
+ * `source` says which inventory answered: `"fixture"` whenever the fixture
+ * inventory did, live mode included, until the kit reader exists (#27).
  */
-export const InventorySearch = z.strictObject({ steps: z.array(SearchStep).min(1) });
+export const InventorySearch = z.strictObject({
+  steps: z.array(SearchStep).min(1),
+  source: Building.shape.source,
+});
 export type InventorySearch = z.infer<typeof InventorySearch>;

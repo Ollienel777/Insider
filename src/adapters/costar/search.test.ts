@@ -6,7 +6,8 @@ import finalists from "../../../fixtures/inventory-finalists.json";
 import missionsRaw from "../../../fixtures/missions.json";
 import { FIXTURE_INVENTORY, createFakeCoStar } from "./fake";
 import { getCoStar, resetCoStar } from "./index";
-import { CoStarKitNotMappedError, createLiveCoStar } from "./live";
+import { createLiveCoStar } from "./live";
+import { passes, searchInventory } from "./search";
 
 const missions = Mission.array().parse(missionsRaw);
 const romaine = missions.find((m) => m.id === "romaine-1974")!;
@@ -86,25 +87,76 @@ describe("searchInventory live (the kit is not mapped yet, #27)", () => {
     resetCoStar();
   });
 
-  it("refuses with an error naming the kit files", async () => {
-    const live = createLiveCoStar({ base: "https://costar.invalid/api", key: "test-key" });
-    await expect(live.searchInventory(romaine.casting)).rejects.toThrow(CoStarKitNotMappedError);
-    await expect(live.searchInventory([])).rejects.toThrow(/commercial-property\.jsonl.*commercial-listing-summary\.jsonl.*commercial-properties\.csv/);
+  // A hand-written live building in the shape mapping.ts assumes; not a CoStar record.
+  const PROPERTY = {
+    propertyId: 48213,
+    propertyName: "Sample Plaza",
+    city: "Los Angeles",
+    submarket: "Downtown Los Angeles",
+    latitude: 34.0489,
+    longitude: -118.2551,
+    yearBuilt: 1986,
+    buildingClass: "A",
+    numberOfStories: 34,
+    rentableBuildingArea: 702318,
+    typicalFloorSize: 21460,
+  };
+
+  it("answers from the fixture inventory, marked as fixtures, without calling CoStar", async () => {
+    const fetch = vi.fn();
+    const live = createLiveCoStar({ base: "https://costar.invalid/api", key: "test-key", fetch });
+    const search = await live.searchInventory(romaine.casting);
+    expect(search).toEqual(await createFakeCoStar().searchInventory(romaine.casting));
+    expect(search.source).toBe("fixture");
+    expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("falls back to the fixture inventory through the breaker, and the mode chip says fixtures", async () => {
+  it("leaves live buildings live: no breaker trip, no fallback", async () => {
     vi.spyOn(console, "info").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.stubEnv("HEIST_MODE", "");
     vi.stubEnv("COSTAR_MODE", "live");
     vi.stubEnv("COSTAR_API_BASE", "https://costar.test/api");
     vi.stubEnv("COSTAR_API_KEY", "test-key");
-    vi.stubGlobal("fetch", async () => new Response("", { status: 500 }));
+    const hits: string[] = [];
+    vi.stubGlobal("fetch", async (input: string | URL | Request) => {
+      const path = new URL(String(input)).pathname;
+      hits.push(path);
+      if (path === "/api/properties") return Response.json([PROPERTY]);
+      if (path === "/api/properties/48213") return Response.json(PROPERTY);
+      if (path === "/api/properties/48213/spaces") return Response.json({ items: [] });
+      return new Response("", { status: 404 });
+    });
     resetCoStar();
-    expect(getCoStar().mode).toBe("live");
-    const { steps } = await getCoStar().adapter.searchInventory(romaine.casting);
-    expect(steps.at(-1)!.top.map((c) => c.id)).toEqual(ROMAINE);
-    expect(getCoStar()).toMatchObject({ mode: "fake" });
-    expect(getCoStar().fallback).toBeDefined();
+
+    const search = await getCoStar().adapter.searchInventory(romaine.casting);
+    expect(search.source).toBe("fixture");
+    expect(search.steps.at(-1)!.top.map((c) => c.id)).toEqual(ROMAINE);
+    expect(getCoStar()).toMatchObject({ mode: "live" });
+    expect(getCoStar().fallback).toBeUndefined();
+
+    expect((await getCoStar().adapter.listBuildings("LA")).map((b) => [b.id, b.source])).toEqual([["48213", "costar"]]);
+    expect((await getCoStar().adapter.getBuilding("48213"))?.name).toBe("Sample Plaza");
+    expect(hits).toContain("/api/properties");
+    expect(hits).toContain("/api/properties/48213");
+    expect(getCoStar()).toMatchObject({ mode: "live" });
+  });
+});
+
+describe("the funnel itself", () => {
+  // An invented property with nothing on the market (no fixture has one).
+  const f1 = FIXTURE_INVENTORY.find((p) => p.id === "F1")!;
+  const empty = { ...structuredClone(f1), id: "Z99", availableSpace: [] };
+
+  it("ranks a property with no vacant floor last, with vacantFloor null, and minVacantFloorSf drops it", () => {
+    const all = searchInventory([empty, f1], [], "fixture");
+    expect(all.steps[0].top.map((c) => [c.id, c.vacantFloor?.floor ?? null])).toEqual([["F1", 22], ["Z99", null]]);
+    const filtered = searchInventory([empty, f1], [{ kind: "minVacantFloorSf", label: "any floor", minVacantFloorSf: 1 }], "fixture");
+    expect(filtered.steps[1].top.map((c) => c.id)).toEqual(["F1"]);
+  });
+
+  it("throws on a filter kind it does not know, instead of emptying the funnel", () => {
+    const unknown = { kind: "roofDeck", label: "a roof deck" } as unknown as CastingFilter;
+    expect(() => passes(f1, unknown)).toThrow(/unknown casting filter kind: roofDeck/);
   });
 });
