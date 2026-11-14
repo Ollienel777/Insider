@@ -164,7 +164,7 @@ export function stepWalker(
   // Move. A run that is over stops the body where it stands.
   const wish = playing ? wishVelocity(controls, controls.yaw) : { x: 0, y: 0 };
   const moved = ground.collide(walker.pos, accelerate(walker.vel, wish, dt), dt, run.locked);
-  // The body stays where the engine can follow it (#134): in a room that holds the engine's node, the move
+  // The body stays where the engine can follow it (issue 134): in a room that holds the engine's node, the move
   // it was handed, or a node it would move to now. A step into any other room is not taken, so no room is
   // reached without its move. A body already outside those rooms (put there by a restart, or left there by
   // a door the Chief locked behind it) may walk within its room and back, but on to no other. Inside a room
@@ -210,7 +210,7 @@ export function stepWalker(
   if (under !== null && under !== walker.node && under !== walker.refused && legal(under)) {
     return emit(walker, { kind: "move", to: under }, under);
   }
-  // Held at the edge of a neighbour's ground, walking on (#134): the player has walked past that node
+  // Held at the edge of a neighbour's ground, walking on (issue 134): the player has walked past that node
   // without stepping on it, so its move is played, and the ground beyond it opens with the next turn.
   if (held && was !== null && was !== walker.node && was !== walker.refused && legal(was)) {
     return emit(walker, { kind: "move", to: was }, was);

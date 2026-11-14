@@ -38,7 +38,7 @@ export interface FirstPersonViewProps {
   onUnavailable: () => void;
   /**
    * Live mode's HUD already shows the alarm (its danger meter) and the objective around the view (issue
-   * 100), so the view leaves out its own cards for them (#134). The turn count goes with the alarm card:
+   * 100), so the view leaves out its own cards for them (issue 134). The turn count goes with the alarm card:
    * in Live it is behind Details, as on Live's board.
    */
   hudAround?: boolean;
