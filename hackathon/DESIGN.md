@@ -135,7 +135,8 @@ pad 12 × 16; the gap between panels is 16; screen gutters 24.
 - **Keyboard.** Arrow keys orbit on Scout; on Run, number keys pick a
   neighbouring node (each neighbour shows its number), `W` waits, `Space`
   confirms, `S` switches to sprinting (the numbers then mark the nodes two
-  open hops away, with a dashed ring; `S` or `Esc` walks again); `?` shows
+  open hops away, with a dashed ring; `S` or `Esc` walks again), `M` mutes
+  the sound (remembered); `?` shows
   the keys; `Esc` closes the Why card.
 
 ## Components

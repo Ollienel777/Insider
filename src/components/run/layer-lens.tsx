@@ -47,6 +47,8 @@ export function LensToggle({ on, onToggle, disabled }: { on: boolean; onToggle: 
       data-testid="lens-toggle"
       aria-pressed={on}
       aria-keyshortcuts="L"
+      // A click must not leave focus here: Space on a focused button presses it, and on Run Space takes the files.
+      onMouseDown={(event) => event.preventDefault()}
       onClick={onToggle}
       disabled={disabled}
       className={cn(
