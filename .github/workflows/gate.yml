@@ -1,8 +1,16 @@
 name: gate
 
 # The same gate every worktree runs locally: `npm run gate` (SPEC §6).
+#
+# The repo is private, so every minute here comes out of the account's monthly
+# allowance. Two kinds of run are skipped (issue 130): a push to a draft PR,
+# and a change that touches only docs no test reads.
 on:
   pull_request:
+    # `ready_for_review` runs the gate the moment a draft is marked ready.
+    # `labeled` is left out on purpose: it would start a run on every label,
+    # and that run would cancel one already in flight for the same PR.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
 
@@ -14,9 +22,17 @@ concurrency:
 
 permissions:
   contents: read
+  # To list a PR's changed files (the scope step).
+  pull-requests: read
 
 jobs:
   gate:
+    # A draft is not ready to be gated. A draft the build loop is working
+    # (labelled `loop`) still is: its rounds read this check.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.draft == false ||
+      contains(github.event.pull_request.labels.*.name, 'loop')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -25,14 +41,31 @@ jobs:
       CI: "true"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # Docs no test reads need no gate (scripts/gate-scope.mjs has the list).
+      # If the changed files cannot be listed, `files` is empty and the gate
+      # runs. The runner's own Node is enough here: the script uses built-ins.
+      - id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -n "$PR" ]; then
+            files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[].filename' || true)
+          else
+            files=$(gh api "repos/$GITHUB_REPOSITORY/compare/$BEFORE...$GITHUB_SHA" --jq '.files[].filename' || true)
+          fi
+          printf '%s\n' "$files" | node scripts/gate-scope.mjs | tee -a "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.code == 'true'
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       # Installs with `npm ci` and `npx playwright install --with-deps chromium`,
       # then lint, typecheck, test, build and smoke. The gate forces fake mode
       # on every step, so no secrets or keys are needed.
-      - run: npm run gate
+      - if: steps.scope.outputs.code == 'true'
+        run: npm run gate
       - if: failure()
         uses: actions/upload-artifact@v4
         with:

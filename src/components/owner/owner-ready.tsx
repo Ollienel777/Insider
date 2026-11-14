@@ -10,13 +10,18 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
 import { BatchPanel, type Side } from "./batch-panel";
+import { compareOptions, ComparePanel, ComparePicker, defaultPick, DemoList, type PairId } from "./compare-panel";
+import { demoSetups, isDemoSetup } from "./demo-setups";
 import { ownerZones } from "./owner-batch";
 import { OwnerBoard, type Selection } from "./owner-board";
 import {
   addCamera,
+  addCleaner,
   addGuard,
   boardOf,
+  extendCleanerRound,
   extendRound,
+  moveCleaner,
   moveGuard,
   playable,
   problemsOf,
@@ -27,12 +32,51 @@ import {
 import { OWNER_SEED, OwnerHeading, type OwnerBuilding } from "./owner-screen";
 import { SetupPanel, type Draft, type Tool } from "./setup-panel";
 import { useOwnerBatch } from "./use-owner-batch";
+import { useOwnerCompare } from "./use-owner-compare";
 
 /** The board's caption over a batch: how many got out, and what the board draws. */
 export function boardCaption(summary: BatchSummary, side: Side | null): string {
   const lead = side === "after" ? "After the fix: " : side === "before" ? "Before: " : "";
   const out = `${summary.escaped} of ${summary.total} got out`;
-  return summary.topRoute ? `${lead}${out}. The way most got out is drawn` : `${lead}${out}. No way out to draw`;
+  return summary.topRoute ? `${lead}${out}. The way most got out is drawn.` : `${lead}${out}. No way out to draw.`;
+}
+
+/** The board's caption over one side of a compare: "A, Demo: night shift: 7 of 50 got out. The way most got out is drawn.". */
+export function pairCaption(side: PairId, name: string, summary: BatchSummary): string {
+  return `${side.toUpperCase()}, ${name}: ${boardCaption(summary, null)}`;
+}
+
+/** The board header's two-way switch: before and after a fix, or the two sides of a compare. */
+function SideToggle({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: readonly (readonly [string, string, string])[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div role="group" aria-label={label} className="ml-auto flex shrink-0 rounded-sm border border-border">
+      {options.map(([v, text, testId]) => (
+        <button
+          key={v}
+          type="button"
+          data-testid={testId}
+          aria-pressed={value === v}
+          onClick={() => onChange(v)}
+          className={cn(
+            "h-8 px-3 label-caps transition-colors duration-fast",
+            value === v ? "bg-surface-3 text-text-1" : "text-text-2 hover:text-text-1",
+          )}
+        >
+          {text}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 /** The key of the untouched starting point. */
@@ -59,10 +103,30 @@ export function OwnerReady({
   const [draft, setDraft] = useState<Draft>(() => ({ setup: setupFromPlaced(generated), pristine: true, state: "untouched" }));
   const [selection, setSelection] = useState<Selection>(null);
   const [tool, setTool] = useState<Tool>("select");
-  const [view, setView] = useState<"setup" | "results">("setup");
+  const [view, setView] = useState<"setup" | "results" | "compare">("setup");
   const [side, setSide] = useState<Side>("after");
   const [fixedSaved, setFixedSaved] = useState<{ key: string; ok: boolean; setup: OwnerSetup } | null>(null);
   const { batch, fix, run, suggest, apply } = useOwnerBatch(manifest, floor);
+  const { pair, compare } = useOwnerCompare(manifest, floor);
+  const [pairSide, setPairSide] = useState<PairId>("a");
+
+  // The prepared demo setups (F1's pair), offered only when they fit this floor.
+  const demos = useMemo(
+    () => demoSetups(manifest.buildingId).filter((d) => problemsOf(d.setup, floor).all.length === 0),
+    [manifest.buildingId, floor],
+  );
+  const options = useMemo(() => compareOptions(demos, saved), [demos, saved]);
+  const [picked, setPicked] = useState<{ a: string; b: string } | null>(null);
+  const valid = (v: string | undefined) => options.some((o) => o.value === v);
+  const fallback = defaultPick(options);
+  const pick = { a: valid(picked?.a) ? picked!.a : fallback.a, b: valid(picked?.b) ? picked!.b : fallback.b };
+  const optionOf = (value: string) => options.find((o) => o.value === value) ?? null;
+  // Each compared side's setup on the board, the selected one drawn with its way out.
+  const pairBoards = useMemo<[PlacedLevel, PlacedLevel] | null>(() => {
+    if (pair.status !== "done") return null;
+    const [a, b] = pair.sides.map((s) => boardOf(manifest, floor, s.setup, OWNER_SEED) ?? generated);
+    return [a, b];
+  }, [pair, manifest, floor, generated]);
 
   const problems = useMemo(() => problemsOf(draft.setup, floor), [draft.setup, floor]);
   const key = setupKey(draft);
@@ -108,6 +172,21 @@ export function OwnerReady({
     setSelection(null);
     setTool("select");
   };
+  const loadDemo = (name: string) => {
+    const demo = demos.find((d) => d.setup.name === name);
+    if (!demo) return;
+    setDraft({ setup: demo.setup, pristine: false, state: "preset" });
+    setSelection(null);
+    setTool("select");
+  };
+  const runCompare = () => {
+    const a = optionOf(pick.a);
+    const b = optionOf(pick.b);
+    if (!a || !b || a.value === b.value) return;
+    compare(a.setup, b.setup);
+    setPairSide("a");
+    setView("compare");
+  };
   const remove = (name: string) => {
     if (deleteOwnerSetup(manifest.buildingId, name)) setSaved(loadOwnerSetups(manifest.buildingId));
   };
@@ -140,7 +219,23 @@ export function OwnerReady({
 
   const planning = batch.status === "planning";
   const action =
-    view === "setup" ? (
+    view === "compare" ? (
+      <Button
+        variant="primary"
+        data-testid="owner-pair-open"
+        disabled={pair.status !== "done"}
+        onClick={() => {
+          if (pair.status !== "done") return;
+          const setup = pair.sides[pairSide === "a" ? 0 : 1].setup;
+          setDraft({ setup, pristine: false, state: isDemoSetup(setup) ? "preset" : "saved" });
+          setSelection(null);
+          setTool("select");
+          setView("setup");
+        }}
+      >
+        Open {pairSide.toUpperCase()} in the editor
+      </Button>
+    ) : view === "setup" ? (
       <div className="flex flex-col gap-2">
         {problems.all.length > 0 ? (
           <p data-testid="owner-run-blocked" className="text-sm text-text-2">
@@ -193,7 +288,13 @@ export function OwnerReady({
         <div className="absolute inset-0 flex flex-col">
           <div className="flex h-14 shrink-0 items-center gap-3 px-4 sm:px-6">
             <span className="hidden label-caps text-text-2 sm:inline">
-              {view === "setup" ? "Your security" : shownSummary ? `${shownSummary.total} attempts` : "The crew's attempts"}
+              {view === "setup"
+                ? "Your security"
+                : view === "compare"
+                  ? "Two setups"
+                  : shownSummary
+                    ? `${shownSummary.total} attempts`
+                    : "The crew's attempts"}
             </span>
             <span aria-hidden className="hidden h-4 w-px bg-border sm:block" />
             {/* On a phone the caption takes two lines, so the count and the side are never cut off. */}
@@ -202,32 +303,50 @@ export function OwnerReady({
                 ? draft.pristine
                   ? "The building's generated security, as a starting point"
                   : draft.setup.name || "Unnamed setup"
-                : shownSummary
-                  ? boardCaption(shownSummary, shownSide)
-                  : "The crew is planning its ways in"}
+                : view === "compare"
+                  ? pair.status === "done"
+                    ? pairCaption(pairSide, pair.sides[pairSide === "a" ? 0 : 1].setup.name, pair.sides[pairSide === "a" ? 0 : 1].summary)
+                    : "The crew is planning its ways in"
+                  : shownSummary
+                    ? boardCaption(shownSummary, shownSide)
+                    : "The crew is planning its ways in"}
             </span>
             {view === "results" && fix.status === "applied" && !fix.rerun.dropped ? (
-              <div role="group" aria-label="Show the setup" className="ml-auto flex rounded-sm border border-border">
-                {(["before", "after"] as const).map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    data-testid={`owner-side-${s}`}
-                    aria-pressed={side === s}
-                    onClick={() => setSide(s)}
-                    className={cn(
-                      "h-8 px-3 label-caps transition-colors duration-fast",
-                      side === s ? "bg-surface-3 text-text-1" : "text-text-2 hover:text-text-1",
-                    )}
-                  >
-                    {s === "before" ? "Before" : "After"}
-                  </button>
-                ))}
-              </div>
+              <SideToggle
+                label="Show the setup"
+                options={[
+                  ["before", "Before", "owner-side-before"],
+                  ["after", "After", "owner-side-after"],
+                ]}
+                value={side}
+                onChange={(s) => setSide(s as Side)}
+              />
+            ) : view === "compare" && pair.status === "done" ? (
+              <SideToggle
+                label="Show a setup"
+                options={[
+                  ["a", "A", "owner-pair-side-a"],
+                  ["b", "B", "owner-pair-side-b"],
+                ]}
+                value={pairSide}
+                onChange={(s) => setPairSide(s as PairId)}
+              />
             ) : null}
           </div>
           <div className="relative min-h-0 flex-1">
-            {view === "setup" ? (
+            {view === "compare" ? (
+              pair.status === "done" && pairBoards ? (
+                <OwnerBoard
+                  placed={pairBoards[pairSide === "a" ? 0 : 1]}
+                  result={{
+                    route: pair.sides[pairSide === "a" ? 0 : 1].summary.topRoute?.nodes ?? null,
+                    detector: pair.sides[pairSide === "a" ? 0 : 1].summary.detectors[0] ?? null,
+                  }}
+                />
+              ) : (
+                <OwnerBoard placed={editBoard} />
+              )
+            ) : view === "setup" ? (
               <OwnerBoard
                 placed={editBoard}
                 edit={{
@@ -255,8 +374,10 @@ export function OwnerReady({
           <div className="flex h-12 shrink-0 items-center px-6">
             <p className="text-sm text-text-2">
               {view === "setup"
-                ? "Click a guard, camera, door or desk to change it, or pick a tool to add one."
-                : "The crew plays each strategy on ten nights: different rounds, sweeps and nerve."}
+                ? "Click a guard, cleaner, camera, door or desk to change it, or pick a tool to add one."
+                : view === "compare"
+                  ? "Both setups meet the same strategies on the same ten nights, so only the setup differs."
+                  : "The crew plays each strategy on ten nights: different rounds, sweeps and nerve."}
             </p>
           </div>
         </div>
@@ -284,6 +405,29 @@ export function OwnerReady({
               onLoad={load}
               onDelete={remove}
               onReset={reset}
+              extra={
+                <>
+                  <DemoList demos={demos} onLoad={loadDemo} />
+                  <ComparePicker
+                    options={options}
+                    pick={pick}
+                    planning={pair.status === "planning"}
+                    onPick={setPicked}
+                    onCompare={runCompare}
+                  />
+                </>
+              }
+            />
+          ) : view === "compare" ? (
+            <ComparePanel
+              pair={pair}
+              floor={floor}
+              boards={pairBoards}
+              madeUp={pair.status === "done" ? [isDemoSetup(pair.sides[0].setup), isDemoSetup(pair.sides[1].setup)] : [false, false]}
+              side={pairSide}
+              onSide={setPairSide}
+              onRetry={runCompare}
+              onBack={() => setView("setup")}
             />
           ) : (
             <BatchPanel
@@ -312,17 +456,24 @@ export function OwnerReady({
 
   function onNode(nodeId: string) {
     const setup = draft.setup;
-    if (tool === "move" && selection && (selection.kind === "guard" || selection.kind === "camera")) {
-      edit(selection.kind === "guard" ? moveGuard(setup, selection.id, nodeId) : updateCamera(setup, selection.id, { node: nodeId }));
+    if (tool === "move" && selection && (selection.kind === "guard" || selection.kind === "cleaner" || selection.kind === "camera")) {
+      edit(
+        selection.kind === "guard"
+          ? moveGuard(setup, selection.id, nodeId)
+          : selection.kind === "cleaner"
+            ? moveCleaner(setup, selection.id, nodeId)
+            : updateCamera(setup, selection.id, { node: nodeId }),
+      );
       setTool("select");
       return;
     }
-    if (tool === "round" && selection?.kind === "guard") {
-      edit(extendRound(setup, selection.id, nodeId));
+    if (tool === "round" && (selection?.kind === "guard" || selection?.kind === "cleaner")) {
+      edit(selection.kind === "guard" ? extendRound(setup, selection.id, nodeId) : extendCleanerRound(setup, selection.id, nodeId));
       return;
     }
-    if (tool === "guard" || tool === "camera") {
-      const added = tool === "guard" ? addGuard(setup, nodeId, generated.level.patrolTempo) : addCamera(setup, nodeId);
+    if (tool === "guard" || tool === "cleaner" || tool === "camera") {
+      const added =
+        tool === "guard" ? addGuard(setup, nodeId, generated.level.patrolTempo) : tool === "cleaner" ? addCleaner(setup, nodeId) : addCamera(setup, nodeId);
       edit(added.setup);
       setSelection({ kind: tool, id: added.id });
       setTool("select");
@@ -335,11 +486,14 @@ export function OwnerReady({
       setTool("select");
       return;
     }
-    // Select: a guard posted here (the next one on each click), a camera mounted here, or a desk.
-    const here = setup.guards.filter((g) => g.post === nodeId);
+    // Select: a guard posted here or a cleaner starting here (the next one on each click), a camera mounted here, or a desk.
+    const here: Selection[] = [
+      ...setup.guards.filter((g) => g.post === nodeId).map((g) => ({ kind: "guard" as const, id: g.id })),
+      ...(setup.cleaners ?? []).filter((c) => c.round[0] === nodeId).map((c) => ({ kind: "cleaner" as const, id: c.id })),
+    ];
     if (here.length > 0) {
-      const at = selection?.kind === "guard" ? here.findIndex((g) => g.id === selection.id) : -1;
-      setSelection({ kind: "guard", id: here[(at + 1) % here.length].id });
+      const at = here.findIndex((w) => w!.kind === selection?.kind && w!.id === selection.id);
+      setSelection(here[(at + 1) % here.length]);
       return;
     }
     const camera = setup.cameras.find((c) => c.node === nodeId);
