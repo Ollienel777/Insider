@@ -14,7 +14,7 @@ import { todoListMiddleware } from "langchain";
 import { getCoStar } from "@/adapters/costar";
 import { getChatModelSelection, loadScript, type Script } from "@/adapters/llm";
 import { getVexcel } from "@/adapters/vexcel";
-import { type BuilderAgent, BuildTrace, LevelManifest } from "@/domain";
+import { type BuilderAgent, BuildTrace, LevelManifest, SCRIPTED_MODEL_PREFIX } from "@/domain";
 import type { ServiceMode } from "@/lib/mode";
 import { BUILDER_PROMPT, DATA_ANALYST_PROMPT, GAME_MASTER_PROMPT, SUBAGENT_DESCRIPTIONS } from "./prompts";
 import { analystTools, builderTools, type BuildRun, gameMasterTools } from "./tools";
@@ -72,7 +72,7 @@ async function resolveModel(buildingId: string, options: BuildOptions): Promise<
     }
     // Say plainly what ran: no language model; the model's turns are the
     // script's, replayed by ScriptedChatModel (#17, R1-M5).
-    return { model: selection.model, label: `scripted (${script.id}), no LLM ran` };
+    return { model: selection.model, label: `${SCRIPTED_MODEL_PREFIX}${script.id}), no LLM ran` };
   }
   const id = (selection.model as { model?: unknown }).model;
   return { model: selection.model, label: `${selection.provider}${typeof id === "string" ? ` ${id}` : ""}` };

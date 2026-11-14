@@ -292,6 +292,18 @@ describe("the builder's guard rails", () => {
     });
     expect(live.trace.liveData).toBe(true);
     expect(live.trace.events.filter((e) => e.kind === "tool")).toHaveLength(6);
+    // The model's turns and the tools' results name the building, its year
+    // and its street; nothing anywhere in the trace may (round 2).
+    const serialized = JSON.stringify(live.trace);
+    for (const derived of ["Halvorsen", "1974", "Bunker Hill", "floor 22", "2202"]) {
+      expect(serialized).not.toContain(derived);
+    }
+    expect(strings(live.trace).filter((s) => /Halvorsen|1974/.test(s))).toEqual([]);
+    expect(live.trace.events.filter((e) => e.kind === "todo").map((e) => e.label)).toContain("Step 1 of 3");
+    expect(live.trace.events.filter((e) => e.kind === "subagent").map((e) => e.label)).toEqual([
+      "Run data-analyst",
+      "Run game-master",
+    ]);
     for (const event of live.trace.events) {
       expect(event).not.toHaveProperty("input");
       expect(event).not.toHaveProperty("output");

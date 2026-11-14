@@ -67,12 +67,37 @@ describe("TraceRecorder on live data (SPEC §4.5)", () => {
     const recorder = new TraceRecorder({ now: () => 0, recordPayloads: false });
     recorder.start("tool", "data-analyst", "get_building", '{"buildingId":"B9"}')(true, '{"name":"A kit record"}');
     recorder.start("subagent", "data-analyst", "Read B9", "Read B9")(false, "Error: it failed", "thrown");
+    recorder.todos("level-builder", [
+      { content: "Read Tower B9, built 1961", status: "completed" },
+      { content: "", status: "pending" },
+      { content: "Stage on floor 40", status: "in_progress" },
+    ]);
     const events = recorder.toTrace("B9").events;
-    expect(events.map((e) => [e.label, e.status])).toEqual([["get_building", "completed"], ["Read B9", "failed"]]);
+    expect(events.map((e) => [e.label, e.status])).toEqual([
+      ["get_building", "completed"],
+      ["Read B9", "failed"],
+      ["Step 1 of 2", "completed"],
+      ["Step 2 of 2", "in_progress"],
+    ]);
     for (const event of events) {
       expect(event).not.toHaveProperty("input");
       expect(event).not.toHaveProperty("output");
     }
+  });
+});
+
+describe("the recorder's middleware on live data", () => {
+  it("labels a task with its subagent's name only, never the model's brief", async () => {
+    const recorder = new TraceRecorder({ now: () => 0, recordPayloads: false });
+    const middleware = recorder.middleware("level-builder") as unknown as {
+      wrapToolCall: (request: unknown, handler: () => Promise<unknown>) => Promise<unknown>;
+    };
+    const brief = (subagent_type: string) => ({ toolCall: { name: "task", args: { subagent_type, description: "Tower B9, built 1961" }, id: "t" } });
+    await middleware.wrapToolCall(brief("data-analyst"), () => Promise.resolve("Tower B9 is analog"));
+    await middleware.wrapToolCall(brief("made-up"), () => Promise.reject(new Error("Tower B9 refused")));
+    const trace = recorder.toTrace("B9");
+    expect(trace.events.map((e) => e.label)).toEqual(["Run data-analyst", "Run a subagent"]);
+    expect(JSON.stringify(trace)).not.toMatch(/Tower|1961/);
   });
 });
 

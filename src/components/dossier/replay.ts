@@ -4,7 +4,7 @@
 // the replay spaces its moments evenly instead of keeping the recorded gaps.
 //
 // Pure: the screen asks what is shown at `elapsed` ms, so a test can too.
-import type { BuildTrace, BuildTraceEvent } from "@/domain";
+import { type BuildTrace, type BuildTraceEvent, SCRIPTED_MODEL_PREFIX } from "@/domain";
 
 /** When the first trace moment shows. */
 export const REPLAY_START_MS = 400;
@@ -161,7 +161,7 @@ export function traceBanner(trace: Pick<BuildTrace, "model" | "liveData">): stri
   const turns =
     trace.model === undefined
       ? ""
-      : trace.model.startsWith("scripted")
+      : trace.model.startsWith(SCRIPTED_MODEL_PREFIX)
         ? ", with scripted model turns"
         : `, with model turns from ${trace.model}`;
   return `A replay of a run recorded ${data}${turns}. Nothing on this screen calls a model.`;
