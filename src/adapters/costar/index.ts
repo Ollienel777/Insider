@@ -85,7 +85,15 @@ export function getCoStar(options: { forced?: boolean } = {}): CoStarSelection {
   if (options.forced) return { adapter: fake, mode: "fake", reason: "CoStar: fixtures (forced in demo settings)" };
   if (!slot.selected) {
     const chosen = selectCoStar(process.env);
-    slot.selected = chosen.mode === "live" ? { ...chosen, adapter: withFallback(knownToFixtures(chosen.adapter, fake), fake, slot.breaker) } : chosen;
+    if (chosen.mode === "live") {
+      const guarded = withFallback(knownToFixtures(chosen.adapter, fake), fake, slot.breaker);
+      // The search stays outside the breaker while it has no live
+      // implementation (#27): it answers from the fixtures anyway, and a
+      // caller's malformed filter is not a CoStar failure.
+      slot.selected = { ...chosen, adapter: { ...guarded, searchInventory: (filters) => chosen.adapter.searchInventory(filters) } };
+    } else {
+      slot.selected = chosen;
+    }
     console.info(slot.selected.reason);
   }
   if (slot.breaker.tripped) {
