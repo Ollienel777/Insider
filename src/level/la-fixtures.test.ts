@@ -34,6 +34,8 @@ interface Case {
   trip: { by: string; zone: string; to: string };
   /** Each way in or out the mission's exit text or briefing names, and the aerial entry it is. */
   exitNames: [string, string][];
+  /** Every name the recorded texts give each aerial entry, placed or not, as a crew step would say it (#85). */
+  entryNames: Record<string, string[]>;
   /**
    * Every guard or camera a recorded text names: the crew reply or Chief turn
    * (`text`, its id), the phrase, and either the room the guard or camera is
@@ -61,12 +63,20 @@ const CASES: Case[] = [
     ],
     exitNames: [
       ["the garage", "garage-N"],
-      ["the service entry", "exit-S"],
+      ["the plaza stair", "exit-S"],
+      ["the helipad", "roof"],
+      ["the Figueroa lobby", "lobby-E"],
+      ["the loading dock", "dock-W"],
       ["freight lift from the loading dock", "dock-W"],
       ["garage shuttle lift", "garage-N"],
-      ["plaza stair", "exit-S"],
-      ["helipad", "roof"],
     ],
+    entryNames: {
+      "dock-W": ["loading dock", "freight lift"],
+      roof: ["helipad", "east stair"],
+      "lobby-E": ["figueroa lobby", "passenger lift"],
+      "garage-N": ["garage"],
+      "exit-S": ["plaza stair", "service entry"],
+    },
     claims: [
       { text: "c2-west-corridor", phrase: "C2 has them in the west corridor", who: "C2", room: "west-corridor" },
       { text: "c2-west-corridor", phrase: "G2, from the mail room", who: "G2", room: "mail-room" },
@@ -102,6 +112,13 @@ const CASES: Case[] = [
       ["the east stair", "roof"],
       ["the loading dock", "dock-N"],
     ],
+    entryNames: {
+      "dock-N": ["loading dock", "service lift"],
+      roof: ["roof deck", "east stair"],
+      "lobby-S": ["wilshire lobby"],
+      "garage-W": ["garage"],
+      "bike-E": ["bike room"],
+    },
     claims: [
       { text: "c1-north-hall", phrase: "C1's analytics flagged someone in the north hall", who: "C1", room: "north-hall" },
       { text: "c1-north-hall", phrase: "G4, from its post in the pantry", who: "G4", room: "pantry" },
@@ -262,6 +279,30 @@ describe.each(CASES)("$id on its fixture floor", (c) => {
       }
       expect(validatePlan(placed, reply(r.id)).dropped, r.id).toEqual([]);
     }
+  });
+
+  it("opens every crew reply where the run starts, and names in the exit line the level's exits and no other way (#85)", () => {
+    // The aerial entries a text names, by the names the recorded texts use for them.
+    const named = (text: string) =>
+      Object.entries(c.entryNames)
+        .filter(([, names]) => names.some((n) => text.toLowerCase().includes(n)))
+        .map(([id]) => id)
+        .sort();
+    const start = placed.entries[0];
+    const entryIds = new Set(manifest().entries.map((e) => e.id));
+    for (const r of c.crew.replies) {
+      const [first, ...rest] = CrewPlan.parse(r.plan).steps;
+      // The board walks every plan from the start, so a plan that opens anywhere else is not the one played.
+      expect(first.zoneId, r.id).toBe(start.entryId);
+      expect(named(first.action), `${r.id}: ${first.action}`).toEqual([start.entryId]);
+      // A later step to an entry says which one it walks to, and no other.
+      for (const step of rest.filter((s) => entryIds.has(s.zoneId))) {
+        expect(named(step.action), `${r.id}: ${step.action}`).toEqual([step.zoneId]);
+      }
+    }
+    // The exit line names each exit the Run screen's plan lists ("Out by the …"), and nothing else.
+    const exits = placed.entries.filter((e) => placed.level.exits.includes(e.nodeId)).map((e) => e.entryId);
+    expect(named(manifest().mission.exitCondition)).toEqual([...exits].sort());
   });
 
   it("puts each guard and camera a recorded crew or Chief text places where that text says (#39 review)", () => {

@@ -55,8 +55,8 @@
       "plan": {
         "steps": [
           {
-            "zoneId": "roof",
-            "action": "Down to the east stair from the roof deck"
+            "zoneId": "dock-N",
+            "action": "Up the service lift from the loading dock"
           },
           {
             "zoneId": "objective",
@@ -64,10 +64,10 @@
           },
           {
             "zoneId": "roof",
-            "action": "Back up to the roof deck"
+            "action": "Out by the east stair to the roof deck"
           }
         ],
-        "pushback": "The east stair lets out into the east hall, and every hall on this floor has a camera with analytics. One look and it's lockdown.",
+        "pushback": "The run starts at the dock, so the east stair is your way out, not in. It lets out into the east hall, and every hall on this floor has a camera with analytics. One look and it's lockdown.",
         "confidence": 0.3
       }
     },
