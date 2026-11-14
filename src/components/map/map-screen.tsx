@@ -279,6 +279,18 @@ interface MapViewProps<B extends Pick<MapBuilding, "id" | "lat" | "lng">> {
 }
 
 /**
+ * Behind a fitted view: the basemap's ground with a faint grid in its
+ * street-line tone, so the area past the street map's edge reads as the
+ * same map beyond its streets, not as missing tiles. No streets are drawn.
+ */
+const BEYOND_STREETS = {
+  backgroundColor: "var(--n-950)",
+  backgroundImage:
+    "linear-gradient(to right, var(--n-800) 1px, transparent 1px), linear-gradient(to bottom, var(--n-800) 1px, transparent 1px)",
+  backgroundSize: "48px 48px",
+} as const;
+
+/**
  * The basemap, scaled to cover the visual area (like `object-fit: cover`) in
  * a box with the image's aspect ratio, so a pin placed at a fraction of the
  * box lands on the right street at every viewport.
@@ -290,20 +302,21 @@ export function MapView<B extends Pick<MapBuilding, "id" | "lat" | "lng">>({ cit
   const ratio = fitted ? aspect(view) : basemap.width / basemap.height;
   const image = fitted ? placeIn(view, basemap.bounds) : null;
   return (
-    <div className="absolute inset-0 overflow-hidden [container-type:size]">
+    <div className="absolute inset-0 overflow-hidden [container-type:size]" style={fitted ? BEYOND_STREETS : undefined}>
       <div
         data-testid="basemap"
         className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
         data-fitted={fitted || undefined}
         style={{
-          // Cover the area with the basemap; or fit a wider view inside it, the
-          // basemap's ground colour being the page's, so the margin is seamless.
+          // Cover the area with the basemap; or fit a wider view inside it, on
+          // the grid (BEYOND_STREETS) that marks everything past the streets.
           width: fitted ? `min(100cqw, calc(100cqh * ${ratio}))` : `max(100cqw, calc(100cqh * ${ratio}))`,
           aspectRatio: fitted ? String(ratio) : `${basemap.width} / ${basemap.height}`,
         }}
       >
         <div
-          className="absolute"
+          // The street map's edge, so the grid around it reads as beyond it.
+          className={cn("absolute", image && "ring-1 ring-border-strong")}
           style={image ? { left: `${image.left}%`, top: `${image.top}%`, width: `${image.width}%`, height: `${image.height}%` } : { inset: 0 }}
         >
         <Image

@@ -13,6 +13,7 @@ import { castPins, funnelFilters } from "./pins";
 import { CAST_START_MS, castSchedule, countLeft, pinState, rowsLanded, startElapsed } from "./replay";
 import { castThumbnails, clientTrace } from "./props";
 import { scoutHref } from "./scout-href";
+import { MISSION_DISCLAIMER } from "@/components/missions/mission-list";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const cast = (id: string) =>
@@ -215,6 +216,11 @@ describe("CastScreen", () => {
     expect(textOf(start)).toContain("Replaying the Casting Director's run.");
     expect(end).not.toContain("/scout?m=");
     expect(textOf(end)).toContain("Pick a finalist to scout.");
+  });
+
+  it("carries the mission cards' disclaimer once, under the finalists", () => {
+    expect(textOf(end).split(MISSION_DISCLAIMER)).toHaveLength(2);
+    expect(end.indexOf('data-testid="cast-disclaimer"')).toBeGreaterThan(end.lastIndexOf('data-testid="finalist-card"'));
   });
 
   it("puts the mission's h1 before the finalists' h2", () => {

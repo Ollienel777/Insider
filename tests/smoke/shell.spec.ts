@@ -104,7 +104,8 @@ const loaded: Record<string, (page: Page) => Promise<void>> = {
 
 for (const [route, waitForData] of Object.entries(loaded)) {
   test(`every control on ${route} shows a focus ring and is at least 40px tall`, async ({ page }) => {
-    await page.emulateMedia({ reducedMotion: "reduce" });
+    // Only the cast screen needs it (above); every other route walks with motion on.
+    if (route.endsWith("/cast")) await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(route);
     await waitForData(page);
     const controls = await tabThrough(page);

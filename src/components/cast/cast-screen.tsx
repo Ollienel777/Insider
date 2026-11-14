@@ -14,6 +14,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { City, type CastingResult, type Mission } from "@/domain";
 import { cityName } from "@/lib/cities";
 import { cn } from "@/lib/utils";
+import { MISSION_DISCLAIMER } from "@/components/missions/mission-list";
 import { FinalistCard } from "./finalist-card";
 import type { CastPinData } from "./pins";
 import { castSchedule, countLeft, pinState, rowsLanded, startElapsed, type PinState } from "./replay";
@@ -226,6 +227,10 @@ export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, 
               </li>
             ))}
           </ol>
+          {/* SPEC §1, taste rules: the reasons speak of locks and cameras, so the mission cards' line stands here too. */}
+          <p data-testid="cast-disclaimer" className="mt-3 text-sm text-text-2">
+            {MISSION_DISCLAIMER}
+          </p>
         </section>
       </div>
 

@@ -12,6 +12,16 @@ export function eraNeeded(mission: Pick<Mission, "casting">): string {
   return mission.casting.find((f) => f.kind === "yearBuilt")?.label ?? "any era";
 }
 
+/** `url` when it parses as an http(s) address, else null: a source link never runs script or throws. */
+export function safeSourceUrl(url: string): URL | null {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Where a mission's card goes: its cast screen. */
 export const castHref = (missionId: string) => `/m/${encodeURIComponent(missionId)}/cast`;
 
@@ -55,6 +65,7 @@ export function MissionList({ missions }: { missions: readonly Mission[] }) {
 
 function MissionCard({ mission }: { mission: Mission }) {
   const { inspiredBy } = mission;
+  const source = inspiredBy ? safeSourceUrl(inspiredBy.sourceUrl) : null;
   return (
     <article
       data-testid="mission-card"
@@ -93,15 +104,15 @@ function MissionCard({ mission }: { mission: Mission }) {
         </span>
       </Link>
       <div className="flex flex-col border-t border-border px-4 pt-1 pb-3">
-        {inspiredBy ? (
+        {source ? (
           <a
-            href={inspiredBy.sourceUrl}
+            href={source.href}
             target="_blank"
             rel="noreferrer"
             data-testid="source-link"
             className="inline-flex h-10 w-fit items-center gap-1 rounded-sm text-sm text-text-1 underline decoration-border-strong underline-offset-4 hover:decoration-text-2"
           >
-            Source: {new URL(inspiredBy.sourceUrl).hostname.replace(/^www\./, "")}
+            Source: {source.hostname.replace(/^www\./, "")}
             <ExternalLink aria-hidden className="size-4 stroke-[1.5]" />
             <span className="sr-only">(opens in a new tab)</span>
           </a>

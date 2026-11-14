@@ -59,7 +59,7 @@ export function aspect(bounds: Bounds): number {
 export function fitView(
   basemap: Bounds,
   points: readonly { lat: number; lng: number }[],
-  pad: { x: number; top: number; bottom: number } = { x: 0.1, top: 0.2, bottom: 0.14 },
+  pad: { x: number; top: number; bottom: number } = { x: 0.1, top: 0.2, bottom: 0.2 },
 ): Bounds {
   const outside = points.filter((p) => p.lng < basemap.west || p.lng > basemap.east || p.lat < basemap.south || p.lat > basemap.north);
   if (outside.length === 0) return basemap;

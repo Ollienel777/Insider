@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { MISSIONS } from "@/agents/builder/missions";
-import { castHref, eraNeeded, MISSION_DISCLAIMER, MissionList } from "./mission-list";
+import { castHref, eraNeeded, MISSION_DISCLAIMER, MissionList, safeSourceUrl } from "./mission-list";
 
 const html = renderToStaticMarkup(<MissionList missions={MISSIONS} />);
 const text = html.replace(/&#x27;/g, "'").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
@@ -45,5 +45,19 @@ describe("MissionList", () => {
     expect(eraNeeded(romaine)).toBe("built 1974 or earlier");
     expect(eraNeeded({ casting: [{ kind: "needsScan", label: "a scan" }] })).toBe("any era");
     for (const m of MISSIONS) expect(text).toContain(eraNeeded(m));
+  });
+
+  it("links a source only when it is an http(s) address, else shows no source", () => {
+    expect(safeSourceUrl("https://www.cia.gov/x")?.hostname).toBe("www.cia.gov");
+    expect(safeSourceUrl("javascript:alert(1)")).toBeNull();
+    expect(safeSourceUrl("not a url")).toBeNull();
+    const romaine = MISSIONS.find((m) => m.id === "romaine-1974")!;
+    for (const sourceUrl of ["javascript:alert(1)", "not a url"]) {
+      const bad = { ...romaine, inspiredBy: { ...romaine.inspiredBy!, sourceUrl } };
+      const out = renderToStaticMarkup(<MissionList missions={[bad]} />);
+      expect(out).not.toContain("source-link");
+      expect(out).not.toContain("javascript:");
+      expect(out).toContain("No source: written for the game.");
+    }
   });
 });

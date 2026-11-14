@@ -16,10 +16,19 @@ test("the cast screen replays to three finalists, F1 first, with the pins dimmin
   await expect(page.getByTestId("finalists")).toHaveAttribute("data-shown", "false");
   await expect(page.getByTestId("skip")).toBeVisible();
 
-  // Mid-replay: some rows have landed, not all, and some pins are already out.
-  await expect(page.locator(shown)).not.toHaveCount(0, { timeout: 10_000 });
-  await expect(page.locator('[data-testid="cast-pin"][data-state="out"]')).not.toHaveCount(0);
-  await expect(page.locator('[data-testid="cast-pin"][data-state="in"]')).not.toHaveCount(3);
+  // Mid-replay: some rows have landed, not all, and some pins are out but not
+  // yet all 29. One sampled condition, so it cannot straddle the replay's end.
+  await expect
+    .poll(
+      () =>
+        page.evaluate((rows) => {
+          const out = document.querySelectorAll('[data-testid="cast-pin"][data-state="out"]').length;
+          const landed = document.querySelectorAll(rows).length;
+          return landed > 0 && landed < 8 && out > 0 && out < 29;
+        }, shown),
+      { timeout: 10_000, intervals: [50] },
+    )
+    .toBe(true);
 
   // The end, without Skip: the funnel 61 → 3, three cards, 29 of 32 LA pins out.
   await expect(page.getByTestId("finalists")).toHaveAttribute("data-shown", "true", { timeout: 15_000 });
