@@ -1,7 +1,10 @@
 // POST /api/drill/narrative: the drill narrator (SPEC §4.4). The body is
-// `{facts}`, the drill's numbers and room names (src/drill/facts.ts), checked
-// against a strict schema, so no node, coordinate or edge can arrive here.
-// Answers `NarrativeAnswer`.
+// `{facts}`, the drill's numbers, room labels and warden posts' door ids
+// (src/drill/facts.ts), checked against a strict schema, so no coordinate can
+// arrive here. The app calls this only for a fixture floor: the drill screen
+// asks for no narrative on a scanned floor. This route would still accept a
+// scan's `door:<sweep>:<sweep>` ids if sent, so that guarantee is the
+// screen's. Answers `NarrativeAnswer`.
 import { narrateDrill, NarratorUnavailableError, NoNarrativeError } from "@/agents/drill";
 import { forcedChatModelSelection } from "@/adapters/llm";
 import { DrillFacts } from "@/drill";

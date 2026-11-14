@@ -1,9 +1,13 @@
-// What the drill narrator is told (SPEC §4.4): the report's numbers and the
-// names of its rooms and stairs, and nothing else. No node, coordinate or
-// edge leaves the browser in it. The drill screen sends these to
-// `POST /api/drill/narrative`; a recorded narrative answers only the facts it
-// was recorded for, so a recorded paragraph is never shown against a report
-// it does not describe.
+// What the drill narrator is told (SPEC §4.4): the report's numbers, the
+// labels of its rooms and stairs, and each warden post's door id. No
+// coordinate leaves the browser in it. The drill screen sends these to
+// `POST /api/drill/narrative` only for a fixture floor, where door ids are
+// hand-written names; on a scanned floor it asks for no narrative
+// (components/drill/drill-screen.tsx), so the scan's `door:<sweep>:<sweep>`
+// ids and labels stay in the browser. The schema itself would accept them:
+// that guarantee is the screen's, not this file's. A recorded narrative
+// answers only the facts it was recorded for, so a recorded paragraph is
+// never shown against a report it does not describe.
 //
 // Pure, like the rest of src/drill.
 import { z } from "zod";
