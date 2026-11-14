@@ -54,7 +54,7 @@ export function createLiveCoStar(config: LiveCoStarConfig): LiveCoStar {
 
   // The search does not read the kit yet: an `InventoryProperty` needs a
   // property type and entry kinds the kit mapping does not provide. Until it
-  // does, the search answers from the fixture inventory, marked
+  // does (#2), the search answers from the fixture inventory, marked
   // `source: "fixture"`, without throwing, so it never trips the breaker
   // that live buildings share.
   const fixtures = createFakeCoStar();

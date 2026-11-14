@@ -45,7 +45,8 @@ test("without ?m=, every building screen redirects to the building's own mission
 });
 
 test("the map passes no mission: its Scout link lands on the building's own (?m=romaine-1974)", async ({ page }) => {
-  await page.goto("/");
+  // The map moved to /map when / became the mission picker (#25).
+  await page.goto("/map");
   await expect(page.getByTestId("map-skeleton")).toHaveCount(0);
   await page.getByTestId("building-row").filter({ hasText: "Halvorsen Tower" }).click();
   const link = page.getByRole("link", { name: "Scout this building" });

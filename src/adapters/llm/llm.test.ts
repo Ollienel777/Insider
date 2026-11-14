@@ -190,6 +190,23 @@ describe("structuredCall", () => {
     warn.mockRestore();
   });
 
+  it("answers with the recording, reason configuration, when a setting refuses every live call", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    for (const [name, value] of [
+      ["LLM_PROVIDER", "openai"],
+      ["LLM_PROVIDER", "bedrock"],
+      ["LLM_TIMEOUT_MS", "4s"],
+    ] as const) {
+      vi.unstubAllEnvs();
+      // The gate forces LLM_MODE=fake, so ask for live explicitly.
+      for (const [k, v] of Object.entries({ ...LIVE, LLM_MODE: "live" })) vi.stubEnv(k, v);
+      vi.stubEnv(name, value);
+      const answer = await structuredCall(Answer, PROMPT, { fake: FAKE });
+      expect(answer, `${name}=${value}`).toEqual({ value: FAKE, recorded: true, reason: "configuration" });
+    }
+    warn.mockRestore();
+  });
+
   it("refuses a recorded answer that does not fit the schema", async () => {
     const selection = selectChatModel("fast", {});
     await expect(structuredCall(Answer, PROMPT, { fake: { say: 1 } as never, selection })).rejects.toThrow();

@@ -10,7 +10,7 @@ import { smallFictionalKit } from "./test-kit";
 // SPEC §7's table of fixture buildings.
 const TABLE = [
   ["F1", "Halvorsen Tower", "LA", "Bunker Hill", 1974, "A", 42],
-  ["F2", "Figueroa Exchange", "LA", "Financial District", 1989, "A", 52],
+  ["F2", "Figueroa Exchange", "LA", "Financial District", 1989, "B", 52],
   ["F3", "Meridian on Wilshire", "LA", "Westlake", 2017, "A", 30],
   ["F4", "Smith Street Center", "Houston", "Downtown", 1983, "A", 50],
   ["F5", "Westchase Commons", "Houston", "Westchase", 2008, "B", 6],

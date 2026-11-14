@@ -5,7 +5,13 @@
 // answer says so. Live, when the model fails and nothing is recorded for the
 // drill, that is the model's failure, not "nothing recorded": it throws
 // `NarratorUnavailableError`, so the screen offers a retry.
-import { getChatModelSelection, structuredCall, type StructuredCallOptions } from "@/adapters/llm";
+import {
+  getChatModelSelection,
+  LlmConfigurationError,
+  structuredCall,
+  type ChatModelSelection,
+  type StructuredCallOptions,
+} from "@/adapters/llm";
 import { DrillReport as DrillNarrative } from "@/domain";
 import type { DrillFacts } from "@/drill";
 import { loadDrillRecording, matchNarrative, NoNarrativeError } from "./recorded";
@@ -14,7 +20,7 @@ export interface NarrativeAnswer {
   narrative: DrillNarrative;
   /** True when a recorded narrative answered, not a live model. */
   recorded: boolean;
-  reason?: "fake mode" | "timeout" | "error";
+  reason?: "fake mode" | "configuration" | "timeout" | "error";
   /** The recorded narrative's id, when one answered. */
   recording?: string;
 }
@@ -81,19 +87,34 @@ export class NarratorUnavailableError extends Error {
 }
 
 /**
- * Narrates one drill. Throws `NoNarrativeError` in fake mode when nothing is recorded for these facts, and
+ * The fast model, or undefined when a setting refuses every live call: structuredCall then
+ * answers with the recording, reason "configuration", and no model is called.
+ */
+function safeSelection(): { selection?: ChatModelSelection; refused: boolean } {
+  try {
+    return { selection: getChatModelSelection("fast"), refused: false };
+  } catch (error) {
+    if (!(error instanceof LlmConfigurationError)) throw error;
+    return { refused: true };
+  }
+}
+
+/**
+ * Narrates one drill. Throws `NoNarrativeError` in fake mode, or under a setting that refuses every live call,
+ * when nothing is recorded for these facts, and
  * `NarratorUnavailableError` when a live call fails and nothing is recorded to stand in.
  */
 export async function narrateDrill(facts: DrillFacts, options: NarrateOptions = {}): Promise<NarrativeAnswer> {
   let recording: string | undefined;
-  const selection = options.selection ?? getChatModelSelection("fast");
+  const { selection, refused } = options.selection ? { selection: options.selection, refused: false } : safeSelection();
   const fake = async () => {
     const file = await loadDrillRecording(facts.buildingId, options.fixturesDir);
     const found = file ? matchNarrative(file, facts) : null;
     if (!found) {
       const none = `no recorded narrative for this drill of "${facts.buildingId}", floor ${facts.floor}`;
       // Live, the fake answers only after the model failed: that failure is what to report.
-      if (selection.mode === "live") throw new NarratorUnavailableError(`the model did not answer, and there is ${none}`);
+      // A refusing setting called no model, so there is nothing to retry: as in fake mode.
+      if (selection?.mode !== "fake" && !refused) throw new NarratorUnavailableError(`the model did not answer, and there is ${none}`);
       throw new NoNarrativeError(none);
     }
     recording = found.id;

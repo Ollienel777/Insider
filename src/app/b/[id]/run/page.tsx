@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
-import { readCachedLevel } from "@/agents/builder/cache";
+import { readCachedLevel, type CachedLevel } from "@/agents/builder/cache";
 import { RunScreen } from "@/components/run/run-screen";
+import { LevelUnavailable } from "@/components/shell/level-unavailable";
 import { findBuilding } from "@/lib/building";
 import { missionParam, type SearchParams } from "@/lib/mission-param";
 
@@ -19,7 +20,14 @@ export default async function RunPage({
   const building = await findBuilding(id);
   if (!building) notFound();
   const missionId = await missionParam(building.id, "run", searchParams);
-  const cached = await readCachedLevel(building.id, missionId);
+  // A level that fails its check is this screen's error state, as on the Dossier.
+  let cached: CachedLevel | null;
+  try {
+    cached = await readCachedLevel(building.id, missionId);
+  } catch (error) {
+    console.error(`[level] ${building.id}:${missionId} failed its check`, error);
+    return <LevelUnavailable buildingId={building.id} missionId={missionId} name={building.name} step="Run" />;
+  }
   return (
     <RunScreen
       building={{ id: building.id, name: building.name, matterportModelId: building.matterportModelId }}

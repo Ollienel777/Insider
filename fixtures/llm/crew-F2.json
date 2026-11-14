@@ -1,0 +1,203 @@
+{
+  "buildingId": "F2",
+  "note": "Recorded crew replies for Figueroa Exchange, keyword-routed by src/agents/crew/recorded.ts. The first reply whose keyword set all occur in the order answers; the last, with no keywords, is the default. Zone ids are the cached manifest's (data/levels/F2.sunset-1986.json; these replies are kept per building, so any mission on F2 reuses them).",
+  "replies": [
+    {
+      "id": "dock-wait",
+      "when": [
+        [
+          "dock",
+          "wait"
+        ],
+        [
+          "freight",
+          "wait"
+        ]
+      ],
+      "plan": {
+        "steps": [
+          {
+            "zoneId": "dock-W",
+            "action": "Up from the loading dock on the freight lift"
+          },
+          {
+            "zoneId": "dock-W",
+            "action": "Wait one turn at the freight lift"
+          },
+          {
+            "zoneId": "objective",
+            "action": "Up the west corridor and through suite 4125, work the vault door, three turns, and take the boxes"
+          },
+          {
+            "zoneId": "roof",
+            "action": "Out by the east stair to the helipad"
+          }
+        ],
+        "pushback": "Camera C2 turns along the west corridor on a three-turn cycle, and walking straight in keeps pace with it. Wait one turn at the freight lift and you stay behind it all the way up. Then out by the helipad stair: from the vault it's the shortest way home with the boxes.",
+        "confidence": 0.7
+      }
+    },
+    {
+      "id": "quiet",
+      "when": [
+        [
+          "quiet"
+        ],
+        [
+          "suite"
+        ]
+      ],
+      "plan": {
+        "steps": [
+          {
+            "zoneId": "dock-W",
+            "action": "Up from the loading dock on the freight lift"
+          },
+          {
+            "zoneId": "quiet-4125",
+            "action": "Hold one turn in the dark of suite 4125"
+          },
+          {
+            "zoneId": "objective",
+            "action": "Work the vault door from the east corridor and take the boxes"
+          },
+          {
+            "zoneId": "roof",
+            "action": "Out by the east stair to the helipad"
+          }
+        ],
+        "pushback": "Suite 4125 is dark and empty, but the way to it is the west corridor, and C2 has you on your first step into it unless you wait at the freight lift first. Sound carries further in an empty suite, too.",
+        "confidence": 0.45
+      }
+    },
+    {
+      "id": "roof",
+      "when": [
+        [
+          "roof"
+        ],
+        [
+          "helipad"
+        ]
+      ],
+      "plan": {
+        "steps": [
+          {
+            "zoneId": "roof",
+            "action": "Down the east stair from the helipad"
+          },
+          {
+            "zoneId": "objective",
+            "action": "Work the vault door from the east corridor and take the boxes"
+          },
+          {
+            "zoneId": "roof",
+            "action": "Back up to the helipad"
+          }
+        ],
+        "pushback": "The helipad stair is the short way to the vault, but the run starts at the dock, so the stair is your way out, not in.",
+        "confidence": 0.4
+      }
+    },
+    {
+      "id": "lobby",
+      "when": [
+        [
+          "lobby"
+        ]
+      ],
+      "plan": {
+        "steps": [
+          {
+            "zoneId": "lobby-E",
+            "action": "Up the passenger lifts from the Figueroa lobby"
+          },
+          {
+            "zoneId": "objective",
+            "action": "Work the vault door and take the boxes"
+          },
+          {
+            "zoneId": "lobby-E",
+            "action": "Back down the passenger lifts"
+          }
+        ],
+        "pushback": "The passenger lifts come up from the Figueroa lobby, past two guards at the desk, and up here they open two steps from the service hall, where C1 turns. If you go that way, you pass the desk twice.",
+        "confidence": 0.3
+      }
+    },
+    {
+      "id": "garage",
+      "when": [
+        [
+          "garage"
+        ]
+      ],
+      "plan": {
+        "steps": [
+          {
+            "zoneId": "garage-N",
+            "action": "Up the garage shuttle lift"
+          },
+          {
+            "zoneId": "objective",
+            "action": "Work the vault door and take the boxes"
+          },
+          {
+            "zoneId": "garage-N",
+            "action": "Back down the garage shuttle lift"
+          }
+        ],
+        "pushback": "The garage shuttle opens at the east end of the service hall, and C1 turns along that hall the whole way. Wait at the freight lift first, or go up the dock instead.",
+        "confidence": 0.35
+      }
+    },
+    {
+      "id": "dock",
+      "when": [
+        [
+          "dock"
+        ]
+      ],
+      "plan": {
+        "steps": [
+          {
+            "zoneId": "dock-W",
+            "action": "Up from the loading dock on the freight lift"
+          },
+          {
+            "zoneId": "objective",
+            "action": "Up the west corridor and through suite 4125, work the vault door and take the boxes"
+          },
+          {
+            "zoneId": "dock-W",
+            "action": "Back down the freight lift"
+          }
+        ],
+        "pushback": "Camera C2 covers the west corridor on a three-turn cycle. Wait one turn at the freight lift.",
+        "confidence": 0.6
+      }
+    },
+    {
+      "id": "default",
+      "when": [],
+      "plan": {
+        "steps": [
+          {
+            "zoneId": "dock-W",
+            "action": "Up from the loading dock on the freight lift"
+          },
+          {
+            "zoneId": "objective",
+            "action": "Work the vault door and take the boxes"
+          },
+          {
+            "zoneId": "dock-W",
+            "action": "Back down the freight lift"
+          }
+        ],
+        "pushback": "You didn't say how you want in, so it's the dock: that's where the run starts. Camera C2 covers the west corridor on a three-turn cycle.",
+        "confidence": 0.5
+      }
+    }
+  ]
+}

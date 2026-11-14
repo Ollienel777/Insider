@@ -8,3 +8,4 @@ export * from "./floor";
 export * from "./manifest";
 export * from "./agents";
 export * from "./run";
+export * from "./batch";

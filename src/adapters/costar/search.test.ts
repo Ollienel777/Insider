@@ -86,7 +86,7 @@ describe.each(missions.map((m) => m.id))("searchInventory for %s", (id) => {
   });
 });
 
-describe("searchInventory live (the kit is not searched yet)", () => {
+describe("searchInventory live (the kit is not searched yet, #2)", () => {
   const dirs: string[] = [];
   afterEach(() => {
     vi.unstubAllEnvs();
