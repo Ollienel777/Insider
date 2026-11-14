@@ -170,6 +170,30 @@ describe.each(CASES)("free movement on $id", ({ id, cached }) => {
     expect(s.played).toEqual([{ kind: "pick", doorId }]);
   });
 
+  it("picks the door the engine allows where two doors stand in one doorway, as two edges of a scan can", () => {
+    const run0 = fresh();
+    const doorId = run0.locked[0];
+    const opening = world.openings.find((o) => o.doorId === doorId)!;
+    // A second door in the same doorway, on no edge out of the player's node, listed (and pressed) first.
+    const twin = "door:twin";
+    const base = groundOf(world);
+    const ground: Ground = {
+      ...base,
+      doors: [{ doorId: twin, centre: opening.centre, bar: opening.bar }, ...base.doors],
+      collide(pos, vel, dt, locked) {
+        const moved = base.collide(pos, vel, dt, locked);
+        return { ...moved, pressed: moved.pressed.flatMap((p) => (p.doorId === doorId ? [{ doorId: twin, n: p.n }, p] : [p])) };
+      },
+    };
+    const s: Session = { world, ground, walker: createWalker(ground, { ...run0, playerNode: opening.a }), run: { ...run0, playerNode: opening.a, locked: [twin, ...run0.locked] }, played: [] };
+    walkTo(s, opening.sideA);
+    const yaw = Math.atan2(opening.centre.y - s.walker.pos.y, opening.centre.x - s.walker.pos.x);
+    expect(promptFor(s.walker, s.ground, s.run, yaw)).toMatchObject({ kind: "pick", doorId });
+    // Leaning picks it too, not the twin the engine would refuse.
+    for (let n = 0; n < (FP.pushPickS + 0.1) / FP.stepS; n++) step(s, { forward: 1, strafe: 0, walk: false, yaw, interact: false });
+    expect(s.played).toEqual([{ kind: "pick", doorId }]);
+  });
+
   it("says a locked door cannot be picked from a node the engine does not have beside it", () => {
     const run0 = fresh();
     const doorId = run0.locked[0];

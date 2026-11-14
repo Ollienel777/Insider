@@ -187,9 +187,9 @@ describe("the scan's ground on a made-up building", () => {
   });
 
   it("finds a doorway in a wall thinner than a door's edge is long", () => {
-    // A 12 cm wall, x from 5.05 to 5.17, between nodes 6 m apart. `doorBar` probes 13 points 30 cm apart
-    // (x = 3.2, 3.5, ... 5.0, 5.3, ...), none of which falls inside the wall, so it never sees both jambs
-    // and puts a 6.2 m bar down the middle of the edge instead.
+    // A 12 cm wall, x from 5.05 to 5.17, between nodes 6 m apart: probed every few centimetres along the
+    // edge, some probe falls inside the wall and sees both jambs, where 13 probes 30 cm apart would miss it
+    // and put a 6.2 m bar down the middle of the edge.
     const thinW = 5.05;
     const thinE = 5.17;
     const thin = geometryOf([
@@ -317,6 +317,47 @@ describe("the scan's ground on a made-up building", () => {
     expect(ground.path("a", "b")).toEqual([node("a"), node("b")]);
     expect(ground.path("b", "a")).toEqual([node("b"), node("a")]);
     expect(ground.path("a", "nowhere")).toEqual([]);
+  });
+});
+
+describe("a doorway two board edges cross, each with its own door", () => {
+  // "e" sits in the west room so that its edge to "b" also runs through the doorway.
+  const twoDoors = (extra: { a: string; b: string; door?: { id: string; lockable: boolean } }[] = []) =>
+    FloorGraph.parse({
+      ...board,
+      nodes: [...board.nodes, { id: "e", x: 2, y: 3, roomId: "west", tags: [] }],
+      edges: [...board.edges, { a: "e", b: "b", door: { id: "door:e:b", lockable: true } }, { a: "a", b: "e" }, ...extra],
+      sightlines: { ...board.sightlines, e: ["a"] },
+    });
+  const both = ["door:a:b", "door:e:b"];
+
+  it("puts both doors' bars in the one doorway", () => {
+    const on = scanGround(twoDoors(), solid, { eye: new Map(), floor: new Map() });
+    expect(on.doors.map((d) => d.doorId).sort()).toEqual(both);
+    for (const d of on.doors) expect(distance(d.centre, DOORWAY)).toBeLessThan(0.3);
+  });
+
+  it("is shut while every door through it is locked, and open once one of them is picked", () => {
+    const on = scanGround(twoDoors(), solid, { eye: new Map(), floor: new Map() });
+    const at = (id: string) => on.nodes.get(id)!;
+    expect(walk(on, at("a"), { x: 3, y: 0 }, 2, both).pos.x).toBeLessThan(WALL_W);
+    expect(on.clear(at("a"), at("b"), both)).toBe(false);
+    // "a"'s door picked: the doorway is open, though "e"'s door is still locked.
+    expect(walk(on, at("a"), { x: 3, y: 0 }, 2, ["door:e:b"]).pos.x).toBeGreaterThan(WALL_E);
+    expect(on.clear(at("a"), at("b"), ["door:e:b"])).toBe(true);
+  });
+
+  it("is open whatever is locked when an edge with no lock runs through it", () => {
+    // "g" stands just inside the east room; its edge from "a" runs through the doorway with no door on it.
+    const floor = FloorGraph.parse({
+      ...twoDoors(),
+      nodes: [...twoDoors().nodes, { id: "g", x: 7, y: 3.6, roomId: "east", tags: [] }],
+      edges: [...twoDoors().edges, { a: "a", b: "g" }],
+      sightlines: { ...twoDoors().sightlines, g: ["b"] },
+    });
+    const on = scanGround(floor, solid, { eye: new Map(), floor: new Map() });
+    expect(walk(on, on.nodes.get("a")!, { x: 3, y: 0 }, 2, both).pos.x).toBeGreaterThan(WALL_E);
+    expect(on.clear(on.nodes.get("a")!, on.nodes.get("b")!, both)).toBe(true);
   });
 });
 

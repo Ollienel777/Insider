@@ -74,6 +74,12 @@ export interface ScanHeights {
   floor: ReadonlyMap<string, number>;
 }
 
+/** Whether the segments p–q and a–b cross. */
+function crosses(p: Vec, q: Vec, a: Vec, b: Vec): boolean {
+  const side = (u: Vec, v: Vec, w: Vec) => (v.x - u.x) * (w.y - u.y) - (v.y - u.y) * (w.x - u.x);
+  return side(p, q, a) * side(p, q, b) < 0 && side(a, b, p) * side(a, b, q) < 0;
+}
+
 const median = (values: number[]): number | null => {
   if (values.length === 0) return null;
   const sorted = [...values].sort((p, q) => p - q);
@@ -145,13 +151,29 @@ export function scanGround(floor: FloorGraph, solid: ScanSolid, heights: ScanHei
     doors.push({ doorId: edge.door.id, ...doorBar(a, b, solid, floorY + SCAN.doorProbeM) });
   }
   const barDoor = new Map<Seg, string>(doors.map((d) => [d.bar, d.doorId]));
+  // Two board edges can cross one doorway, each with its own door. A doorway is shut only while
+  // every edge through it is: the bar of a locked door stands only when no open edge crosses it.
+  const through = new Map<string, (string | null)[]>(
+    doors.map((d) => [
+      d.doorId,
+      floor.edges
+        .filter((e) => {
+          const a = nodes.get(e.a);
+          const b = nodes.get(e.b);
+          return a && b && crosses(a, b, d.bar.a, d.bar.b);
+        })
+        .map((e) => (e.door?.lockable ? e.door.id : null)),
+    ]),
+  );
   const shutCache = new Map<string, Seg[]>();
   const shut = (locked: readonly string[]): Seg[] => {
     const key = locked.join("|");
     let segs = shutCache.get(key);
     if (!segs) {
       const set = new Set(locked);
-      segs = doors.filter((d) => set.has(d.doorId)).map((d) => d.bar);
+      segs = doors
+        .filter((d) => set.has(d.doorId) && (through.get(d.doorId) ?? []).every((id) => id === d.doorId || (id !== null && set.has(id))))
+        .map((d) => d.bar);
       shutCache.set(key, segs);
     }
     return segs;

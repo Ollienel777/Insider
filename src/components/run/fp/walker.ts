@@ -113,20 +113,32 @@ export type Prompt =
   | { kind: "take" }
   | null;
 
-/** The locked door within reach that the view faces, nearest first. */
+/** Whether the engine would let the player pick `doorId` now. */
+const pickable = (run: RunState, doorId: string) => choices(run).some((c) => c.kind === "pick" && c.doorId === doorId);
+
+/**
+ * The locked door within reach that the view faces, nearest first; one the
+ * engine would let the player pick before one it wouldn't. On a scan two board
+ * edges can cross one doorway (issue 118), so two doors can stand in it.
+ */
 function doorInReach(ground: Ground, run: RunState, pos: Vec, yaw: number): GroundDoor | null {
   const look = facing(yaw);
   let best: GroundDoor | null = null;
   let bestD: number = FP.reachM;
+  let bestPickable = false;
   for (const door of ground.doors) {
     if (!run.locked.includes(door.doorId)) continue;
     const d = distance(nearestOn(door.bar, pos), pos);
-    if (d > bestD) continue;
+    if (d > FP.reachM) continue;
     const to = { x: door.centre.x - pos.x, y: door.centre.y - pos.y };
     const length = Math.hypot(to.x, to.y) || 1;
     if ((to.x * look.x + to.y * look.y) / length < 0.4) continue;
+    const canPick = pickable(run, door.doorId);
+    if (bestPickable && !canPick) continue;
+    if (canPick === bestPickable && d > bestD) continue;
     best = door;
     bestD = d;
+    bestPickable = canPick;
   }
   return best;
 }
@@ -176,7 +188,7 @@ export function stepWalker(
   if (walker.refused !== null && under !== walker.refused) walker = { ...walker, refused: null };
 
   // Leaning on a locked door: touching it and walking into it.
-  const leaning = playing ? leaningOn(moved.pressed, wish) : null;
+  const leaning = playing ? leaningOn(moved.pressed, wish, run) : null;
   const push = leaning ? { doorId: leaning, s: (walker.push?.doorId === leaning ? walker.push.s : 0) + dt } : null;
   walker = { ...walker, push };
 
@@ -205,12 +217,10 @@ function emit(walker: Walker, action: Action, to: string | null): { walker: Walk
   return { walker: { ...walker, pending: { to, age: 0 } }, action };
 }
 
-/** The shut door among `pressed` that `wish` walks into, if any. */
-function leaningOn(pressed: readonly { doorId: string; n: Vec }[], wish: Vec): string | null {
+/** The shut door among `pressed` that `wish` walks into, if any: one the engine would let the player pick first. */
+function leaningOn(pressed: readonly { doorId: string; n: Vec }[], wish: Vec, run: RunState): string | null {
   const speed = Math.hypot(wish.x, wish.y);
   if (speed === 0) return null;
-  for (const { doorId, n } of pressed) {
-    if (-(wish.x * n.x + wish.y * n.y) / speed > 0.5) return doorId;
-  }
-  return null;
+  const into = pressed.filter(({ n }) => -(wish.x * n.x + wish.y * n.y) / speed > 0.5).map(({ doorId }) => doorId);
+  return into.find((doorId) => pickable(run, doorId)) ?? into[0] ?? null;
 }
