@@ -33,6 +33,29 @@ describe("GET /api/buildings", () => {
     expect(all.buildings.map((b) => b.id)).toEqual(["F1", "F2", "F3", "F4", "F5"]);
   });
 
+  it("answers 502 with a fixed message, and logs the failure on the server only (R1-M1)", async () => {
+    const failure = new Error("ENOENT: /kits/secret-path/data/commercial-property.jsonl");
+    vi.resetModules();
+    vi.doMock("@/adapters/costar", () => ({
+      getCoStar: () => ({
+        mode: "live",
+        adapter: { listBuildings: async () => Promise.reject(failure) },
+      }),
+    }));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { GET: failing } = await import("./route");
+      const response = await failing(new Request("http://localhost/api/buildings?city=LA"));
+      expect(response.status).toBe(502);
+      expect(await response.json()).toEqual({ mode: "live", error: "CoStar could not list the buildings. Try again." });
+      expect(logged).toHaveBeenCalledWith("GET /api/buildings: CoStar failed", failure);
+    } finally {
+      vi.doUnmock("@/adapters/costar");
+      vi.resetModules();
+      logged.mockRestore();
+    }
+  });
+
   it("answers 400 for a city it does not know", async () => {
     const response = await get("?city=Dallas");
     expect(response.status).toBe(400);

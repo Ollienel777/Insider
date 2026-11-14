@@ -104,10 +104,35 @@ export function createTurnClock(onTimeout: () => void, turnMs: number = LIVE_TUR
 
 /**
  * What the clock is doing: `off` in Tactical and while no run is on the
- * board; `running`; `paused` by the player; `held` by a Why card or a hidden
- * tab; `over` once the run has ended.
+ * board; `running`; `paused` by the player; `held` by a Why card, a hidden
+ * tab or the caller; `over` once the run has ended.
  */
 export type TurnClockState = "off" | "running" | "paused" | "held" | "over";
+
+/**
+ * The clock's state, from what the screen knows. Tactical is the clock
+ * switched off, whatever else is true. A run that has ended is over, paused
+ * or not; the player's pause shows over a hold, since it is the one they
+ * have to lift themselves.
+ */
+export function clockState({
+  live,
+  run,
+  paused,
+  held,
+}: {
+  live: boolean;
+  run: RunState | null;
+  /** The player paused it. */
+  paused: boolean;
+  /** Something else holds it: a Why card, a hidden tab, the caller. */
+  held: boolean;
+}): TurnClockState {
+  if (!live || !run) return "off";
+  if (run.status !== "playing") return "over";
+  if (paused) return "paused";
+  return held ? "held" : "running";
+}
 
 /** The clock as the Run screen's Live pieces see it (the timer now; the play HUD and the scan view next). */
 export interface LiveClock {
@@ -146,19 +171,27 @@ const tabHidden = () => document.visibilityState === "hidden";
  * turn or a new run (the player acted, Restart, a level placed again) starts
  * it over; the Chief's orders landing mid-turn do not. When it runs out the
  * clock plays `clockAction` through `play`. `P` pauses and resumes, except
- * while typing. It also holds while a Why card is open and while the tab is
- * hidden, and it is done once the run has ended.
+ * while typing. It also holds while a Why card is open, while the tab is
+ * hidden and while the caller says `hold`, and it is done once the run has
+ * ended. It never holds for the Security Chief: his orders apply on the turn
+ * they land.
  */
 export function useTurnClock({
   live,
   run,
   play,
+  hold = false,
 }: {
   live: boolean;
   /** The run on the board; null while there is none. */
   run: RunState | null;
   /** The Run screen's one path for an action. The latest one is always the one called. */
   play: (action: Action) => void;
+  /**
+   * Holds the countdown from outside for as long as it is true, keeping the time left: for a
+   * view that needs the turn to wait for it, as the scan view's camera does while it travels.
+   */
+  hold?: boolean;
 }): LiveClock {
   const [paused, setPaused] = useState(false);
   // Leaving Live drops the pause, so choosing Live again starts the clock.
@@ -170,8 +203,7 @@ export function useTurnClock({
   const whyOpen = useSyncExternalStore(live ? watchWhyCard : noWatch, live ? whyCardOpen : never, never);
   const hidden = useSyncExternalStore(live ? watchTab : noWatch, live ? tabHidden : never, never);
 
-  const state: TurnClockState =
-    !live || !run ? "off" : run.status !== "playing" ? "over" : paused ? "paused" : whyOpen || hidden ? "held" : "running";
+  const state = clockState({ live, run, paused, held: whyOpen || hidden || hold });
 
   const clock = useRef<TurnClock | null>(null);
   /** The run state the countdown is running for. */

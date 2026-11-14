@@ -11,9 +11,10 @@ interface BuildingScreenProps {
   /** The visual's accessible name, e.g. "Aerial view". */
   visualLabel: string;
   /**
-   * Leaves the side panel out, so the visual takes the whole screen: the Run
-   * screen in Live, until Details opens it (issue 100). The visual stays the
-   * same element either way, so what it holds keeps its state.
+   * Closes the side panel, so the visual takes the whole screen: the Run
+   * screen in Live, until Details opens it (issue 100). The panel is hidden,
+   * not removed: what it holds keeps its state and goes on updating, and is
+   * there the moment it opens.
    */
   panelClosed?: boolean;
   /**
@@ -51,12 +52,15 @@ export function BuildingScreen({
       <section aria-label={visualLabel} className="relative min-h-0 overflow-hidden bg-surface-0">
         {visual}
       </section>
-      {panelClosed ? null : (
-        <aside className="flex min-h-0 flex-col border-t border-border bg-surface-1 lg:border-t-0 lg:border-l">
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">{panel}</div>
-          {action ? <div className="border-t border-border p-4 [&>*]:w-full">{action}</div> : null}
-        </aside>
-      )}
+      <aside
+        hidden={panelClosed || undefined}
+        className="flex min-h-0 flex-col border-t border-border bg-surface-1 lg:border-t-0 lg:border-l"
+      >
+        <div data-testid="panel-body" className="min-h-0 flex-1 overflow-y-auto p-4">
+          {panel}
+        </div>
+        {action ? <div className="border-t border-border p-4 [&>*]:w-full">{action}</div> : null}
+      </aside>
     </div>
   );
 }

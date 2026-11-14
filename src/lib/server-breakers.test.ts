@@ -16,8 +16,6 @@ import { resetServerSlots } from "./server-breakers";
 const LIVE = {
   HEIST_MODE: "",
   COSTAR_MODE: "live",
-  COSTAR_API_BASE: "https://costar.test/api",
-  COSTAR_API_KEY: "test-key",
   VEXCEL_MODE: "live",
   VEXCEL_API_BASE: "https://vexcel.test/api",
   VEXCEL_API_KEY: "test-key",
@@ -92,6 +90,8 @@ beforeEach(() => {
   root = repo();
   for (const [name, value] of Object.entries(LIVE)) vi.stubEnv(name, value);
   vi.stubEnv("HEIST_STATE_DIR", path.join(root, ".heist"));
+  // A kit directory that does not exist: live CoStar fails on its first call.
+  vi.stubEnv("COSTAR_KIT_DIR", path.join(root, "no-kit"));
   fetch = vi.fn(async () => {
     throw new TypeError("fetch failed");
   });
@@ -135,11 +135,10 @@ describe("the server's breakers, across bundles", () => {
   it("one CoStar failure trips CoStar for every bundle: the next bundle goes straight to the fixtures", async () => {
     const first = await (await bundle()).buildings();
     expect(first.fallback?.service).toBe("costar");
-    const calls = fetch.mock.calls.length;
 
+    // A second trip would carry a new id: the same id means the breaker held.
     const second = await (await bundle()).buildings();
     expect(second.fallback?.id).toBe(first.fallback!.id);
-    expect(fetch.mock.calls.length).toBe(calls);
   });
 
   it("demo:reset puts every bundle's breaker back: the chip and the adapters return to live, with no restart", async () => {

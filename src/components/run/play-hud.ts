@@ -23,7 +23,7 @@ import {
 } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
 import { objectiveNoun } from "@/lib/objective-noun";
-import { canTake, crewPlanSteps, planSteps, roomName } from "./board";
+import { canTake, crewPlanSteps, describeTurn, planSteps, roomName } from "./board";
 import type { ChiefState, Revealed } from "./chief-panel";
 import type { StoredCrewPlan } from "./crew-plan-store";
 import { watcherPhrase, type Watcher } from "./danger-meter";
@@ -255,6 +255,19 @@ export function nextStep(placed: PlacedLevel, run: RunState, objective: string, 
   return steps.find((s) => s.state === "next")?.label ?? null;
 }
 
+/**
+ * What the status line says that the radio should say too, since Live puts
+ * the status line away: anything but its account of the last turn, which the
+ * board has just shown. That leaves the screen's own notices: a move that is
+ * not possible, sprinting on and off, nowhere to sprint, back at the start.
+ * `before` is the state the last turn started from; null on a fresh run,
+ * whose status is always a notice.
+ */
+export function noticeOf(placed: PlacedLevel, before: RunState | null, after: RunState, status: string): string | null {
+  if (!status) return null;
+  return before && status === describeTurn(placed, before, after) ? null : status;
+}
+
 /** Everything the HUD shows on one render. */
 export interface PlayHud {
   objective: ObjectiveInfo;
@@ -297,7 +310,7 @@ export function usePlayHud({
   crewPlan,
   chief,
   revealed,
-  notice,
+  status,
 }: {
   live: boolean;
   placed: PlacedLevel | null;
@@ -309,8 +322,8 @@ export function usePlayHud({
   chief: ChiefState;
   /** How much of the Chief's answer its stream has shown (`useChiefStream`). */
   revealed: Revealed;
-  /** A line that stands in for the plan step while it applies (the sprint hint); null otherwise. */
-  notice: string | null;
+  /** The screen's status line. Its notices go out on the radio (`noticeOf`). */
+  status: string;
 }): PlayHud | null {
   const { before, after } = useLastTurn(run);
   const on = live && placed !== null && run !== null && mission !== null;
@@ -322,7 +335,9 @@ export function usePlayHud({
     [playing, placed, run, mission, crewPlan],
   );
   // Once the run is over, the radio's last word is how it went.
-  const note = !on ? null : playing ? notice : endNote(run);
+  const notice = playing ? noticeOf(placed, before, run, status) : null;
+  // The crew's opening line is the status line's own: said once, as the step.
+  const note = !on ? null : playing ? (notice === step ? null : notice) : endNote(run);
   const callout = playing ? calloutOf(watchers, run.turn - 1, roomName(placed.level.floor, run.playerNode)) : null;
   // The Chief's own words, who it sends where and why, are read out to the end, after the run's too.
   const reading = on && chief.status === "ready" ? chief : null;

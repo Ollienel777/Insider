@@ -46,7 +46,7 @@ export function missingForLive(service: Service, env: Env): string[] {
   const unset = (names: string[]) => names.filter((name) => !env[name]);
   switch (service) {
     case "costar":
-      return unset(["COSTAR_API_BASE", "COSTAR_API_KEY"]);
+      return unset(["COSTAR_KIT_DIR"]);
     case "vexcel":
       return unset(["VEXCEL_API_BASE", "VEXCEL_API_KEY"]);
     case "matterport":

@@ -12,13 +12,15 @@
 // row over it and one under it, so they never cover a piece. The side panel
 // (the alarm banner, the Chief, the plan, the guards' orders), the board's bar
 // with the Layer lens, the lens legend and the keys' legend are closed until
-// the one Details control opens them. The board itself is not put away: its
-// guards, cameras and locks still open their Why cards.
+// the one Details control opens them. Closed is hidden, not removed: the
+// Chief's panel goes on streaming and the status line goes on reading the
+// turn, so they are whole the moment Details opens. The board itself is not
+// put away: its guards, cameras and locks still open their Why cards.
 //
 // The board is the same element in every mode, so its pieces, an open Why card
 // and the play mode switch keep their state when the layout changes.
 import { PanelRight, RotateCcw } from "lucide-react";
-import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { BuildingScreen } from "@/components/shell/building-screen";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,6 +39,16 @@ export function panelsOpen(mode: PlayMode, details: boolean): boolean {
 }
 
 const TYPING = "input, textarea, select, [contenteditable=true], [contenteditable='']";
+
+/**
+ * After a click or a tap the keys go back to the run: a button that kept the
+ * focus would take the next Space, and Space takes the objective (as the play
+ * mode switch does, live-controls.tsx). A button pressed from the keyboard
+ * keeps its focus.
+ */
+function releaseFocus(event: MouseEvent<HTMLButtonElement>) {
+  if (event.detail > 0) event.currentTarget.blur();
+}
 
 /**
  * Whether Details is open, and its toggle. In Live, `D` toggles it too,
@@ -102,8 +114,10 @@ export interface RunLayoutProps {
   loading: boolean;
   /** Takes the objective, from the objective line's own button. */
   onTake: () => void;
-  /** Starts the run over, from the objective line once the run has ended. */
+  /** Starts the run over, from the HUD's own Restart: the bar's is closed with the bar. */
   onRestart: () => void;
+  /** Whether there is anything to start over: the bar's Restart waits for the first turn too. */
+  canRestart: boolean;
   /** The board's bar: the floor's source, the mission, the Layer lens and Restart. */
   bar: ReactNode;
   /** The board's area, with whatever sits over its corners. */
@@ -124,9 +138,9 @@ export interface RunLayoutProps {
  * Live: the HUD's two rows around the board, and the rest only while Details
  * is open; while the board is set up, the HUD's skeleton. With no board coming
  * there is no run to show a HUD for, and Live looks as Tactical does.
- * Once a Live run is over with the panel closed, the objective line
- * says how it ended and carries the screen's action and Restart, which the
- * closed panel and bar would otherwise hold.
+ * Once a Live run is over with the panel closed, the objective line says how
+ * it ended and carries the screen's action, which the closed panel would
+ * otherwise hold.
  */
 export function RunLayout({
   mode,
@@ -136,6 +150,7 @@ export function RunLayout({
   loading,
   onTake,
   onRestart,
+  canRestart,
   bar,
   board,
   legend,
@@ -147,6 +162,15 @@ export function RunLayout({
   const live = mode === "live" && (hud !== null || loading);
   const open = !live || details;
   const objective = hud?.objective ?? null;
+  /** A part Details opens. In Tactical it is the part itself; in Live it is hidden while closed, and laid out as itself while open. */
+  const closable = (key: string, part: ReactNode, className = "contents") =>
+    live ? (
+      <div key={key} hidden={!open || undefined} className={className}>
+        {part}
+      </div>
+    ) : (
+      <Fragment key={key}>{part}</Fragment>
+    );
   return (
     <BuildingScreen
       visualLabel="Run board"
@@ -175,12 +199,8 @@ export function RunLayout({
                   className="flex-1 basis-72"
                 >
                   {objective.outcome && !open ? (
-                    <div data-testid="live-end" className="flex shrink-0 items-center gap-2">
+                    <div data-testid="live-end" className="flex shrink-0 items-center">
                       {action}
-                      <Button variant="secondary" data-testid="live-restart" onClick={onRestart}>
-                        <RotateCcw aria-hidden />
-                        Restart
-                      </Button>
                     </div>
                   ) : null}
                 </ObjectiveLine>
@@ -191,23 +211,33 @@ export function RunLayout({
               )}
               <div className="flex items-center gap-6 max-md:w-full max-md:justify-between">
                 {hud ? <DangerMeter alarm={hud.danger.alarm} watchers={hud.danger.watchers} /> : <Skeleton className="h-11 w-48" />}
-                <DetailsToggle open={details} onToggle={onDetails} />
+                <div className="flex items-center gap-2">
+                  {/* With Details open the bar is back, and its Restart with it. */}
+                  {open ? null : (
+                    <Button
+                      variant="ghost"
+                      data-testid="live-restart"
+                      disabled={!canRestart}
+                      onClick={(event) => {
+                        releaseFocus(event);
+                        onRestart();
+                      }}
+                      className="max-md:w-10 max-md:px-0"
+                    >
+                      <RotateCcw aria-hidden />
+                      <span className="max-md:sr-only">Restart</span>
+                    </Button>
+                  )}
+                  <DetailsToggle open={details} onToggle={onDetails} />
+                </div>
               </div>
             </div>
           ) : null}
-          {open ? <Fragment key="bar">{bar}</Fragment> : null}
+          {closable("bar", bar)}
           <Fragment key="board">{board}</Fragment>
-          {open ? <Fragment key="legend">{legend}</Fragment> : null}
-          {open ? (
-            live ? (
-              // On a phone the keys' legend is already hidden, and the radio says what the status line would.
-              <div key="footer" className="shrink-0 max-md:hidden">
-                {footer}
-              </div>
-            ) : (
-              <Fragment key="footer">{footer}</Fragment>
-            )
-          ) : null}
+          {closable("legend", legend)}
+          {/* On a phone the keys' legend is already hidden, and the radio says what the status line would. */}
+          {closable("footer", footer, "contents max-md:hidden")}
           {live ? (
             <div key="radio" className="shrink-0 px-6 pt-2 pb-4 max-md:px-4">
               {hud ? (
@@ -237,7 +267,10 @@ export function DetailsToggle({ open, onToggle }: { open: boolean; onToggle: () 
       data-testid="details-toggle"
       aria-pressed={open}
       aria-keyshortcuts="D"
-      onClick={onToggle}
+      onClick={(event) => {
+        releaseFocus(event);
+        onToggle();
+      }}
       className={cn(
         "inline-flex h-10 shrink-0 items-center gap-2 rounded-sm border px-3 text-sm font-medium select-none",
         "transition-colors duration-fast ease-out",

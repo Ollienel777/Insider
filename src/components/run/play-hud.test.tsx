@@ -7,10 +7,10 @@ import { describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { BuildingScreen } from "@/components/shell/building-screen";
 import { LevelManifest, type FloorGraph } from "@/domain";
-import { act, createRun, neighbours, shortestPath, type Action, type Level, type RunState } from "@/engine";
+import { act, createRun, neighbours, shortestPath, zoneOf, type Action, type Level, type RunState } from "@/engine";
 import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.romaine-1974.json";
-import { choices, sprintChoices } from "./board";
+import { choices, describeTurn, sprintChoices } from "./board";
 import { BoardView } from "./board-view";
 import { ChiefPanel, type ChiefState } from "./chief-panel";
 import { DangerMeter, UNSEEN, watcherPhrase } from "./danger-meter";
@@ -24,6 +24,7 @@ import {
   endNote,
   nextStep,
   noticedBy,
+  noticeOf,
   objectiveInfo,
   routeLeft,
   sprintVia,
@@ -231,6 +232,25 @@ describe("who noticed the player", () => {
     const watchers = noticedBy(before, after);
     expect(watchers).toEqual([{ id: "G2", sense: "hears" }]);
     expect(calloutOf(watchers, before.turn, "Open Office 2210")).toMatchObject({ kind: "noise", text: "G2 hears you in the Open Office 2210." });
+  });
+
+  it("names whoever goes on seeing the player at Lockdown, where the engine raises no event to read it from", () => {
+    // A camera: into C2's cover on a turn it watches, already at Lockdown and last seen there a turn ago.
+    const inLobby = play(start(), [move("fl-lobby")]);
+    const cover = play(inLobby, [move("dc-west")]);
+    const lockedDown: RunState = { ...inLobby, alarm: "lockdown", lastKnown: cover.lastKnown, lastSeen: { nodeId: "dc-west", turn: 0 } };
+    const seenAgain = play(lockedDown, [move("dc-west")]);
+    expect(seenAgain.alarmEvents).toHaveLength(lockedDown.alarmEvents.length);
+    expect(seenAgain.lastSeen).toEqual({ nodeId: "dc-west", turn: 1 });
+    expect(noticedBy(lockedDown, seenAgain)).toEqual([{ id: "C2", sense: "sees" }]);
+
+    // A guard, after its own move: nobody sees the open office's south end as the turn starts, and G2 walks into view of it.
+    const run = start();
+    const hiding: RunState = { ...run, playerNode: "o-south", alarm: "lockdown", lastKnown: zoneOf(run.board, "o-south"), lastSeen: { nodeId: "o-south", turn: 0 } };
+    const found = play(hiding, [wait]);
+    expect(found.status).toBe("playing");
+    expect(found.alarmEvents).toHaveLength(hiding.alarmEvents.length);
+    expect(noticedBy(hiding, found)).toEqual([{ id: "G2", sense: "sees" }]);
   });
 
   it("is nobody across anything but one turn of the same run", () => {
@@ -561,8 +581,40 @@ function hudOf(run: RunState, radio: RadioMessage | null = { kind: "step", text:
 
 function layout(run: RunState, props: Partial<RunLayoutProps> & Pick<RunLayoutProps, "mode">, why: string | null = null): string {
   return renderToStaticMarkup(
-    <RunLayout details={false} onDetails={noop} hud={hudOf(run)} loading={false} onTake={noop} onRestart={noop} {...pieces(run, why)} {...props} />,
+    <RunLayout
+      details={false}
+      onDetails={noop}
+      hud={hudOf(run)}
+      loading={false}
+      onTake={noop}
+      onRestart={noop}
+      canRestart
+      {...pieces(run, why)}
+      {...props}
+    />,
   );
+}
+
+/** The markup less everything inside an element with the `hidden` attribute: what is on the screen. */
+function shown(markup: string): string {
+  let out = "";
+  let at = 0;
+  /** How deep inside a hidden element the walk is; 0 outside one. */
+  let depth = 0;
+  for (const tag of markup.matchAll(/<(\/?)([a-zA-Z][\w-]*)((?:"[^"]*"|[^>"])*?)(\/?)>/g)) {
+    const [whole, closing, , attrs, selfClosing] = tag;
+    if (depth === 0) out += markup.slice(at, tag.index);
+    at = tag.index + whole.length;
+    if (depth > 0) {
+      if (closing) depth -= 1;
+      else if (!selfClosing) depth += 1;
+    } else if (!closing && / hidden=""/.test(attrs)) {
+      if (!selfClosing) depth = 1;
+    } else {
+      out += whole;
+    }
+  }
+  return out + markup.slice(at);
 }
 
 const PANELS = ['data-testid="chief-panel"', 'data-testid="lens-toggle"', 'data-testid="lens-legend"', 'data-testid="keys-legend"'];
@@ -602,18 +654,29 @@ describe("the Run screen's layout", () => {
     expect(before).toContain('<aside class="flex min-h-0 flex-col border-t border-border bg-surface-1 lg:border-t-0 lg:border-l">');
   });
 
+  it("reads what is on the screen: an element with the hidden attribute, and all inside it, is not", () => {
+    expect(shown('<div><p hidden="">a<b>b</b><br/></p><i>c</i><span hidden=""></span>d</div>')).toBe("<div><i>c</i>d</div>");
+    expect(shown('<a title="x > y">e</a>')).toBe('<a title="x > y">e</a>');
+  });
+
   it("in Live shows the objective line, the danger meter and the radio line, with the panels closed", () => {
     const run = play(start(), [move("fl-lobby")]);
-    const out = layout(run, { mode: "live" });
+    const markup = layout(run, { mode: "live" });
+    const out = shown(markup);
     for (const part of HUD) expect(out).toContain(part);
     expect(out).toContain(mission.objective);
     expect(out).toMatch(/data-testid="hops-left" data-hops="5"/);
     expect(out).toMatch(/data-testid="danger-level"[^>]*>Calm</);
     expect(out).toContain(STEP);
-    // Closed: the Chief's panel, the lens and the legends are not on the page, and no side panel is.
+    // Closed: the Chief's panel, the lens and the legends are not on the screen, and no side panel is.
     for (const part of PANELS) expect(out).not.toContain(part);
     expect(out).not.toContain("<aside");
     expect(out).toMatch(/data-testid="details-toggle" aria-pressed="false"/);
+    // Closed is hidden, not removed: each is still in the page, going on with its work.
+    for (const part of PANELS) expect(markup).toContain(part);
+    expect(markup).toContain('<aside hidden=""');
+    // The bar's Restart is closed with the bar, so the HUD has one.
+    expect(out).toContain('data-testid="live-restart"');
     // The board is still there, whole.
     expect(out).toContain('data-testid="run-board"');
     expect(out).toContain('data-testid="player-piece"');
@@ -621,9 +684,13 @@ describe("the Run screen's layout", () => {
 
   it("opens the panels in Live with Details, beside the HUD", () => {
     const run = play(start(), [move("fl-lobby")]);
-    const out = layout(run, { mode: "live", details: true });
+    const markup = layout(run, { mode: "live", details: true });
+    const out = shown(markup);
+    // Nothing is hidden once Details is open.
+    expect(out).toBe(markup);
     for (const part of [...HUD, ...PANELS]) expect(out).toContain(part);
     expect(out).toContain("<aside");
+    expect(out).not.toContain('data-testid="live-restart"');
     expect(out).toMatch(/data-testid="details-toggle" aria-pressed="true"/);
     expect(panelsOpen("live", false)).toBe(false);
     expect(panelsOpen("live", true)).toBe(true);
@@ -634,30 +701,38 @@ describe("the Run screen's layout", () => {
     const run = play(start(), [move("fl-lobby")]);
     const target = whyTargets(placed).find((t) => t.kind === kind)!;
     expect(layout(run, { mode: "live" })).not.toContain('data-testid="why-card"');
-    const out = layout(run, { mode: "live" }, target.key);
+    const out = shown(layout(run, { mode: "live" }, target.key));
     expect(out).toContain('data-testid="why-card"');
     expect(out).toContain(`data-why-target="${target.key}"`);
     for (const part of PANELS) expect(out).not.toContain(part);
   });
 
-  it("once a Live run is over, says how it ended in the objective line, with the debrief and Restart beside it", () => {
+  it("once a Live run is over, says how it ended in the objective line, with the way to the debrief beside it", () => {
     const caught: RunState = { ...play(start(), [move("fl-lobby")]), status: "caught" };
-    const closed = layout(caught, { mode: "live" });
+    const closed = shown(layout(caught, { mode: "live" }));
     expect(closed).toMatch(/data-testid="objective-label" class="text-danger">Caught</);
-    expect(closed).toContain('data-testid="live-end"');
-    expect(closed).toContain("See the debrief");
+    expect(closed).toMatch(/data-testid="live-end"[^>]*><button type="button">See the debrief</);
+    // One way to the debrief and one Restart on the screen, whichever way Details is.
+    expect(closed.match(/See the debrief/g)).toHaveLength(1);
     expect(closed).toContain('data-testid="live-restart"');
-    // With the panel open, the panel carries the action, and the bar Restart: the line does not repeat them.
-    const open = layout(caught, { mode: "live", details: true });
+    const open = shown(layout(caught, { mode: "live", details: true }));
     expect(open).not.toContain('data-testid="live-end"');
     expect(open.match(/See the debrief/g)).toHaveLength(1);
-    // A run still on has neither.
+    // A run still on has no end to show.
     expect(layout(play(start(), [move("fl-lobby")]), { mode: "live" })).not.toContain('data-testid="live-end"');
+  });
+
+  it("offers Restart in the HUD once there is a turn to start over", () => {
+    const run = play(start(), [move("fl-lobby")]);
+    const restart = (markup: string) => shown(markup).match(/<button[^>]*data-testid="live-restart"[^>]*>/)?.[0] ?? "";
+    expect(restart(layout(run, { mode: "live" }))).not.toBe("");
+    expect(restart(layout(run, { mode: "live" }))).not.toContain(`disabled=""`);
+    expect(restart(layout(start(), { mode: "live", canRestart: false }))).toContain('disabled=""');
   });
 
   it("holds the HUD's place with a skeleton while the board is set up, and is Tactical's screen when no board is coming", () => {
     const run = start();
-    const loading = layout(run, { mode: "live", hud: null, loading: true });
+    const loading = shown(layout(run, { mode: "live", hud: null, loading: true }));
     expect(loading).toContain('data-testid="hud-skeleton"');
     expect(loading).toContain(DETAILS);
     for (const part of [...HUD, ...PANELS]) expect(loading).not.toContain(part);
@@ -668,7 +743,7 @@ describe("the Run screen's layout", () => {
 });
 
 describe("the HUD on the Run screen", () => {
-  function Probe({ live, run }: { live: boolean; run: RunState | null }) {
+  function Probe({ live, run, status = "" }: { live: boolean; run: RunState | null; status?: string }) {
     const hud = usePlayHud({
       live,
       placed,
@@ -677,7 +752,7 @@ describe("the HUD on the Run screen", () => {
       crewPlan: null,
       chief: IDLE,
       revealed: { words: 0, rows: 0, done: false },
-      notice: null,
+      status,
     });
     return <pre>{JSON.stringify(hud)}</pre>;
   }
@@ -694,5 +769,25 @@ describe("the HUD on the Run screen", () => {
     expect(hud.objective).toMatchObject({ label: "Objective", goal: mission.objective, hops: 6, locks: 1 });
     expect(hud.danger).toEqual({ alarm: "calm", watchers: [] });
     expect(hud.radio).toEqual({ kind: "step", text: "You're in at the loading dock. Pick a number to move." });
+    // The status line's opening words are the crew's own first line: said once, as the step.
+    const opening = "You're in at the loading dock. Pick a number to move.";
+    expect(read(<Probe live run={start()} status={opening} />)!.radio).toEqual({ kind: "step", text: opening });
+    // Any other notice on a fresh run stands in for the step.
+    const back = "Back at the start. The guards are on their rounds.";
+    expect(read(<Probe live run={start()} status={back} />)!.radio).toEqual({ kind: "note", text: back });
+  });
+
+  it("puts the status line's notices on the radio, and leaves its account of the turn to the board", () => {
+    const before = start();
+    const after = play(before, [move("fl-lobby")]);
+    const told = describeTurn(placed, before, after);
+    expect(told).toBe("You move to the Freight Lift Lobby.");
+    expect(noticeOf(placed, before, after, told)).toBeNull();
+    expect(noticeOf(placed, before, after, "")).toBeNull();
+    for (const notice of ["Nowhere to sprint from here: nothing is two open hops away.", "Not possible: the door is locked.", "Walking again. Pick a number to move."]) {
+      expect(noticeOf(placed, before, after, notice)).toBe(notice);
+    }
+    // A fresh run has no last turn: whatever the status line says is a notice.
+    expect(noticeOf(placed, null, before, "Back at the start. The guards are on their rounds.")).toBe("Back at the start. The guards are on their rounds.");
   });
 });
