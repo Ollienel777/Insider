@@ -136,6 +136,16 @@ describe("placeLevel on F1 from the cached manifest", () => {
     }
   });
 
+  it("drops the pick node from an anchored camera's cover, so an anchor cannot watch the lock being picked (PR #62 R1-M5)", () => {
+    const pickFrom = "dc-east";
+    // An anchor that asks C2 to watch the whole dock corridor, the pick node with it.
+    const anchors = { ...ANCHORS.F1, cameras: { C2: [...F1_DEMO.c2Cover, pickFrom] } };
+    const p = placeLevel(manifest(), floor(), SEED, anchors);
+    const c2 = p.cameras.find((c) => c.id === "C2")!;
+    expect(c2.cover).toEqual(F1_DEMO.c2Cover);
+    for (const camera of p.level.cameras ?? []) expect(camera.cover, camera.id).not.toContain(pickFrom);
+  });
+
   it("trips the alarm when the player steps straight into C2's view (beat 5)", () => {
     for (const seed of SEEDS) {
       const run = play(createRun(placeF1(seed).level), [
