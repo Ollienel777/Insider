@@ -1,0 +1,121 @@
+[
+  {
+    "id": "F1",
+    "name": "Halvorsen Tower",
+    "city": "LA",
+    "neighbourhood": "Bunker Hill",
+    "lat": 34.05226,
+    "lng": -118.25287,
+    "yearBuilt": 1974,
+    "buildingClass": "A",
+    "stories": 42,
+    "rbaSf": 1018437,
+    "typicalFloorSf": 24850,
+    "availableSpace": [
+      { "floor": 8, "suite": "810", "sf": 2618 },
+      { "floor": 15, "suite": "1504", "sf": 1947 },
+      { "floor": 22, "suite": "2202", "sf": 3412 },
+      { "floor": 22, "suite": "2203", "sf": 2187 },
+      { "floor": 22, "suite": "2204", "sf": 1946 },
+      { "floor": 22, "suite": "2205", "sf": 2764 },
+      { "floor": 22, "suite": "2206", "sf": 1518 },
+      { "floor": 22, "suite": "2207", "sf": 3095 },
+      { "floor": 22, "suite": "2208", "sf": 2231 },
+      { "floor": 22, "suite": "2209", "sf": 1872 },
+      { "floor": 22, "suite": "2210", "sf": 4316 },
+      { "floor": 31, "suite": "3120", "sf": 5203 },
+      { "floor": 37, "suite": "3702", "sf": 3861 }
+    ],
+    "layers": { "costar": true, "vexcel": true, "matterport": true },
+    "source": "fixture"
+  },
+  {
+    "id": "F2",
+    "name": "Figueroa Exchange",
+    "city": "LA",
+    "neighbourhood": "Financial District",
+    "lat": 34.05091,
+    "lng": -118.25864,
+    "yearBuilt": 1989,
+    "buildingClass": "A",
+    "stories": 52,
+    "rbaSf": 1146512,
+    "typicalFloorSf": 22940,
+    "availableSpace": [
+      { "floor": 9, "suite": "910", "sf": 6283 },
+      { "floor": 17, "suite": "1720", "sf": 4885 },
+      { "floor": 17, "suite": "1750", "sf": 2312 },
+      { "floor": 28, "suite": "2810", "sf": 7436 },
+      { "floor": 41, "suite": "4125", "sf": 11254 },
+      { "floor": 46, "suite": "4630", "sf": 3127 }
+    ],
+    "layers": { "costar": true, "vexcel": true, "matterport": true },
+    "source": "fixture"
+  },
+  {
+    "id": "F3",
+    "name": "Meridian on Wilshire",
+    "city": "LA",
+    "neighbourhood": "Westlake",
+    "lat": 34.05934,
+    "lng": -118.27512,
+    "yearBuilt": 2017,
+    "buildingClass": "A",
+    "stories": 30,
+    "rbaSf": 571893,
+    "typicalFloorSf": 19615,
+    "availableSpace": [
+      { "floor": 6, "suite": "610", "sf": 3742 },
+      { "floor": 12, "suite": "1205", "sf": 2118 },
+      { "floor": 12, "suite": "1230", "sf": 5961 },
+      { "floor": 24, "suite": "2401", "sf": 18974 }
+    ],
+    "layers": { "costar": true, "vexcel": true, "matterport": true },
+    "source": "fixture"
+  },
+  {
+    "id": "F4",
+    "name": "Smith Street Center",
+    "city": "Houston",
+    "neighbourhood": "Downtown",
+    "lat": 29.75712,
+    "lng": -95.36958,
+    "yearBuilt": 1983,
+    "buildingClass": "A",
+    "stories": 50,
+    "rbaSf": 1237846,
+    "typicalFloorSf": 25410,
+    "availableSpace": [
+      { "floor": 14, "suite": "1450", "sf": 3286 },
+      { "floor": 19, "suite": "1910", "sf": 8742 },
+      { "floor": 19, "suite": "1975", "sf": 4413 },
+      { "floor": 33, "suite": "3320", "sf": 12081 },
+      { "floor": 44, "suite": "4430", "sf": 2957 },
+      { "floor": 44, "suite": "4460", "sf": 1684 }
+    ],
+    "layers": { "costar": true, "vexcel": true, "matterport": true },
+    "source": "fixture"
+  },
+  {
+    "id": "F5",
+    "name": "Westchase Commons",
+    "city": "Houston",
+    "neighbourhood": "Westchase",
+    "lat": 29.73618,
+    "lng": -95.56137,
+    "yearBuilt": 2008,
+    "buildingClass": "B",
+    "stories": 6,
+    "rbaSf": 128904,
+    "typicalFloorSf": 21736,
+    "availableSpace": [
+      { "floor": 1, "suite": "150", "sf": 2843 },
+      { "floor": 2, "suite": "210", "sf": 4176 },
+      { "floor": 2, "suite": "245", "sf": 1392 },
+      { "floor": 4, "suite": "410", "sf": 6518 },
+      { "floor": 5, "suite": "520", "sf": 3047 }
+    ],
+    "layers": { "costar": true, "vexcel": true, "matterport": true },
+    "source": "fixture"
+  }
+]
