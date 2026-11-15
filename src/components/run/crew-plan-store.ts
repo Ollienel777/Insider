@@ -15,6 +15,8 @@ export interface StoredCrewPlan {
   plan: CrewPlan;
   /** True when a recorded reply answered, not a live model. */
   recorded: boolean;
+  /** Set when no reply came and the plan was worked out from the board (issue 140), so the Run says so too. */
+  source?: "board";
 }
 
 /** Keyed by building and mission (issue 119), like the run log. */
@@ -71,9 +73,9 @@ export function loadCrewPlan(
     if (kept) return kept;
     const raw = store?.getItem(key);
     if (!raw) return null;
-    const value = JSON.parse(raw) as { plan?: unknown; recorded?: unknown };
+    const value = JSON.parse(raw) as { plan?: unknown; recorded?: unknown; source?: unknown };
     const plan = CrewPlan.safeParse(value.plan);
-    return plan.success ? { plan: plan.data, recorded: value.recorded === true } : null;
+    return plan.success ? { plan: plan.data, recorded: value.recorded === true, ...(value.source === "board" && { source: "board" as const }) } : null;
   } catch {
     // Blocked storage still leaves the plan held in memory.
     return kept;

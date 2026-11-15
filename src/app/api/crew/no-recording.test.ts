@@ -12,7 +12,7 @@ import { POST } from "./route";
 
 afterEach(() => clearKitLevels());
 
-/** Century Park's stand-in: F1's level stored in memory under a kit id, as the Level Builder leaves one. */
+/** A kit building's stand-in: F1's level stored in memory under a kit id, as the Level Builder leaves one. */
 async function storeKitLevel(): Promise<void> {
   const level = (await readCachedLevel("F1", "romaine-1974"))!;
   store.set(levelKey("900001", "romaine-1974"), {

@@ -667,6 +667,8 @@ function RunPanel({
   }
   const briefed = crewPlan ? crewPlanSteps(placed, run, crewPlan.plan) : [];
   const fromCrew = briefed.length > 0;
+  // A plan worked out on the board when the crew gave no reply (issue 140) is not the crew's own.
+  const fromBoard = fromCrew && crewPlan?.source === "board";
   const steps = fromCrew ? briefed : planSteps(placed, run, manifest.mission.objective);
   const orders = guardOrders(placed, run);
   const floor = placed.level.floor;
@@ -696,9 +698,9 @@ function RunPanel({
 
       <section aria-labelledby="plan-label" className="flex flex-col gap-2">
         <h2 id="plan-label" className="label-caps text-text-3">
-          {fromCrew ? "The crew's plan" : "The plan"}
+          {fromBoard ? "The board's plan" : fromCrew ? "The crew's plan" : "The plan"}
         </h2>
-        <ol data-testid="plan" data-source={fromCrew ? "crew" : "level"} className="flex flex-col">
+        <ol data-testid="plan" data-source={fromBoard ? "board" : fromCrew ? "crew" : "level"} className="flex flex-col">
           {steps.map((step, i) => (
             <li
               key={i}

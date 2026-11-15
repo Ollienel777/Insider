@@ -108,6 +108,12 @@ describe("CrewReply", () => {
     const html = renderToStaticMarkup(<CrewReply answer={{ plan: board, recorded: false, source: "board" }} checked={validatePlan(placed, board)} />);
     expect(html).toContain('data-testid="board-plan-chip"');
     expect(html).toContain("Worked out on the board");
+    // Whose plan it is: the board's, not the crew's own speech.
+    expect(html).toContain('data-source="board"');
+    expect(html).toContain("The board&#x27;s plan");
+    expect(html).toContain("What the board shows");
+    expect(html).not.toContain("The crew&#x27;s plan");
+    expect(html).not.toContain("The crew pushes back");
     expect(html).not.toContain('data-testid="recorded-chip"');
     expect(html.match(/data-testid="crew-step"/g)).toHaveLength(3);
   });
@@ -144,6 +150,8 @@ describe("CrewReply", () => {
       <CrewReply answer={{ plan: plan("dock-wait"), recorded: false }} checked={validatePlan(placed, plan("dock-wait"))} />,
     );
     expect(html).not.toContain("recorded-chip");
+    expect(html).toContain("The crew&#x27;s plan");
+    expect(html).toContain('data-source="crew"');
   });
 
   it("notes each dropped step", () => {

@@ -128,7 +128,7 @@ export function PlanScreen({
         setAsk({ status: "answered", answer: reply });
         // The run follows the briefed plan (beat 4 into beat 5). A kit building's is derived from its
         // real record, so it is held in memory, not stored (#95).
-        saveCrewPlan(building.id, { plan: reply.plan, recorded: reply.recorded }, undefined, missionId, source === "costar");
+        saveCrewPlan(building.id, { plan: reply.plan, recorded: reply.recorded, ...(reply.source && { source: reply.source }) }, undefined, missionId, source === "costar");
       }
     } catch (error) {
       if (!controller.signal.aborted) setAsk({ status: "error", message: error instanceof Error ? error.message : String(error) });
@@ -204,7 +204,7 @@ export function PlanScreen({
           <div className="flex h-16 shrink-0 items-center gap-6 px-6 text-sm text-text-2">
             {checked ? (
               <>
-                <Legend swatch={<span className="h-1 w-6 rounded-sm bg-accent opacity-50" />}>The crew&apos;s plan</Legend>
+                <Legend swatch={<span className="h-1 w-6 rounded-sm bg-accent opacity-50" />}>{answer?.source === "board" ? "The board's plan" : "The crew's plan"}</Legend>
                 {checked.warnings.some((w) => w.by) ? (
                   <Legend swatch={<span className="size-3 rounded-full border-2 border-warning" />}>Where it&apos;s seen</Legend>
                 ) : null}

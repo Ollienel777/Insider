@@ -44,11 +44,19 @@ export function boardPlanTitle(reason: CrewAnswer["reason"]): string {
 export function CrewReply({ answer, checked }: { answer: CrewAnswer; checked: CheckedPlan }) {
   const { plan } = answer;
   const warning = checked.warnings[0];
+  // A plan worked out on the board (issue 140) is not the crew's own speech: the panel says whose it is.
+  const board = answer.source === "board";
   return (
-    <section aria-labelledby="crew-plan-label" data-testid="crew-reply" data-outcome={checked.outcome} className="flex flex-col gap-4">
+    <section
+      aria-labelledby="crew-plan-label"
+      data-testid="crew-reply"
+      data-outcome={checked.outcome}
+      data-source={board ? "board" : "crew"}
+      className="flex flex-col gap-4"
+    >
       <div className="flex items-center gap-2">
         <h2 id="crew-plan-label" className="label-caps text-text-3">
-          The crew&apos;s plan
+          {board ? "The board's plan" : "The crew's plan"}
         </h2>
         {answer.recorded ? (
           <span
@@ -67,7 +75,7 @@ export function CrewReply({ answer, checked }: { answer: CrewAnswer; checked: Ch
             Worked out on the board
           </span>
         ) : null}
-        <span className="ml-auto font-mono text-xs text-text-2" title="The crew's confidence in this plan">
+        <span className="ml-auto font-mono text-xs text-text-2" title={board ? "How sure the board's plan is: higher when it plays clean, lower when it is seen" : "The crew's confidence in this plan"}>
           {Math.round(plan.confidence * 100)}% sure
         </span>
       </div>
@@ -147,7 +155,7 @@ export function CrewReply({ answer, checked }: { answer: CrewAnswer; checked: Ch
 
       {plan.pushback ? (
         <div className="flex flex-col gap-1">
-          <p className="label-caps text-text-3">The crew pushes back</p>
+          <p className="label-caps text-text-3">{board ? "What the board shows" : "The crew pushes back"}</p>
           <p data-testid="crew-pushback" className="text-base text-text-1">
             {plan.pushback}
           </p>

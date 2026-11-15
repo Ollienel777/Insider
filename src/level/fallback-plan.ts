@@ -27,15 +27,26 @@ const SURE_CLEAN = 0.6;
 const SURE_CAUGHT = 0.3;
 /** The most turns the plan waits at one stop; past this the shapes are not worth trying. */
 const MAX_WAIT = 4;
+/** The quiet zones on the route tried as stops, nearest the way in first; more only multiply the search. */
+const MAX_STOPS = 3;
+/**
+ * The most shapes played on the board before giving up on a clean one. Each play is well under a
+ * millisecond on a fixture floor, so this keeps a large open-plan scan to a short pause, not a freeze.
+ */
+export const MAX_TRIES = 400;
 
 const TURNS = ["", "one turn", "two turns", "three turns", "four turns"];
 
 type Step = CrewPlan["steps"][number];
 
+/** A zone's name in the plan's words, without the board's "(vacant)" tag (as the Chief says it). */
+const placeLabel = (placed: PlacedLevel, zoneId: string) => zoneLabel(placed, zoneId).replace(/\s*\(vacant\)\s*$/i, "");
+
 /** A warning's text in the crew's voice: "sees you" becomes "sees us". */
 const ours = (text: string) => text.replace(/\b(sees|hears|spots) you\b/g, "$1 us");
 
-export function fallbackPlan(placed: PlacedLevel): CrewPlan {
+export function fallbackPlan(placed: PlacedLevel, options: { maxTries?: number } = {}): CrewPlan {
+  const maxTries = options.maxTries ?? MAX_TRIES;
   const { level } = placed;
   const way = (e: PlacedEntry) => e.label.toLowerCase();
   const start = placed.entries.find((e) => e.nodeId === level.start) ?? placed.entries[0];
@@ -59,12 +70,16 @@ export function fallbackPlan(placed: PlacedLevel): CrewPlan {
   );
   if (exitOrder.length === 0) exitOrder.push(start);
   // Quiet zones the quiet route passes through: the only stops between the way in and the objective where a wait can sit.
-  const onRoute = new Set(advice?.path ?? []);
-  const quietStops = placed.zones.filter((z) => z.role === "quiet" && z.nodes.some((n) => onRoute.has(n)));
+  const routeIndex = new Map((advice?.path ?? []).map((n, i) => [n, i] as const));
+  const firstOnRoute = (nodes: readonly string[]) => Math.min(...nodes.map((n) => routeIndex.get(n) ?? Infinity));
+  const quietStops = placed.zones
+    .filter((z) => z.role === "quiet" && Number.isFinite(firstOnRoute(z.nodes)))
+    .sort((a, b) => firstOnRoute(a.nodes) - firstOnRoute(b.nodes))
+    .slice(0, MAX_STOPS);
 
   const waitWords = (n: number) => (n > 0 ? `, and wait ${TURNS[n]} there` : "");
   type Stop = { zoneId: string; wait: number } | null;
-  const through = (stop: Stop): Step[] => (stop ? [{ zoneId: stop.zoneId, action: `Through ${zoneLabel(placed, stop.zoneId)}${waitWords(stop.wait)}` }] : []);
+  const through = (stop: Stop): Step[] => (stop ? [{ zoneId: stop.zoneId, action: `Through ${placeLabel(placed, stop.zoneId)}${waitWords(stop.wait)}` }] : []);
   const shape = (waitIn: number, stop: Stop, waitAtObjective: number, exit: PlacedEntry, back: Stop = null): Step[] => [
     { zoneId: start.entryId, action: `In by the ${way(start)}${waitWords(waitIn)}` },
     ...through(stop),
@@ -96,6 +111,7 @@ export function fallbackPlan(placed: PlacedLevel): CrewPlan {
 
   // The shapes, fewest waits first; the first the board plays clean is the plan.
   let best: Step[] | null = null;
+  let tries = 0;
   if (advice) {
     const stops = [null, ...quietStops.flatMap((z) => [0, 1, 2].map((wait) => ({ zoneId: z.zoneId, wait })))];
     search: for (let total = 0; total <= 2 * MAX_WAIT + 2; total++) {
@@ -105,6 +121,7 @@ export function fallbackPlan(placed: PlacedLevel): CrewPlan {
           if (waitAtObjective < 0 || waitAtObjective > MAX_WAIT) continue;
           for (const exit of exitOrder) {
             for (const back of [null, ...quietStops.map((z) => ({ zoneId: z.zoneId, wait: 0 }))]) {
+              if (++tries > maxTries) break search;
               const steps = shape(waitIn, stop, waitAtObjective, exit, back);
               const checked = validatePlan(placed, { steps, pushback: "", confidence: 0 });
               if (checked.outcome === "clean" && checked.dropped.length === 0) {
@@ -129,14 +146,19 @@ export function fallbackPlan(placed: PlacedLevel): CrewPlan {
     const pushback = hurried?.by
       ? `${ours(hurried.text)} The waits in this plan let ${hurried.by} look away: hold where it says, then move.`
       : straight?.by && stop
-        ? `${ours(straight.text)} Going through ${zoneLabel(placed, stop.zoneId)} keeps us out of ${straight.by}'s way.`
+        ? `${ours(straight.text)} Going through ${placeLabel(placed, stop.zoneId)} keeps us out of ${straight.by}'s way.`
         : `Nothing catches us this way if we keep moving: in by the ${way(start)}, out by the ${way(exit)}. ${clearOf(best)}`;
     return { steps: best, pushback, confidence: SURE_CLEAN };
   }
 
   // No quiet way through (or none that fits a plan's stops): the shortest plan, and who catches it.
   const steps = shape(0, null, 0, exitOrder[0]);
-  const warning = validatePlan(placed, { steps, pushback: "", confidence: 0 }).warnings[0];
+  const shortest = validatePlan(placed, { steps, pushback: "", confidence: 0 });
+  // The objective can't be reached at all: say so plainly, rather than a plan with its middle struck out.
+  if (shortest.dropped.some((d) => d.zoneId === placed.objective.zoneId)) {
+    return { steps, pushback: `There's no way to the ${noun} on this board.`, confidence: SURE_CAUGHT };
+  }
+  const warning = shortest.warnings[0];
   const caughtLine = warning ? ` ${ours(warning.text)}` : "";
   const pushback = advice
     ? `I can't fit the quiet way into a plan here; follow the waits the board marks.${caughtLine}`

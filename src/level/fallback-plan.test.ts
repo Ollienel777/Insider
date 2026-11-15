@@ -42,6 +42,10 @@ describe.each([
     expect(plan.confidence).toBe(0.6);
   });
 
+  it("speaks its zones without the board's (vacant) tag, as the Chief does", () => {
+    for (const text of [...plan.steps.map((s) => s.action), plan.pushback]) expect(text).not.toMatch(/\(vacant\)/i);
+  });
+
   it("pushes back with the camera or guard that its waits or its way round get past", () => {
     const named = /\b([CG]\d+)\b/.exec(plan.pushback)?.[1];
     expect(named, plan.pushback).toBeDefined();
@@ -130,5 +134,17 @@ describe("the fallback plan on a floor where nothing is in the way", () => {
     expect(plan.pushback).toMatch(/^Nothing catches us this way if we keep moving/);
     expect(plan.pushback).toContain(`${blind[0].id}`);
     expect(plan.pushback).toMatch(/never get eyes on it\.$/);
+  });
+});
+
+describe("the fallback plan when the objective is off the board", () => {
+  // F1 with the objective's zone missing from the board: no plan can reach it.
+  const base = placeLevel(LevelManifest.parse(structuredClone(f1)), structuredClone(FIXTURE_FLOORS.F1), 1);
+  const placed = { ...base, objective: { ...base.objective, zoneId: "nowhere" } };
+  const plan = fallbackPlan(placed);
+
+  it("says plainly there is no way to it, and sounds unsure", () => {
+    expect(plan.pushback).toBe("There's no way to the files on this board.");
+    expect(plan.confidence).toBe(0.3);
   });
 });
