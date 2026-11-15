@@ -96,9 +96,14 @@ result is a count, the way out the crew used most, the guard or camera that
 noticed them first most often, how much of the floor is watched, and the
 "open windows" when a crew gets in and out unseen. **Ask the Chief for a fix**
 proposes one change; **Apply and rerun** puts before and after side by side.
-On the prepared demo pair, played on recorded strategies, moving one camera
-takes 7 of 50 escapes to 1 of 50. Owner Mode opens only on fixture buildings, with "Made-up setup on a
-fixture building" on screen.
+On fixture F1's prepared demo pair, played on recorded strategies, moving one
+camera takes 7 of 50 escapes to 1 of 50. Owner Mode runs on the fixture
+buildings, with "Made-up setup on a fixture building" on screen, and live on
+the real building from the CoStar kit, on its scan, with "A made-up setup for
+the demo, not this building's real security." beside "Security shown is game
+fiction". There a setup stays in the tab's memory only, and the demo pair is
+worked out in the browser from the placed level: the generated security, and
+the same with one camera moved or turned by a rule.
 
 **Fixtures and live.** With no keys the whole game runs on fixtures: five
 invented buildings, three of them with a floor and a level, a 61-building
@@ -251,8 +256,9 @@ Amazon Bedrock is wired in and not used.
   on a scanned floor so that a careful player has a route.
 - **Send the crew the placed board's zones**, so it never plans on a suite
   the scan does not have.
-- **Owner Mode on a real building**, unlocked only for its verified owner,
-  which CoStar's ownership records could allow. Today it is fixtures only.
+- **Owner Mode with a building's real security**, unlocked only for its
+  verified owner, which CoStar's ownership records could allow. Today every
+  setup is made up, on the fixture buildings and on the real building's scan.
 - **More buildings and missions**: floors and levels for the two Houston
   fixtures, and for more of the kit.
 - **Ways in from the aerial** on real buildings, tagged from Vexcel imagery.
