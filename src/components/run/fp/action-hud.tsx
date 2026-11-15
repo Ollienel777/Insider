@@ -2,7 +2,7 @@
 
 // What E is doing, on the first-person HUD: the label under the crosshair
 // with a ring that fills over the hold, the toast when the objective is
-// taken (the objective line's carry chip, #192, stays for the rest of the
+// taken (the objective line's carry chip, issue 192, stays for the rest of the
 // run), and a live region that says each as it lands. What they show comes
 // from action.ts; under reduced motion the ring jumps and nothing fades.
 import { CircleCheck, FolderClosed } from "lucide-react";

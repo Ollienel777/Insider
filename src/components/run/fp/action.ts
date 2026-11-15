@@ -1,6 +1,6 @@
 // What E is doing, in words (the play-tester's "say 'picking lock'"): the
 // verb under the crosshair while E is aimed or held, and the line when it
-// lands. What the player carries is the objective line's (#192). Pure: read off the walker's prompt, the
+// lands. What the player carries is the objective line's (issue 192). Pure: read off the walker's prompt, the
 // placed level and the engine's run state, so it is the same on a fixture
 // floor and on a scan.
 //

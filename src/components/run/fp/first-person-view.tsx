@@ -593,7 +593,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
   useEffect(() => {
     if (over && surface.current && document.pointerLockElement === surface.current) document.exitPointerLock();
   }, [over]);
-  // What E does, in words (action.ts). Carrying is the objective line's chip (#192); the toast marks the take.
+  // What E does, in words (action.ts). Carrying is the objective line's chip (issue 192); the toast marks the take.
   const wordsFor = (doorId: string) => lockWords(lockOf(placed, doorId, lockKind));
   const action = over ? null : actionLabel(hud.prompt, hud.using, wordsFor, noun, moment?.kind === "door" ? moment : null);
   const said = over ? null : announcement(moment?.kind === "door" ? { kind: "door", doorId: moment.doorId } : moment ? { kind: "take" } : null, wordsFor, noun);
