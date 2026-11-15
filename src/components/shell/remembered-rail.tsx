@@ -7,7 +7,7 @@
 // plan (#95): it carries over every move between tabs, nothing is stored, and a
 // full reload starts the tabs over. Picking another mission or building starts
 // them over too.
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { RAIL_TABS, reachedIndex, StepRailView } from "./step-rail-view";
 
 export interface RailProgress {
@@ -19,6 +19,11 @@ export interface RailProgress {
 }
 
 let progress: RailProgress | null = null;
+const listeners = new Set<() => void>();
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
 
 /** Records the tab on screen and returns the progress so far. Only a tab of the rail counts: Owner Mode and Drill don't. */
 export function recordTab(at: {
@@ -66,9 +71,11 @@ export function RememberedRailView({
   missionId?: string | null;
   factsOnly?: boolean;
 }) {
-  const [memory, setMemory] = useState<RailProgress | null>(null);
+  // The server has no memory (null), so the first paint matches it; the store then answers.
+  const memory = useSyncExternalStore(subscribe, () => progress, () => null);
   useEffect(() => {
-    setMemory(recordTab({ current, missionId, buildingId, factsOnly }));
+    recordTab({ current, missionId, buildingId, factsOnly });
+    for (const listener of listeners) listener();
   }, [current, missionId, buildingId, factsOnly]);
   // Use the memory only where it is about this mission and building.
   const fits = memory && (missionId === null || missionId === memory.missionId) && (buildingId === null || buildingId === memory.buildingId);
