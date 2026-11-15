@@ -41,7 +41,7 @@ import { useTurnClock } from "./turn-clock";
 import { FirstMoveHint } from "./fp/first-move-hint";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
-import { ChiefCalls } from "./chief-calls";
+import { ChiefCalls, worthAsking, type AskedAbout } from "./chief-calls";
 import { loadCrewPlan, PLAN_HEADING, planSourceOf, type StoredCrewPlan } from "./crew-plan-store";
 import { clearRunLog, keepRunLogInMemory, runLogOf, saveRunLog } from "./run-log-store";
 import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postureOf, runRecordOf, type RunRecord } from "./run-history";
@@ -142,6 +142,8 @@ export function RunScreen({
   const latestRun = useRef<RunState | null>(null);
   const pendingChief = useRef<AbortController | null>(null);
   const chiefCalls = useRef(new ChiefCalls());
+  /** The last event a Chief call went out about, so a Lockdown re-sighting doesn't re-ask on every sweep (issue 190). */
+  const askedAbout = useRef<AskedAbout | null>(null);
   /** Turn number → where the Chief's orders logged on that turn came from, for the Debrief. */
   const chiefSources = useRef(new Map<number, ChiefAnswer["source"]>());
   /** The Chief's answer that landed after the run ended, if one did. */
@@ -158,6 +160,7 @@ export function RunScreen({
     pendingChief.current?.abort();
     pendingChief.current = null;
     chiefCalls.current.reset();
+    askedAbout.current = null;
     chiefSources.current = new Map();
     lateChief.current = null;
     setChief({ status: "idle" });
@@ -276,7 +279,17 @@ export function RunScreen({
         if (queued) chiefCalls.current.reset();
         return;
       }
+      const event = state.alarmEvents[seq];
+      // A Lockdown re-sighting in the same place, or too soon after the last re-plan, asks nothing: the
+      // orders out still stand, and the radio gets to read that re-plan in full (issue 190).
+      const now = performance.now();
+      if (event && !worthAsking(event, askedAbout.current, now)) {
+        // A queued call skipped: free the queue, so the next event can ask.
+        if (queued) chiefCalls.current.reset();
+        return;
+      }
       if (!queued && !chiefCalls.current.ask(seq)) return;
+      if (event) askedAbout.current = { to: event.to, zone: event.lastKnownZone, at: now };
       const controller = new AbortController();
       pendingChief.current = controller;
       // This call is done: the newest event that waited behind it goes next, on the run as it stands now.

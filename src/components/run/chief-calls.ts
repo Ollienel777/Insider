@@ -53,3 +53,37 @@ export class ChiefCalls {
     this.waiting = null;
   }
 }
+
+// At Lockdown the engine adds an event each time the player is seen again
+// after a gap (`detect`, the `elsewhere` branch): a sweeping camera makes one
+// every second or so. Asking the Chief about each one restarted the radio on
+// every answer, so only the first sentence was ever heard (issue 190). A
+// Lockdown re-sighting is asked about only when it is somewhere new, and not
+// before the last re-plan has had time to be read out in full.
+
+/** How long a re-plan at Lockdown keeps the air before another re-sighting may ask again: about a full read-out on the radio. */
+export const LOCKDOWN_REASK_MS = 10_000;
+
+/** The last event a Chief call went out about: its alarm level, its zone, and when (ms, any clock that only goes forward). */
+export interface AskedAbout {
+  to: string;
+  zone: string | null;
+  at: number;
+}
+
+/**
+ * Whether an alarm event is worth a Chief call. Every change of alarm level is.
+ * A Lockdown re-sighting (`from` and `to` both "lockdown") is not when it is in
+ * the zone last asked about, or when the last call at Lockdown went out under
+ * `LOCKDOWN_REASK_MS` ago. The engine still records every event.
+ */
+export function worthAsking(
+  event: { from: string; to: string; lastKnownZone: string | null },
+  last: AskedAbout | null,
+  now: number,
+): boolean {
+  if (event.from !== "lockdown" || event.to !== "lockdown") return true;
+  if (!last || last.to !== "lockdown") return true;
+  if (event.lastKnownZone === last.zone) return false;
+  return now - last.at >= LOCKDOWN_REASK_MS;
+}
