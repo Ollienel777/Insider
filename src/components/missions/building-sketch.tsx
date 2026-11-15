@@ -41,7 +41,7 @@ export function BuildingSketch({ era, label }: { era: Era; label: string }) {
       <polygon points={`${pt(F)} ${pt(R)} ${pt(R, h)} ${pt(F, h)}`} fill={L0.side} className="stroke-border-strong" strokeWidth="2.5" strokeLinejoin="round" />
       <polygon points={`${pt(Lp, h)} ${pt(F, h)} ${pt(R, h)} ${pt(B, h)}`} className="fill-n-950 stroke-border-strong" strokeWidth="2.5" strokeLinejoin="round" />
       {windows.map((p, i) => (
-        <rect key={i} x={(p.x - 3).toFixed(1)} y={p.y.toFixed(1)} width="5" height="4" fill={L0.win} transform={`skewY(26)`} transform-origin={`${p.x} ${p.y}`} />
+        <rect key={i} x={(p.x - 3).toFixed(1)} y={p.y.toFixed(1)} width="5" height="4" fill={L0.win} transform={`skewY(26)`} transformOrigin={`${p.x} ${p.y}`} />
       ))}
     </svg>
   );

@@ -1,18 +1,15 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { COVER_KEY } from "./case-cover-script";
 
 // The case file's cover (issue 166): closed over the whole desk when the game
 // first opens, then it turns on the spine like a sheet of thin card. It is cut
 // into strips that each turn a little more than the one before, so it bends.
 // Once per visit: a reload in the same tab finds the file already open.
-const KEY = "heist:cover-opened";
 const STRIPS = 30;
 const DELAY_MS = 450;
 const TURN_MS = 1700;
-
-/** Runs before the cover is painted, so a file already opened this visit never shows its cover. */
-const PRE_PAINT = `try{if(sessionStorage.getItem("${KEY}")||matchMedia("(prefers-reduced-motion: reduce)").matches)document.documentElement.dataset.coverDone="1"}catch(e){document.documentElement.dataset.coverDone="1"}`;
 
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
@@ -61,7 +58,7 @@ export function CaseCover() {
         document.documentElement.dataset.coverDone = "1";
         desk?.removeAttribute("data-shaded");
         try {
-          sessionStorage.setItem(KEY, "1");
+          sessionStorage.setItem(COVER_KEY, "1");
         } catch {
           // Storage refused: the cover just opens again next load.
         }
@@ -72,16 +69,16 @@ export function CaseCover() {
     return () => cancelAnimationFrame(raf);
   }, []);
   return (
-    <>
-      <script dangerouslySetInnerHTML={{ __html: PRE_PAINT }} />
-      <div ref={ref} aria-hidden data-case-cover className="case-cover">
-        <div data-sheet className="cover-sheet" />
-        <template
-          dangerouslySetInnerHTML={{
-            __html: `<div class="cover-art"><span class="cover-tab">Case files</span><div class="cover-label"><b>Hobbs</b><span>Case files · Los Angeles &amp; Houston</span><i>Open</i></div></div>`,
-          }}
-        />
-      </div>
-    </>
+    // Whether it shows at all is decided before the first paint, by the script the root layout puts in <head>
+    // (case-cover-script.ts): this effect then finds <html data-cover-done> already set, on a first load and
+    // on every move between screens.
+    <div ref={ref} aria-hidden data-case-cover className="case-cover">
+      <div data-sheet className="cover-sheet" />
+      <template
+        dangerouslySetInnerHTML={{
+          __html: `<div class="cover-art"><span class="cover-tab">Case files</span><div class="cover-label"><b>Hobbs</b><span>Case files · Los Angeles &amp; Houston</span><i>Open</i></div></div>`,
+        }}
+      />
+    </div>
   );
 }

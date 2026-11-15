@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Luckiest_Guy, Nunito, Permanent_Marker, Special_Elite } from "next/font/google";
 import type { ReactNode } from "react";
+import { COVER_PRE_PAINT } from "@/components/shell/case-cover-script";
 import "./globals.css";
 
 // Self-hosted at build time and preloaded, so there is no layout shift and no
@@ -20,7 +21,13 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${nunito.variable} ${display.variable} ${typed.variable} ${marker.variable}`}>
+    // The cover's script below sets data-cover-done on <html> before React hydrates, on purpose:
+    // suppressHydrationWarning covers that one element's own attributes, nothing under it.
+    <html lang="en" suppressHydrationWarning className={`${nunito.variable} ${display.variable} ${typed.variable} ${marker.variable}`}>
+      <head>
+        {/* Before the first paint: a file already opened this visit never shows its cover (case-cover-script.ts). */}
+        <script dangerouslySetInnerHTML={{ __html: COVER_PRE_PAINT }} />
+      </head>
       <body className="min-h-dvh antialiased">{children}</body>
     </html>
   );
