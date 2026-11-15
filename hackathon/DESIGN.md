@@ -18,6 +18,12 @@ a little cinematic. The data is the star; the game reads it.
 
 ## Theme
 
+> **Case file theme (issue 166).** The look changed from a dark operations
+> console to a heist case file on a walnut desk: paper surfaces, ink text,
+> folder tabs for the steps, a rubber stamp for each screen's one action, and
+> a cover that opens on first load. Run takes the whole screen. The token
+> values below are the case file's; the names and their roles are unchanged.
+
 **Dark only.** The game is a night heist, a dark board makes cones and
 guard pieces readable, and dark reads as premium on the demo video and on
 a laptop screen at a judging table. A light theme is not shipped. Every
@@ -34,17 +40,17 @@ Tailwind theme. Components use these names only, never raw values.
 ```css
 :root {
   /* neutrals (cool slate) */
-  --n-950: #07090c;  --n-900: #0c1015;  --n-850: #11161d;  --n-800: #171d26;
-  --n-700: #232b37;  --n-600: #323c4b;  --n-500: #4a5566;  --n-400: #7d8899;
-  --n-300: #939caa;  --n-200: #bcc3cd;  --n-100: #e1e5ea;  --n-50:  #f4f6f8;
+  --n-950: #fbf4e4;  --n-900: #f6ecd7;  --n-850: #efe2c6;  --n-800: #e6d4b2;
+  --n-700: #cdb791;  --n-600: #ae9670;  --n-500: #8a7356;  --n-400: #6c5843;
+  --n-300: #584633;  --n-200: #45362a;  --n-100: #352a1f;  --n-50: #2b1d12;
 
   /* surfaces */
   --surface-0: var(--n-950);   /* page, board backdrop */
   --surface-1: var(--n-900);   /* panels */
   --surface-2: var(--n-850);   /* raised rows, inputs */
   --surface-3: var(--n-800);   /* hover */
-  --border:        var(--n-700);
-  --border-strong: var(--n-600);
+  --border: #cdb791;
+  --border-strong: #2b1d12;
 
   /* text */
   --text-1: var(--n-50);    /* primary */
@@ -52,21 +58,21 @@ Tailwind theme. Components use these names only, never raw values.
   --text-3: var(--n-400);   /* labels only, 12px mono caps, never body; 4.7:1 on surface-3 */
 
   /* the one accent: signal amber, the colour of a lit window at night */
-  --accent:        #f2a93b;
-  --accent-hover:  #f6bb5f;
-  --accent-active: #d98f22;
-  --accent-ink:    #1a1206;  /* text on accent */
-  --accent-wash:   rgb(242 169 59 / 0.12);
+  --accent: #f0bd4a;
+  --accent-hover: #f5ca68;
+  --accent-active: #dfa52a;
+  --accent-ink: #2b1d12;  /* text on accent */
+  --accent-wash: rgb(240 189 74 / 0.22);
 
   /* semantic, used only for their meaning */
-  --success: #3ccf91;   /* objective taken, drill floor clear */
-  --warning: #f5d547;   /* Suspicious, crew warning */
-  --danger:  #ff5a5f;   /* Alert, Lockdown, detected, blocked stair */
+  --success: #2f7a5c;   /* objective taken, drill floor clear */
+  --warning: #b86e0e;   /* Suspicious, crew warning */
+  --danger: #b8392a;   /* Alert, Lockdown, detected, blocked stair */
 
   /* data layers: only on 8px layer dots, the provenance thread, the Layer lens */
-  --layer-costar:     #7aa7ff;
-  --layer-vexcel:     #c08cff;
-  --layer-matterport: #4fd1c5;
+  --layer-costar: #2f6fb0;
+  --layer-vexcel: #8f43a4;
+  --layer-matterport: #1f8a76;
 }
 ```
 
@@ -99,10 +105,10 @@ pad 12 × 16; the gap between panels is 16; screen gutters 24.
 
 ### Radius, elevation, motion, breakpoints
 
-- **Radius:** `--r-sm: 6px` (chips, inputs, buttons), `--r-md: 10px` (panels,
+- **Radius:** `--r-sm: 12px` (chips, inputs, buttons), `--r-md: 20px` (panels,
   cards). No other values; no pills except the mode chip.
-- **Elevation:** `--e-1: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 1px 2px rgb(0 0 0 / 0.4)`
-  for panels; `--e-2: 0 12px 32px rgb(0 0 0 / 0.5)` for the Why card and
+- **Elevation:** `--e-1: 0 4px 0 var(--ink-shadow)`
+  for panels; `--e-2: 0 6px 0 var(--ink-shadow), 0 18px 36px rgb(0 0 0 / 0.45)` for the Why card and
   menus only. No glows.
 - **Motion:** `--t-fast: 150ms`, `--t-base: 200ms`, `--t-slow: 300ms`,
   easing `cubic-bezier(0.2, 0, 0, 1)` (ease-out, no bounce). A guard's hop is

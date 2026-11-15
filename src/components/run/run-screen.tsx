@@ -173,6 +173,12 @@ export function RunScreen({
     [building.id, startRun, missionId, source],
   );
 
+  // Playing takes the whole screen: no desk, no tabs (issue 166). Leaving Run puts the desk back.
+  useEffect(() => {
+    document.body.classList.add("playing");
+    return () => document.body.classList.remove("playing");
+  }, []);
+
   useEffect(() => {
     if (!manifest) return;
     let live = true;

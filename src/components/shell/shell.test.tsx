@@ -36,18 +36,30 @@ describe("stepStates", () => {
 describe("StepRailView", () => {
   const html = renderToStaticMarkup(<StepRailView buildingId="F1" current="scout" />);
 
-  it("lists the five run steps, a divider, then Drill", () => {
-    const items = [...html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)].map((m) => text(m[1]));
-    expect(items).toEqual(["Scout", "Dossier", "Plan", "Run", "Debrief", "", "Drill"]);
-    expect(html).toMatch(/<li aria-hidden="true" class="[^"]*w-px[^"]*bg-border/);
+  it("lists the steps in order as numbered folder tabs, then Owner Mode, on one row", () => {
+    const items = [...html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)].map((m) => text(m[1]).replace(/ \(.*\)$/, ""));
+    expect(items).toEqual(["1Scout", "2Dossier", "3Plan", "4Run", "5Debrief", "6Drill", "7Owner Mode"]);
+    expect(html).toContain("flex-nowrap");
   });
 
-  it("marks the current route with aria-current and the accent underline", () => {
+  it("marks the current step with aria-current and the front tab", () => {
     const current = [...html.matchAll(/<a [^>]*aria-current="page"[^>]*>/g)];
     expect(current).toHaveLength(1);
     expect(current[0][0]).toContain('href="/b/F1/scout"');
-    expect(current[0][0]).toContain("after:bg-accent");
-    expect(current[0][0]).toContain("text-text-1");
+    expect(current[0][0]).toContain("bg-manila ");
+  });
+
+  it("locks the steps not reached yet, says why, and keeps Owner Mode open", () => {
+    const links = [...html.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1]);
+    expect(links).toEqual(["/b/F1/scout", "/b/F1/owner"]);
+    expect(html).toMatch(/aria-disabled="true" title="Finish Scout first" data-state="upcoming"/);
+    expect(html).toMatch(/aria-disabled="true" title="Finish Debrief first" data-state="upcoming"/);
+  });
+
+  it("opens every step on Owner Mode", () => {
+    const owner = renderToStaticMarkup(<StepRailView buildingId="F1" current="owner" />);
+    expect(owner).not.toContain('aria-disabled="true"');
+    expect([...owner.matchAll(/<a [^>]*aria-current="page"[^>]*href="([^"]+)"/g)].map((m) => m[1])).toEqual(["/b/F1/owner"]);
   });
 
   it("shows a check on done steps", () => {
@@ -112,13 +124,16 @@ describe("LayerDot", () => {
 
 describe("Button", () => {
   it.each(["primary", "secondary", "ghost"] as const)("%s is at least 40px tall", (variant) => {
-    expect(buttonVariants({ variant })).toContain("h-10");
+    expect(buttonVariants({ variant })).toMatch(/(^| )h-(10|11|12|14)( |$)/);
   });
 
-  it("uses the accent for primary only", () => {
-    expect(buttonVariants({ variant: "primary" })).toContain("bg-accent");
-    expect(buttonVariants({ variant: "secondary" })).not.toContain("accent");
-    expect(buttonVariants({ variant: "ghost" })).not.toContain("accent");
+  it("draws primary only as the stamp: a walnut block with a red handle", () => {
+    expect(buttonVariants({ variant: "primary" })).toContain("bg-walnut");
+    expect(buttonVariants({ variant: "primary" })).toContain("var(--stamp-handle)");
+    for (const variant of ["secondary", "ghost"] as const) {
+      expect(buttonVariants({ variant })).not.toContain("walnut");
+      expect(buttonVariants({ variant })).not.toContain("stamp-handle");
+    }
   });
 
   it("defaults to type=button so it never submits a form by accident", () => {

@@ -9,6 +9,7 @@ import { forcedServices } from "@/lib/forced-server";
 import { configuredModes, SERVICE_IDS, type Service } from "@/lib/mode";
 import type { Building } from "@/domain";
 import type { ServerStatus } from "@/lib/demo-status";
+import { CaseCover } from "./case-cover";
 import { DemoSafety } from "./demo-safety";
 import { StepRail } from "./step-rail";
 import { isFactsOnly } from "./steps";
@@ -34,7 +35,11 @@ export function serverStatus(forced: ReadonlySet<Service>): ServerStatus {
   return { configured, forced: SERVICE_IDS.filter((s) => forced.has(s)), fallbacks, heistMode: process.env.HEIST_MODE };
 }
 
-/** The viewport-high frame every screen sits in: top bar, step rail on building screens, then content. */
+/**
+ * The desk every screen sits on (issue 166): the game's card and the mode chip
+ * along the top, the folder's tabs under them, then the open case file, which
+ * holds the screen. Run takes the whole screen (`body.playing`, set by Run).
+ */
 export async function AppShell({ children, building }: AppShellProps) {
   // Read the mode per request, not at build time, so the chip reports how the
   // running server is configured.
@@ -42,15 +47,30 @@ export async function AppShell({ children, building }: AppShellProps) {
   const epoch = syncDemoEpoch();
   const status = serverStatus(await forcedServices());
   return (
-    <div className="flex min-h-dvh flex-col lg:h-dvh">
+    <div data-desk className="relative flex min-h-dvh flex-col gap-2 px-3 pt-2 pb-4 md:px-6 lg:h-dvh">
       {epoch ? <script dangerouslySetInnerHTML={{ __html: demoEpochScript(epoch) }} /> : null}
       <TopBar status={status} building={building} />
-      {building ? <StepRail
-          buildingId={building.id}
-          factsOnly={isFactsOnly(building.source)}
-          builtMissions={isFactsOnly(building.source) ? builtMissions(building.id) : undefined}
-        /> : null}
-      <main className="flex min-h-0 flex-1 flex-col">{children}</main>
+      {/* The tab row: the folder's tabs on building screens; the stamp docks at its right end (BuildingScreen). */}
+      <div data-chrome className="flex h-12 shrink-0 items-end pr-[230px] max-lg:pr-0">
+        {building ? (
+          <StepRail
+            buildingId={building.id}
+            factsOnly={isFactsOnly(building.source)}
+            builtMissions={isFactsOnly(building.source) ? builtMissions(building.id) : undefined}
+          />
+        ) : (
+          <span className="ml-[clamp(8px,1.6vw,22px)] inline-flex h-10 items-center rounded-t-[12px] border-[3px] border-b-0 border-border-strong bg-manila px-4 font-hand text-[15px] text-text-1">
+            Case files
+          </span>
+        )}
+      </div>
+      <main
+        data-folder
+        className="relative flex min-h-0 flex-1 flex-col rounded-[4px_18px_18px_18px] border-[3px] border-border-strong bg-manila p-3 shadow-[0_8px_0_var(--manila-2),0_8px_0_3px_var(--ink-shadow),10px_22px_30px_rgb(0_0_0/0.42)]"
+      >
+        {children}
+      </main>
+      <CaseCover />
       <DemoSafety status={status} />
     </div>
   );

@@ -19,8 +19,13 @@ export const buttonVariants = cva(
   {
     variants: {
       variant: {
-        primary: "bg-accent text-accent-ink hover:bg-accent-hover active:bg-accent-active",
-        secondary: "bg-surface-3 text-text-1 hover:bg-n-700 active:bg-surface-3",
+        // The rubber stamp: a walnut block with a red handle on top, the screen's one action (issue 166).
+        primary: cn(
+          "relative mt-5 -rotate-2 bg-walnut text-n-950 hover:-rotate-1 hover:bg-[var(--walnut-3)] active:bg-walnut",
+          "before:absolute before:bottom-[calc(100%+2px)] before:left-1/2 before:h-5 before:w-8 before:-translate-x-1/2 before:rounded-t-full before:border-2 before:border-border-strong",
+          "before:bg-[image:var(--stamp-handle)] before:content-['']",
+        ),
+        secondary: "bg-n-950 text-text-1 hover:bg-surface-2 active:bg-surface-3",
         ghost: "border-transparent bg-transparent text-text-2 shadow-none hover:bg-surface-3 hover:text-text-1 active:shadow-none",
       },
       size: {
