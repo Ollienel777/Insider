@@ -136,3 +136,30 @@ test("first person: holding E at a locked door picks it until the engine opens i
   await page.keyboard.up("e");
   await expect(view(page)).toHaveAttribute("data-node", "s1-sw");
 });
+
+test("first person: the controls hint is up for a first-time player, and fades once they have walked and looked", async ({ page }) => {
+  await open(page, "F1");
+  if (!(await firstPerson(page))) return;
+
+  // Issue 146: big, in the middle, every control named.
+  const hint = page.getByTestId("fp-controls-hint");
+  await expect(hint).toBeVisible();
+  for (const words of ["move", "look around", "sneak", "pick the lock"]) await expect(hint).toContainText(words);
+  await expect(page.getByTestId("fp-notice")).toHaveAttribute("data-tone", /calm|warning|danger/);
+
+  // Looking alone does not clear it.
+  await page.keyboard.down("ArrowRight");
+  await page.waitForTimeout(400);
+  await page.keyboard.up("ArrowRight");
+  await expect(hint.locator("li").nth(1)).toHaveAttribute("data-done", "true");
+  await expect(hint).toBeVisible();
+  await expect(hint).toHaveAttribute("data-phase", "shown");
+
+  // Walking too: it fades and goes. Back the way it turned, so the walk heads into the lobby.
+  await page.keyboard.down("ArrowLeft");
+  await page.waitForTimeout(400);
+  await page.keyboard.up("ArrowLeft");
+  await page.keyboard.down("w");
+  await expect(hint).toHaveCount(0, { timeout: 10_000 });
+  await page.keyboard.up("w");
+});

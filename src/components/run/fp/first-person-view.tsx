@@ -21,8 +21,14 @@ import { cameraMount, choices, roomName } from "../board";
 import type { HeldAction } from "./run-view";
 import { Actors, type Marks } from "./actors";
 import { Controller } from "./controller";
+import { ControlsHint } from "./controls-hint";
+import { FrameRateWatch } from "./flashlight";
+import { hintDone, hintPhase, hintTicks, type HintPhase, type HintProgress } from "./hint";
+import { earshot, noiseCue, noticeOf, type NoiseCue, type Notice } from "./notice";
+import { NoticeGlow } from "./notice-glow";
 import { readPalette } from "./palette";
 import { buildFloorGroup, disposeGroup, type RoomTone } from "./scene";
+import { sightOf, type Sight } from "./sight";
 import { FP } from "./tuning";
 import { createWalker, heldAction, promptFor, stepWalker, type Prompt } from "./walker";
 import { buildWorld, groundOf } from "./world";
@@ -79,6 +85,12 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
   const labelLayer = useRef<HTMLDivElement>(null);
   const [hud, setHud] = useState<Hud>({ locked: false, refused: false, prompt: null, using: false });
   const [ready, setReady] = useState(false);
+  // The first-time controls hint and being noticed (issue 146).
+  const [hint, setHint] = useState<{ phase: HintPhase; progress: HintProgress }>({
+    phase: "shown",
+    progress: { walkedM: 0, lookedRad: 0, sneaked: false, used: false },
+  });
+  const [notice, setNotice] = useState<{ notice: Notice; noise: NoiseCue } | null>(null);
 
   const world = useMemo(() => buildWorld(placed.level.floor), [placed]);
   const ground = useMemo(() => groundOf(world), [world]);
@@ -186,6 +198,17 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
     const labelEls = new Map<string, HTMLSpanElement>();
     const point = new Vector3();
     let seen: RunState | null = null;
+    let sight: Sight[] = [];
+    let noise: NoiseCue = noiseCue(first);
+    // What the player has tried, for the hint; when it was done, for its fade.
+    const progress: HintProgress = { walkedM: 0, lookedRad: 0, sneaked: false, used: false };
+    let doneAt: number | null = null;
+    let hintKey = "";
+    let noticeKey = "";
+    let looked = { yaw: controller.yaw, pitch: controller.pitch };
+    // The flashlights' real lights go, once, if the frame rate drops (issue 146). The rate is on the view for a readout.
+    const watch = new FrameRateWatch();
+    let rateAt = 0;
     let last = performance.now();
     let owed = 0;
     let use = false;
@@ -201,11 +224,22 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       raf = requestAnimationFrame(frame);
       const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
       last = now;
+      if (watch.frame(dt)) actors.dropLights();
+      if (now - rateAt > 1000) {
+        rateAt = now;
+        host.dataset.fps = watch.fps.toFixed(0);
+        host.dataset.lights = actors.lightsOn ? "real" : "unlit";
+      }
       const { run: current, onAct: act } = latest.current;
       if (current !== seen) {
         actors.sync(current, now);
         seen = current;
+        sight = sightOf(current, ground.unitM);
+        noise = noiseCue(current);
+        actors.showHeard(earshot(current));
       }
+      // Turned by the player since the last frame: before the view is put back on a hop below.
+      progress.lookedRad += Math.abs(controller.yaw - looked.yaw) + Math.abs(controller.pitch - looked.pitch);
 
       // The movement runs at a fixed step, however fast the screen draws.
       controller.frame(dt);
@@ -213,6 +247,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       use ||= controls.usePressed;
       owed += dt;
       const stood = walker.pos;
+      const walkedBefore = walker.walked;
+      if (controls.usePressed) progress.used = true;
       while (owed >= FP.stepS) {
         owed -= FP.stepS;
         const out = stepWalker(walker, ground, current, { ...controls, usePressed: use });
@@ -227,6 +263,9 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         controller.yaw = current.turn === 0 ? (wayOn(current, walker.pos) ?? hop) : hop;
         controller.pitch = 0;
       }
+      looked = { yaw: controller.yaw, pitch: controller.pitch };
+      progress.walkedM += walker.walked - walkedBefore;
+      if (controls.walk && walker.walked - walkedBefore > 0) progress.sneaked = true;
       if (controller.areas !== areas) {
         areas = controller.areas;
         actors.showAreas(areas, current.playerNode);
@@ -243,7 +282,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         FP.eyeM + lift + Math.sin(controller.pitch),
         walker.pos.y + Math.sin(controller.yaw) * flat,
       );
-      actors.update(now);
+      actors.update(now, walker.pos);
       renderer.render(scene, camera);
 
       // Labels: each at its piece, hidden behind the view and behind walls (a beacon shows through).
@@ -292,6 +331,20 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       if (key !== hudKey) {
         hudKey = key;
         setHud((was) => ({ ...was, prompt, using }));
+      }
+      if (doneAt === null && hintDone(progress)) doneAt = now;
+      const phase = hintPhase(doneAt === null ? null : now - doneAt, still);
+      const ticks = hintTicks(progress);
+      const nextHint = `${phase}${ticks.move}${ticks.look}${ticks.sneak}${ticks.use}`;
+      if (nextHint !== hintKey) {
+        hintKey = nextHint;
+        setHint({ phase, progress: { ...progress } });
+      }
+      const noticed = noticeOf(current, sight, walker.pos, ground.nodes);
+      const nextNotice = JSON.stringify([noticed.level, noticed.tone, noticed.reason, noise, current.turn]);
+      if (nextNotice !== noticeKey) {
+        noticeKey = nextNotice;
+        setNotice({ notice: noticed, noise });
       }
       if (!drawn) {
         drawn = true;
@@ -346,6 +399,9 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           }}
         />
       ) : null}
+
+      {notice && !over ? <NoticeGlow notice={notice.notice} noise={notice.noise} turn={run.turn} /> : null}
+      {over ? null : <ControlsHint phase={hint.phase} ticks={hintTicks(hint.progress)} dragToLook={hud.refused} />}
 
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-end px-6 py-3">
         <div className="flex flex-col items-center gap-2">
