@@ -1,60 +1,8 @@
 # Devpost write-up: Hobbs
 
 Paste each section into the Devpost field of the same name. Links are
-absolute, into `Ollienel777/Insider`, which is public. Everything below
-describes `main` at
-[`48387f2`](https://github.com/Ollienel777/Insider/commit/48387f2) (15 November,
-with #167 merged). `TODO(team):` marks what only a person can supply.
-
-**Notes for the team, not for Devpost.**
-
-- **The name.** The product is Hobbs (#183), and since #167 the wordmark and
-  the page title say so. `hackathon/SPEC.md` still says "Heist Anywhere", and
-  every picture in `docs/screenshots/` predates the rename and the restyle.
-- **The README disagrees with this write-up**, and a judge who follows the
-  repo link reads it first. It is stale on:
-  - "never been run live" for CoStar, Vexcel and Matterport;
-  - leading with the fire drill, and the fire safety director as a user
-    (Drill is on hold);
-  - "Pick Halvorsen Tower" as the start (the start is the mission picker);
-  - Scout showing no aerial photos;
-  - only F1 having a level (F1, F2 and F3 do);
-  - one `deepagents` agent in its table (there are two);
-  - "What is next" items already on `main` (live data, aerials in Scout, a
-    Chief that learns);
-  - "no scan id or label reaches the Chief" (false since #173: it gets the
-    scan's room names);
-  - no mention of first person.
-- **The demo script (PR #154) says three things the code does not do.** The
-  casting search reads only the fixture inventory, and the team picks the
-  real building:
-  - beat 1, "Our agent finds one that's empty tonight";
-  - beat 2, "The agent searches CoStar's inventory for this heist", and its
-    note that an agent runs a real location search over CoStar's inventory;
-  - beat 7, "on CoStar's own availability".
-- **Merged PR #185's body names the real building**, with its staged floor
-  and its count of free suites. SPEC §4.5 bars property-identifiable data in
-  any PR. Its author can edit the body.
-- **Nothing here names the real building**, and no screenshot or video may
-  show it, its record or its scan: SPEC §4.5 keeps "property-identifiable
-  data" out of every issue, PR, README and video, Q10 keeps the scan out of
-  the public video, and Q3 and Q5 (Vexcel imagery and CoStar records in a
-  public video) are unanswered. The gallery and the video show fake mode and
-  the fixture buildings.
-- `TODO(team):` the demo video link (optional, at most 2 minutes; the run on
-  F1, not the scan).
-- `TODO(team):` the gallery: screenshots in fake mode. `docs/screenshots/` has
-  candidates, all taken before the rename.
-- `TODO(team):` each member's name and role as they want it shown, and the
-  four Discord usernames the event asks for.
-- `TODO(team):` confirm Entertainment as the main track on the form (the
-  README and SPEC §3 both say so), and tick CoStar, LangChain and Amazon.
-- `TODO(team):` check the hacker guide for a required AI-disclosure wording.
-  `hackathon/EVENT.md` records no rule on AI use; the section below is written
-  to be complete rather than to a template.
-- `TODO(team):` the link to `prizes.md` under "Tracks and prizes" points at
-  this PR's branch, because the file is not on `main` until the PR merges.
-  Switch it to `blob/main/` after the merge.
+absolute, into `Ollienel777/Insider`, which is public, and point at `main`.
+Everything below was checked against `main` on 15 November.
 
 ---
 
@@ -62,8 +10,8 @@ with #167 merged). `TODO(team):` marks what only a person can supply.
 
 For Devpost's tagline field:
 
-> A heist game whose levels AI agents build from a real building's data, and
-> whose floor is that building's own 3D scan.
+> A heist game whose levels AI agents build from a real building's data,
+> walked in first person on the mesh of that building's own 3D scan.
 
 **Elevator pitch.** Hobbs is a stealth heist game that AI agents build from a
 real building. You pick a heist from history. A deep agent reads the
@@ -126,9 +74,10 @@ Hobbs is a stealth game in the browser, played in seven steps.
    itself and names the camera that would see you.
 6. **Run.** Three ways to see the same run, all driven by one engine: an
    isometric board; on a live scan, the board beside the scan; and first
-   person, in real time. On a kit building, first person is inside the
-   building's real Matterport scan, drawn from its mesh and panoramas, with
-   the game's guards and cameras placed in it and "Security shown is game
+   person, in real time. On a kit building, first person walks the mesh of
+   the building's real Matterport scan, which the browser colours from the
+   scan's own panoramas. The picture is still rough in places. The game's
+   guards and cameras are placed in it, with "Security shown is game
    fiction" on screen. A suspicion meter says who is about to see you. Step
    into a camera's light and the alarm rises, the guards converge, and the
    Security Chief's re-plan arrives. Lines such as "Carrying the files" and
@@ -206,11 +155,15 @@ handlers hold the keys, read the CoStar kit and call Vexcel and the model.
   one set of rules, and two grounds to stand on: a fixture floor built from
   room rectangles, or a live scan's own mesh
   ([`scan-ground.ts`](https://github.com/Ollienel777/Insider/blob/main/src/components/run/fp/scan-ground.ts)),
-  where walls, sight and doors come from the mesh. The body and the engine's
-  node are kept in step, so the log and the replay stay exact.
-- **The gate.** Lint, typecheck, 2,843 unit tests, a production build and 28
-  Playwright smoke specs, all in fake mode, on every ready pull request. One spec
-  walks the demo path from the mission picker to the Debrief.
+  where walls, sight and doors come from the mesh. On a scan, a shader paints
+  the mesh from the scan's panoramas, up to four at a time
+  ([`projection.ts`](https://github.com/Ollienel777/Insider/blob/main/src/app/spike/mesh/projection.ts));
+  the picture is still rough in places. The body and the engine's node are
+  kept in step, so the log and the replay stay exact.
+- **The gate.** Lint, typecheck, more than 2,800 unit tests, a production
+  build and more than 25 Playwright smoke specs, all in fake mode, on every
+  ready pull request. One spec walks the demo path from the mission picker to
+  the Debrief.
 
 ## Challenges we ran into
 
@@ -262,8 +215,9 @@ Amazon Bedrock is wired in and not used.
 
 ## Accomplishments that we're proud of
 
-- You can walk a real building's scan in first person as a game level, with
-  guards and cameras that the building's own CoStar record put there.
+- You can walk the mesh of a real building's 3D scan in first person, as a
+  game level, with guards and cameras that the building's own CoStar record
+  put there.
 - Two real `deepagents` agents whose runs replay in the product, down to
   each tool call's input and output.
 - The Why card: every guard, camera and lock answers "which data put you
@@ -335,7 +289,7 @@ Main track: **Entertainment**. Special tracks: CoStar, LangChain, Amazon.
   Anthropic's API, not on Bedrock.
 
 Each requirement, its evidence and an honest status:
-[`prizes.md`](https://github.com/Ollienel777/Insider/blob/docs/13-devpost-current/hackathon/submission/prizes.md).
+[`prizes.md`](https://github.com/Ollienel777/Insider/blob/main/hackathon/submission/prizes.md).
 In short: Entertainment, LangChain and Owner Mode's rows are met in the repo;
 CoStar's real-data row is met only live, at the table; CoStar's "real person"
 row is partly met, because casting searches fixture data; Amazon's "adapt"
@@ -403,9 +357,11 @@ npm run dev
 ```
 
 Open <http://localhost:3000>, pick **The Romaine Street Papers**, and follow
-the primary button on each screen. The top bar shows `FIXTURES`. On the Run,
-**First person** switches the view; from the Debrief, **Owner mode** opens
-the editor and the 50 attempts.
+the primary button on each screen. The top bar shows `FIXTURES`. The Run
+opens in first person: WASD and the mouse to walk, hold E to open or pick a
+door. **Board** switches to the board view, which a phone-width screen gets
+instead. From the Debrief, **Owner mode** opens the editor and the 50
+attempts.
 
 Live mode needs the event's keys and data kit, which are not public. Copy
 `.env.example` to `.env.local`, set `HEIST_MODE=live` (keys alone leave every
