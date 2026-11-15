@@ -105,7 +105,7 @@ describe("a kit building's screens offer only steps that exist", () => {
   it("shows the steps it lacks as off, and says why", async () => {
     const { scout, dossier } = await kitScreens();
     for (const html of [scout, dossier]) {
-      for (const label of ["Plan", "Run", "Debrief", "Drill"]) {
+      for (const label of ["Plan", "Run", "Debrief"]) {
         expect(html).toMatch(new RegExp(`aria-disabled="true" title="Facts only[^"]*" data-state="off"[^>]*>(?:(?!</li>)[\\s\\S])*>${label}<`));
       }
       expect(html).toContain("Facts only: no level is built for this building.");
@@ -123,7 +123,7 @@ describe("a kit building's screens offer only steps that exist", () => {
     route.segment = "scout";
     const html = renderToStaticMarkup(await AppShell({ building: f1, children: <ScoutScreen building={f1} /> }));
     expect(buildingLinks(html, f1.id).map(([step]) => step)).toEqual(expect.arrayContaining(["scout", "owner"]));
-    for (const label of ["Dossier", "Plan", "Run", "Debrief", "Drill"]) {
+    for (const label of ["Dossier", "Plan", "Run", "Debrief"]) {
       expect(html).toMatch(new RegExp(`aria-disabled="true" title="Finish [^"]+ first" data-state="upcoming"(?:(?!</li>)[\\s\\S])*>${label}<`));
     }
     expect(html).toContain("Plan the job");

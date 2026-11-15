@@ -22,12 +22,16 @@ test("a building screen shows the building and the step rail", async ({ page }) 
   await page.goto("/b/F1/scout");
   await expect(page.getByTestId("building-slot")).toHaveText("Halvorsen Tower · Los Angeles");
   const rail = page.getByRole("navigation", { name: "Steps" });
-  await expect(rail.getByRole("link")).toHaveText(["Scout", "Dossier", "Plan", "Run", "Debrief", "Drill"]);
+  // The case file's tabs (issue 166): the current step and Owner Mode open, the rest locked until reached.
+  await expect(rail.getByRole("link")).toHaveText(["1Scout", "6Owner Mode"]);
+  await expect(rail.locator('[aria-disabled="true"]')).toHaveCount(4);
+  await expect(rail).not.toContainText("Drill");
   const current = rail.locator('[aria-current="page"]');
-  await expect(current).toHaveText("Scout");
-  // The underline is the accent (DESIGN.md --accent: #f2a93b).
-  const underline = await current.evaluate((el) => getComputedStyle(el, "::after").backgroundColor);
-  expect(underline).toBe("rgb(242, 169, 59)");
+  await expect(current).toHaveText("1Scout");
+  // The front tab is the folder's manila (DESIGN.md --manila: #e9cf94), on one row with the rest.
+  expect(await current.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(233, 207, 148)");
+  const tops = await rail.locator("li").evaluateAll((els) => new Set(els.map((el) => Math.round(el.getBoundingClientRect().top))).size);
+  expect(tops).toBe(1);
 });
 
 test("the primary action walks to the next step and marks the last one done", async ({ page }) => {
@@ -35,8 +39,8 @@ test("the primary action walks to the next step and marks the last one done", as
   await page.getByRole("link", { name: "Plan the job" }).click();
   await expect(page).toHaveURL(/\/b\/F1\/dossier\?m=romaine-1974$/);
   const rail = page.getByRole("navigation", { name: "Steps" });
-  await expect(rail.locator('[aria-current="page"]')).toHaveText("Dossier");
-  await expect(rail.locator('[data-state="done"]')).toHaveText(["Scout(done)"]);
+  await expect(rail.locator('[aria-current="page"]')).toHaveText("2Dossier");
+  await expect(rail.locator('[data-state="done"]')).toHaveText(["1Scout(done)"]);
 });
 
 test("an unknown building is a not-found page with a way back", async ({ page }) => {

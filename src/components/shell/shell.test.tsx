@@ -38,7 +38,8 @@ describe("StepRailView", () => {
 
   it("lists the steps in order as numbered folder tabs, then Owner Mode, on one row", () => {
     const items = [...html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)].map((m) => text(m[1]).replace(/ \(.*\)$/, ""));
-    expect(items).toEqual(["1Scout", "2Dossier", "3Plan", "4Run", "5Debrief", "6Drill", "7Owner Mode"]);
+    expect(items).toEqual(["1Scout", "2Dossier", "3Plan", "4Run", "5Debrief", "6Owner Mode"]);
+    expect(html).not.toContain("Drill");
     expect(html).toContain("flex-nowrap");
   });
 
@@ -53,7 +54,7 @@ describe("StepRailView", () => {
     const links = [...html.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1]);
     expect(links).toEqual(["/b/F1/scout", "/b/F1/owner"]);
     expect(html).toMatch(/aria-disabled="true" title="Finish Scout first" data-state="upcoming"/);
-    expect(html).toMatch(/aria-disabled="true" title="Finish Debrief first" data-state="upcoming"/);
+    expect(html).toMatch(/aria-disabled="true" title="Finish Run first" data-state="upcoming"/);
   });
 
   it("opens every step on Owner Mode", () => {

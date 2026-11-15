@@ -28,9 +28,9 @@ const blocked = {
 };
 
 describe("the Run screen's view choice", () => {
-  it("is the board until first person is chosen", () => {
-    expect(DEFAULT_RUN_VIEW).toBe("board");
-    expect(loadRunView(memory())).toBe("board");
+  it("is first person until the board is chosen (issue 166)", () => {
+    expect(DEFAULT_RUN_VIEW).toBe("first-person");
+    expect(loadRunView(memory())).toBe("first-person");
   });
 
   it("remembers first person, and the board again after", () => {
@@ -42,14 +42,14 @@ describe("the Run screen's view choice", () => {
     expect(loadRunView(storage)).toBe("board");
   });
 
-  it("reads anything else in storage as the board", () => {
+  it("reads anything else in storage as first person", () => {
     const storage = memory();
     storage.setItem(RUN_VIEW_KEY, "isometric");
-    expect(loadRunView(storage)).toBe("board");
+    expect(loadRunView(storage)).toBe("first-person");
   });
 
-  it("is the board, without an error, when storage is blocked", () => {
-    expect(loadRunView(blocked)).toBe("board");
+  it("is first person, without an error, when storage is blocked", () => {
+    expect(loadRunView(blocked)).toBe("first-person");
     expect(() => saveRunView("first-person", blocked)).not.toThrow();
   });
 });

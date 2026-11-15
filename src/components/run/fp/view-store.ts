@@ -8,8 +8,8 @@ import { useCallback, useEffect, useState } from "react";
 
 export type RunView = "board" | "first-person";
 
-/** The view a browser that has never chosen sees, and the one every other smoke test walks. */
-export const DEFAULT_RUN_VIEW: RunView = "board";
+/** The view a browser that has never chosen sees: first person (issue 166). The smoke tests start on the board (playwright.config.ts). */
+export const DEFAULT_RUN_VIEW: RunView = "first-person";
 
 /** One key for the whole browser: the choice is the player's, not the building's. */
 export const RUN_VIEW_KEY = "heist:run-view";
@@ -17,10 +17,10 @@ export const RUN_VIEW_KEY = "heist:run-view";
 /** The browser's storage, read inside the caller's `try`: the getter itself throws when site data is blocked. */
 const browserStorage = (): Storage | undefined => globalThis.localStorage;
 
-/** The stored choice. The board when there is none, when it is not a view, or when storage cannot be read. */
+/** The stored choice. First person when there is none, when it is not a view, or when storage cannot be read. */
 export function loadRunView(storage?: Pick<Storage, "getItem">): RunView {
   try {
-    return (storage ?? browserStorage())?.getItem(RUN_VIEW_KEY) === "first-person" ? "first-person" : DEFAULT_RUN_VIEW;
+    return (storage ?? browserStorage())?.getItem(RUN_VIEW_KEY) === "board" ? "board" : DEFAULT_RUN_VIEW;
   } catch {
     return DEFAULT_RUN_VIEW;
   }
@@ -49,7 +49,8 @@ export interface RunViewState {
  * board; a browser that chose first person switches a moment later.
  */
 export function useRunView(): RunViewState {
-  const [view, setView] = useState<RunView>(DEFAULT_RUN_VIEW);
+  // The server's render and the browser's first one show the board; the stored choice, or first person, follows a moment later.
+  const [view, setView] = useState<RunView>("board");
   const [unavailable, setUnavailable] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setView(loadRunView()), 0);

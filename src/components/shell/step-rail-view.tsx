@@ -69,7 +69,8 @@ export function StepRailView({
   const states = stepStates(current);
   const href = (segment: string) => buildingHref(buildingId, segment, missionId);
   const owner = current === "owner";
-  const steps = STEPS.map((s, i) => ({ ...s, n: i + 1 }));
+  // Drill Mode is on hold, so the file has no Drill tab; its page is untouched.
+  const steps = STEPS.filter((s) => s.segment !== "drill").map((s, i) => ({ ...s, n: i + 1 }));
   const renderStep = ({ segment, label, n }: { segment: StepSegment; label: string; n: number }, i: number) => {
     if (factsOnly && !FACTS_ONLY_STEPS.includes(segment)) return <StepLocked label={label} n={n} why={FACTS_ONLY_NOTE} state="off" />;
     // On Owner Mode every step is open: the owner came from a finished run.
