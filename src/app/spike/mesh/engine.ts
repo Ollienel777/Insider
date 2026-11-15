@@ -103,6 +103,12 @@ const MOVE_WAIT = 10_000;
 /** Radians per second of turning on the arrow keys. */
 const KEY_TURN = 2.2;
 
+/**
+ * The sandbox's pace: a brisk walk and a stroll. Faster than this and the
+ * player outruns the full-size panoramas, which take a second each to come in.
+ */
+const PACE = { ...TUNING, runSpeed: 3, walkSpeed: 1.5 };
+
 const MOVE_KEYS = new Set([
   "KeyW",
   "KeyA",
@@ -516,7 +522,7 @@ export class ScanWalk {
       this.yaw = recorder.yaw;
       this.pitch = 0;
     } else {
-      next = stepMove(state, input, this.yaw, dt, world);
+      next = stepMove(state, input, this.yaw, dt, world, PACE);
     }
     this.state = next;
     if (input.forward !== 0 || input.right !== 0) this.holdLift = false;

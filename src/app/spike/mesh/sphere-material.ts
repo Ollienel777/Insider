@@ -21,13 +21,16 @@
 // in the mesh cannot move), then the mean of the samples near that median
 // (which keeps a wall flat and an edge where it is).
 //
-// Slot 0 of the store's panoramas is the one the eye is nearer and slot 1
-// the other of the two it is between. They share the picture all the way
-// from one scan position to the next. The lead's sphere is drawn first and
-// writes one less the other's share to the frame's alpha (the far view
-// behind writes 0); the other's is then blended in by that alpha: its share
-// of every pixel the lead painted, and the whole of any pixel it did not.
-import { CustomBlending, DoubleSide, DstAlphaFactor, OneFactor, OneMinusDstAlphaFactor, ShaderMaterial, type IUniform } from "three";
+// Two spheres are drawn, both solid: the lead's, and behind it the other
+// of the two panoramas the eye is between. Nothing is blended (two
+// photographs laid over each other read as a double exposure). The other
+// sphere is set a little farther from the eye than it is, so wherever both
+// have a surface the lead's is the one seen, and the other shows only
+// through what the lead leaves out: its skins, and the directions where
+// its depth found nothing. Behind both is the mesh itself, so no gap ever
+// shows nothing. When the lead changes, the new one comes in over a few
+// frames as a fine screen of pixels (`uSolid`) rather than at a stroke.
+import { DoubleSide, ShaderMaterial, type IUniform } from "three";
 import type { PhotoUniforms } from "./photo-material";
 
 /** The angle between a vertex's depth samples, radians: about a degree, the sphere's own grid. */
@@ -39,11 +42,17 @@ export const SKIN = 0.15;
 /** Depths are held to this range, metres: a hole in the mesh reads as far, not as two kilometres. */
 export const DEPTH_NEAR = 0.25;
 export const DEPTH_FAR = 40;
+/** The sphere behind the lead is drawn this much farther from the eye than it is: a part of its distance, and metres. */
+export const BEHIND_PART = 0.05;
+export const BEHIND = 0.08;
 
 const vertex = (slot: number) => /* glsl */ `
 uniform vec3 uPanoPos[4];
 uniform samplerCube uDepth${slot};
+/** 1 for the sphere behind the lead. */
+uniform float uBehind;
 varying vec3 vDirection;
+varying float vDepth;
 varying vec3 vWorld;
 varying float vJump;
 
@@ -92,8 +101,12 @@ void main() {
   float depth = count > 0.0 ? sum / count : median;
   // A vertex whose own sample is with the median keeps a share of it: detail survives where the depth is steady.
   depth = mix(depth, own, 0.35 * (1.0 - smoothstep(0.02, 0.08, abs(own - median) / median)));
+  vDepth = depth;
   vec4 world = vec4(uPanoPos[${slot}] + direction * depth, 1.0);
   vWorld = world.xyz;
+  // Behind the lead: farther along the eye's own line to it, so it lands on the same pixel.
+  vec3 fromEye = world.xyz - cameraPosition;
+  world.xyz += uBehind * fromEye * (${BEHIND_PART.toFixed(2)} + ${BEHIND.toFixed(2)} / max(length(fromEye), 0.1));
   gl_Position = projectionMatrix * viewMatrix * world;
 }
 `;
@@ -104,55 +117,47 @@ uniform vec3 uPanoGain[4];
 uniform float uPanoSharp[4];
 uniform samplerCube uPano${slot};
 uniform samplerCube uLow${slot};
-uniform float uFade;
+/** How much of the sphere is drawn: 1 all of it, less a screen of its pixels (the lead coming in). */
+uniform float uSolid;
 varying vec3 vDirection;
 varying vec3 vWorld;
 varying float vJump;
+varying float vDepth;
 
 void main() {
   // The skin across a jump in depth: at an edge, and lying along the panorama's own line of sight.
   vec3 normal = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
   if (vJump > ${JUMP.toFixed(2)} && abs(dot(normal, normalize(vDirection))) < ${SKIN.toFixed(2)}) discard;
+  // Where the depth found nothing (a hole in the mesh, a window) there is no surface to draw: what is behind shows.
+  if (vDepth > ${(0.97).toFixed(2)} * ${DEPTH_FAR.toFixed(1)}) discard;
+  if (uSolid < 1.0) {
+    float grain = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453);
+    if (grain > uSolid) discard;
+  }
   vec3 lookup = uPanoInv[${slot}] * vDirection;
   float sharp = uPanoSharp[${slot}];
   vec3 colour = sharp >= 1.0 ? textureCube(uPano${slot}, lookup).rgb
     : sharp <= 0.0 ? textureCube(uLow${slot}, lookup).rgb
     : mix(textureCube(uLow${slot}, lookup).rgb, textureCube(uPano${slot}, lookup).rgb, sharp);
-  gl_FragColor = vec4(colour * uPanoGain[${slot}], uFade);
+  gl_FragColor = vec4(colour * uPanoGain[${slot}], 1.0);
 }
 `;
 
-export type SpherePart = "lead" | "other-depth" | "other";
-
 /**
- * The material for a panorama's sphere, on the store's shared uniforms.
- * "lead" is slot 0: opaque, its alpha `uFade` (one less the other's share).
- * Slot 1 is drawn in two steps: "other-depth" lays down its depth alone,
- * then "other" its colour, blended in by the alpha already in the frame,
- * only where it is the nearest of its own surfaces, so each pixel is
- * blended once.
+ * The material for the sphere of the panorama in the store's slot `slot`
+ * (0 or 1), on the store's shared uniforms. Solid, with depth. `uBehind`
+ * (0 or 1) says whether it is the one behind the lead this frame, and
+ * `uSolid` how far in the lead has come.
  */
-export function createSphereMaterial(panos: PhotoUniforms, part: SpherePart): ShaderMaterial {
-  const slot = part === "lead" ? 0 : 1;
-  const uniforms: Record<string, IUniform> = { ...panos, uFade: { value: 1 } };
-  const material = new ShaderMaterial({
+export function createSphereMaterial(panos: PhotoUniforms, slot: 0 | 1): ShaderMaterial {
+  const uniforms: Record<string, IUniform> = { ...panos, uBehind: { value: 0 }, uSolid: { value: 1 } };
+  return new ShaderMaterial({
     uniforms,
     vertexShader: vertex(slot),
     fragmentShader: fragment(slot),
     side: DoubleSide,
     toneMapped: false,
     depthTest: true,
-    depthWrite: part !== "other",
-    colorWrite: part !== "other-depth",
+    depthWrite: true,
   });
-  if (part === "other") {
-    // Blended, but drawn with the solid things and before the game's own: not sorted in with what is see-through.
-    material.blending = CustomBlending;
-    material.blendSrc = OneMinusDstAlphaFactor;
-    material.blendDst = DstAlphaFactor;
-    // The frame's alpha stays 1: it says a pixel was painted (hole-fill.ts).
-    material.blendSrcAlpha = OneFactor;
-    material.blendDstAlpha = OneFactor;
-  }
-  return material;
 }

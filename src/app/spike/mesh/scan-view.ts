@@ -86,9 +86,9 @@ export interface ScanViewOptions {
   repair?: "all" | "none" | "shards" | "planes";
   /**
    * What is drawn. "spheres" (the default): the panoramas themselves, each
-   * a sphere pushed out to its own depth (sphere-material.ts); the mesh is
-   * then only walked on and measured against, never seen. "mesh": the mesh,
-   * painted from the panoramas and its textures.
+   * a sphere pushed out to its own depth (sphere-material.ts), over the
+   * mesh, which shows only through what the spheres leave out. "mesh": the
+   * mesh alone, painted from the panoramas and its textures.
    */
   view?: "spheres" | "mesh";
   /** Vertical field of view, degrees. */
@@ -182,8 +182,12 @@ const SHARP_CUBES = 5;
 const SPHERE_CUBES = 4;
 /** Squares along each edge of each of a sphere's six faces: about a degree each. */
 const SPHERE_CELLS = 96;
-/** Under this share the panorama the eye is leaving is no longer drawn. */
+/** Under this share the other panorama's sphere is no longer drawn. */
 const SPHERE_GONE = 0.004;
+/** The other panorama takes the lead once its share is this much: past the midpoint, so standing there does not flip it back and forth. */
+const LEAD_TAKES = 0.56;
+/** Seconds a new lead takes to come in. */
+const LEAD_IN = 0.14;
 /** A patch's picture is this fine, metres a pixel, and at most this many pixels a side. */
 const PATCH_TEXEL = 0.012;
 const PATCH_PIXELS = 256;
@@ -260,8 +264,11 @@ export class ScanView {
   private sharpClock = 0;
   private arrived: { group: number; sharp: boolean; image: ImageBitmap }[] = [];
   private readonly fill: HoleFill | null;
-  /** The panoramas as spheres (sphere-material.ts): the lead's, and the other's depth and colour while the lead changes. Empty when the mesh is what is drawn. */
+  /** The panoramas as spheres (sphere-material.ts), one for each of the store's first two slots. Empty when the mesh is what is drawn. */
   private spheres: Mesh[] = [];
+  /** The panorama whose sphere is in front, by its place in the scan's list, and how far in it has come (0 to 1). */
+  private lead = -1;
+  private leadIn = 1;
   private readonly sphereView: boolean;
   private readonly fillMaterial: ShaderMaterial;
   /** For the fans that close small holes: a step farther behind, so a plane's patch over the same hole wins. */
@@ -307,22 +314,22 @@ export class ScanView {
       const sphere = new BufferGeometry();
       sphere.setAttribute("position", new BufferAttribute(directions, 3));
       sphere.setIndex(new BufferAttribute(index, 1));
-      this.spheres = (["lead", "other-depth", "other"] as const).map((part, order) => {
-        const mesh = new Mesh(sphere, createSphereMaterial(this.photo, part));
+      this.spheres = ([0, 1] as const).map((slot) => {
+        const mesh = new Mesh(sphere, createSphereMaterial(this.photo, slot));
         // The shader moves every vertex: the geometry's own bounds say nothing of where it is.
         mesh.frustumCulled = false;
-        // Before anything a game puts in the scene, in this order.
-        mesh.renderOrder = -10 + order;
+        // After the mesh behind them, before anything a game puts in the scene.
+        mesh.renderOrder = -10 + slot;
         mesh.visible = false;
         this.scene.add(mesh);
         return mesh;
       });
-      // The other panorama's sphere is its own picture of the room: it hides itself, not the lead's.
-      this.spheres[1].onBeforeRender = (renderer) => renderer.clearDepth();
+      // The mesh is drawn first and is only ever behind: the spheres start from a clean depth, over it.
+      this.spheres[0].onBeforeRender = (renderer) => renderer.clearDepth();
     }
     this.backdrop = new Mesh(new BoxGeometry(1000, 1000, 1000), this.backdropMaterial);
-    // Behind everything, the spheres included: it has no depth of its own.
-    this.backdrop.renderOrder = -20;
+    // Behind everything, the mesh and the spheres included: it has no depth of its own.
+    this.backdrop.renderOrder = -40;
     this.backdrop.frustumCulled = false;
     this.scene.add(this.backdrop);
     this.state = {
@@ -370,22 +377,36 @@ export class ScanView {
       this.startExposure();
     }
     if (this.spheres.length > 0) {
-      const [lead, otherDepth, other] = this.spheres;
       const show = this.sphereShown && this.used.length > 0;
       const second = show && this.used.length > 1 && this.used[1].share > SPHERE_GONE;
-      lead.visible = show;
-      otherDepth.visible = second;
-      other.visible = second;
-      // The lead leaves the other's share of each pixel in the frame's alpha; the far view behind leaves all of it.
-      (lead.material as ShaderMaterial).uniforms.uFade.value = second ? this.used[0].share / (this.used[0].share + this.used[1].share) : 1;
-      this.photo.uBackdropAlpha.value = show ? 0 : 1;
+      if (show) {
+        // The lead: the one in front already, until the other has clearly more of the share.
+        const [a, b] = this.used;
+        const held = a.index === this.lead ? a : b?.index === this.lead ? b : null;
+        const rival = held === a ? b : a;
+        if (!held || (rival && rival.share / (rival.share + held.share) > LEAD_TAKES)) {
+          // The first lead is simply there; a later one comes in over a few frames.
+          this.leadIn = this.lead === -1 || !held ? 1 : 0;
+          this.lead = (held ? rival : a).index;
+        }
+        this.leadIn = Math.min(1, this.leadIn + dt / LEAD_IN);
+      }
+      this.spheres.forEach((mesh, slot) => {
+        const use = this.used[slot];
+        mesh.visible = show && use !== undefined && (slot === 0 || second);
+        if (!use) return;
+        const front = use.index === this.lead;
+        const uniforms = (mesh.material as ShaderMaterial).uniforms;
+        uniforms.uBehind.value = front ? 0 : 1;
+        uniforms.uSolid.value = front ? this.leadIn : 1;
+      });
     }
     this.draw(null);
   }
 
   /** Renders the current view to `target` (null: the screen), filled where no surface covers it. */
   draw(target: WebGLRenderTarget | null): void {
-    // The spheres paint every pixel themselves, and use the frame's alpha between them.
+    // In the sphere view every pixel is painted: the far view, the mesh over it, the spheres over that.
     if (this.fill && this.shows === "mesh") {
       this.fill.render(this.scene, this.camera, target);
       return;
@@ -403,12 +424,9 @@ export class ScanView {
   setSpheres(on: boolean): void {
     if (this.spheres.length === 0) return;
     this.sphereShown = on;
-    if (this.drawn) this.drawn.visible = !on;
+    // The mesh stays drawn under the spheres: what they leave out shows it. Its stand-ins are for the mesh view alone.
     for (const mesh of this.fillMeshes) mesh.visible = !on;
-    if (!on) {
-      for (const mesh of this.spheres) mesh.visible = false;
-      this.photo.uBackdropAlpha.value = 1;
-    }
+    if (!on) for (const mesh of this.spheres) mesh.visible = false;
   }
 
   /** What is drawn: the panoramas as spheres, or the mesh. */
@@ -655,7 +673,8 @@ export class ScanView {
       state.timings.build = (performance.now() - at) / 1000;
       state.triangles = parsed.index.length / 3;
       this.drawn = new Mesh(geometry, this.material);
-      this.drawn.visible = this.shows === "mesh";
+      // Under the spheres too, drawn before them: whatever they leave out shows the mesh, painted from the panoramas, never nothing.
+      this.drawn.renderOrder = -30;
       this.scene.add(this.drawn);
 
       const sharp = sharpLayer(this.faces);
