@@ -47,6 +47,16 @@ function TabLink({ href, label, n, state }: { href: string; label: string; n: nu
   );
 }
 
+/**
+ * The furthest tab the screen itself reaches: its own tab, or every tab on a
+ * building page that has none (Drill) or on Owner Mode.
+ */
+export function reachedIndex(current: string | null, buildingId: string | null): number {
+  if (current === "owner") return RAIL_TABS.length;
+  const at = RAIL_TABS.findIndex((t) => t.tab === current);
+  return at >= 0 ? at : buildingId ? RAIL_TABS.length : 0;
+}
+
 /** A tab not reached yet, or a step a building does not have: shown in the stack, shaded, not linked. */
 function TabLocked({ label, n, why, state }: { label: string; n: number; why: string; state: string }) {
   return (
@@ -74,7 +84,10 @@ export function StepRailView({
   current,
   missionId = null,
   factsOnly = false,
+  reachedAtLeast = 0,
 }: {
+  /** The furthest tab opened before (RememberedRailView): every tab up to it stays open. */
+  reachedAtLeast?: number;
   /** The building on screen; none on the mission picker and the cast screen. */
   buildingId?: string | null;
   current: string | null;
@@ -85,8 +98,8 @@ export function StepRailView({
 }) {
   const owner = current === "owner";
   const at = RAIL_TABS.findIndex((t) => t.tab === current);
-  // A building page without a tab of its own (Drill) comes after every step.
-  const reached = owner ? RAIL_TABS.length : at >= 0 ? at : buildingId ? RAIL_TABS.length : 0;
+  // A building page without a tab of its own (Drill) comes after every step; a tab opened before stays open.
+  const reached = Math.max(reachedIndex(current, buildingId), reachedAtLeast);
   const href = (tab: RailTab): string | null => {
     if (tab === "missions") return "/";
     if (tab === "cast") return missionId ? `/m/${encodeURIComponent(missionId)}/cast` : null;
@@ -102,7 +115,8 @@ export function StepRailView({
       const before = RAIL_TABS[i - 1]?.label ?? "the step before";
       return <TabLocked label={label} n={n} why={i === 1 ? "Pick a mission first" : `Finish ${before} first`} state="upcoming" />;
     }
-    return <TabLink href={to} label={label} n={n} state={i === at ? "current" : "done"} />;
+    // Before the screen's tab: done. After it: opened before, so open, but not ticked.
+    return <TabLink href={to} label={label} n={n} state={i === at ? "current" : at >= 0 && i > at ? "upcoming" : "done"} />;
   };
   return (
     <nav aria-label="Steps" className="min-w-0 flex-1 pl-[clamp(8px,1.6vw,22px)] max-lg:overflow-x-auto max-lg:[scrollbar-width:none]">

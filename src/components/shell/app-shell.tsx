@@ -12,7 +12,7 @@ import type { ServerStatus } from "@/lib/demo-status";
 import { CaseCover } from "./case-cover";
 import { DemoSafety } from "./demo-safety";
 import { StepRail } from "./step-rail";
-import { StepRailView } from "./step-rail-view";
+import { RememberedRailView } from "./remembered-rail";
 import { isFactsOnly } from "./steps";
 import { TopBar } from "./top-bar";
 
@@ -64,7 +64,7 @@ export async function AppShell({ children, building, tab = "missions", missionId
             builtMissions={isFactsOnly(building.source) ? builtMissions(building.id) : undefined}
           />
         ) : (
-          <StepRailView current={tab} missionId={missionId ?? null} />
+          <RememberedRailView current={tab} missionId={missionId ?? null} />
         )}
       </div>
       <main
