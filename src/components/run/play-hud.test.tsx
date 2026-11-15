@@ -180,10 +180,10 @@ describe("the objective line's words", () => {
     run = play(run, [{ kind: "take" }]);
     expect(objectiveInfo(placed, run, mission.objective, mission.exitCondition)).toEqual({
       label: "Way out",
-      goal: "Out by the loading dock",
+      goal: "Out by the loading dock or the roof hatch. Reach either with the files and the run ends.",
       hops: 6,
       locks: 0,
-      taken: "Files taken",
+      taken: "Carrying the files",
       take: null,
       outcome: null,
     });
@@ -810,11 +810,12 @@ function pieces(run: RunState, why: string | null = null) {
   } satisfies Record<string, ReactNode>;
 }
 
-function hudOf(run: RunState, radio: RadioMessage | null = { kind: "step", text: STEP }): PlayHud {
+function hudOf(run: RunState, radio: RadioMessage | null = { kind: "step", text: STEP }, moment: PlayHud["moment"] = null): PlayHud {
   return {
     objective: objectiveInfo(placed, run, mission.objective, mission.exitCondition),
     danger: { alarm: run.alarm, watchers: [] },
     radio,
+    moment,
   };
 }
 
