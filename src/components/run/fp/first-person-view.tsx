@@ -16,6 +16,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AmbientLight,
+  Color,
   DirectionalLight,
   Fog,
   Group,
@@ -45,6 +46,7 @@ import { readPalette } from "./palette";
 import { joinRefusal, joinScan } from "./scan-join";
 import { nodeFloors, scanGround } from "./scan-ground";
 import { addFurniture, derivePlan, FURNITURE, PLAN, planSolid, type ScanPlan } from "./scan-plan";
+import { buildDress, DRESS } from "./scan-dress";
 import { fetchPhotoPanos, PhotoSet } from "./scan-photo";
 import { buildPlanGroup } from "./scan-plan-scene";
 import { meshSolid } from "./scan-solid";
@@ -107,6 +109,8 @@ interface Stage {
    * run, looking along it.
    */
   cameraMount?: (cover: readonly string[]) => Vec;
+  /** The door leaves' colour, where it is not the palette's. */
+  doorColour?: Color;
   /** Puts the run's pieces (actors.ts) in the drawing. */
   add(object: Object3D): void;
   /** Whether the picture around `pos` has arrived: until it has, the view draws but the player waits. */
@@ -154,6 +158,15 @@ function scanLook(): "set" | "blockout" | "photo" {
   } catch {
     return "set";
   }
+}
+
+/** The view's height, degrees: a shooter's 72, narrower on a wide view so it never spans more than `MAX_ACROSS` across. */
+const FOV_DEGREES = 72;
+const MAX_ACROSS = 100;
+function fovFor(aspect: number): number {
+  const across = (MAX_ACROSS * Math.PI) / 360;
+  const capped = (2 * Math.atan(Math.tan(across) / Math.max(aspect, 1e-3)) * 180) / Math.PI;
+  return Math.min(FOV_DEGREES, capped);
 }
 
 /** Whether this browser will give a canvas a WebGL 2 context, asked of a spare canvas. */
@@ -237,7 +250,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         }),
       };
       const tempo = (id: string) => level.guardTempo?.[id] ?? level.patrolTempo;
-      const actors = new Actors(ground, palette, marks, still, FP.turnMs, tempo);
+      const actors = new Actors(ground, palette, marks, still, FP.turnMs, tempo, on.doorColour ?? null);
       on.add(actors.group);
 
       // Facing the first way on from where the engine has the player.
@@ -436,7 +449,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       floorGroup: Group,
       ground: Stage["ground"],
       floorY: number,
-      extra: Partial<Pick<Stage, "cameraMount" | "settled" | "counts">> & { tick?: (renderer: WebGLRenderer) => void; dispose?: () => void } = {},
+      extra: Partial<Pick<Stage, "cameraMount" | "settled" | "counts" | "doorColour">> & { tick?: (renderer: WebGLRenderer) => void; dispose?: () => void } = {},
     ): Stage | null => {
       if (!hasWebGL()) return null;
       let renderer: WebGLRenderer;
@@ -449,7 +462,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       const scene = new Scene();
       scene.background = palette.n950;
       scene.fog = new Fog(palette.n950, 4, 36);
-      const camera = new PerspectiveCamera(72, 1, 0.05, 80);
+      const camera = new PerspectiveCamera(FOV_DEGREES, 1, 0.05, 80);
       // An even night light, a slanted one so walls that meet at a corner differ in shade, and a
       // little carried by the player so what is near reads before what is far.
       scene.add(new AmbientLight(palette.n100, 2));
@@ -470,6 +483,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         ground,
         liftY: floorY,
         cameraMount: extra.cameraMount,
+        doorColour: extra.doorColour,
         add: (object) => pieces.add(object),
         settled: extra.settled ?? (() => true),
         counts: extra.counts ?? (() => null),
@@ -479,6 +493,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
           renderer.setSize(w, h, false);
           camera.aspect = w / h;
+          camera.fov = fovFor(w / h);
           camera.updateProjectionMatrix();
         },
         draw(walker, lift, yaw, pitch) {
@@ -586,6 +601,24 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           (x, z) => tree.floorBelow(x, floorY + FURNITURE.highM, z, FURNITURE.highM - 0.2),
           (x, z) => tree.floorBelow(x, floorY + FURNITURE.standM, z, FURNITURE.standM + 0.3),
         );
+        // Only what a scan position saw: a box no photograph confirms would be a grey guess.
+        const eyes = floor.nodes.flatMap((n) => {
+          const y = join.heights.eye.get(n.id);
+          return y === undefined ? [] : [[n.x, y, n.y] as const];
+        });
+        plan.furniture = plan.furniture.filter((box) => {
+          const c = box.corners.reduce((s, p) => ({ x: s.x + p.x / 4, y: s.y + p.y / 4 }), { x: 0, y: 0 });
+          const target = [c.x, box.top - 0.03, c.y] as const;
+          return eyes.some(([ex, ey, ez]) => {
+            const dx = target[0] - ex;
+            const dy = target[1] - ey;
+            const dz = target[2] - ez;
+            const far = Math.hypot(dx, dy, dz);
+            if (far > 7 || far < 0.3) return false;
+            const hit = mesh.hit([ex, ey, ez], [dx / far, dy / far, dz / far], far + 0.3);
+            return hit !== null && Math.abs(hit - far) < 0.3;
+          });
+        });
       }
       // Counts only.
       console.info(
@@ -607,10 +640,15 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         return best ? toneOfRoom(nodeRoom.get(best.id) ?? "") : "plain";
       };
       const blockout = buildPlanGroup(plan, palette, tone);
-      if (!dressed) return finishPlan(ourStage(blockout, ground, floorY, { cameraMount: scanCameraMount(ground) }), plan, tree);
+      if (!dressed) {
+        // The glass stops the player here too, so it is drawn here too.
+        blockout.add(buildDress(plan, ground.doors.map((d) => d.centre)));
+        return finishPlan(ourStage(blockout, ground, floorY, { cameraMount: scanCameraMount(ground) }), plan, tree);
+      }
       // The set: the blockout until the photographs are in hand, then the photographs, painted as they arrive.
       const set = new Group();
       set.add(blockout);
+      set.add(buildDress(plan, ground.doors.map((d) => d.centre)));
       let photos: PhotoSet | null = null;
       let photosFailed = false;
       const startNode = ground.nodes.get(latest.current.run.playerNode);
@@ -633,6 +671,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       return finishPlan(
         ourStage(set, ground, floorY, {
           cameraMount: scanCameraMount(ground),
+          doorColour: DRESS.wood,
           tick(renderer) {
             photos?.step(renderer);
             if (photos && !told && photos.progress().done) {

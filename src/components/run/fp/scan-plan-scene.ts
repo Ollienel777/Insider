@@ -141,7 +141,8 @@ export function buildPlanGroup(plan: ScanPlan, palette: Palette, tone: (p: Vec) 
   };
   for (const wall of plan.walls) {
     const len = Math.hypot(wall.b.x - wall.a.x, wall.b.y - wall.a.y);
-    if (len < 1e-6) continue;
+    // A shut door is drawn as a door (scan-dress.ts), not wall.
+    if (len < 1e-6 || wall.door) continue;
     const d = { x: (wall.b.x - wall.a.x) / len, y: (wall.b.y - wall.a.y) / len };
     const mid = { x: (wall.a.x + wall.b.x) / 2, y: (wall.a.y + wall.b.y) / 2 };
     for (const s of [1, -1]) {

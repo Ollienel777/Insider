@@ -27,8 +27,13 @@
 import type { Seg, Vec } from "./ground";
 import type { ScanSolid, Vec3 } from "./scan-ground";
 
+/** A door's height: what is over it is wall. */
+const FP_DOOR_M = 2.1;
+
 /** Every number the plan is worked out by. Metres. */
 export const PLAN = Object.freeze({
+  /** The slice over door height, above the floor, that tells a doorway (wall over it) from glass (none). */
+  headM: 2.3,
   /** The slices' heights above the floor: over the desks, under the ceiling. */
   sliceM: [1.1, 1.5, 1.9] as readonly number[],
   /** A triangle this flat (|normal y|) is a floor, a desk top or a ceiling, not a wall. */
@@ -61,10 +66,13 @@ export const PLAN = Object.freeze({
   leashM: 6.5,
   /** Within this of a scan position, a hole in the mesh's floor is still floor. */
   holeM: 1.5,
-  /** A gap between two walls on a line up to this wide is a doorway, framed; wider is open floor. */
-  doorwayMaxM: 2.0,
+  /** A walked gap between two walls on a line up to this wide is a doorway, framed; wider is open floor. */
+  doorwayMaxM: 2.6,
+  /** A gap no one walked through this wide or wider is a pane of glass; narrower, a hole in the scan, closed. Wider than the most is open. */
+  glassMinM: 1.0,
+  glassMaxM: 8,
   /** A doorway up to this wide has a lintel over it, as a fixture floor's doors do. */
-  lintelMaxM: 1.6,
+  lintelMaxM: 1.8,
 });
 
 export interface PlanInput {
@@ -86,12 +94,16 @@ export interface PlanInput {
 export interface PlanWall extends Seg {
   /** Put where the floor ends with no wall of the scan's. */
   boundary: boolean;
+  /** A shut door across a doorway: solid, but drawn as a door, not wall. */
+  door?: boolean;
 }
 
 /** A gap between two walls on one line. `a` and `b` are the walls' ends either side. */
 export interface PlanDoorway extends Seg {
   width: number;
   lintel: boolean;
+  /** No one went through it: its door is drawn shut, and is a wall (`PlanWall.door`). */
+  shut: boolean;
 }
 
 /** The floor as cells on the building's square. */
@@ -123,6 +135,8 @@ export interface ScanPlan {
   ceilingY: number;
   walls: PlanWall[];
   doorways: PlanDoorway[];
+  /** Panes of glass across a wall line: solid to walk into, clear to see through. */
+  glass: Seg[];
   floor: PlanFloor;
   /** Counts, for the console and the tests: no positions. */
   stats: { pieces: number; lines: number; cuts: number; boundary: number };
@@ -141,6 +155,8 @@ interface Line {
   along: "u" | "v";
   c: number;
   runs: [number, number][];
+  /** Where the line has wall over door height: over a doorway, not over glass. */
+  head: [number, number][];
 }
 
 const rot = (p: Vec, angle: number): { u: number; v: number } => {
@@ -326,7 +342,8 @@ function linesOf(pieces: Piece[], along: "u" | "v", levels: number): Line[] {
       if (was >= need && depth < need) covered.push([start, at]);
     }
     const runs = union(covered, PLAN.bridgeM).filter(([s, e]) => e - s >= PLAN.minRunM);
-    if (runs.length > 0) lines.push({ along, c: sum / wsum, runs });
+    const head = union(mine.filter((p) => p.level >= levels).map((p) => [p.lo, p.hi]), PLAN.closeM);
+    if (runs.length > 0) lines.push({ along, c: sum / wsum, runs, head });
   }
   return lines;
 }
@@ -362,8 +379,11 @@ export function derivePlan(input: PlanInput): ScanPlan {
   const top = ceilingY - floorY - 0.2;
   const heights = PLAN.sliceM.filter((h) => h < top).map((h) => floorY + h);
   if (heights.length === 0) heights.push(floorY + Math.min(1.1, Math.max(0.5, top)));
-  const raw = slicePieces(input, heights);
-  const angle = squareOf(raw);
+  // One more slice over door height, if the ceiling allows: a doorway has wall over it, glass none.
+  const headY = Math.min(PLAN.headM, ceilingY - floorY - 0.25);
+  const sliced = headY > FP_DOOR_M + 0.05 ? [...heights, floorY + headY] : heights;
+  const raw = slicePieces(input, sliced);
+  const angle = squareOf(raw.filter((p) => p.level < heights.length));
 
   // Square pieces, in the cell frame.
   const across: Piece[] = [];
@@ -396,7 +416,7 @@ export function derivePlan(input: PlanInput): ScanPlan {
       const at = alongOf(p) + t * (alongOf(q) - alongOf(p));
       const len = Math.hypot(q.u - p.u, q.v - p.v) || 1;
       const sin = Math.abs(acrossOf(q) - acrossOf(p)) / len;
-      const w = Math.min(2.5, PLAN.doorM / Math.max(sin, 0.4));
+      const w = Math.min(1.6, PLAN.doorM / Math.max(sin, 0.6));
       holes.push([at - w / 2, at + w / 2]);
     }
     for (const n of nodesUV) {
@@ -522,16 +542,55 @@ export function derivePlan(input: PlanInput): ScanPlan {
 
   const walls: PlanWall[] = [];
   const doorways: PlanDoorway[] = [];
+  const glass: Seg[] = [];
   const toWorld = (line: { along: "u" | "v"; c: number }, at: number) => (line.along === "v" ? unrot(at, line.c, angle) : unrot(line.c, at, angle));
+  const headOver = (line: Line, lo: number, hi: number) => {
+    let covered = 0;
+    for (const [a, b] of line.head) covered += Math.max(0, Math.min(b, hi) - Math.max(a, lo));
+    return covered / Math.max(1e-6, hi - lo);
+  };
+  // Each gap between two walls on a line: a doorway where the scanner went through it or stood in
+  // it; else, if wide, a pane of glass the scan saw through; else a hole in the scan, closed.
   for (const line of lines) {
+    const acrossOf = (p: { u: number; v: number }) => (line.along === "v" ? p.v : p.u);
+    const alongOf = (p: { u: number; v: number }) => (line.along === "v" ? p.u : p.v);
+    const walked = (lo: number, hi: number) =>
+      pathsUV.some(([p, q]) => {
+        const dp = acrossOf(p) - line.c;
+        const dq = acrossOf(q) - line.c;
+        if (dp * dq >= 0) return false;
+        const at = alongOf(p) + (dp / (dp - dq)) * (alongOf(q) - alongOf(p));
+        return at > lo - 0.1 && at < hi + 0.1;
+      }) || nodesUV.some((n) => Math.abs(acrossOf(n) - line.c) < PLAN.nodeClearM && alongOf(n) > lo - 0.1 && alongOf(n) < hi + 0.1);
     const runs = [...line.runs].sort((p, q) => p[0] - q[0]);
-    runs.forEach(([lo, hi], k) => {
-      walls.push({ a: toWorld(line, lo), b: toWorld(line, hi), boundary: false });
-      const next = runs[k + 1];
-      if (!next) return;
-      const width = next[0] - hi;
-      if (width >= 0.5 && width <= PLAN.doorwayMaxM) doorways.push({ a: toWorld(line, hi), b: toWorld(line, next[0]), width, lintel: width <= PLAN.lintelMaxM });
-    });
+    const kept: [number, number][] = [];
+    for (const run of runs) {
+      const last = kept[kept.length - 1];
+      if (!last) {
+        kept.push([run[0], run[1]]);
+        continue;
+      }
+      const [lo, hi] = [last[1], run[0]];
+      const width = hi - lo;
+      if (walked(lo, hi)) {
+        if (width <= PLAN.doorwayMaxM) doorways.push({ a: toWorld(line, lo), b: toWorld(line, hi), width, lintel: width <= PLAN.lintelMaxM, shut: false });
+        kept.push([run[0], run[1]]);
+      } else if (headOver(line, lo, hi) >= 0.6 && width <= PLAN.doorwayMaxM && width >= 0.5) {
+        // Wall over it: a doorway no one went through. Its door stands shut, a wall to walk into.
+        doorways.push({ a: toWorld(line, lo), b: toWorld(line, hi), width, lintel: width <= PLAN.lintelMaxM, shut: true });
+        walls.push({ a: toWorld(line, lo), b: toWorld(line, hi), boundary: false, door: true });
+        kept.push([run[0], run[1]]);
+      } else if (width >= PLAN.glassMinM && width <= PLAN.glassMaxM) {
+        glass.push({ a: toWorld(line, lo), b: toWorld(line, hi) });
+        kept.push([run[0], run[1]]);
+      } else if (width < PLAN.glassMinM) {
+        last[1] = run[1];
+      } else {
+        kept.push([run[0], run[1]]);
+      }
+    }
+    line.runs = kept;
+    for (const [lo, hi] of kept) walls.push({ a: toWorld(line, lo), b: toWorld(line, hi), boundary: false });
   }
 
   // Where the floor ends with no wall, a wall: what stops the player is drawn.
@@ -588,6 +647,7 @@ export function derivePlan(input: PlanInput): ScanPlan {
     ceilingY,
     walls,
     doorways,
+    glass,
     floor: { angle, u0, v0, cell, cols, rows, cells },
     stats: { pieces: raw.length, lines: lines.filter((l) => l.runs.length > 0).length, cuts, boundary },
   };
@@ -617,12 +677,14 @@ export function fromCellFrame(floor: PlanFloor, u: number, v: number): Vec {
  * walls are the plan's walls, full height, as thick as they are drawn. So
  * the player is stopped by exactly the walls in the picture.
  */
-export function planSolid(plan: ScanPlan): ScanSolid {
+export function planSolid(plan: ScanPlan): ScanSolid & { hit(origin: Vec3, dir: Vec3, far: number, throughGlass?: boolean): number | null } {
   const half = PLAN.thickM / 2;
   // Walls are full height and as thick as drawn; a box's sides stand as high as its top, and no thicker.
-  const walls: { a: Vec; b: Vec; top: number; thick: number }[] = [
-    ...plan.walls.map((w) => ({ a: w.a, b: w.b, top: Infinity, thick: half })),
-    ...plan.furniture.flatMap((box) => box.corners.map((a, k) => ({ a, b: box.corners[(k + 1) % 4], top: box.top, thick: 0.01 }))),
+  // Glass stops a body and the scan's own sense of what is in view, but not a guard's eye (`sight`).
+  const walls: { a: Vec; b: Vec; top: number; thick: number; clear: boolean }[] = [
+    ...plan.walls.map((w) => ({ a: w.a, b: w.b, top: Infinity, thick: half, clear: false })),
+    ...plan.glass.map((g) => ({ a: g.a, b: g.b, top: Infinity, thick: 0.02, clear: true })),
+    ...plan.furniture.flatMap((box) => box.corners.map((a, k) => ({ a, b: box.corners[(k + 1) % 4], top: box.top, thick: 0.01, clear: false }))),
   ];
   const { floorY, ceilingY } = plan;
   return {
@@ -662,7 +724,7 @@ export function planSolid(plan: ScanPlan): ScanSolid {
       }
       return { x: px, z: pz };
     },
-    hit(origin: Vec3, dir: Vec3, far: number) {
+    hit(origin: Vec3, dir: Vec3, far: number, throughGlass = false) {
       const [ox, oy, oz] = origin;
       const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
       const flat = Math.hypot(dir[0], dir[2]) / len;
@@ -670,8 +732,8 @@ export function planSolid(plan: ScanPlan): ScanSolid {
       const dx = dir[0] / len / flat;
       const dz = dir[2] / len / flat;
       let best: number | null = null;
-      for (const { a, b, top } of walls) {
-        if (oy > top) continue;
+      for (const { a, b, top, clear } of walls) {
+        if (oy > top || (throughGlass && clear)) continue;
         const ex = b.x - a.x;
         const ez = b.y - a.y;
         const den = dx * ez - dz * ex;
@@ -686,6 +748,9 @@ export function planSolid(plan: ScanPlan): ScanSolid {
         if (d <= far && (best === null || d < best)) best = d;
       }
       return best;
+    },
+    sight(origin: Vec3, dir: Vec3, far: number) {
+      return this.hit(origin, dir, far, true);
     },
   };
 }

@@ -43,6 +43,8 @@ export interface ScanSolid {
   pushOut(x: number, feetY: number, z: number, radius: number): { x: number; z: number };
   /** How far along the ray from `origin` in the unit direction `dir` the mesh is first hit, up to `far`; null when it isn't. */
   hit(origin: Vec3, dir: Vec3, far: number): number | null;
+  /** As `hit`, for an eye: what can be seen through (glass) is no hit. Where absent, `hit`. */
+  sight?(origin: Vec3, dir: Vec3, far: number): number | null;
 }
 
 /** Every number the scan's ground is tuned by. Metres. */
@@ -204,12 +206,13 @@ export function scanGround(floor: FloorGraph, solid: ScanSolid, heights: ScanHei
   };
   const feetAt = (p: Vec): number => floorAt(p) ?? floorY;
   /** Whether the mesh leaves the line from `p` to `q` clear at chest height. Doors are not walls here: `clear` and `regionOf` add the shut ones. */
-  const inView = (p: Vec, q: Vec): boolean => {
+  const inView = (p: Vec, q: Vec, eye = false): boolean => {
     const dx = q.x - p.x;
     const dy = q.y - p.y;
     const far = Math.hypot(dx, dy);
     if (far < 1e-6) return true;
-    const hit = solid.hit([p.x, floorY + SCAN.sightM, p.y], [dx / far, 0, dy / far], far);
+    const ray = eye && solid.sight ? solid.sight.bind(solid) : solid.hit.bind(solid);
+    const hit = ray([p.x, floorY + SCAN.sightM, p.y], [dx / far, 0, dy / far], far);
     return hit === null || hit >= far - 0.05;
   };
   /** Whether a body may stand at `p`: near the scan's positions, over the floor or close enough to a position that a hole is still floor. */
@@ -263,7 +266,7 @@ export function scanGround(floor: FloorGraph, solid: ScanSolid, heights: ScanHei
       const v = stopped ? { x: 0, y: 0 } : deflect(vel, normals);
       return { pos: p, vel: v, pressed };
     },
-    clear: (p, q, locked) => !blocked(shut(locked), p, q) && inView(p, q),
+    clear: (p, q, locked) => !blocked(shut(locked), p, q) && inView(p, q, true),
     regionOf(pos, locked = []) {
       if (!standable(pos)) return null;
       const bars = shut(locked);

@@ -66,7 +66,7 @@ export const PHOTO = Object.freeze({
   /** The floor and ceiling are painted in tiles this big. */
   tileM: 4,
   /** How sharply a panorama's share falls as its score falls below the best: higher, crisper, more seams. */
-  sharpness: 5,
+  sharpness: 8,
   /** A depth cube's face, pixels. */
   depthPx: 256,
   /** Panoramas fetched at once. */
@@ -89,6 +89,8 @@ interface Surface {
   w: number;
   h: number;
   kind: "floor" | "ceiling" | "wall" | "furniture";
+  /** The piece of furniture it belongs to, or -1. */
+  piece: number;
   /** Where its patch sits in the atlas, texels, without the gutter. */
   x: number;
   y: number;
@@ -96,11 +98,12 @@ interface Surface {
   ph: number;
 }
 
+/** Until the photographs say otherwise: an office's carpet, ceiling tile, white wall and desk. */
 const FALLBACK: Record<Surface["kind"], [number, number, number]> = {
-  floor: [0.42, 0.4, 0.38],
-  ceiling: [0.82, 0.82, 0.8],
-  wall: [0.72, 0.7, 0.66],
-  furniture: [0.4, 0.38, 0.36],
+  floor: [0.55, 0.53, 0.5],
+  ceiling: [0.88, 0.88, 0.86],
+  wall: [0.86, 0.85, 0.83],
+  furniture: [0.6, 0.56, 0.5],
 };
 
 const CUBE_CAMERAS: readonly [Vector3, Vector3][] = [
@@ -140,7 +143,8 @@ float score() {
   float d = length(ray);
   vec3 dir = ray / max(d, 1e-4);
   float facing = dot(normalize(vNormal), -dir);
-  if (facing < 0.06) discard;
+  // Never at a grazing angle (past about 62°), and never from across the building: that is where a photo smears.
+  if (facing < 0.47 || d > 8.0) discard;
   float seenTo = textureCube(uDepth, ray).r;
   if (d > seenTo * 1.015 + 0.05) discard;
   float s = 0.8 * log(facing) - 2.0 * log(max(d, 0.4));
@@ -313,15 +317,19 @@ void main() {
       ...add,
     });
     this.resolveMaterial = new ShaderMaterial({
-      uniforms: { uAccum: { value: this.accum.texture } },
+      uniforms: { uAccum: { value: this.accum.texture }, uBest: { value: this.best.texture } },
       vertexShader: BAKE_VERTEX,
       fragmentShader: /* glsl */ `
 uniform sampler2D uAccum;
+uniform sampler2D uBest;
 varying vec2 vAtlas;
 varying vec3 vFallback;
 void main() {
   vec4 a = texture2D(uAccum, vAtlas);
-  gl_FragColor = vec4(a.a > 1e-3 ? a.rgb / a.a : vFallback, 1.0);
+  // Seen only from far or aslant, a photo smears: plain paint is better than a smear.
+  float sure = smoothstep(-4.0, -2.4, texture2D(uBest, vAtlas).r - 50.0);
+  vec3 photo = a.a > 1e-3 ? a.rgb / a.a : vFallback;
+  gl_FragColor = vec4(mix(vFallback, photo, a.a > 1e-3 ? sure : 0.0), 1.0);
 }`,
       depthTest: false,
       depthWrite: false,
@@ -358,10 +366,12 @@ void main() {
 
   // ---- the surfaces ----
 
+  private piece = -1;
+
   private surface(o: Vector3, u: Vector3, v: Vector3, w: number, h: number, kind: Surface["kind"]): void {
     if (w < 1e-3 || h < 1e-3) return;
     const n = new Vector3().crossVectors(u, v).normalize();
-    this.surfaces.push({ o, u: u.clone().normalize(), v: v.clone().normalize(), n, w, h, kind, x: 0, y: 0, pw: 0, ph: 0 });
+    this.surfaces.push({ o, u: u.clone().normalize(), v: v.clone().normalize(), n, w, h, kind, piece: kind === "furniture" ? this.piece : -1, x: 0, y: 0, pw: 0, ph: 0 });
   }
 
   private collect(): void {
@@ -408,7 +418,7 @@ void main() {
     const H = y1 - y0;
     for (const wall of plan.walls) {
       const len = Math.hypot(wall.b.x - wall.a.x, wall.b.y - wall.a.y);
-      if (len < 1e-3) continue;
+      if (len < 1e-3 || wall.door) continue;
       const d = new Vector3((wall.b.x - wall.a.x) / len, 0, (wall.b.y - wall.a.y) / len);
       const mid = { x: (wall.a.x + wall.b.x) / 2, y: (wall.a.y + wall.b.y) / 2 };
       for (const s of [1, -1]) {
@@ -445,6 +455,7 @@ void main() {
     }
     // Furniture: the top and four sides of each box.
     for (const box of plan.furniture) {
+      this.piece++;
       const c = box.corners.map((p) => new Vector3(p.x, y0, p.y));
       const e1 = c[1].clone().sub(c[0]);
       const e3 = c[3].clone().sub(c[0]);
@@ -763,7 +774,11 @@ void main() {
     average.dispose();
     quad.geometry.dispose();
     const fallback = this.bakeGeometry.getAttribute("fallback") as BufferAttribute;
-    this.surfaces.forEach((s, si) => {
+    const medianOf = (values: [number, number, number][]) => [0, 1, 2].map((c) => values.map((v) => v[c]).sort((p, q) => p - q)[Math.floor(values.length / 2)]) as [number, number, number];
+    const own: ([number, number, number][] | null)[] = [];
+    const byKind = new Map<Surface["kind"], [number, number, number][]>();
+    const byPiece = new Map<number, [number, number, number][]>();
+    this.surfaces.forEach((s) => {
       const values: [number, number, number][] = [];
       for (let y = Math.floor(s.y / k); y < Math.ceil((s.y + s.ph) / k); y++) {
         for (let x = Math.floor(s.x / k); x < Math.ceil((s.x + s.pw) / k); x++) {
@@ -772,8 +787,17 @@ void main() {
           values.push([DataUtils.fromHalfFloat(raw[o]), DataUtils.fromHalfFloat(raw[o + 1]), DataUtils.fromHalfFloat(raw[o + 2])]);
         }
       }
-      if (values.length === 0) return;
-      const median = [0, 1, 2].map((c) => values.map((v) => v[c]).sort((p, q) => p - q)[Math.floor(values.length / 2)]);
+      own.push(values.length > 0 ? values : null);
+      byKind.set(s.kind, [...(byKind.get(s.kind) ?? []), ...values]);
+      if (s.piece >= 0) byPiece.set(s.piece, [...(byPiece.get(s.piece) ?? []), ...values]);
+    });
+    // Each surface's own median; one never seen takes its piece's, else its kind's: never a made-up grey.
+    const kindMedian = new Map([...byKind].filter(([, v]) => v.length > 0).map(([k, v]) => [k, medianOf(v)]));
+    this.surfaces.forEach((s, si) => {
+      const piece = s.piece >= 0 ? byPiece.get(s.piece) : undefined;
+      const values = own[si] ?? (piece && piece.length > 0 ? piece : null);
+      const median = values ? medianOf(values) : kindMedian.get(s.kind);
+      if (!median) return;
       for (let vtx = 0; vtx < 6; vtx++) fallback.setXYZ(si * 6 + vtx, median[0], median[1], median[2]);
     });
     fallback.needsUpdate = true;

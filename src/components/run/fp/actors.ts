@@ -185,6 +185,8 @@ export class Actors {
     private readonly turnMs: number,
     /** Turns per hop for a guard or cleaner (the engine's tempo). */
     private readonly tempo: (id: string) => number,
+    /** The door leaves' colour: the palette's on our own floors, a door's wood on a scan's set. */
+    private readonly doorColour: Color | null = null,
   ) {
     this.group.name = "actors";
     const keep = <T extends BufferGeometry | Material>(thing: T): T => {
@@ -226,7 +228,8 @@ export class Actors {
   }
 
   private buildDoors(keep: <T extends BufferGeometry | Material>(thing: T) => T): void {
-    const body = keep(new MeshLambertMaterial({ color: this.palette.n500 }));
+    // A door of the scan's set is unlit, as the set is; our own floors' doors take their light.
+    const body = keep(this.doorColour ? new MeshBasicMaterial({ color: this.doorColour }) : new MeshLambertMaterial({ color: this.palette.n500 }));
     const plate = keep(new MeshLambertMaterial({ color: this.palette.n700 }));
     const bar = keep(new MeshLambertMaterial({ color: this.palette.n300 }));
     const lock = keep(new MeshBasicMaterial({ color: this.palette.danger }));
@@ -235,18 +238,37 @@ export class Actors {
       const dy = door.bar.b.y - door.bar.a.y;
       const width = Math.hypot(dx, dy);
       const leaf = new Group();
-      const panel = new Mesh(keep(new BoxGeometry(width, FP.doorHeightM, 0.06)), body);
+      // On a scan's set, a wide doorway is a door and glass beside it: the bar is shut all across, the leaf a door's width.
+      const leafW = this.doorColour ? Math.min(width, 1.0) : width;
+      const panel = new Mesh(keep(new BoxGeometry(leafW, FP.doorHeightM, 0.06)), body);
       panel.position.y = FP.doorHeightM / 2;
       leaf.add(panel);
+      if (leafW < width - 0.05) {
+        const pane = keep(new MeshBasicMaterial({ color: 0xbcd6e3, transparent: true, opacity: 0.18, depthWrite: false, side: DoubleSide }));
+        const metal = keep(new MeshBasicMaterial({ color: 0x232325 }));
+        for (const side of [-1, 1]) {
+          const w = (width - leafW) / 2;
+          const x = side * (leafW / 2 + w / 2);
+          const glass = new Mesh(keep(new BoxGeometry(w, FP.doorHeightM, 0.01)), pane);
+          glass.position.set(x, FP.doorHeightM / 2, 0);
+          const frame = new Mesh(keep(new BoxGeometry(0.05, FP.doorHeightM, 0.07)), metal);
+          frame.position.set(side * (leafW / 2 + 0.025), FP.doorHeightM / 2, 0);
+          const sill = new Mesh(keep(new BoxGeometry(w, 0.06, 0.07)), metal);
+          sill.position.set(x, 0.03, 0);
+          const head = new Mesh(keep(new BoxGeometry(w, 0.06, 0.07)), metal);
+          head.position.set(x, FP.doorHeightM - 0.03, 0);
+          leaf.add(glass, frame, sill, head);
+        }
+      }
       // On both faces: a kick plate, a push bar, and the lock's light at hand height. A door
       // stood against is most of the view, so it has something on it to look at.
       for (const side of [-1, 1]) {
-        const kick = new Mesh(keep(new BoxGeometry(width - 0.12, 0.28, 0.012)), plate);
+        const kick = new Mesh(keep(new BoxGeometry(leafW - 0.12, 0.28, 0.012)), plate);
         kick.position.set(0, 0.2, side * 0.034);
-        const push = new Mesh(keep(new BoxGeometry(width - 0.3, 0.05, 0.05)), bar);
+        const push = new Mesh(keep(new BoxGeometry(Math.max(0.2, leafW - 0.3), 0.05, 0.05)), bar);
         push.position.set(0, 1.0, side * 0.055);
         const light = new Mesh(keep(new BoxGeometry(0.07, 0.12, 0.02)), lock);
-        light.position.set(width / 2 - 0.1, 1.22, side * 0.04);
+        light.position.set(leafW / 2 - 0.1, 1.22, side * 0.04);
         leaf.add(kick, push, light);
       }
       // The pick's progress, on both faces at eye height: a dim track, and the fill over it.
