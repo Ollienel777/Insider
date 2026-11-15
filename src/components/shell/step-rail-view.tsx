@@ -8,9 +8,9 @@ import { FACTS_ONLY_NOTE, FACTS_ONLY_STEPS, STEPS, type StepSegment, type StepSt
 // every screen: Missions, Cast, the building's steps, then Owner Mode. A tab
 // you have not reached yet is pushed back into the stack, shaded and locked;
 // Owner Mode is always open. Drill Mode is on hold, so it has no tab. The row
-// never wraps: the tabs shrink first.
+// never wraps: the tabs shrink first, and on a phone they keep their labels and the row scrolls.
 const TAB = cn(
-  "relative inline-flex h-10 min-w-0 shrink items-center gap-1.5 overflow-hidden rounded-t-[12px] border-[3px] border-b-0 border-border-strong",
+  "relative inline-flex h-10 min-w-0 shrink max-md:shrink-0 items-center gap-1.5 overflow-hidden rounded-t-[12px] border-[3px] border-b-0 border-border-strong",
   "px-[clamp(6px,0.9vw,12px)] font-hand text-[clamp(12px,1.05vw,15px)] whitespace-nowrap",
   "transition-transform duration-fast ease-out",
 );
@@ -125,12 +125,12 @@ export function StepRailView({
     <nav aria-label="Steps" className="min-w-0 flex-1 pl-[clamp(8px,1.6vw,22px)] max-lg:overflow-x-auto max-lg:[scrollbar-width:none]">
       <ol className="flex min-w-0 flex-nowrap items-end gap-1">
         {RAIL_TABS.map((t, i) => (
-          <li key={t.tab} className="flex min-w-0 shrink">
+          <li key={t.tab} className="flex min-w-0 shrink max-md:shrink-0">
             {renderTab(t, i)}
           </li>
         ))}
         {factsOnly ? null : (
-          <li className="flex min-w-0 shrink">
+          <li className="flex min-w-0 shrink max-md:shrink-0">
             <TabLink
               href={buildingId ? buildingHref(buildingId, "owner", missionId) : OWNER_DEMO_HREF}
               label="Owner Mode"

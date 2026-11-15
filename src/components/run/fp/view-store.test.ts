@@ -33,6 +33,13 @@ describe("the Run screen's view choice", () => {
     expect(loadRunView(memory())).toBe("first-person");
   });
 
+  it("opens on the board on a phone that has never chosen, where first person is not offered; a stored choice still wins", () => {
+    expect(loadRunView(memory(), true)).toBe("board");
+    const storage = memory();
+    saveRunView("first-person", storage);
+    expect(loadRunView(storage, true)).toBe("first-person");
+  });
+
   it("remembers first person, and the board again after", () => {
     const storage = memory();
     saveRunView("first-person", storage);

@@ -100,7 +100,7 @@ export function MissionList({ missions, buildings = [] }: { missions: readonly M
           ))}
         </div>
         <article data-testid="mission-card" data-mission={mission.id} role="tabpanel" aria-labelledby={`${tabsId}-${at}`} className="flex flex-1 flex-col gap-3">
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 max-sm:grid-cols-1">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 max-md:grid-cols-1">
             <div className="flex min-w-0 flex-col gap-2">
               <span className="font-mono text-xs text-text-3 uppercase">
                 {mission.type === "heist" ? "Heist" : "Prevent"} · {cityName(mission.city)}

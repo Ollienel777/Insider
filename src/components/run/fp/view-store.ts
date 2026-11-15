@@ -17,13 +17,30 @@ export const RUN_VIEW_KEY = "heist:run-view";
 /** The browser's storage, read inside the caller's `try`: the getter itself throws when site data is blocked. */
 const browserStorage = (): Storage | undefined => globalThis.localStorage;
 
-/** The stored choice. First person when there is none, when it is not a view, or when storage cannot be read. */
-export function loadRunView(storage?: Pick<Storage, "getItem">): RunView {
+/** A phone-width screen, where first person is not offered (run-view.tsx) and the board is the default. */
+const PHONE = "(max-width: 767px)";
+function isPhone(): boolean {
   try {
-    return (storage ?? browserStorage())?.getItem(RUN_VIEW_KEY) === "board" ? "board" : DEFAULT_RUN_VIEW;
+    return globalThis.matchMedia?.(PHONE).matches === true;
   } catch {
-    return DEFAULT_RUN_VIEW;
+    return false;
   }
+}
+
+/** The view for a browser that has never chosen: first person, or the board on a phone. */
+export function defaultRunView(phone: boolean = isPhone()): RunView {
+  return phone ? "board" : DEFAULT_RUN_VIEW;
+}
+
+/** The stored choice; with none, or one that is not a view, or storage that cannot be read, the default (`defaultRunView`). */
+export function loadRunView(storage?: Pick<Storage, "getItem">, phone?: boolean): RunView {
+  try {
+    const stored = (storage ?? browserStorage())?.getItem(RUN_VIEW_KEY);
+    if (stored === "board" || stored === "first-person") return stored;
+  } catch {
+    // Fall through to the default.
+  }
+  return defaultRunView(phone);
 }
 
 export function saveRunView(view: RunView, storage?: Pick<Storage, "setItem">): void {
