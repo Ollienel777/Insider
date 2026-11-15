@@ -116,7 +116,8 @@ Fake mode is the fallback for every beat and must look like the real thing
 
 One Next.js app (App Router, TypeScript). The game engine runs in the browser.
 Server route handlers hold the keys, read CoStar's data kit and talk to
-Vexcel and the model. Matterport runs only in the browser (terms, §4.5).
+Vexcel and the model. Matterport runs in the browser, except one route,
+`/api/scan-mesh`, that asks Matterport's Model API for a scan's links (terms, §4.5).
 
 ```
 browser                                     server (route handlers)
@@ -176,7 +177,8 @@ and a level manifest is keyed by building and mission together.
   values and fiction only, never Matterport data.
 - **RunLog**: every turn's player action, guard positions, alarm state, Chief
   orders and rationale. It feeds Debrief, and the summary the Chief adapts
-  from (D33). Kept in `localStorage`.
+  from (D33). Kept in `localStorage` for a fixture building; held in the
+  tab's memory only for a kit building or a board built from a scan (§4.5).
 
 ### 4.2 The hard part: a level that is visibly made of the data, and a live re-plan that never stalls
 
@@ -240,16 +242,44 @@ runtimes, two installs and twice the gate memory on a 3.7 GB VM.
 | Model | `src/adapters/llm/` | Anthropic API via `@langchain/anthropic` (primary). Bedrock via `@langchain/aws` `ChatBedrockConverse`, present but refused unless `BEDROCK_ENABLED=1` | `ScriptedChatModel` for the builder; keyword-routed recorded replies for the crew; per-transition recorded orders and a deterministic template for the Chief; recorded drill narratives |
 | CoStar | `src/adapters/costar/` | **CoStar's data kit**, read from `COSTAR_KIT_DIR` at runtime: eight datasets exported from CoStar's data platform, documented in the kit's `index.md`, `models/` and `schemas/`. Only `data/commercial-property.jsonl` (buildings) and `data/commercial-listing-summary.jsonl` (space for lease or sale) are read, joined to Matterport models through `commercial-properties.csv`; field mapping in one file. The kit is licensed for the event only: **no kit record, and nothing derived from one, is ever committed** | five fixture buildings and the fixture inventory for casting, §7 |
 | Vexcel | `src/adapters/vexcel/` | `https://api.vexcelgroup.com/v2` with the `X-API-KEY` header: `property/extract` for the parcel, `ortho/extract` and the oblique directions `oriented/collections` reports, and `elements/detect` to tag docks and doors; imagery proxied, never stored in the repo | a massing render per building (footprint polygon plus height, drawn in Three.js) with hand-placed entry tags |
-| Matterport | `src/adapters/matterport/` (browser only) | Showcase SDK: `Sweep.data` and `Room.data` → `FloorGraph`, in memory; an "Inside view" panel follows the player's sweep. The SDK key works on `localhost` only. The GraphQL API (`MATTERPORT_API_KEY`, `MATTERPORT_API_TOKEN`, server side) also exposes rooms, room types, panoramas, floor plans and meshes; it stays unused until Q2 is answered | a hand-authored floor per building (`fixtures/floors/F*.json`), authored as fiction, so no Matterport content is involved |
+| Matterport | `src/adapters/matterport/` (browser only) | Showcase SDK: `Sweep.data` and `Room.data` → `FloorGraph`, in memory; an "Inside view" panel follows the player's sweep. The SDK key works on `localhost` only. The GraphQL API (`MATTERPORT_API_KEY`, `MATTERPORT_API_TOKEN`, server side) also exposes rooms, room types, panoramas, floor plans and meshes. Since Q2's yes, the scan renderer (#122) asks it for a scan's mesh and panorama links: the server calls the Model API and relays signed links (terms below), and the browser fetches the assets into memory | a hand-authored floor per building (`fixtures/floors/F*.json`), authored as fiction, so no Matterport content is involved |
 
-**Matterport terms (DECISION risk 2).** Until the sponsor says yes in writing,
-in live mode: the `FloorGraph` is built in the browser on each load and never
-sent to the server, persisted, or sent to a model. The Crew and the Chief
-receive zone ids and the game-fiction names the manifest gave them, the
-guard roster and the alarm state, never node coordinates or adjacency. The
-placer (D13) maps manifest roles onto nodes in the browser. The cached
-manifest holds no Matterport data. A written yes would let the crew see
-zone adjacency (Q2).
+**Matterport terms (DECISION risk 2).** Q2 is answered yes (the builder,
+2026-11-14). This records the answer on status issue #1, which cites no
+sponsor source: the team "may save data derived from a scan, show a scan's
+meshes and panoramas outside Matterport's Showcase viewer, and send
+scan-derived data to the model". The same answer keeps the event
+agreement's limits, which hold in every case:
+- No scan asset, model id or signed link is committed, logged or written to
+  disk.
+- Nothing from a scan is kept after the event, or shared outside the team
+  except in two calls: the model call (the Chief's room names, below) and
+  the server's call to Matterport's Model API (below).
+- No scan asset, model id, signed link, floor plan, kit property id or other
+  property-identifiable data is committed, or put in an issue, PR, README or
+  video; examples in `.env.example` and comments use invented values.
+- The public demo video shows the run on F1's fixture floor, not a scan,
+  unless the CoStar crew says yes (Q10).
+
+In live mode:
+- The `FloorGraph`, the scan and anything derived from it are held in the
+  tab's memory for the session, and nothing is saved to disk or storage.
+- The model id reaches this app's server in a POST body, never in a URL or a
+  log. The server calls the Model API, reads one byte of the scan's archive
+  (where it is unlocked) for its length, and relays signed links with each
+  panorama's position and rotation; it caches nothing. The browser fetches
+  the assets itself, into memory.
+- The Crew receives zone ids, the game-fiction names the manifest gave them,
+  the guard roster and the alarm state. The Chief receives the same, and on
+  a scanned floor also the rooms no zone holds: each as an opaque `area-N`
+  id with the scan's room name, as the board draws it (letters, digits and
+  simple punctuation only, at most 80 characters, "Area N" when it has
+  none). Neither receives node coordinates or adjacency.
+- The placer (D13) maps manifest roles onto nodes in the browser.
+- The cached manifest holds no Matterport data.
+
+Zone adjacency is not sent to the Crew or the Chief; sending it has not been
+decided.
 
 **Latency (DECISION risk 3).** No model call blocks a frame. The builder runs
 ahead; crew and Chief calls are single structured calls with low `max_tokens`
@@ -283,7 +313,7 @@ the Norco robbery, the Dunbar Armored robbery).
   schema. Vitest for unit tests, Playwright for the smoke. `deepagents`,
   `langchain`, `@langchain/core`, `@langchain/anthropic`, `@langchain/aws`.
   No database: manifests are JSON files in `data/levels/`, run logs in
-  `localStorage`.
+  `localStorage` (in memory only for a kit building or a scanned board, §4.5).
 - **Layout:** `src/app/` routes; `src/domain/` schemas; `src/adapters/<service>/{index,live,fake}.ts`;
   `src/level/` rules and placer; `src/engine/`; `src/agents/` (casting, builder,
   crew, chief, drill); `src/components/<area>/`; `fixtures/`; `data/casting/`; `data/levels/`;
@@ -402,7 +432,7 @@ required: with no `.env.local` the app runs fully in fake mode.
 | `COSTAR_KIT_DIR` | the unpacked CoStar data kit, outside the repo | — |
 | `VEXCEL_API_BASE`, `VEXCEL_API_KEY` | Vexcel | `https://api.vexcelgroup.com/v2`, — |
 | `NEXT_PUBLIC_MATTERPORT_SDK_KEY` | Showcase SDK key (bound to `localhost`, browser) | — |
-| `MATTERPORT_API_KEY`, `MATTERPORT_API_TOKEN` | Matterport GraphQL API, server only; unused until Q2 | — |
+| `MATTERPORT_API_KEY`, `MATTERPORT_API_TOKEN` | Matterport GraphQL API, server only; used by `/api/scan-mesh` | — |
 | `HEIST_STATE_DIR` | where live casting results, live manifests and the demo epoch are written; never inside the repo's tracked files | `.heist/` |
 | `PORT` | server port, also the smoke test's (a local gate picks a free one unless set) | `3100` |
 
@@ -479,7 +509,7 @@ answer), the rules table and Why card (CoStar's 30%), the deepagents agents
 | CoStar data reads as decoration (DECISION risk 1) | CoStar's data decides where each heist happens: casting filters its inventory and listings on screen (beat 2). Then the rules table makes each field change a visible thing on the board, the dossier's Data → Level table states the mapping, the Why card ties each guard, camera and lock back to its field, and the Layer lens tints every element by its layer |
 | A real building cast for a heist reads as casing it | Casting picks a stage by era, class and vacancy, never by security; security is generated from the rules (§4.3); every mission card says "Staged in a real building cast for its era" and that security is game fiction |
 | The kit leaks into the public repo | live casting results and live manifests go to `HEIST_STATE_DIR`, which is gitignored; fixtures are invented; C2's tests use the fixture inventory only |
-| Matterport terms (risk 2) | §4.5: browser-only graph, no caching, no scan data to a model; fixture floors are hand-authored fiction |
+| Matterport terms (risk 2) | §4.5: browser-only graph, no caching, nothing from a scan in the repo, a log or on disk; fixture floors are hand-authored fiction |
 | A 20 s agent loop on stage; LLM guards talked past (risk 3) | Builder cached ahead; one structured call per crew order and per alarm change, 4 s timeout with fake fallback; deterministic engine authoritative; no talking to guards |
 | No usefulness answer (risk 4) | Casting is a location scout's search over CoStar's inventory and availability, with scans and aerials attached (§1). Drill Mode, the earlier answer, is on hold (Q8) |
 | AI Game Master is a saturated archetype (risk 5) | The Game Master is one subagent writing a briefing; the product is the data-built level and the re-planning Chief. The pitch never leads with "AI story" |
@@ -500,7 +530,7 @@ Each blocks only the tickets named; everything else proceeds on fakes.
 | # | question | who answers | blocks |
 |---|---|---|---|
 | Q1 | ~~Which CoStar fields does the toolkit expose, and how?~~ **Answered:** a data kit of eight datasets, not an API (§4.5) | — | — |
-| Q2 | The keys reach 14,944 Houston and LA models. Is there a written yes for caching derived graphs, serving panoramas or meshes outside the Showcase viewer, and sending scan-derived data to an outside model? Without it, D26 ships under the §4.5 restrictions, and casting checks only that a scan exists, never what it contains | Matterport/CoStar on site, in writing | D26 |
+| Q2 | ~~The keys reach 14,944 Houston and LA models. Is there a written yes for caching derived graphs, serving panoramas or meshes outside the Showcase viewer, and sending scan-derived data to an outside model?~~ **Answered yes** (the builder, 2026-11-14, status issue #1): all three are allowed, under the event agreement's limits in §4.5 | — | — |
 | Q3 | What do the Vexcel keys include (obliques, ortho, entry detection), and may the imagery appear in a public repo and video? | Vexcel on site | D27; the video plan in D41 |
 | Q4 | The Anthropic API key, in `.env.local` and the repo's Actions secrets | the builder | D28, D29 |
 | Q5 | May CoStar records appear on screen in a public demo video? | CoStar | D41 |
@@ -508,7 +538,7 @@ Each blocks only the tickets named; everything else proceeds on fakes.
 | Q7 | The real deadline (EVENT.md marks it as an estimate) | the builder, from the hacker guide | none; moves the freeze and M5 |
 | Q8 | Does Drill Mode stay? It is on hold: off the demo script, its code kept, #34 and its PR held | the builder and the team | the held drill work |
 | Q9 | Does Owner Mode (§13) join casting as a second Monday answer, and does its beat make the 2-minute slot? Until then it is built only as far as O1 to O3 (no demo-script or smoke changes). Also ask CoStar's table whether owners would use it and whether the framing sits well with them | the builder and the team; CoStar | O4, O6 |
-| Q10 | May game elements (guards, cameras, rings) be drawn over the Showcase player, the player be shown under a CSS filter, and the scan appear in the demo video (§14)? | CoStar and Matterport on site | T5 to T7: the scan view in the demo and the video. T1 to T4 proceed |
+| Q10 | ~~May game elements (guards, cameras, rings) be drawn over the Showcase player, the player be shown under a CSS filter, and the scan appear in the demo video (§14)?~~ **Decided by the team** (2026-11-14, status issue #1; CoStar's ask-costar bot couldn't confirm either way): game pieces drawn into a real scan, darkened for night, with "Security shown is game fiction" on screen, are a yes in the game and on stage. The public demo video doesn't show the scan unless the CoStar crew says yes; until then it shows the run on F1 | — | the scan in the video only |
 
 ## 12. The casting backlog (C1–C6)
 
@@ -633,7 +663,13 @@ sees that layer. In first person the scan is the screen.
      level, and who sees or hears the player), and one radio line (the crew's
      next step, sightings, and the Chief's re-plan as it streams). The
      Chief's panel, the lens and the legends open on demand.
-  3. **The scan view**, on a building with a live scan (§4.5). It reuses the
+  3. **The scan view**, on a building with a live scan (§4.5). *What was
+     built instead: first person on a live scan draws the scan with its own
+     renderer (`src/app/spike/mesh/scan-view.ts`), and guards, cameras and
+     what they see are meshes in that same canvas
+     (`src/components/run/fp/actors.ts`), with no Showcase player, CSS filter
+     or `worldToScreen` layer. The rest of this item describes the earlier
+     proposal.* It reuses the
      Inside view's player: in Live that player is the stage and the side
      panel is not shown.
      - Each engine node is a scan position, so a hop is a camera move. The
@@ -692,13 +728,15 @@ SDK has no `Scene` namespace, so nothing can be placed inside the player as a
 3D object. The scan is playable about 11 s after the page opens, so the
 player should start loading on the Plan screen.
 
-**Terms and guardrails.** §4.5 stands, restated here: nothing read from the
-scan goes to the server, into storage or to a model. The scan view adds no
-exception. It uses no device camera, microphone or location. The guards and
+**Terms and guardrails.** §4.5's Matterport terms, as they read since Q2,
+apply here: the scan is held in the tab's memory and nothing from it is
+stored. The scan view adds no exception. It uses no device camera, microphone or location. The guards and
 cameras drawn in a real building's scan are game fiction, so the scan view
 keeps the line "Security shown is game fiction" and the source chip on
-screen. Whether the sponsor accepts game elements over the player, the CSS
-filter, and the scan in the video is Q10 (§11).
+screen. Q10 is decided by the team (§11): game pieces drawn into a real
+scan, darkened for night, with that line on screen, are a yes in the game and
+on stage; the public video shows F1's fixture floor unless the CoStar crew
+says yes.
 
 **Demo.** Beat 6 stays on the Tactical board unless the team says go by
 02:00 UTC on 15 November (T7). A go leaves 4 h 48 min to the 06:48 UTC
@@ -718,8 +756,8 @@ and reviewed by the loop; T5, T6 and W are open to the team.
 | T2 | #100 | feat: the play HUD and the radio line | `area:run` | M | three elements in Live, the panels behind Details; `ui-craft` rubric at 1440×900 and 390×844. Depends on T1 |
 | T3 | #101 | feat: sound cues for the run | `area:run` | S | `cuesFor` pure, with a test per cue; no audio files; mute |
 | T4 | #106 | feat: the Inside view reports its pose and takes a look | `area:adapter-matterport` | M | pose, floor points, projection, rotate and a per-move travel time on the adapter; the Inside view as it is unchanged; nothing stored |
-| T5 | #107 | feat: the scan as the first-person Run view | `area:run` | L | the page owns look and step; the engine stays in step with the camera; board fallback. Depends on T1, T4, T8 and Q10 |
-| T6 | #108 | feat: guards and sight drawn over the scan | `area:run` | M | the overlay tracks the pose; the visibility rule above; the Why card opens. Depends on T4 and Q10 |
-| T7 | to file | docs: the Live demo beat and the default mode | `area:docs` | S | the 02:00 decision recorded; the script and the smoke follow it. Depends on Q10 for a go only: a no-go needs no answer to Q10 |
+| T5 | #107 | feat: the scan as the first-person Run view | `area:run` | L | the page owns look and step; the engine stays in step with the camera; board fallback. Depends on T1, T4 and T8 (Q10 is decided, §11) |
+| T6 | #108 | feat: guards and sight drawn over the scan | `area:run` | M | the overlay tracks the pose; the visibility rule above; the Why card opens. Depends on T4 (Q10 is decided, §11) |
+| T7 | to file | docs: the Live demo beat and the default mode | `area:docs` | S | the 02:00 decision recorded; the script and the smoke follow it. Q10 is decided (§11): its yes on stage covers a go |
 | T8 | #110 | feat: a scan's board drops long hops | `area:adapter-matterport` | S | no position cut off; the entry, the objective and an exit stay reachable, or the fixture floor is used |
 | W | #109 | chore: make walking the scan feel smooth | `area:run` | S | by hand, in the sandbox on `chore/98-scan-walk-spike`: holding W walks without a stop between hops; `controls.ts` keeps its `target` and `step` contract |

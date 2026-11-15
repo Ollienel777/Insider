@@ -179,6 +179,12 @@ describe("the Data → Level table for F1", () => {
     });
   });
 
+  it("on a kit building's real record, counts the free suites and names none of them", () => {
+    const staging = dataToLevelRows(manifest, cast, true).find((r) => r.id === "staging");
+    expect(staging).toMatchObject({ value: "floor 22", rule: "Most free space: 23,341 sf in 9 suites", result: "Staged on 22; its 9 free suites are quiet zones" });
+    expect(staging?.result).not.toMatch(/\d{3,}/);
+  });
+
   it("has a row for the dock entry, showing the recorded field and value, not the entry's id", () => {
     const dock = manifest.entries.find((e) => e.kind === "dock")!;
     const recorded = manifest.provenance.find((p) => p.elementRole === `entry:${dock.id}`)!;
