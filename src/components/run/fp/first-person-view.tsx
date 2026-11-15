@@ -242,6 +242,9 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       on.resize();
       const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => on.resize());
       observer?.observe(host);
+      // Entering and leaving fullscreen, and a window resize, size the canvas again even where the observer is late or absent.
+      window.addEventListener("resize", on.resize);
+      document.addEventListener("fullscreenchange", on.resize);
 
       const labelEls = new Map<string, HTMLSpanElement>();
       const point = new Vector3();
@@ -394,6 +397,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       return () => {
         cancelAnimationFrame(raf);
         observer?.disconnect();
+        window.removeEventListener("resize", on.resize);
+        document.removeEventListener("fullscreenchange", on.resize);
         latest.current.onHeld(null);
         latest.current.onReady?.(false);
         if (debug) delete debug.__fp;

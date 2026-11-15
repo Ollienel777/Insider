@@ -33,6 +33,7 @@ import type { PlayMode } from "./play-mode";
 import type { RadioKind, RadioMessage } from "./radio";
 import { RadioLine, type RadioLineProps, type RadioTone } from "./radio-line";
 import { stageVisualClass } from "./run-stage";
+import { FULLSCREEN_ROOT } from "./fp/fullscreen";
 
 /** Whether the panels show: always in Tactical, and in Live once Details has opened them. */
 export function panelsOpen(mode: PlayMode, details: boolean): boolean {
@@ -211,7 +212,8 @@ export function RunLayout({
       panelClosed={!open}
       visualTall={live}
       visual={
-        <div className={stageVisualClass(staged)}>
+        // The stage is what Fullscreen fills the screen with (fp/fullscreen-toggle.tsx): the HUD, the board and the radio line.
+        <div className={stageVisualClass(staged)} {...{ [FULLSCREEN_ROOT]: "" }}>
           {live ? (
             <div
               key="hud"

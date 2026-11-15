@@ -865,7 +865,7 @@ describe("the Run screen's layout", () => {
       <BuildingScreen
         visualLabel="Run board"
         visual={
-          <div className="absolute inset-0 flex flex-col">
+          <div className="absolute inset-0 flex flex-col" data-fullscreen-root="">
             {p.bar}
             {p.board}
             {p.legend}
@@ -886,7 +886,7 @@ describe("the Run screen's layout", () => {
     // The shell itself, as every other screen still gets it.
     // The open case file's two pages (issue 166): the board on the left page, the panel on the right.
     expect(before).toMatch(
-      /^<div class="grid min-h-0 flex-1 gap-3 grid-rows-\[minmax\(320px,1fr\)_auto\] lg:grid-cols-\[minmax\(0,1fr\)_minmax\(340px,420px\)\] lg:grid-rows-1"><section aria-label="Run board" class="[^"]*bg-surface-0[^"]*relative min-h-0 overflow-hidden"><div class="absolute inset-0 flex flex-col">/,
+      /^<div class="grid min-h-0 flex-1 gap-3 grid-rows-\[minmax\(320px,1fr\)_auto\] lg:grid-cols-\[minmax\(0,1fr\)_minmax\(340px,420px\)\] lg:grid-rows-1"><section aria-label="Run board" class="[^"]*bg-surface-0[^"]*relative min-h-0 overflow-hidden"><div class="absolute inset-0 flex flex-col" data-fullscreen-root="">/,
     );
     expect(before).toMatch(/<aside class="[^"]*bg-surface-0[^"]*flex min-h-0 flex-col">/);
   });

@@ -97,7 +97,7 @@ describe("the Run screen", () => {
 
   it("carries the mute button over the board once a run is on it", () => {
     const source = readFileSync(path.join(import.meta.dirname, "run-screen.tsx"), "utf8");
-    expect(source).toMatch(/\{run \? <MuteToggle muted=\{muted\} onToggle=\{toggleMute\}/);
+    expect(source).toMatch(/\{run \? \(\s*<div[^>]*>[\s\S]{0,200}?<FullscreenToggle [^>]*\/>\s*<MuteToggle muted=\{muted\} onToggle=\{toggleMute\}/);
   });
 
   it("hands its run to the sound hook, which a static render cannot show", () => {
