@@ -96,6 +96,12 @@ export type DetailReply =
   /** A picture's gaps filled; null when it had nothing to fill them from. */
   | { kind: "inpainted"; id: number; pixels: Uint8ClampedArray | null; filled: number }
   | { kind: "texture"; group: number; sharp: boolean; image: ImageBitmap }
+  /**
+   * The clean view's walls: per corner of the repaired mesh, the median
+   * colour of the large upright plane it lies on (r g b), and 1 in the
+   * fourth place where it lies on one, else 0. Sent once every texture is in.
+   */
+  | { kind: "walls"; colours: Float32Array }
   /** Every texture fetched and sent small; `megabytes` fetched. */
   | { kind: "textures-done"; megabytes: number; seconds: number }
   | { kind: "failed"; failed: string };
@@ -140,7 +146,7 @@ const SEEN_SLICE = 15_000;
 /** Range requests in flight at once for the textures. */
 const PARALLEL = 6;
 /** The clean view's limits: smaller and thinner pieces count as floating, and larger gaps are closed. */
-const CLEAN_FLOATERS = { ...FLOATER_LIMITS, maxArea: 4, needle: 0.2, needleLong: 0.4, minSeen: 0.7 };
+const CLEAN_FLOATERS = { ...FLOATER_LIMITS, maxArea: 10, needle: 0.2, needleLong: 0.4, minSeen: 0.75 };
 const CLEAN_PLANES = { ...PLANE_LIMITS, maxWallArea: 9, maxLevelArea: 40, minPatch: 0.01 };
 const CLEAN_HOLES = { maxEdges: 400, maxSpan: 2.2 };
 
@@ -175,6 +181,13 @@ async function entryBlob(url: string, entry: ZipEntry, total: number): Promise<B
 let eye: [number, number, number] = [0, 0, 0];
 let groups: TexturedGroup[] = [];
 const blobs = new Map<number, Blob>();
+/** The clean view: each texture very small, for the walls' median colours; and what the repair knows of the walls. */
+const TINY = 64;
+const tiny = new Map<number, Uint8ClampedArray>();
+let wallWork: { uvs: Float32Array; index: Uint32Array; owner: Int32Array; walls: Uint8Array; groups: TexturedGroup[]; corners: number } | null = null;
+let cleanView = false;
+/** An upright plane with at least this much surface, m², has its smudges evened out to its median colour. */
+const WALL_AREA = 2;
 let small = 512;
 let sharpSize: number | null = null;
 
@@ -224,6 +237,20 @@ async function fetchTextures(url: string, total: number, images: Map<string, Zip
         const blob = await entryBlob(url, entry, total);
         megabytes += entry.compressedSize / 1e6;
         blobs.set(i, blob);
+        if (cleanView) {
+          try {
+            const little = await decode(blob, TINY);
+            const canvas = new OffscreenCanvas(TINY, TINY);
+            const context = canvas.getContext("2d");
+            if (context) {
+              context.drawImage(little, 0, 0);
+              tiny.set(i, context.getImageData(0, 0, TINY, TINY).data);
+            }
+            little.close();
+          } catch {
+            // This texture's walls keep their texture.
+          }
+        }
         const image = await decode(blob, small);
         scope.postMessage({ kind: "texture", group: i, sharp: false, image }, [image]);
       } catch {
@@ -261,6 +288,8 @@ async function load(request: Extract<DetailRequest, { kind: "load" }>): Promise<
     groups = mesh.groups;
     const textured = request.textures ? groups.filter((g) => g.image && parts.images.has(g.image)).length : 0;
     const first = mesh.index.slice();
+    cleanView = request.clean === true;
+    const uvs = cleanView ? mesh.uvs.slice() : null;
     scope.postMessage(
       {
         kind: "mesh",
@@ -277,11 +306,12 @@ async function load(request: Extract<DetailRequest, { kind: "load" }>): Promise<
     // The textures' requests go out first; the repair holds this thread for a few seconds while they travel.
     const fetched = textured > 0 ? fetchTextures(url, total, parts.images) : null;
     try {
-      await repair(mesh.vertices, mesh.index, mesh.welded, shards.flags, request.panos, request.repair, request.clean === true);
+      await repair(mesh.vertices, mesh.index, mesh.welded, shards.flags, request.panos, request.repair, request.clean === true, uvs);
     } catch {
       // The mesh stays as it was first sent.
     }
     await fetched;
+    if (wallWork) sendWalls(wallWork);
   } catch (error) {
     scope.postMessage({ kind: "failed", failed: error instanceof Error ? error.message : "failed" });
   }
@@ -304,6 +334,7 @@ async function repair(
   panos: [number, number, number][],
   which: "all" | "none" | "shards" | "planes",
   clean = false,
+  uvs: Float32Array | null = null,
 ): Promise<void> {
   const started = performance.now();
   if (which === "none" || which === "planes") shards.fill(0);
@@ -376,10 +407,21 @@ async function repair(
   const trimmed = dropTriangles(kept.index, kept.welded, kept.groups, fill.replaced);
   groups = trimmed.groups;
   const closed = closeHoles(vertices, kept.welded, clean ? CLEAN_HOLES : undefined);
+  if (clean && uvs) {
+    const walls = new Uint8Array(fit.planes.length);
+    fit.planes.forEach((plane, i) => (walls[i] = Math.abs(plane.normal[1]) < 0.3 && plane.area >= WALL_AREA ? 1 : 0));
+    wallWork = { uvs, index: kept.index, owner: fit.owner, walls, groups: kept.groups, corners };
+  }
   let occlusion: Float32Array | null = null;
   if (clean) {
     // What is drawn, and its stand-ins, hide the space over each vertex.
-    const shut = vertexOcclusion(vertices, trimmed.welded);
+    const shut = vertexOcclusion(vertices, trimmed.welded, undefined, panos);
+    // A plane's triangles are large: a value at each corner, spread across them, shows as diagonal bands.
+    // The occlusion is for the finely made things (furniture, trims), and the planes keep none.
+    for (let t = 0; t < fit.owner.length; t++) {
+      if (fit.owner[t] < 0) continue;
+      for (let k = 0; k < 3; k++) shut[kept.welded[t * 3 + k]] = 0;
+    }
     occlusion = new Float32Array(corners);
     for (let i = 0; i < index.length; i++) occlusion[index[i]] = shut[welded[i]];
   }
@@ -416,6 +458,53 @@ async function repair(
     },
     [positions.buffer, trimmed.index.buffer, closed.triangles.buffer, fill.positions.buffer, fill.uvs.buffer, ...(occlusion ? [occlusion.buffer] : [])],
   );
+}
+
+/**
+ * The walls' median colours (the clean view): each large upright plane's
+ * colour sampled at its triangles' middles from the tiny textures, the
+ * median of each channel taken, and handed back per corner.
+ */
+function sendWalls(work: NonNullable<typeof wallWork>): void {
+  const { uvs, index, owner, walls, groups: wallGroups, corners } = work;
+  const samples = new Map<number, number[]>();
+  // The groups keep their places through every repair: the n-th is still the n-th texture's.
+  wallGroups.forEach((group, g) => {
+    const pixels = tiny.get(g);
+    if (!pixels) return;
+    for (let i = group.start; i < group.start + group.count; i += 3) {
+      const plane = owner[i / 3];
+      if (plane < 0 || !walls[plane]) continue;
+      let u = 0;
+      let v = 0;
+      for (let k = 0; k < 3; k++) {
+        u += uvs[index[i + k] * 2] / 3;
+        v += uvs[index[i + k] * 2 + 1] / 3;
+      }
+      const x = Math.min(TINY - 1, Math.max(0, Math.floor((u - Math.floor(u)) * TINY)));
+      const y = Math.min(TINY - 1, Math.max(0, Math.floor((v - Math.floor(v)) * TINY)));
+      const at = (y * TINY + x) * 4;
+      let list = samples.get(plane);
+      if (!list) samples.set(plane, (list = []));
+      list.push(pixels[at], pixels[at + 1], pixels[at + 2]);
+    }
+  });
+  const medians = new Map<number, [number, number, number]>();
+  for (const [plane, list] of samples) {
+    if (list.length < 30) continue;
+    const median = [0, 1, 2].map((c) => {
+      const channel = list.filter((_, i) => i % 3 === c).sort((a, b) => a - b);
+      return channel[Math.floor(channel.length * 0.6)] / 255;
+    }) as [number, number, number];
+    medians.set(plane, median);
+  }
+  const colours = new Float32Array(corners * 4);
+  for (let i = 0; i < index.length; i += 3) {
+    const median = medians.get(owner[i / 3]);
+    if (!median) continue;
+    for (let k = 0; k < 3; k++) colours.set([...median, 1], index[i + k] * 4);
+  }
+  scope.postMessage({ kind: "walls", colours }, [colours.buffer]);
 }
 
 /** One picture's gaps filled from the rest of it (lib/scan-mesh/inpaint.ts). */

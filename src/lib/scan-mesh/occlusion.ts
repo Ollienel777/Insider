@@ -34,9 +34,16 @@ const DIRECTIONS: [number, number, number][] = (() => {
 
 /**
  * Per vertex of `positions` (x y z each), 0 for open to 1 for shut in, from
- * the triangles of `index` over them. Vertices no triangle uses get 0.
+ * the triangles of `index` over them. Vertices no triangle uses get 0. With
+ * `cameras` (where the scan was taken from), each vertex is taken to face
+ * the one nearest it.
  */
-export function vertexOcclusion(positions: Float32Array, index: Uint32Array, limits: OcclusionLimits = OCCLUSION_LIMITS): Float32Array {
+export function vertexOcclusion(
+  positions: Float32Array,
+  index: Uint32Array,
+  limits: OcclusionLimits = OCCLUSION_LIMITS,
+  cameras: readonly (readonly [number, number, number])[] = [],
+): Float32Array {
   const vertexCount = Math.floor(positions.length / 3);
   const out = new Float32Array(vertexCount);
   if (index.length < 3) return out;
@@ -127,6 +134,26 @@ export function vertexOcclusion(positions: Float32Array, index: Uint32Array, lim
     ax /= length;
     ay /= length;
     az /= length;
+    // The scan's winding is not to be trusted: the surface faces the camera nearest it, which saw it.
+    if (cameras.length > 0) {
+      let near = Infinity;
+      let toward = 0;
+      for (const c of cameras) {
+        const dx = c[0] - positions[p];
+        const dy = c[1] - positions[p + 1];
+        const dz = c[2] - positions[p + 2];
+        const d = dx * dx + dy * dy + dz * dz;
+        if (d < near) {
+          near = d;
+          toward = dx * ax + dy * ay + dz * az;
+        }
+      }
+      if (toward < 0) {
+        ax = -ax;
+        ay = -ay;
+        az = -az;
+      }
+    }
     // A frame round the normal.
     let tx = Math.abs(ay) < 0.9 ? -az : 0;
     let ty = Math.abs(ay) < 0.9 ? 0 : az;

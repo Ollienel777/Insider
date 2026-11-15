@@ -799,6 +799,10 @@ export class ScanView {
           this.usePatchPicture(reply.id, reply.pixels);
           return;
         }
+        if (reply.kind === "walls") {
+          this.detailGeometry?.setAttribute("wall", new BufferAttribute(reply.colours, 4));
+          return;
+        }
         if (reply.kind === "texture") {
           this.arrived.push(reply);
           return;

@@ -8,6 +8,8 @@ import { BackSide, DoubleSide, ShaderMaterial, type Texture } from "three";
 
 const VERTEX = /* glsl */ `
 attribute float occlusion;
+attribute vec4 wall;
+varying vec4 vWall;
 varying vec3 vWorld;
 varying vec2 vUv;
 varying float vShut;
@@ -24,6 +26,11 @@ void main() {
 #else
   vShut = 0.0;
 #endif
+#ifdef STANDIN
+  vWall = vec4(0.0);
+#else
+  vWall = wall;
+#endif
   gl_Position = projectionMatrix * viewMatrix * world;
 }
 `;
@@ -37,6 +44,7 @@ uniform float uShade;
 varying vec3 vWorld;
 varying vec2 vUv;
 varying float vShut;
+varying vec4 vWall;
 void main() {
   vec3 normal = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
   vec3 sight = normalize(vWorld - cameraPosition);
@@ -49,12 +57,26 @@ void main() {
   float alpha = has;
 #else
   vec3 own = uHasMap > 0.5 ? texture2D(uMap, vUv).rgb : uBase;
+  if (vWall.a > 0.5) {
+    // A large wall: where the texture has the wall's own colour, only lighter or darker (a smudge, a
+    // shadow baked in from one photograph), it takes the wall's median colour. A door, a poster, a
+    // whiteboard's frame differ in hue and keep their texture.
+    vec3 median = vWall.rgb;
+    vec3 hue = own / max(dot(own, vec3(1.0)), 0.03);
+    vec3 wallHue = median / max(dot(median, vec3(1.0)), 0.03);
+    float sameHue = 1.0 - smoothstep(0.025, 0.06, length(hue - wallHue));
+    float luma = dot(own, vec3(0.333));
+    float wallLuma = dot(median, vec3(0.333));
+    // Much darker than the wall is a dark object on it (a switch, a frame): kept.
+    float notDark = smoothstep(0.35, 0.6, luma / max(wallLuma, 0.01));
+    own = mix(own, median, sameHue * notDark);
+  }
   if (uDebug > 2.5) { gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0); return; }
   float alpha = 1.0;
 #endif
   // A soft light from above and to one side: floors brightest, ceilings a little darker, walls by which way they face.
   float light = 0.9 + 0.1 * dot(normal, normalize(vec3(0.35, 0.8, 0.5)));
-  float shut = smoothstep(0.0, 0.75, vShut);
+  float shut = smoothstep(0.08, 0.8, vShut);
   float ao = 1.0 - uShade * shut;
   gl_FragColor = vec4(own * light * ao, alpha);
 }
@@ -71,12 +93,12 @@ export function createCleanMaterial(map: Texture | null, surface: "mesh" | "stan
   // The occlusion attribute comes with the repair; until then the corners read 0, open.
   const defines: Record<string, string> = { HAS_UV: "", HAS_OCCLUSION: "" };
   if (standIn) defines.STANDIN = "";
-  return new ShaderMaterial({
+  const material = new ShaderMaterial({
     uniforms: {
       uMap: { value: map },
       uHasMap: { value: map ? 1 : 0 },
       uBase: { value: [0.62, 0.61, 0.58] },
-      uShade: { value: 0.5 },
+      uShade: { value: 0.45 },
       uDebug: { value: 0 },
       // Kept so the view's looks (setProjection, setFixes) find what they set.
       uProjection: { value: 0 },
@@ -92,6 +114,9 @@ export function createCleanMaterial(map: Texture | null, surface: "mesh" | "stan
     polygonOffsetFactor: standIn ? behind : 0,
     polygonOffsetUnits: standIn ? 4 * behind : 0,
   });
+  // Until the repair and the walls are in, their attributes read as none: open, and no wall.
+  Object.assign(material.defaultAttributeValues ?? {}, { occlusion: [0], wall: [0, 0, 0, 0] });
+  return material;
 }
 
 /** Behind everything: a pale overcast daylight, what an opening such as a window shows in the clean view. */
