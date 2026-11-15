@@ -5,12 +5,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { MeshResolution, PanoResolution } from "@/lib/scan-mesh/manifest";
 import type { ScanWalk, WalkHud, WalkPhase } from "./engine";
+import { modelFromHash, movedToHash, type ModelChoice } from "./model-hash";
 
 interface Props {
-  /** Null when the address has no usable `m`. */
-  modelId: string | null;
-  /** Whether the address had an `m` at all. */
-  given: boolean;
   faces: PanoResolution;
   mesh: MeshResolution;
   /** Whether to load the scan's detailed mesh. */
@@ -44,8 +41,20 @@ const HINTS: [string, string][] = [
 
 const seconds = (value: number | null) => (value === null ? "…" : `${value.toFixed(2)} s`);
 
-export function ScanWalkScreen({ modelId, given, faces, mesh, detail, debug }: Props) {
+export function ScanWalkScreen({ faces, mesh, detail, debug }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  // Null until the address has been read: the id lives after `#`, which only the browser sees.
+  const [choice, setChoice] = useState<ModelChoice | null>(null);
+  const modelId = choice?.modelId ?? null;
+
+  useEffect(() => {
+    const moved = movedToHash(window.location.search, window.location.hash);
+    if (moved !== null) window.history.replaceState(null, "", window.location.pathname + moved);
+    const read = () => setChoice(modelFromHash(window.location.hash));
+    read();
+    window.addEventListener("hashchange", read);
+    return () => window.removeEventListener("hashchange", read);
+  }, []);
   const [hud, setHud] = useState<WalkHud | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
 
@@ -65,18 +74,23 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, detail, debug }: P
     return () => {
       gone = true;
       engine?.dispose();
+      // A new scan starts from a clean HUD, not the last one's "Stopped".
+      setHud(null);
+      setFailed(null);
     };
   }, [modelId, faces, mesh, detail, debug]);
+
+  if (choice === null) return <Shell>{null}</Shell>;
 
   if (!modelId) {
     return (
       <Shell>
         <Notice
-          title={given ? "That isn't a model id" : "No scan chosen"}
+          title={choice.given ? "That isn't a model id" : "No scan chosen"}
           body={
-            given
+            choice.given
               ? "A model id is 6 to 20 letters and digits."
-              : "Add a scan's model id to the address: /spike/mesh?m=MODEL_ID"
+              : "Add a scan's model id to the address: /spike/mesh#m=MODEL_ID"
           }
         />
       </Shell>

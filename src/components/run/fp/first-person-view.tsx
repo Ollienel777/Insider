@@ -298,7 +298,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         }
         if (controller.areas !== areas) {
           areas = controller.areas;
-          actors.showAreas(areas, current.playerNode);
+          actors.showAreas(areas, current.playerNode, current.locked);
         }
 
         // The view: at eye height, with a small bob tied to the ground covered.

@@ -41,8 +41,9 @@ const worlds = new WeakMap<FloorGraph, World>();
  */
 export function firstPersonPace(floor: FloorGraph, walking: boolean): Pace {
   const pace = { unitM: FP.unitM, mps: walking ? FP.walkMps : FP.runMps, turnMs: FP.turnMs };
-  // A live scan's floor has no walls of ours to walk through: node to node in a straight line.
-  if (floor.source !== "fixture") return pace;
+  // A live scan's floor has no walls of ours to walk through: node to node in a straight line, and in
+  // metres already, as its ground is (scan-ground.ts, `unitM` 1).
+  if (floor.source !== "fixture") return { ...pace, unitM: 1 };
   let world = worlds.get(floor);
   if (!world) worlds.set(floor, (world = buildWorld(floor)));
   const built = world;

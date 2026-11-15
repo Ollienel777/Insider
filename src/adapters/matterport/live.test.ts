@@ -34,6 +34,9 @@ import {
   withFictionLabels,
   type ObservableCollection,
 } from "./mapping";
+import { createFakeMatterport } from "./fake";
+import { withFixtureFloor } from "./index";
+import { fallbackMessage } from "@/lib/fallback";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -566,6 +569,53 @@ describe("waiting for the scan's collections", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("a load its caller gave up on (issue 145)", () => {
+  it("never opens a player when it was given up on before it started", async () => {
+    const { connect } = stubSdk();
+    const abandon = new AbortController();
+    abandon.abort();
+    const load = createLiveMatterport({ sdkKey: "k", connect }).loadFloor({ id: "x", matterportModelId: "m" }, abandon.signal);
+    await expect(load).rejects.toMatchObject({ name: "AbortError" });
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it("aborts a connection still opening, and the next load does not wait out its deadline", async () => {
+    let seen: AbortSignal | undefined;
+    const second = stubSdk();
+    let calls = 0;
+    const connect: ShowcaseConnect = (m, k, signal) => {
+      calls += 1;
+      if (calls > 1) return second.connect(m, k, signal);
+      seen = signal;
+      return new Promise(() => {});
+    };
+    const adapter = createLiveMatterport({ sdkKey: "k", connect });
+    const abandon = new AbortController();
+    const first = adapter.loadFloor({ id: "x", matterportModelId: "m" }, abandon.signal);
+    const next = adapter.loadFloor({ id: "x", matterportModelId: "m" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(seen?.aborted).toBe(false);
+    abandon.abort();
+    await expect(first).rejects.toMatchObject({ name: "AbortError" });
+    expect(seen?.aborted).toBe(true);
+    expect((await next)?.nodes).toHaveLength(5);
+  });
+
+  it("stops waiting for the sweeps, cancels its subscriptions and disconnects the player", async () => {
+    const cancel = vi.fn();
+    const silent: ObservableCollection<unknown> = { subscribe: () => ({ cancel }) };
+    const disconnect = vi.fn();
+    const connect: ShowcaseConnect = async () => ({ sdk: { Sweep: { data: silent }, Room: { data: silent } }, disconnect });
+    const abandon = new AbortController();
+    const load = createLiveMatterport({ sdkKey: "k", connect }).loadFloor({ id: "x", matterportModelId: "m" }, abandon.signal);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    abandon.abort();
+    await expect(load).rejects.toMatchObject({ name: "AbortError" });
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -1663,4 +1713,177 @@ describe("the Inside view opens only once its player is playing (issue 117)", ()
     await told();
     expect(heard).toStrictEqual([pose(0, 0, 0)]);
   });
+});
+
+describe("a hidden tab doesn't run a scan's load out (issue 156)", () => {
+  /** A page whose visibility the test sets; `document` is stubbed until `vi.unstubAllGlobals`. */
+  function page(state: "visible" | "hidden") {
+    const listeners = new Set<() => void>();
+    const doc = {
+      visibilityState: state,
+      addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+    };
+    vi.stubGlobal("document", doc);
+    return {
+      set(next: "visible" | "hidden") {
+        doc.visibilityState = next;
+        [...listeners].forEach((listener) => listener());
+      },
+    };
+  }
+
+  function pushed() {
+    let observer: { onCollectionUpdated(items: Record<string, unknown>): void } | null = null;
+    const data: ObservableCollection<unknown> = {
+      subscribe(o) {
+        observer = o;
+        return { cancel() {} };
+      },
+    };
+    return { data, send: (items: Record<string, unknown>) => observer?.onCollectionUpdated(items) };
+  }
+
+  /** A player's `App.state` that the test moves along, as the hidden player's is. */
+  function phases(first: string) {
+    let observer: ((state: { phase?: string }) => void) | null = null;
+    const state = {
+      subscribe(o: (state: { phase?: string }) => void) {
+        observer = o;
+        o({ phase: first });
+        return { cancel() {} };
+      },
+    };
+    return { state, send: (phase: string) => observer?.({ phase }) };
+  }
+
+  function loading(app?: { state: ReturnType<typeof phases>["state"] }) {
+    const sweeps = pushed();
+    const rooms = pushed();
+    const connect = vi.fn<ShowcaseConnect>(async () => ({
+      sdk: { Sweep: { data: sweeps.data }, Room: { data: rooms.data }, ...(app ? { App: app } : {}) },
+      disconnect() {},
+    }));
+    const adapter = createLiveMatterport({ sdkKey: "k", connect });
+    const load = adapter.loadFloor({ id: "x", matterportModelId: "m" });
+    let settled = false;
+    load.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    return { sweeps, rooms, load, connect, adapter, answered: () => settled };
+  }
+
+  async function inFakeTime(body: () => Promise<void>) {
+    vi.useFakeTimers();
+    try {
+      await body();
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  }
+
+  it("does not count a hidden period toward the rooms wait or the connection's deadline", () =>
+    inFakeTime(async () => {
+      page("hidden");
+      const { sweeps, answered } = loading();
+      await vi.advanceTimersByTimeAsync(0);
+      sweeps.send(SWEEPS);
+      await vi.advanceTimersByTimeAsync(ROOMS_WAIT_MS * 5);
+      expect(answered()).toBe(false);
+
+      // A connection that never opens is not given up on while the tab is hidden either.
+      const never = vi.fn<ShowcaseConnect>(() => new Promise(() => {}));
+      const load = createLiveMatterport({ sdkKey: "k", connect: never }).loadFloor({ id: "y", matterportModelId: "m" });
+      let settled = false;
+      load.catch(() => {}).finally(() => (settled = true));
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(settled).toBe(false);
+    }));
+
+  it("resumes the count when the tab is visible again, and says the viewer didn't start", () =>
+    inFakeTime(async () => {
+      const tab = page("visible");
+      const { sweeps, load, answered } = loading();
+      const rejected = expect(load).rejects.toMatchObject({ name: "NotStartedError", hidden: true });
+      await vi.advanceTimersByTimeAsync(0);
+      sweeps.send(SWEEPS);
+      await vi.advanceTimersByTimeAsync(10_000);
+      tab.set("hidden");
+      await vi.advanceTimersByTimeAsync(120_000);
+      tab.set("visible");
+      await vi.advanceTimersByTimeAsync(ROOMS_WAIT_MS - 10_000 - 1);
+      expect(answered()).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await rejected;
+    }));
+
+  it("gives a connection its deadline in visible time, and blames the hidden window, not the scan", () =>
+    inFakeTime(async () => {
+      const tab = page("visible");
+      const never = vi.fn<ShowcaseConnect>(() => new Promise(() => {}));
+      const load = createLiveMatterport({ sdkKey: "k", connect: never, connectTimeoutMs: 20_000 }).loadFloor({
+        id: "y",
+        matterportModelId: "m",
+      });
+      let settled = false;
+      const rejected = expect(load).rejects.toMatchObject({ name: "NotStartedError", hidden: true });
+      load.catch(() => {}).finally(() => (settled = true));
+      await vi.advanceTimersByTimeAsync(5_000);
+      tab.set("hidden");
+      await vi.advanceTimersByTimeAsync(60_000);
+      tab.set("visible");
+      await vi.advanceTimersByTimeAsync(15_000 - 1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await rejected;
+    }));
+
+  it("tells a player that never started apart from a scan the level can't be placed on", () =>
+    inFakeTime(async () => {
+      page("visible");
+      const app = phases("appphase.loading");
+      const sweeps = pushed();
+      const rooms = pushed();
+      const connect = vi.fn<ShowcaseConnect>(async () => ({
+        sdk: { Sweep: { data: sweeps.data }, Room: { data: rooms.data }, App: app },
+        disconnect() {},
+      }));
+      const messages: string[] = [];
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const adapter = withFixtureFloor(createLiveMatterport({ sdkKey: "k", connect }), createFakeMatterport(), (f) =>
+        messages.push(f.message),
+      );
+      const floor = adapter.loadFloor({ id: "F1", matterportModelId: "m" });
+      await vi.advanceTimersByTimeAsync(0);
+      sweeps.send(SWEEPS);
+      await vi.advanceTimersByTimeAsync(ROOMS_WAIT_MS);
+      // Not a one-room board for the placer to refuse ("no room on the floor fits the objective zone").
+      expect((await floor)?.source).toBe("fixture");
+      expect(messages).toEqual(["The Matterport scan's viewer didn't start, so the board uses the fixture floor."]);
+      expect(messages[0]).not.toBe(fallbackMessage("matterport", "unplaceable"));
+      // Not a dead connection: the next load tries live again.
+      void adapter.loadFloor({ id: "F1", matterportModelId: "m" });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(connect).toHaveBeenCalledTimes(2);
+      warn.mockRestore();
+    }));
+
+  it("says the window was hidden when it was", () => {
+    expect(fallbackMessage("matterport", "not-started-hidden")).toBe(
+      "The Matterport scan's viewer didn't start (the window was hidden), so the board uses the fixture floor. Open it again with the window in front to load the scan.",
+    );
+  });
+
+  it("still builds a playing scan with no rooms as one room, in a tab that stayed visible", () =>
+    inFakeTime(async () => {
+      page("visible");
+      const app = phases(PLAYING);
+      const { sweeps, load } = loading({ state: app.state });
+      await vi.advanceTimersByTimeAsync(0);
+      sweeps.send(SWEEPS);
+      await vi.advanceTimersByTimeAsync(ROOMS_WAIT_MS);
+      expect((await load)?.rooms.map((r) => r.id)).toEqual([UNASSIGNED_ROOM]);
+    }));
 });

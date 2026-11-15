@@ -15,7 +15,13 @@
 // - A node's area (`regionOf`, issue 136's areas) is the part of the floor
 //   nearer it than any other node in clear view of the point: a scan has no
 //   room rectangles to cut, and the mesh says what is in view, so an area
-//   does not reach through a wall to a node in the next room.
+//   does not reach through a wall to a node in the next room. Every node is
+//   looked at, not only the nearest few, since the nearest can all be behind
+//   a wall. A shut door counts as a wall here, as it does for `clear`, so an
+//   area never reaches across a locked door either; once the door opens, the
+//   area behind it is in view again. A point with no node in view (a
+//   walled-in pocket of the mesh) has no area: the walker then keeps the body
+//   in the one it was in.
 // - A scan has no door geometry. A door is an edge between two rooms
 //   (`door:<sweepA>:<sweepB>`), so its leaf is a bar across that edge, put
 //   where the way between the two sweeps is narrowest (the doorway) and as
@@ -52,8 +58,6 @@ export const SCAN = Object.freeze({
   leashM: 4,
   /** Within this of a scan position, a hole in the mesh's floor is still floor. */
   holeM: 1.5,
-  /** How many of the nearest nodes an area looks for in view before it takes the nearest. */
-  regionLooks: 6,
   /** The line-of-sight ray's height above the floor: over a desk and a low partition, not a wall. */
   sightM: 1.4,
   /** The height a doorway's width is measured at, over the desks. */
@@ -196,7 +200,7 @@ export function scanGround(floor: FloorGraph, solid: ScanSolid, heights: ScanHei
     return y;
   };
   const feetAt = (p: Vec): number => floorAt(p) ?? floorY;
-  /** Whether the mesh leaves the line from `p` to `q` clear at chest height. Doors are not walls here. */
+  /** Whether the mesh leaves the line from `p` to `q` clear at chest height. Doors are not walls here: `clear` and `regionOf` add the shut ones. */
   const inView = (p: Vec, q: Vec): boolean => {
     const dx = q.x - p.x;
     const dy = q.y - p.y;
@@ -257,12 +261,15 @@ export function scanGround(floor: FloorGraph, solid: ScanSolid, heights: ScanHei
       return { pos: p, vel: v, pressed };
     },
     clear: (p, q, locked) => !blocked(shut(locked), p, q) && inView(p, q),
-    regionOf(pos) {
+    regionOf(pos, locked = []) {
       if (!standable(pos)) return null;
+      const bars = shut(locked);
       const byDistance = all.map((n) => ({ n, d: Math.hypot(n.x - pos.x, n.y - pos.y) })).sort((p, q) => p.d - q.d);
-      // The nearest node in view; with none in view (pressed into a corner of the mesh), the nearest.
-      for (const { n } of byDistance.slice(0, SCAN.regionLooks)) if (inView(pos, n)) return n.id;
-      return byDistance[0]?.n.id ?? null;
+      // The nearest node in view, of all of them. With none in view (pressed into a walled-in pocket of the
+      // mesh), no area: never the nearest node through a wall, which would move the engine into the next room.
+      // A shut door is a wall here too, as in `clear`: a node behind a locked door is not in view.
+      for (const { n } of byDistance) if (!blocked(bars, pos, n) && inView(pos, n)) return n.id;
+      return null;
     },
     path(a, b) {
       const from = nodes.get(a);

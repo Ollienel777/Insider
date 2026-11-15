@@ -152,7 +152,8 @@ export class Actors {
   private readonly rings = new Map<string, PickRing>();
   private readonly areas = new Group();
   private areasBuilt = false;
-  private areasNode: string | null = null;
+  /** The player node and the locked doors the areas were last drawn for. */
+  private areasKey: string | null = null;
   private readonly lenses = new Map<string, MeshBasicMaterial>();
   private readonly floor = new Group();
   /** The watched nodes' markings, cross-faded from one turn to the next. */
@@ -422,7 +423,7 @@ export class Actors {
     }
 
     this.drawFloor(run, now);
-    if (this.areas.visible) this.drawAreas(run.playerNode);
+    if (this.areas.visible) this.drawAreas(run.playerNode, run.locked);
     this.objective.visible = !run.carrying;
     const exitColour = run.carrying ? this.palette.success : this.palette.n400;
     for (const exit of this.exitMarks) {
@@ -513,14 +514,16 @@ export class Actors {
   }
 
   /** Shows or hides the floor's areas, one per node (`Ground.regionOf`): a debug overlay. */
-  showAreas(on: boolean, playerNode: string): void {
+  showAreas(on: boolean, playerNode: string, locked: readonly string[]): void {
     this.areas.visible = on;
-    if (on) this.drawAreas(playerNode);
+    if (on) this.drawAreas(playerNode, locked);
   }
 
   /** The areas as a grid of tinted cells, the area the engine has the player in picked out in the accent. */
-  private drawAreas(playerNode: string): void {
-    if (this.areasBuilt && this.areasNode === playerNode) return;
+  private drawAreas(playerNode: string, locked: readonly string[]): void {
+    // A shut door is a wall to an area (`Ground.regionOf`), so the areas change as doors open.
+    const key = `${playerNode}|${locked.join(",")}`;
+    if (this.areasBuilt && this.areasKey === key) return;
     for (const child of [...this.areas.children]) {
       (child as Mesh).geometry.dispose();
       ((child as Mesh).material as Material).dispose();
@@ -537,7 +540,7 @@ export class Actors {
     for (let x = x0; x < x1; x += cell) {
       for (let y = y0; y < y1; y += cell) {
         const c = { x: x + cell / 2, y: y + cell / 2 };
-        const region = this.ground.regionOf(c);
+        const region = this.ground.regionOf(c, locked);
         if (region === null) continue;
         const flat = region === playerNode ? mine : flats[ids.indexOf(region) % tints.length];
         flat.beam({ x: c.x - cell * 0.45, y: c.y }, { x: c.x + cell * 0.45, y: c.y }, cell * 0.9, 0.006);
@@ -546,7 +549,7 @@ export class Actors {
     flats.forEach((flat, i) => this.areas.add(new Mesh(flat.geometry(), flatMaterial(tints[i], 0.16))));
     this.areas.add(new Mesh(mine.geometry(), flatMaterial(this.palette.accent, 0.28)));
     this.areasBuilt = true;
-    this.areasNode = playerNode;
+    this.areasKey = key;
   }
 
   /** Advances the glides and the doors to `now`. */

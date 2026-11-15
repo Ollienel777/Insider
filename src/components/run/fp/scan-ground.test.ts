@@ -9,8 +9,9 @@ import { FloorGraph } from "@/domain";
 import type { Collision, Ground, Vec } from "./ground";
 import { doorBar, SCAN, scanGround, type ScanHeights, type ScanSolid, type Vec3 } from "./scan-ground";
 import { meshSolid } from "./scan-solid";
-import { doorInView } from "./walker";
-import type { RunState } from "@/engine";
+import { FP } from "./tuning";
+import { createWalker, doorInView, promptFor, stepWalker, type Controls } from "./walker";
+import type { Action, Board, Exit, RunState } from "@/engine";
 
 const DT = 1 / 120;
 const STEP_UP = 0.45;
@@ -387,6 +388,253 @@ describe("a doorway two board edges cross, each with its own door", () => {
     const on = scanGround(floor, solid, { eye: new Map(), floor: new Map() });
     expect(walk(on, on.nodes.get("a")!, { x: 3, y: 0 }, 2, both).pos.x).toBeGreaterThan(WALL_E);
     expect(on.clear(on.nodes.get("a")!, on.nodes.get("b")!, both)).toBe(true);
+  });
+});
+
+describe("areas behind a wall, where the nearest nodes are all on the far side", () => {
+  // A 10 m square floor, and one solid wall at x = 4.9..5.1 from z = 0 to z = 7; the way round it is north
+  // of z = 7. "w" and "w2" are west of the wall. Six nodes "e0".."e5" stand half a metre apart just east of
+  // it, so a point just west of the wall has all six nearer than "w", every one of them through the wall.
+  const walled = (): BufferGeometry => {
+    const wall: Quad[] = [
+      upright(WALL_W, 0, WALL_W, ROOM_N),
+      upright(WALL_E, 0, WALL_E, ROOM_N),
+      upright(WALL_W, ROOM_N, WALL_E, ROOM_N),
+      upright(WALL_W, 0, WALL_E, 0),
+      flat(WALL_W, 0, WALL_E, ROOM_N, WALL_H),
+    ];
+    return geometryOf([flat(0, 0, 10, 10), ...wall]);
+  };
+  const east = [0.5, 1, 1.5, 2, 2.5, 3].map((y, i) => ({ id: `e${i}`, x: 5.4, y, roomId: "east", tags: [] }));
+  const floor = FloorGraph.parse({
+    source: "matterport",
+    rooms: [
+      { id: "west", label: "West", rect: { x: 0, y: 0, w: 5, h: 10 } },
+      { id: "east", label: "East", rect: { x: 5, y: 0, w: 5, h: 10 } },
+    ],
+    nodes: [{ id: "w", x: 1, y: 1, roomId: "west", tags: [] }, { id: "w2", x: 2, y: 8.5, roomId: "west", tags: [] }, ...east],
+    edges: [{ a: "w", b: "w2" }, { a: "w2", b: "e5" }, ...east.slice(1).map((n, i) => ({ a: east[i].id, b: n.id }))],
+    sightlines: { w: ["w2"], w2: ["w", "e5"] },
+  });
+  const on = scanGround(floor, meshSolid(new MeshWorld(walled(), STEP_UP)), { eye: new Map(), floor: new Map() });
+  const at = (id: string) => on.nodes.get(id)!;
+
+  it("gives a point just west of the wall to the node it can see, not the nearer ones through the wall", () => {
+    const here: Vec = { x: 4.7, y: 1.75 };
+    // The set-up as described: the six nearest are all east of the wall, out of view; "w" is in view.
+    for (const n of east) expect(on.clear(here, at(n.id), [])).toBe(false);
+    expect(on.clear(here, at("w"), [])).toBe(true);
+    expect(on.regionOf(here)).toBe("w");
+  });
+
+  it("never gives any point west of the wall to a node east of it, along the whole wall", () => {
+    for (let z = 0.2; z < ROOM_N; z += 0.25) {
+      for (const x of [4.3, 4.5, 4.7]) {
+        const region = on.regionOf({ x, y: z });
+        expect(region === null || !region.startsWith("e"), `(${x}, ${z}) → ${region}`).toBe(true);
+      }
+    }
+  });
+
+  it("gives no area where no node is in view, rather than the nearest node through a wall", () => {
+    // Every ray hits something at once: nothing but the node itself is ever in view.
+    const boxed: ScanSolid = { floorBelow: () => 0, pushOut: (x, _y, z) => ({ x, z }), hit: () => 0.01 };
+    const shut = scanGround(floor, boxed, { eye: new Map(), floor: new Map() });
+    expect(shut.regionOf(at("w"))).toBe("w");
+    expect(shut.regionOf({ x: 4.7, y: 1.75 })).toBeNull();
+  });
+});
+
+const SOUTH_N = 1.6;
+/** The made-up building with a second doorway through the dividing wall at z = 0..SOUTH_N, open. */
+function geometryOfTwoWays(): BufferGeometry {
+  const floor: Quad[] = [
+    flat(0, 0, 20, HOLE.z0),
+    flat(0, HOLE.z1, 20, ROOM_N),
+    flat(0, HOLE.z0, HOLE.x0, HOLE.z1),
+    flat(HOLE.x1, HOLE.z0, 20, HOLE.z1),
+  ];
+  const outer: Quad[] = [upright(0, 0, 10, 0), upright(0, ROOM_N, 10, ROOM_N)];
+  const wall = (z0: number, z1: number): Quad[] => [
+    upright(WALL_W, z0, WALL_W, z1),
+    upright(WALL_E, z0, WALL_E, z1),
+    upright(WALL_W, z0, WALL_E, z0),
+    upright(WALL_W, z1, WALL_E, z1),
+    flat(WALL_W, z0, WALL_E, z1, WALL_H),
+  ];
+  const head: Quad[] = [
+    flat(WALL_W, DOOR_S, WALL_E, DOOR_N, HEAD_H),
+    upright(WALL_W, DOOR_S, WALL_W, DOOR_N, HEAD_H, WALL_H),
+    upright(WALL_E, DOOR_S, WALL_E, DOOR_N, HEAD_H, WALL_H),
+  ];
+  return geometryOf([...floor, ...outer, ...wall(SOUTH_N, DOOR_S), ...wall(DOOR_N, ROOM_N), ...head]);
+}
+
+describe("an area behind a locked door, with a second way round within reach", () => {
+  // The made-up building, with a second doorway through the dividing wall at z = 0..1.6, open, so "a" reaches
+  // "b" round by "c" and "d" in three hops. The door on "a"–"b" is locked. Its bar stands east of the middle of
+  // the edge, so before the fix "b" in view across the bar owned the floor west of the door.
+  // "a" and "b" are moved west of their places in `board`, as in the review's reproduction, so the middle of
+  // their edge (x = 3.5) is well west of the doorway (x = 5).
+  const floor = FloorGraph.parse({
+    ...board,
+    nodes: board.nodes.map((n) => (n.id === "a" ? { ...n, x: 1 } : n.id === "b" ? { ...n, x: 6 } : n)),
+    edges: [...board.edges, { a: "c", b: "d" }],
+  });
+  const on = scanGround(floor, meshSolid(new MeshWorld(geometryOfTwoWays(), STEP_UP)), heights());
+  const at = (id: string) => on.nodes.get(id)!;
+  const door = on.doors.find((d) => d.doorId === "door:a:b")!;
+
+  /** A run the engine would hold: the player on `playerNode`, `locked` shut. Only what the walker reads. */
+  const runOn = (playerNode: string, locked: readonly string[], turn = 0): RunState => {
+    const adjacency = new Map<string, Exit[]>();
+    for (const e of floor.edges) {
+      const doorId = e.door?.lockable ? e.door.id : undefined;
+      adjacency.set(e.a, [...(adjacency.get(e.a) ?? []), { to: e.b, doorId } as Exit]);
+      adjacency.set(e.b, [...(adjacency.get(e.b) ?? []), { to: e.a, doorId } as Exit]);
+    }
+    return { status: "playing", playerNode, turn, locked: [...locked], picking: null, board: { adjacency, level: { pickTurns: 2 } } as unknown as Board } as unknown as RunState;
+  };
+  const IDLE: Controls = { forward: 0, strafe: 0, walk: false, yaw: 0, use: false, usePressed: false };
+
+  it("stands the locked door's bar east of the middle of its edge, with the second doorway open", () => {
+    expect(door.centre.x).toBeGreaterThan((at("a").x + at("b").x) / 2 + 1);
+    expect(on.clear(at("c"), at("d"), LOCKED)).toBe(true);
+  });
+
+  it("gives the floor west of a locked door to a node on this side, never to the one behind the door", () => {
+    for (let x = 3.6; x <= 4.7; x += 0.1) {
+      const here: Vec = { x, y: 3.5 };
+      expect(on.clear(here, at("b"), LOCKED), `(${x}, 3.5) sees "b" across the bar`).toBe(false);
+      const region = on.regionOf(here, LOCKED);
+      expect(region === "a" || region === "c", `(${x.toFixed(1)}, 3.5) → ${region}`).toBe(true);
+    }
+  });
+
+  it("gives the same floor to the node behind the door once the door is open", () => {
+    const here: Vec = { x: 4.7, y: 3.5 };
+    expect(on.clear(here, at("b"), [])).toBe(true);
+    expect(on.regionOf(here, [])).toBe("b");
+  });
+
+  it("never walks the engine round into the locked room while the body stays outside it", () => {
+    let run = runOn("a", LOCKED);
+    let walker = createWalker(on, run);
+    const played: Action[] = [];
+    for (let i = 0; i < 5 / FP.stepS; i++) {
+      const { walker: next, action } = stepWalker(walker, on, run, { ...IDLE, forward: 1 });
+      walker = next;
+      if (action) {
+        played.push(action);
+        if (action.kind === "move") run = runOn(action.to, LOCKED, run.turn + 1);
+      }
+    }
+    // The body is held west of the locked door, and the engine stays on this side with it: at most a step
+    // into "c"'s area (in view, through no door), never round by "d" into "b".
+    expect(walker.pos.x).toBeLessThan(door.centre.x);
+    expect(played.filter((a) => a.kind === "move" && (a.to === "b" || a.to === "d"))).toEqual([]);
+    expect(["a", "c"]).toContain(run.playerNode);
+    expect(on.regionOf(walker.pos, run.locked)).toBe(run.playerNode);
+  });
+
+  it("offers the pick from \"a\"'s area at the door, where the far node's area used to reach", () => {
+    // Before the fix this point was "b"'s area, so the prompt said "far" and the door was never picked.
+    const here: Vec = { x: 4.2, y: 3.8 };
+    const run = runOn("a", LOCKED);
+    const walker = { ...createWalker(on, run), pos: here };
+    expect(on.regionOf(here, [])).toBe("b");
+    expect(on.regionOf(here, LOCKED)).toBe("a");
+    expect(promptFor(walker, on, run, 0)).toMatchObject({ kind: "pick", doorId: "door:a:b", node: "a" });
+  });
+});
+
+describe("a door the engine locks with the body in its doorway, on the near side of the bar", () => {
+  // The floor of the block above: "a" (1, 3.5) and "b" (6, 3.5), the bar at x ≈ 4.92, and the strip between the
+  // edge's middle and the bar, which is "b"'s area while the door is open and a near-side node's once it locks.
+  // The Chief locks a door on its own turn (`lockZones`), whatever the body is doing.
+  const moved = board.nodes.map((n) => (n.id === "a" ? { ...n, x: 1 } : n.id === "b" ? { ...n, x: 6 } : n));
+  const twoWayFloor = FloorGraph.parse({ ...board, nodes: moved, edges: [...board.edges, { a: "c", b: "d" }] });
+  const oneWayFloor = FloorGraph.parse({ ...board, nodes: moved });
+  const STRIP: Vec = { x: 4.5, y: 3.5 };
+  const IDLE: Controls = { forward: 0, strafe: 0, walk: false, yaw: 0, use: false, usePressed: false };
+
+  const runOn = (floor: typeof board, playerNode: string, locked: readonly string[], turn = 0): RunState => {
+    const adjacency = new Map<string, Exit[]>();
+    for (const e of floor.edges) {
+      const doorId = e.door?.lockable ? e.door.id : undefined;
+      adjacency.set(e.a, [...(adjacency.get(e.a) ?? []), { to: e.b, doorId } as Exit]);
+      adjacency.set(e.b, [...(adjacency.get(e.b) ?? []), { to: e.a, doorId } as Exit]);
+    }
+    return { status: "playing", playerNode, turn, locked: [...locked], picking: null, board: { adjacency, level: { pickTurns: 2 } } as unknown as Board } as unknown as RunState;
+  };
+
+  /**
+   * The body walked into the strip from "a" with the door open, so the engine has the player on "b"; then the
+   * door locks on the engine's turn. Steps idle, then walks each way in turn, playing back every move as the
+   * engine would, and says what was played while the body stood still.
+   */
+  const lockUnder = (floor: typeof board) => {
+    const on = scanGround(floor, meshSolid(new MeshWorld(geometryOfTwoWays(), STEP_UP)), heights());
+    expect(on.regionOf(STRIP, []), "the strip is \"b\"'s area while the door is open").toBe("b");
+    expect(on.regionOf(STRIP, LOCKED), "and a near-side node's once it locks").not.toBe("b");
+    let run = runOn(floor, "b", []);
+    let walker = { ...createWalker(on, run), pos: STRIP, home: STRIP };
+    run = runOn(floor, "b", LOCKED, 1);
+    const play = (controls: Controls, seconds: number) => {
+      const played: Action[] = [];
+      for (let i = 0; i < seconds / FP.stepS; i++) {
+        const { walker: next, action } = stepWalker(walker, on, run, controls);
+        walker = next;
+        if (action) {
+          played.push(action);
+          if (action.kind === "move") run = runOn(floor, action.to, LOCKED, run.turn + 1);
+        }
+      }
+      return played;
+    };
+    const idle = play(IDLE, 1);
+    const afterLock = { ...walker.pos };
+    const nodeAfterLock = run.playerNode;
+    const walks = [0, Math.PI / 2, Math.PI, -Math.PI / 2].map((yaw) => {
+      const start = { ...walker.pos };
+      const played = play({ ...IDLE, forward: 1, yaw }, 1);
+      return { yaw, moved: distance(start, walker.pos), played, at: { ...walker.pos }, node: run.playerNode };
+    });
+    return { on, idle, afterLock, nodeAfterLock, walks };
+  };
+
+  for (const [name, floor] of [["with a second way round", twoWayFloor], ["with no other way", oneWayFloor]] as const) {
+    it(`${name}: plays no move the body did not walk, and puts the body on the engine's node`, () => {
+      const { on, idle, afterLock, nodeAfterLock } = lockUnder(floor);
+      expect(idle).toEqual([]);
+      expect(nodeAfterLock).toBe("b");
+      expect(distance(afterLock, on.nodes.get("b")!)).toBeLessThan(0.05);
+      expect(on.regionOf(afterLock, LOCKED)).toBe("b");
+    });
+
+    it(`${name}: lets the body walk afterwards, each move it plays into the area it walked into`, () => {
+      const { on, walks } = lockUnder(floor);
+      expect(Math.max(...walks.map((w) => w.moved)), "the body moves at all").toBeGreaterThan(0.5);
+      for (const w of walks) {
+        // Never back through the locked door, and the engine ends where the body stands.
+        expect(w.played.filter((a) => a.kind === "move" && a.to === "a")).toEqual([]);
+        const region = on.regionOf(w.at, LOCKED);
+        if (region !== null) expect(region, `walking at yaw ${w.yaw.toFixed(2)}`).toBe(w.node);
+      }
+    });
+  }
+
+  it("as the door opens again with the body west of it, plays the one move through it, the body unmoved", () => {
+    const on = scanGround(oneWayFloor, meshSolid(new MeshWorld(geometryOfTwoWays(), STEP_UP)), heights());
+    const here: Vec = { x: 4.2, y: 3.8 };
+    let run = runOn(oneWayFloor, "a", LOCKED);
+    const walker = { ...createWalker(on, run), pos: here, home: here };
+    expect(on.regionOf(here, LOCKED)).toBe("a");
+    run = runOn(oneWayFloor, "a", [], 1);
+    const { walker: next, action } = stepWalker(walker, on, run, IDLE);
+    expect(action).toEqual({ kind: "move", to: "b" });
+    expect(distance(next.pos, here)).toBeLessThan(1e-9);
+    expect(next.region).toBe("b");
   });
 });
 
