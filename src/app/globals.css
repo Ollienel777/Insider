@@ -367,6 +367,11 @@ html[data-cover-done] .case-cover { display: none; }
 body.playing [data-desk] { padding: 4px 8px 10px; gap: 4px; }
 body.playing header[data-chrome] { height: 3rem; }
 body.playing [data-folder] { padding: 4px; }
+/* While a run is in play (set by Run): the game fills the window. The top bar, the tabs and the
+   folder's edge go; they come back when the run ends. */
+body.run-full [data-desk] { padding: 0; gap: 0; }
+body.run-full [data-desk] > [data-chrome] { display: none; }
+body.run-full [data-folder] { padding: 0; border: 0; border-radius: 0; box-shadow: none; }
 
 /* The street map printed on the case file's paper: the dark basemap turned to ink lines on cream (issue 166). */
 .paper-map { filter: invert(1) sepia(0.7) saturate(0.9) contrast(1.35) brightness(0.92); }

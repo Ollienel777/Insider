@@ -136,6 +136,8 @@ export interface RunLayoutProps {
   canRestart: boolean;
   /** The board's bar: the floor's source, the mission, the Layer lens and Restart. */
   bar: ReactNode;
+  /** The full-window switch, beside Details in Live's HUD (the bar carries its own). */
+  windowToggle?: ReactNode;
   /**
    * A kit building's record label (#95), which the bar carries too. Live's HUD shows it while the
    * bar is closed, so the label never leaves the screen: it is what says the floor is a stand-in.
@@ -181,6 +183,7 @@ export function RunLayout({
   onRestart,
   canRestart,
   bar,
+  windowToggle = null,
   record,
   board,
   legend,
@@ -262,6 +265,7 @@ export function RunLayout({
                       <span className="max-md:sr-only">Restart</span>
                     </Button>
                   )}
+                  {windowToggle}
                   <DetailsToggle open={details} onToggle={onDetails} keyName={detailsKey} />
                 </div>
               </div>
