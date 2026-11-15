@@ -87,7 +87,7 @@ export function MissionList({ missions }: { missions: readonly Mission[] }) {
               data-mission={m.id}
               onClick={() => setAt(i)}
               className={cn(
-                "inline-flex h-9 items-center gap-1.5 rounded-[8px] border-2 border-border-strong px-2.5 font-hand text-sm text-text-1 transition-transform duration-fast",
+                "inline-flex h-10 items-center gap-1.5 rounded-[8px] border-2 border-border-strong px-2.5 font-hand text-sm text-text-1 transition-transform duration-fast",
                 i === at ? "bg-accent shadow-[0_3px_0_var(--ink-shadow)]" : "bg-surface-2 hover:-translate-y-px",
               )}
             >
