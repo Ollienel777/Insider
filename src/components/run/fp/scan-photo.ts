@@ -140,6 +140,7 @@ void main() {
 /** A panorama's score for this texel, plus 50 so a cleared target (0) is below any; discards what it cannot see. */
 const SCORE = /* glsl */ `
 uniform samplerCube uDepth;
+uniform samplerCube uReal;
 uniform vec3 uOrigin;
 uniform float uFloorY;
 uniform float uCeilY;
@@ -155,6 +156,9 @@ float score() {
   // photograph shows sharp. The floor and ceiling are only asked their colour, from further and aslant.
   bool level = vWorld.y < uFloorY + 0.05 || vWorld.y > uCeilY - 0.05;
   if (level ? (facing < 0.3 || d > 8.0) : (facing < 0.8 || d > 3.5)) discard;
+  // A wall's or a piece's photograph only where the panorama really saw a surface on this plane: not the view
+  // through a window, not an open door standing in front of the wall.
+  if (!level && abs(textureCube(uReal, ray).r - d) > 0.12) discard;
   float seenTo = textureCube(uDepth, ray).r;
   if (d > seenTo * 1.015 + 0.05) discard;
   float s = 0.8 * log(facing) - 2.0 * log(max(d, 0.4));
@@ -204,6 +208,9 @@ export class PhotoSet {
   private readonly scoreMaterial: ShaderMaterial;
   private readonly paintMaterial: ShaderMaterial;
   private readonly depths: (WebGLCubeRenderTarget | null)[];
+  /** Each panorama's depth against the scan's own mesh; null without it. */
+  private readonly reals: (WebGLCubeRenderTarget | null)[];
+  private realScene: Scene | null = null;
   private readonly entries: { pano: PhotoPano; origin: Vector3; toPano: Matrix3 }[];
   private readonly order: number[];
   private readonly align = alignToCube();
@@ -231,6 +238,8 @@ export class PhotoSet {
     /** The room a point of the floor is in: walls and floors take their room's colour. */
     private readonly roomOf: (p: Vec) => string,
     private readonly onChange?: () => void,
+    /** The scan's own mesh: what a panorama really saw at each texel, so it paints only what lies on the set's plane. */
+    real?: BufferGeometry,
   ) {
     this.collect();
     this.texelM = this.pack();
@@ -344,11 +353,15 @@ void main() { gl_FragColor = vec4(distance(vWorld, uOrigin), 0.0, 0.0, 1.0); }`,
       side: DoubleSide,
     });
     this.depthScene.add(new Mesh(this.drawGeometry(), distance));
+    if (real) {
+      this.realScene = new Scene();
+      this.realScene.add(new Mesh(real, distance.clone()));
+    }
 
     this.bakeGeometry = this.bakeGeometryOf();
     const add = { blending: CustomBlending, blendEquation: AddEquation, blendSrc: OneFactor, blendDst: OneFactor, blendSrcAlpha: OneFactor, blendDstAlpha: OneFactor };
     this.scoreMaterial = new ShaderMaterial({
-      uniforms: { uDepth: { value: null }, uOrigin: { value: new Vector3() }, uFloorY: { value: this.plan.floorY }, uCeilY: { value: this.plan.ceilingY } },
+      uniforms: { uDepth: { value: null }, uReal: { value: null }, uOrigin: { value: new Vector3() }, uFloorY: { value: this.plan.floorY }, uCeilY: { value: this.plan.ceilingY } },
       vertexShader: BAKE_VERTEX,
       fragmentShader: `${SCORE}\nvoid main() { gl_FragColor = vec4(score(), 0.0, 0.0, 1.0); }`,
       depthTest: false,
@@ -362,6 +375,7 @@ void main() { gl_FragColor = vec4(distance(vWorld, uOrigin), 0.0, 0.0, 1.0); }`,
     this.paintMaterial = new ShaderMaterial({
       uniforms: {
         uDepth: { value: null },
+        uReal: { value: null },
         uOrigin: { value: new Vector3() },
         uFloorY: { value: this.plan.floorY },
         uCeilY: { value: this.plan.ceilingY },
@@ -422,6 +436,7 @@ void main() {
       return { pano, origin: new Vector3(...pano.position), toPano: new Matrix3().fromArray(elements) };
     });
     this.depths = this.entries.map(() => null);
+    this.reals = this.entries.map(() => null);
     this.order = this.entries
       .map((e, i) => ({ i, d: Math.hypot(e.origin.x - start.x, e.origin.z - start.y) }))
       .sort((p, q) => p.d - q.d)
@@ -817,7 +832,7 @@ void main() {
     }
   }
 
-  private renderDepth(renderer: WebGLRenderer, origin: Vector3): WebGLCubeRenderTarget {
+  private renderDepth(renderer: WebGLRenderer, origin: Vector3, scene: Scene = this.depthScene): WebGLCubeRenderTarget {
     const single = renderer.extensions.has("EXT_color_buffer_float");
     const target = new WebGLCubeRenderTarget(PHOTO.depthPx, {
       type: HalfFloatType,
@@ -827,7 +842,7 @@ void main() {
       generateMipmaps: false,
       depthBuffer: true,
     });
-    const mesh = this.depthScene.children[0] as Mesh;
+    const mesh = scene.children[0] as Mesh;
     (mesh.material as ShaderMaterial).uniforms.uOrigin.value.copy(origin);
     const camera = this.depthCamera;
     camera.position.copy(origin);
@@ -838,7 +853,7 @@ void main() {
       renderer.setRenderTarget(target, i);
       renderer.setClearColor(new Color(1000, 0, 0), 1);
       renderer.clear();
-      renderer.render(this.depthScene, camera);
+      renderer.render(scene, camera);
     });
     return target;
   }
@@ -874,12 +889,14 @@ void main() {
           }
         }
         this.depths[this.nextDepth] = this.renderDepth(renderer, this.entries[this.nextDepth].origin);
+        this.reals[this.nextDepth] = this.realScene ? this.renderDepth(renderer, this.entries[this.nextDepth].origin, this.realScene) : null;
         this.nextDepth++;
       }
       if (this.nextDepth < this.entries.length) return;
       while (this.nextScore < this.entries.length && performance.now() - t0 < 6) {
         const i = this.nextScore++;
         this.scoreMaterial.uniforms.uDepth.value = this.depths[i]!.texture;
+        this.scoreMaterial.uniforms.uReal.value = (this.reals[i] ?? this.depths[i])!.texture;
         this.scoreMaterial.uniforms.uOrigin.value.copy(this.entries[i].origin);
         this.pass(renderer, this.best, this.scoreMaterial);
       }
@@ -892,6 +909,7 @@ void main() {
         const e = this.entries[index];
         const u = this.paintMaterial.uniforms;
         u.uDepth.value = this.depths[index]!.texture;
+        u.uReal.value = (this.reals[index] ?? this.depths[index])!.texture;
         u.uOrigin.value.copy(e.origin);
         u.uToPano.value.copy(e.toPano);
         u.uPhoto.value = cube;
@@ -1060,7 +1078,7 @@ void main() {
     // What only the asking needed.
     this.accum.dispose();
     this.best.dispose();
-    for (const d of this.depths) d?.dispose();
+    for (const d of [...this.depths, ...this.reals]) d?.dispose();
     this.onChange?.();
   }
 
@@ -1077,7 +1095,7 @@ void main() {
     this.resolveMaterial.dispose();
     this.accum.dispose();
     this.best.dispose();
-    for (const d of this.depths) d?.dispose();
+    for (const d of [...this.depths, ...this.reals]) d?.dispose();
     this.bakeGeometry.dispose();
     this.drawn.geometry.dispose();
     (this.depthScene.children[0] as Mesh | undefined)?.geometry.dispose();

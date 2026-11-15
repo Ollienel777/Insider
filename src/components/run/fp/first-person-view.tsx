@@ -677,7 +677,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
             photosFailed = true;
             return;
           }
-          photos = new PhotoSet(plan, panos, startNode ?? { x: 0, y: 0 }, roomOfPoint);
+          photos = new PhotoSet(plan, panos, startNode ?? { x: 0, y: 0 }, roomOfPoint, undefined, handle.view.detailMesh ?? tree.bvh.geometry);
           blockout.visible = false;
           set.add(photos.group);
           // Counts only.
