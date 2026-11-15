@@ -41,18 +41,19 @@ export function seenTriangles(positions: Float32Array, index: Uint32Array, panos
 
 /**
  * `seenTriangles` a slice at a time, for a caller with other work to let
- * in between: `run(from, to)` fills `seen` for those triangles, and `done`
- * lets go of the tree.
+ * in between: `run(from, to)` fills `seen` for those triangles, `clearTo`
+ * says whether some panorama had a clear view of a point, and `done` lets
+ * go of the tree.
  */
 export function seenWork(
   positions: Float32Array,
   index: Uint32Array,
   panos: readonly Vec3[],
   limits: SeenLimits = SEEN_LIMITS,
-): { seen: Uint8Array; run: (from: number, to: number) => void; done: () => void } {
+): { seen: Uint8Array; run: (from: number, to: number) => void; clearTo: (point: Vec3) => boolean; done: () => void } {
   const count = Math.floor(index.length / 3);
   const seen = new Uint8Array(count);
-  if (count === 0 || panos.length === 0) return { seen, run: () => undefined, done: () => undefined };
+  if (count === 0 || panos.length === 0) return { seen, run: () => undefined, clearTo: () => false, done: () => undefined };
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(positions, 3));
   // The tree sorts the index it is given: a copy, so the caller's triangles keep their order.
@@ -141,5 +142,19 @@ export function seenWork(
     }
    }
   };
-  return { seen, run, done: () => geometry.dispose() };
+  /** Whether some panorama within reach had nothing between it and `point`. */
+  const clearTo = (point: Vec3): boolean => {
+    for (const pano of panos) {
+      const dx = point[0] - pano[0];
+      const dy = point[1] - pano[1];
+      const dz = point[2] - pano[2];
+      const reach = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (reach > limits.reach || reach < 1e-4) continue;
+      ray.origin.set(pano[0], pano[1], pano[2]);
+      ray.direction.set(dx / reach, dy / reach, dz / reach);
+      if (bvh.raycastFirst(ray, DoubleSide, 0, Math.max(0, reach - limits.slack)) === null) return true;
+    }
+    return false;
+  };
+  return { seen, run, clearTo, done: () => geometry.dispose() };
 }

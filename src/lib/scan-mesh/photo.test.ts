@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BLOCKED, LEAD_MARGIN, PRIORITY, panoCosts, photoBlend, priorities, rankPanos, seenBy, standingOn } from "./photo";
+import { BLOCKED, DEPTH_SCALE, DEPTH_SLACK, DEPTH_SOFT, LEAD_MARGIN, PRIORITY, panoCosts, photoBlend, priorities, rankPanos, seenBy, standingOn } from "./photo";
 
 describe("panoCosts", () => {
   it("is the distance, and more for a panorama behind a wall", () => {
@@ -46,7 +46,7 @@ describe("priorities", () => {
 describe("seenBy", () => {
   it("accepts a point the panorama's depth reaches", () => {
     expect(seenBy(3, 3)).toBe(1);
-    expect(seenBy(3.1, 3)).toBe(1);
+    expect(seenBy(3.08, 3)).toBe(1);
   });
 
   it("rejects a point well behind what the panorama saw", () => {
@@ -55,7 +55,7 @@ describe("seenBy", () => {
   });
 
   it("is soft between", () => {
-    const edge = seenBy(3 * 1.03 + 0.08 + 0.125, 3);
+    const edge = seenBy(3 * DEPTH_SCALE + DEPTH_SLACK + DEPTH_SOFT / 2, 3);
     expect(edge).toBeGreaterThan(0);
     expect(edge).toBeLessThan(1);
   });
@@ -73,10 +73,24 @@ describe("photoBlend", () => {
   const lead = { priority: PRIORITY[0], seen: 1, facing: 0.8 };
   const second = { priority: PRIORITY[1], seen: 1, facing: 0.8 };
 
-  it("paints a point the lead saw from the lead", () => {
+  it("paints a point both saw alike mostly from the lead, and from the other too", () => {
     const { weights, cover } = photoBlend([lead, second]);
-    expect(weights[0]).toBeGreaterThan(0.95);
+    expect(weights[0]).toBeGreaterThan(0.65);
+    expect(weights[1]).toBeGreaterThan(0.1);
     expect(cover).toBe(1);
+  });
+
+  it("gives more of a point to the panorama that saw it from nearer and squarer", () => {
+    const far = photoBlend([{ ...lead, reach: 4, facing: 0.45 }, { ...second, reach: 1, facing: 1 }]);
+    expect(far.weights[1]).toBeGreaterThan(far.weights[0]);
+  });
+
+  it("leaves a surface far from every panorama to its texture", () => {
+    expect(photoBlend([{ ...lead, reach: 3 }]).cover).toBe(1);
+    const fading = photoBlend([{ ...lead, reach: 6 }]).cover;
+    expect(fading).toBeGreaterThan(0);
+    expect(fading).toBeLessThan(1);
+    expect(photoBlend([{ ...lead, reach: 9 }]).cover).toBe(0);
   });
 
   it("hands a point the lead did not see to the next that did", () => {
@@ -93,10 +107,13 @@ describe("photoBlend", () => {
 
   it("does not use a panorama that saw the surface edge-on", () => {
     expect(photoBlend([{ ...lead, facing: 0.01 }]).cover).toBe(0);
+    // Under about 12 degrees to the surface's own plane.
+    expect(photoBlend([{ ...lead, facing: 0.19 }]).cover).toBe(0);
+    expect(photoBlend([{ ...lead, facing: 0.4 }]).cover).toBe(1);
   });
 
   it("is the panorama alone when the eye stands on it, whatever its depth says", () => {
-    const { weights, cover } = photoBlend([{ ...lead, seen: 0, facing: 0, on: 1 }, second]);
+    const { weights, cover } = photoBlend([{ ...lead, seen: 0, facing: 0, on: 1, reach: 9 }, second]);
     expect(weights[0]).toBeGreaterThan(0.95);
     expect(cover).toBe(1);
   });

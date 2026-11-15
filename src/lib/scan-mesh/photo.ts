@@ -10,6 +10,15 @@
 // mesh's texture. The lead changes by a short cross-fade, never a cut, and
 // standing on a scan position the picture is that panorama alone.
 //
+// A panorama paints only what it saw well: a surface near it (its say fades
+// out between `REACH_FULL` and `REACH_NONE` metres), not along the surface's
+// own length, and not behind anything by its depth cube. Past that the
+// surface keeps its texture: a photograph stretched over a wall from ten
+// metres down the corridor is a smear, however sharp the photograph. And
+// among the panoramas that did see a point well, the nearer and squarer one
+// counts for more, so the lead does not paint alone what a neighbour saw
+// better.
+//
 // A panorama counts for as much as its picture is worth. Each has a small
 // cube from the start and a full-size one once it is near; the small one is
 // coarser than the mesh's texture, so until the full-size cube has faded in
@@ -17,7 +26,7 @@
 import type { Vec3 } from "./coords";
 
 /** Each rank's say: the lead, then the ones that paint only what the lead missed. */
-export const PRIORITY: readonly number[] = [1, 0.03, 0.001, 0.00003];
+export const PRIORITY: readonly number[] = [1, 0.4, 0.15, 0.05];
 /** Another panorama takes the lead only when it is this much nearer the eye, metres. */
 export const LEAD_MARGIN = 0.35;
 /** A panorama keeps its place among those in use until one outside is this much nearer, metres. */
@@ -26,16 +35,23 @@ export const STAY_MARGIN = 0.15;
 export const BLOCKED = 3;
 
 /** A point this much farther than the panorama saw in its direction (a part of the distance, and metres) is behind something... */
-export const DEPTH_SCALE = 1.03;
-export const DEPTH_SLACK = 0.08;
+export const DEPTH_SCALE = 1.02;
+export const DEPTH_SLACK = 0.05;
 /** ...and over this many more metres the panorama's say falls to nothing. */
-export const DEPTH_SOFT = 0.25;
+export const DEPTH_SOFT = 0.12;
 /** The eye this close to a scan position stands on it: every point it sees, the panorama saw. Metres, full and none. */
 export const ON_NEAR = 0.05;
 export const ON_FAR = 0.45;
 /** A surface seen at less than this cosine is too stretched in the panorama to use; at `GRAZE_FULL` it counts fully. */
-export const GRAZE_NONE = 0.02;
-export const GRAZE_FULL = 0.2;
+export const GRAZE_NONE = 0.2;
+export const GRAZE_FULL = 0.38;
+/** A panorama paints a surface within `REACH_FULL` metres of it fully, and one past `REACH_NONE` not at all. */
+export const REACH_FULL = 4.5;
+export const REACH_NONE = 7.5;
+/** At this many metres a panorama's picture of a surface counts half what it does up close. */
+export const REACH_HALF = 3;
+/** Standing on a scan position multiplies that panorama's say by one more than this: the picture there is its alone. */
+export const ON_BOOST = 40;
 
 const smoothstep = (lo: number, hi: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - lo) / (hi - lo)));
@@ -114,6 +130,8 @@ export interface PhotoSample {
    * surface with none: the small cube is then better than nothing.
    */
   sharp?: number;
+  /** Metres from the panorama to the point. Left out, the panorama counts as beside it. */
+  reach?: number;
 }
 
 export interface PhotoBlend {
@@ -129,10 +147,17 @@ export function photoBlend(samples: readonly PhotoSample[]): PhotoBlend {
   const raw = samples.map((s) => {
     if (s.priority <= 0) return 0;
     const worth = SMALL_CUBE + (1 - SMALL_CUBE) * (s.sharp ?? 1);
-    const usable = Math.max(s.seen * smoothstep(GRAZE_NONE, GRAZE_FULL, Math.abs(s.facing)), s.on ?? 0) * worth;
+    const reach = s.reach ?? 0;
+    const on = s.on ?? 0;
+    const near = 1 - smoothstep(REACH_FULL, REACH_NONE, reach);
+    const usable = Math.max(s.seen * smoothstep(GRAZE_NONE, GRAZE_FULL, Math.abs(s.facing)) * near, on) * worth;
     // A panorama fading in or out of use takes its points with it.
     cover += usable * Math.min(1, s.priority / floor);
-    return s.priority * usable;
+    // The nearer and the squarer its view of the point, the more its picture of it is worth.
+    const view = (0.25 + Math.abs(s.facing)) / (1 + (reach / REACH_HALF) ** 2);
+    // Standing on it, its picture is the eye's own view: as good as a picture gets.
+    const quality = (view + (1.25 - view) * on) * (1 + ON_BOOST * on);
+    return s.priority * usable * quality;
   });
   const total = raw.reduce((a, b) => a + b, 0);
   return { weights: total > 0 ? raw.map((w) => w / total) : raw.map(() => 0), cover: Math.min(1, cover) };

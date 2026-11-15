@@ -12,8 +12,8 @@
 import { closeHoles } from "@/lib/scan-mesh/holes";
 import { inpaint } from "@/lib/scan-mesh/inpaint";
 import { isAllowedAssetUrl } from "@/lib/scan-mesh/manifest";
-import { fillPlanes, fitPlanes, fitUnseen, type PlanePatch } from "@/lib/scan-mesh/planes";
-import { dropTriangles, findShards, SHARD_SCRAP } from "@/lib/scan-mesh/shards";
+import { fillPlanes, fitPlanes, flattenPlanes, type PlanePatch } from "@/lib/scan-mesh/planes";
+import { dropTriangles, findFloaters, findShards, SHARD_SCRAP } from "@/lib/scan-mesh/shards";
 import { seenWork } from "./seen";
 import { distanceToGroup, parseMtl, parseTexturedObj, type TexturedGroup } from "@/lib/scan-mesh/textured";
 import {
@@ -68,12 +68,14 @@ export type DetailReply =
   /**
    * The mesh repaired, sent after the mesh so the mesh shows first: its
    * triangles again without its shards and the unseen ones a plane's patch
-   * stands in for (`index` and `groups` replace the first), the patches (unindexed
+   * stands in for (`index` and `groups` replace the first), its corners again
+   * with the large planes' made flat (`positions`), the patches (unindexed
    * corners and their places in each patch's box), and the triangles closing
    * the small holes no plane holds (`fans`).
    */
   | {
       kind: "repair";
+      positions: Float32Array;
       index: Uint32Array;
       groups: TexturedGroup[];
       fans: Float32Array;
@@ -97,6 +99,13 @@ export interface RepairStats {
    */
   shards: number;
   found: number;
+  /** Triangles left out with the pieces that hung in the air (shards.ts's findFloaters), and how many pieces. */
+  floating: number;
+  floaters: number;
+  /** Vertices moved onto their wall's, floor's or ceiling's plane, and their root mean square distance from it before and after, metres. */
+  flattened: number;
+  rippleBefore: number;
+  rippleAfter: number;
   /** Triangles no panorama saw, and of those the ones a patch now stands in for. */
   unseen: number;
   replaced: number;
@@ -290,7 +299,6 @@ async function repair(
     work.run(from, from + SEEN_SLICE);
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
-  work.done();
   const seenAll = work.seen;
   const afterSeen = performance.now();
   let found = 0;
@@ -311,20 +319,44 @@ async function repair(
       seen[keptCount++] = seenAll[t];
     }
   }
+  // Pieces left hanging in the air, among what is still in.
+  const floaters = which === "all" || which === "shards" ? findFloaters(vertices, welded, shards, panos, undefined, seenAll) : { flags: new Uint8Array(0), count: 0, pieces: 0 };
+  if (floaters.count > 0) {
+    keptCount = 0;
+    for (let t = 0; t < shards.length; t++) {
+      if (floaters.flags[t]) shards[t] = SHARD_SCRAP;
+      if (shards[t] === 0) seen[keptCount++] = seenAll[t];
+    }
+  }
   const kept = dropTriangles(index, welded, groups, shards);
   const planes = which === "all" || which === "planes";
   const fit = planes ? fitPlanes(vertices, kept.welded) : { planes: [], owner: new Int32Array(kept.welded.length / 3).fill(-1) };
-  // What nobody saw and no plane holds is the scan's guess, and warped: a looser fit flattens it.
-  if (planes) fitUnseen(vertices, kept.welded, fit, seen.subarray(0, keptCount));
+  // Walls, floors and ceilings made flat: their vertices moved onto their planes.
+  const flat = planes ? flattenPlanes(vertices, kept.welded, fit) : { moved: 0, before: 0, after: 0 };
+  // The drawn mesh's corners again, from the moved vertices: each is one of them, split where its texture has a seam.
+  let corners = 0;
+  for (let i = 0; i < index.length; i++) if (index[i] >= corners) corners = index[i] + 1;
+  const positions = new Float32Array(corners * 3);
+  for (let i = 0; i < index.length; i++) {
+    const to = index[i] * 3;
+    const from = welded[i] * 3;
+    positions[to] = vertices[from];
+    positions[to + 1] = vertices[from + 1];
+    positions[to + 2] = vertices[from + 2];
+  }
   const afterFit = performance.now();
   const fill = fillPlanes(
     vertices,
     kept.welded,
     fit,
     undefined,
-    seen.subarray(0, keptCount),
+    // Only true gaps are closed. What no panorama saw of a plane keeps the mesh's own surface and texture:
+    // a patch laid over it reads as a slab set into the wall, its outline in steps.
+    null,
     panos.map((p) => p[1]),
+    work.clearTo,
   );
+  work.done();
   const afterFill = performance.now();
   const trimmed = dropTriangles(kept.index, kept.welded, kept.groups, fill.replaced);
   groups = trimmed.groups;
@@ -334,6 +366,7 @@ async function repair(
   scope.postMessage(
     {
       kind: "repair",
+      positions,
       index: trimmed.index,
       groups,
       fans: closed.triangles,
@@ -341,8 +374,13 @@ async function repair(
       patchUvs: fill.uvs,
       patches: fill.patches,
       stats: {
-        shards: dropped,
+        shards: dropped + floaters.count,
         found,
+        floating: floaters.count,
+        floaters: floaters.pieces,
+        flattened: flat.moved,
+        rippleBefore: flat.before,
+        rippleAfter: flat.after,
         unseen,
         replaced,
         unseenArea: fill.unseenArea,
@@ -353,7 +391,7 @@ async function repair(
         steps: [(afterSeen - started) / 1000, (afterFit - afterSeen) / 1000, (afterFill - afterFit) / 1000, (performance.now() - afterFill) / 1000],
       },
     },
-    [trimmed.index.buffer, closed.triangles.buffer, fill.positions.buffer, fill.uvs.buffer],
+    [positions.buffer, trimmed.index.buffer, closed.triangles.buffer, fill.positions.buffer, fill.uvs.buffer],
   );
 }
 

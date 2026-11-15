@@ -18,7 +18,19 @@
 // The panoramas' uniforms are one set, shared by every material made here:
 // the store writes them once a frame.
 import { BackSide, DoubleSide, Matrix3, ShaderMaterial, Vector3, type CubeTexture, type IUniform, type Texture } from "three";
-import { DEPTH_SCALE, DEPTH_SLACK, DEPTH_SOFT, GRAZE_FULL, GRAZE_NONE, PRIORITY, SMALL_CUBE } from "@/lib/scan-mesh/photo";
+import {
+  DEPTH_SCALE,
+  DEPTH_SLACK,
+  DEPTH_SOFT,
+  GRAZE_FULL,
+  GRAZE_NONE,
+  ON_BOOST,
+  PRIORITY,
+  REACH_FULL,
+  REACH_HALF,
+  REACH_NONE,
+  SMALL_CUBE,
+} from "@/lib/scan-mesh/photo";
 import { SLOTS } from "./projection";
 
 export type PhotoUniforms = Record<string, IUniform>;
@@ -94,10 +106,11 @@ varying vec2 vUv;
 void slot(samplerCube pano, samplerCube low, float sharp, samplerCube depth, vec3 origin, mat3 toPano, float share, vec3 gain, float on, vec3 normal, vec3 sight, inout vec3 sum, inout float total, inout float cover) {
   if (share <= 0.0) return;
   // Painted already, and this one's part would not show.
-  if (cover >= 0.999 && share < 0.02 * total) return;
+  if (cover >= 0.999 && share * 2.0 < 0.02 * total) return;
 #ifdef BACKDROP
   vec3 ray = sight;
   float usable = 1.0;
+  float quality = 1.0;
 #else
   vec3 ray = vWorld - origin;
   float reach = length(ray);
@@ -107,8 +120,14 @@ void slot(samplerCube pano, samplerCube low, float sharp, samplerCube depth, vec
   float seen = 1.0 - smoothstep(limit, limit + ${f(DEPTH_SOFT)}, reach);
   // Either face: a wall the scan has one skin of, seen from the room behind it, still shows the
   // photograph of its other side (a door where the door is) rather than nothing.
-  float graze = smoothstep(${f(GRAZE_NONE)}, ${f(GRAZE_FULL)}, abs(dot(normal, along)));
-  float usable = max(seen * graze, on);
+  float square = abs(dot(normal, along));
+  float graze = smoothstep(${f(GRAZE_NONE)}, ${f(GRAZE_FULL)}, square);
+  // Only what it saw from near enough: farther off the surface keeps its texture.
+  float near = 1.0 - smoothstep(${f(REACH_FULL)}, ${f(REACH_NONE)}, reach);
+  float usable = max(seen * graze * near, on);
+  // The nearer and the squarer its view, the more its picture counts beside the others'.
+  float part = reach / ${f(REACH_HALF)};
+  float quality = mix((0.25 + square) / (1.0 + part * part), 1.25, on) * (1.0 + ${f(ON_BOOST)} * on);
 #ifndef STANDIN
   // A surface with its own texture keeps it until the panorama's full-size cube has faded in: the small one is coarser.
   usable *= mix(${f(SMALL_CUBE)}, 1.0, sharp);
@@ -119,7 +138,7 @@ void slot(samplerCube pano, samplerCube low, float sharp, samplerCube depth, vec
   vec3 colour = sharp >= 1.0 ? textureCube(pano, lookup).rgb
     : sharp <= 0.0 ? textureCube(low, lookup).rgb
     : mix(textureCube(low, lookup).rgb, textureCube(pano, lookup).rgb, sharp);
-  float w = share * usable;
+  float w = share * usable * quality;
   sum += colour * gain * w;
   total += w;
   cover += usable * min(1.0, share / ${PRIORITY[PRIORITY.length - 1].toExponential()});

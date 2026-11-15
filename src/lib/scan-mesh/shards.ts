@@ -182,3 +182,133 @@ export function dropTriangles<G extends ShardGroup>(
   if (groups.length === 0) for (let t = 0; t < flags.length; t++) copy(t);
   return { index: outIndex.slice(0, at), welded: outWelded.slice(0, at), groups: outGroups };
 }
+
+export interface FloaterLimits {
+  /** Only a piece with less surface than this, m², can be a floater: a larger one is a room. */
+  maxArea: number;
+  /** A piece reaching this far under the camera nearest it, metres, stands on the floor... */
+  floorUnder: number;
+  /** ...and one reaching this far over it hangs from the ceiling. */
+  ceilingOver: number;
+  /** A piece whose middle size is under `needle` metres and whose length is over `needleLong` is a needle, whatever it touches. */
+  needle: number;
+  needleLong: number;
+  /** A small piece of which less than this part was seen well by any panorama goes too, wherever it stands. */
+  minSeen: number;
+}
+
+export const FLOATER_LIMITS: FloaterLimits = { maxArea: 2.5, floorUnder: 1.15, ceilingOver: 0.8, needle: 0.12, needleLong: 0.6, minSeen: 0.5 };
+
+/**
+ * The pieces of the mesh that hang in the air: joined to nothing else
+ * (through shared vertices of `welded`), smaller than a room, and reaching
+ * neither the floor nor the ceiling by the height of the camera nearest
+ * them; and thin needles. Glass and mirrors leave these: a crystal of
+ * triangles where a reflection was taken for a surface. `skip` marks
+ * triangles already left out. `cameras` are where the scan's panoramas were
+ * taken, y-up; with none, only needles are found. `seen` (per triangle, 1
+ * where a panorama saw it well) also takes out the small pieces that were
+ * mostly not: what the scanner made of a reflection, on the floor or under
+ * the ceiling as often as in the air.
+ */
+export function findFloaters(
+  positions: Float32Array,
+  welded: Uint32Array,
+  skip: Uint8Array | null,
+  cameras: readonly (readonly [number, number, number])[],
+  limits: FloaterLimits = FLOATER_LIMITS,
+  seen: Uint8Array | null = null,
+): { flags: Uint8Array; count: number; pieces: number } {
+  const count = Math.floor(welded.length / 3);
+  const flags = new Uint8Array(count);
+  let vertices = 0;
+  for (let i = 0; i < welded.length; i++) if (welded[i] >= vertices) vertices = welded[i] + 1;
+  const parent = new Int32Array(vertices);
+  for (let i = 0; i < vertices; i++) parent[i] = i;
+  const find = (x: number): number => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
+    }
+    return x;
+  };
+  for (let t = 0; t < count; t++) {
+    if (skip && skip[t]) continue;
+    const a = find(welded[t * 3]);
+    const b = find(welded[t * 3 + 1]);
+    if (b !== a) parent[b] = a;
+    const c = find(welded[t * 3 + 2]);
+    if (c !== a) parent[c] = a;
+  }
+  interface Piece {
+    area: number;
+    seen: number;
+    min: [number, number, number];
+    max: [number, number, number];
+  }
+  const pieces = new Map<number, Piece>();
+  for (let t = 0; t < count; t++) {
+    if (skip && skip[t]) continue;
+    const root = find(welded[t * 3]);
+    let piece = pieces.get(root);
+    if (!piece) {
+      piece = { area: 0, seen: 0, min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+      pieces.set(root, piece);
+    }
+    const a = welded[t * 3] * 3;
+    const b = welded[t * 3 + 1] * 3;
+    const c = welded[t * 3 + 2] * 3;
+    const ux = positions[b] - positions[a];
+    const uy = positions[b + 1] - positions[a + 1];
+    const uz = positions[b + 2] - positions[a + 2];
+    const vx = positions[c] - positions[a];
+    const vy = positions[c + 1] - positions[a + 1];
+    const vz = positions[c + 2] - positions[a + 2];
+    const area = Math.sqrt((uy * vz - uz * vy) ** 2 + (uz * vx - ux * vz) ** 2 + (ux * vy - uy * vx) ** 2) / 2;
+    piece.area += area;
+    if (seen && seen[t]) piece.seen += area;
+    for (const p of [a, b, c]) {
+      for (let k = 0; k < 3; k++) {
+        if (positions[p + k] < piece.min[k]) piece.min[k] = positions[p + k];
+        if (positions[p + k] > piece.max[k]) piece.max[k] = positions[p + k];
+      }
+    }
+  }
+  const floating = new Set<number>();
+  for (const [root, piece] of pieces) {
+    if (piece.area >= limits.maxArea) continue;
+    if (seen && piece.seen < piece.area * limits.minSeen) {
+      floating.add(root);
+      continue;
+    }
+    const size = [piece.max[0] - piece.min[0], piece.max[1] - piece.min[1], piece.max[2] - piece.min[2]].sort((x, y) => x - y);
+    if (size[1] < limits.needle && size[2] > limits.needleLong) {
+      floating.add(root);
+      continue;
+    }
+    // The camera nearest it over the ground says where the floor and ceiling are.
+    const x = (piece.min[0] + piece.max[0]) / 2;
+    const z = (piece.min[2] + piece.max[2]) / 2;
+    let camera: number | null = null;
+    let least = Infinity;
+    for (const c of cameras) {
+      const d = (c[0] - x) ** 2 + (c[2] - z) ** 2 + ((c[1] - (piece.min[1] + piece.max[1]) / 2) * 3) ** 2;
+      if (d < least) {
+        least = d;
+        camera = c[1];
+      }
+    }
+    if (camera === null) continue;
+    if (piece.min[1] < camera - limits.floorUnder || piece.max[1] > camera + limits.ceilingOver) continue;
+    floating.add(root);
+  }
+  let found = 0;
+  for (let t = 0; t < count; t++) {
+    if (skip && skip[t]) continue;
+    if (floating.has(find(welded[t * 3]))) {
+      flags[t] = 1;
+      found++;
+    }
+  }
+  return { flags, count: found, pieces: floating.size };
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Vec3 } from "@/lib/scan-mesh/coords";
-import { seenTriangles } from "./seen";
+import { seenTriangles, seenWork } from "./seen";
 
 /** A square wall in the plane z = `z`, `size` metres, centred on the x and y axes: two triangles. */
 function wall(z: number, size: number, base: number) {
@@ -50,5 +50,17 @@ describe("seenTriangles", () => {
   it("sees nothing with no panoramas", () => {
     const only = wall(0, 2, 0);
     expect([...seenTriangles(Float32Array.from(only.positions), Uint32Array.from(only.index), [])]).toEqual([0, 0]);
+  });
+});
+
+describe("seenWork's clear view", () => {
+  it("is true for a point in the open, and false behind a wall", () => {
+    const front = wall(2, 4, 0);
+    const work = seenWork(Float32Array.from(front.positions), Uint32Array.from(front.index), [[0, 0, 0]]);
+    expect(work.clearTo([0.5, 0, 1])).toBe(true);
+    expect(work.clearTo([0.5, 0, 3])).toBe(false);
+    // Too far for any panorama to count.
+    expect(work.clearTo([30, 0, 1])).toBe(false);
+    work.done();
   });
 });

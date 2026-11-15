@@ -755,6 +755,8 @@ export class ScanView {
   private useRepair(reply: Extract<DetailReply, { kind: "repair" }>): void {
     const geometry = this.detailGeometry;
     if (!geometry) return;
+    geometry.setAttribute("position", new BufferAttribute(reply.positions, 3));
+    geometry.computeBoundingSphere();
     geometry.setIndex(new BufferAttribute(reply.index, 1));
     if (this.groups.length > 0) {
       geometry.clearGroups();

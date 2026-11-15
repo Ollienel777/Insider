@@ -146,7 +146,7 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, detail, textured, 
           {hud?.detail.repair && (
             <Row label="Repair">
               {hud.detail.repair.stats
-                ? `${hud.detail.repair.stats.shards.toLocaleString("en-US")} shards out · ${hud.detail.repair.patches.toLocaleString("en-US")} gaps in ${hud.detail.repair.stats.planes} planes closed, ${hud.detail.repair.synthesized.toLocaleString("en-US")} textured · ${hud.detail.repair.stats.holes.toLocaleString("en-US")} holes`
+                ? `${hud.detail.repair.stats.shards.toLocaleString("en-US")} shards out (${hud.detail.repair.stats.floaters} floating pieces) · walls flat to ${(hud.detail.repair.stats.rippleAfter * 1000).toFixed(0)} mm from ${(hud.detail.repair.stats.rippleBefore * 1000).toFixed(0)} · ${hud.detail.repair.patches.toLocaleString("en-US")} gaps in ${hud.detail.repair.stats.planes} planes closed, ${hud.detail.repair.synthesized.toLocaleString("en-US")} textured · ${hud.detail.repair.stats.holes.toLocaleString("en-US")} holes`
                 : "finding shards and planes"}
             </Row>
           )}

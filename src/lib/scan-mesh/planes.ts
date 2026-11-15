@@ -65,7 +65,7 @@ export const PLANE_LIMITS: PlaneLimits = {
   distance: 0.04,
   minArea: 0.6,
   maxPlanes: 400,
-  cell: 0.04,
+  cell: 0.03,
   minPatch: 0.03,
   maxWallArea: 5,
   maxLevelArea: 14,
@@ -80,12 +80,6 @@ export const PLANE_LIMITS: PlaneLimits = {
   donor: 1.2,
   donorSeen: 0.97,
 };
-
-/**
- * For what no panorama saw and no plane holds: the scan's guess at a
- * surface, and warped. A looser fit takes it for the plane it stands for.
- */
-export const ROUGH_LIMITS: PlaneLimits = { ...PLANE_LIMITS, cosine: Math.cos((25 * Math.PI) / 180), distance: 0.12, minArea: 1 };
 
 export interface Plane {
   /** Unit normal, and the plane's distance from the origin along it. */
@@ -226,27 +220,55 @@ export function fitPlanes(positions: Float32Array, index: Uint32Array, limits: P
   return { planes, owner };
 }
 
+export interface Flattened {
+  /** Vertices moved onto a plane. */
+  moved: number;
+  /** Root mean square distance of the planes' vertices from their planes, metres, before and after. */
+  before: number;
+  after: number;
+}
+
 /**
- * `fit` with more planes: those a looser fit (`ROUGH_LIMITS`) finds among
- * the triangles that no plane holds yet and `seen` says no panorama saw.
- * Changes `fit` and returns how many planes it added.
+ * Makes each large plane flat: every vertex of its triangles that lies
+ * within `reach` metres of the plane is moved onto it, so a wall that the
+ * scan left rippled and bumped is one flat surface. `positions` is changed
+ * in place. A vertex on two planes (a corner between walls) is moved onto
+ * both, one after the other. Planes with less than `minArea` m² of surface
+ * (a desk top, a cabinet's side) are left as they are: furniture keeps its
+ * shape.
  */
-export function fitUnseen(positions: Float32Array, index: Uint32Array, fit: PlaneFit, seen: Uint8Array, limits: PlaneLimits = ROUGH_LIMITS): number {
-  const from: number[] = [];
-  const corners: number[] = [];
+export function flattenPlanes(positions: Float32Array, index: Uint32Array, fit: PlaneFit, reach = 0.06, minArea = 2): Flattened {
+  const done = new Map<number, number>();
+  let moved = 0;
+  let before = 0;
+  let after = 0;
+  let measured = 0;
   for (let t = 0; t < fit.owner.length; t++) {
-    if (fit.owner[t] !== -1 || seen[t]) continue;
-    from.push(t);
-    corners.push(index[t * 3], index[t * 3 + 1], index[t * 3 + 2]);
+    const at = fit.owner[t];
+    if (at < 0) continue;
+    const plane = fit.planes[at];
+    if (plane.area < minArea) continue;
+    const [nx, ny, nz] = plane.normal;
+    for (let k = 0; k < 3; k++) {
+      const v = index[t * 3 + k];
+      // Once a plane: a vertex is in several of its triangles.
+      if (done.get(v) === at) continue;
+      done.set(v, at);
+      const p = v * 3;
+      const off = positions[p] * nx + positions[p + 1] * ny + positions[p + 2] * nz - plane.offset;
+      before += off * off;
+      measured++;
+      if (Math.abs(off) > reach) {
+        after += off * off;
+        continue;
+      }
+      positions[p] -= off * nx;
+      positions[p + 1] -= off * ny;
+      positions[p + 2] -= off * nz;
+      if (off !== 0) moved++;
+    }
   }
-  if (from.length === 0) return 0;
-  const rough = fitPlanes(positions, Uint32Array.from(corners), limits);
-  const first = fit.planes.length;
-  rough.owner.forEach((plane, i) => {
-    if (plane >= 0) fit.owner[from[i]] = first + plane;
-  });
-  fit.planes.push(...rough.planes);
-  return rough.planes.length;
+  return { moved, before: measured > 0 ? Math.sqrt(before / measured) : 0, after: measured > 0 ? Math.sqrt(after / measured) : 0 };
 }
 
 /** Two unit axes in the plane, at right angles: `v` is up for an upright plane. */
@@ -402,6 +424,9 @@ export interface PlaneFill {
   unseenArea: number;
 }
 
+/** Cells of a gap tried for a panorama's clear view through it, and the part of them that makes it an opening. */
+const SEE_SAMPLES = 14;
+const SEE_PART = 0.25;
 /** Metres of the plane's own surface kept round a hole in its patch: what the hole is filled from. */
 export const PATCH_MARGIN = 0.4;
 /**
@@ -464,7 +489,10 @@ const kindOf = (normal: Vec3): number => (Math.abs(normal[1]) < 0.5 ? 0 : normal
  * it). With `seen` (per triangle, 1 where a panorama saw it), a plane's
  * unseen surface is a gap as well, and its triangles come back in
  * `replaced`. `cameras` are the heights the scan's panoramas were taken
- * at: with none, no plane is taken for a floor or a ceiling.
+ * at: with none, no plane is taken for a floor or a ceiling. `seesThrough`
+ * says whether some panorama had a clear view of a point: a gap the
+ * panoramas saw through (a doorway whose sill the scan closed, a corridor's
+ * mouth, a window) is an opening, not a hole, and is left open.
  */
 export function fillPlanes(
   positions: Float32Array,
@@ -473,6 +501,7 @@ export function fillPlanes(
   limits: PlaneLimits = PLANE_LIMITS,
   seen: Uint8Array | null = null,
   cameras: readonly number[] = [],
+  seesThrough: ((point: Vec3) => boolean) | null = null,
 ): PlaneFill {
   const outPositions: number[] = [];
   const outUvs: number[] = [];
@@ -592,6 +621,24 @@ export function fillPlanes(
       if (hole.cells.length * cell * cell > maxArea || doorway) {
         open++;
         continue;
+      }
+      if (seesThrough) {
+        // A dozen or so of its cells: a panorama that looked straight at a wall would have scanned it.
+        const step = Math.max(1, Math.floor(hole.cells.length / SEE_SAMPLES));
+        let tried = 0;
+        let through = 0;
+        for (let i = step >> 1; i < hole.cells.length; i += step) {
+          const c = hole.cells[i];
+          const x = c % width;
+          tried++;
+          const pu = u0 + (x + 0.5) * cell;
+          const pv = v0 + ((c - x) / width + 0.5) * cell;
+          if (seesThrough([plane.normal[0] * plane.offset + u[0] * pu + v[0] * pv, plane.normal[1] * plane.offset + u[1] * pu + v[1] * pv, plane.normal[2] * plane.offset + u[2] * pu + v[2] * pv])) through++;
+        }
+        if (through >= tried * SEE_PART) {
+          open++;
+          continue;
+        }
       }
       for (const c of hole.cells) want[c] = 1;
     }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cellRects, fillPlanes, fitPlanes, fitUnseen, gridHoles, maskRuns, PATCH_BEHIND, planeBasis, PLANE_LIMITS } from "./planes";
+import { cellRects, fillPlanes, fitPlanes, flattenPlanes, gridHoles, maskRuns, PATCH_BEHIND, planeBasis, PLANE_LIMITS } from "./planes";
 
 type Skip = (x: number, y: number) => boolean;
 
@@ -326,38 +326,78 @@ describe("fillPlanes on a floor", () => {
   });
 });
 
-describe("fitUnseen", () => {
-  /** A 1.6 m by 2.5 m wall at z = 0, bowed in and out by 8 cm along its length: too warped for the careful fit to hold much of. */
-  function warped() {
-    const a = wall(16, 25, 0.1, 0);
-    for (let i = 0; i < a.positions.length; i += 3) a.positions[i + 2] = 0.08 * Math.sin((2 * Math.PI * a.positions[i]) / 1.6);
+describe("fillPlanes and what the panoramas saw through", () => {
+  const holed = () => {
+    const a = wall(30, 25, 0.1, 2, (x, y) => x >= 12 && x < 17 && y >= 10 && y < 15);
     return { positions: Float32Array.from(a.positions), index: Uint32Array.from(a.index) };
-  }
-  const held = (owner: Int32Array) => [...owner].filter((p) => p >= 0).length;
+  };
 
-  it("takes the rest of a warped wall nobody saw for a plane, which the careful fit leaves loose", () => {
-    const { positions, index } = warped();
-    // A fit stricter still than the usual one, so that it is certain to leave most of the wall loose.
-    const fit = fitPlanes(positions, index, { ...PLANE_LIMITS, distance: 0.005, cosine: Math.cos((3 * Math.PI) / 180) });
-    const careful = fit.planes.length;
-    const before = held(fit.owner);
-    expect(before).toBeLessThan(fit.owner.length * 0.6);
-    const added = fitUnseen(positions, index, fit, new Uint8Array(index.length / 3));
-    expect(added).toBeGreaterThan(0);
-    expect(fit.planes).toHaveLength(careful + added);
-    expect(held(fit.owner)).toBeGreaterThan(fit.owner.length * 0.8);
-    // The new planes are numbered after the old, and face the way the wall does.
-    expect(Math.max(...fit.owner)).toBe(fit.planes.length - 1);
-    expect(Math.abs(fit.planes[fit.planes.length - 1].normal[2])).toBeGreaterThan(0.9);
+  it("leaves open a gap a panorama saw through", () => {
+    const { positions, index } = holed();
+    const fill = fillPlanes(positions, index, fitPlanes(positions, index), PLANE_LIMITS, null, [], () => true);
+    expect(fill.patches).toHaveLength(0);
+    expect(fill.open).toBe(1);
   });
 
-  it("leaves alone what a panorama saw", () => {
-    const { positions, index } = warped();
+  it("closes a gap no panorama saw through, asking about points in the gap", () => {
+    const { positions, index } = holed();
+    const asked: number[][] = [];
+    const fill = fillPlanes(positions, index, fitPlanes(positions, index), PLANE_LIMITS, null, [], (point) => {
+      asked.push([...point]);
+      return false;
+    });
+    expect(fill.patches).toHaveLength(1);
+    expect(asked.length).toBeGreaterThan(5);
+    for (const [x, y, z] of asked) {
+      expect(z).toBeCloseTo(2, 4);
+      expect(x).toBeGreaterThan(1.15);
+      expect(x).toBeLessThan(1.75);
+      expect(y).toBeGreaterThan(0.95);
+      expect(y).toBeLessThan(1.55);
+    }
+  });
+});
+
+describe("flattenPlanes", () => {
+  it("moves a rippled wall's vertices onto its plane, and says how far off they were", () => {
+    const a = wall(30, 25, 0.1, 1);
+    // Ripples a centimetre high, half a metre or so across.
+    for (let i = 0; i < a.positions.length; i += 3) a.positions[i + 2] += 0.01 * Math.sin(a.positions[i] * 3) * Math.cos(a.positions[i + 1] * 2.5);
+    const positions = Float32Array.from(a.positions);
+    const index = Uint32Array.from(a.index);
     const fit = fitPlanes(positions, index);
-    const before = [...fit.owner];
-    const planes = fit.planes.length;
-    expect(fitUnseen(positions, index, fit, new Uint8Array(index.length / 3).fill(1))).toBe(0);
-    expect(fit.planes).toHaveLength(planes);
-    expect([...fit.owner]).toEqual(before);
+    expect(fit.planes).toHaveLength(1);
+    const out = flattenPlanes(positions, index, fit);
+    expect(out.before).toBeGreaterThan(0.003);
+    expect(out.after).toBe(0);
+    expect(out.moved).toBeGreaterThan(700);
+    const { normal, offset } = fit.planes[0];
+    for (let i = 0; i < positions.length; i += 3) {
+      expect(positions[i] * normal[0] + positions[i + 1] * normal[1] + positions[i + 2] * normal[2]).toBeCloseTo(offset, 5);
+    }
+  });
+
+  it("leaves a small plane as it is: a desk top keeps its shape", () => {
+    const a = wall(10, 10, 0.1, 0);
+    for (let i = 0; i < a.positions.length; i += 3) a.positions[i + 2] += 0.01 * Math.sin(a.positions[i] * 3);
+    const positions = Float32Array.from(a.positions);
+    const before = [...positions];
+    const index = Uint32Array.from(a.index);
+    const fit = fitPlanes(positions, index);
+    expect(fit.planes).toHaveLength(1);
+    expect(flattenPlanes(positions, index, fit).moved).toBe(0);
+    expect([...positions]).toEqual(before);
+  });
+
+  it("leaves a vertex that stands well off the plane where it is", () => {
+    const a = wall(30, 25, 0.1, 0);
+    const positions = Float32Array.from(a.positions);
+    const index = Uint32Array.from(a.index);
+    const fit = fitPlanes(positions, index);
+    // One vertex pulled 20 cm out, after the fit.
+    positions[2] = 0.2;
+    const out = flattenPlanes(positions, index, fit);
+    expect(positions[2]).toBeCloseTo(0.2, 6);
+    expect(out.after).toBeGreaterThan(0);
   });
 });
