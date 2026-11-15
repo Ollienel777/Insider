@@ -77,22 +77,39 @@ describe("what the browser sends the Chief", () => {
     }
   });
 
-  it("on a scanned floor, names the rooms outside every zone by opaque area ids, never by the scan's ids or labels", () => {
+  it("on a scanned floor, gives the rooms outside every zone opaque area ids, never the scan's ids, with the board's names (issue 172)", () => {
     const scanned = { ...structuredClone(FIXTURE_FLOORS.F1), source: "matterport" as const };
     const live = chiefZones(placeLevel(manifest, scanned, RUN_SEED));
     const areas = live.zones.filter((z) => z.id.startsWith("area-"));
     expect(areas.length).toBeGreaterThan(0);
-    const text = JSON.stringify(live.zones);
-    for (const room of scanned.rooms) {
-      expect(text).not.toContain(`"${room.id}"`);
-      expect(text).not.toContain(room.label);
+    const ids = JSON.stringify(live.zones.map((z) => z.id));
+    for (const room of scanned.rooms) expect(ids).not.toContain(`"${room.id}"`);
+    // Each area goes by its room's name on the board, never "Area N" for a room the board names.
+    for (const z of areas) {
+      const room = scanned.rooms.find((r) => r.id === live.toEngine.get(z.id))!;
+      expect(z.name.startsWith(room.label), z.name).toBe(true);
+      expect(z.name).not.toMatch(/^Area \d+$/);
     }
+    const names = live.zones.map((z) => z.name.toLowerCase());
+    expect(new Set(names).size).toBe(names.length);
     // And the orders map back to the rooms.
     const dock = live.toChief.get("dock-corridor")!;
     expect(dock).toMatch(/^area-\d+$/);
     expect(toEngineOrders({ orders: [{ guardId: "G1", intent: "converge", zoneId: dock }], lockZones: [], rationale: "x" }, live).orders[0].zoneId).toBe(
       "dock-corridor",
     );
+  });
+
+  it("on a scanned floor, a room with no name is an Area, and two rooms of one name are told apart", () => {
+    const scanned = { ...structuredClone(FIXTURE_FLOORS.F1), source: "matterport" as const };
+    const placedScan = placeLevel(manifest, scanned, RUN_SEED);
+    const before = chiefZones(placedScan);
+    const [a, b] = before.zones.filter((z) => z.id.startsWith("area-")).map((z) => before.toEngine.get(z.id)!);
+    const taken = before.zones[0].name;
+    const rooms = placedScan.level.floor.rooms.map((r) => (r.id === a ? { ...r, label: "" } : r.id === b ? { ...r, label: taken } : r));
+    const live = chiefZones({ ...placedScan, level: { ...placedScan.level, floor: { ...placedScan.level.floor, rooms } } });
+    expect(live.zones.find((z) => live.toEngine.get(z.id) === a)!.name).toMatch(/^Area \d+$/);
+    expect(live.zones.find((z) => live.toEngine.get(z.id) === b)!.name).toBe(`${taken} 2`);
   });
 
   it("posts exactly the request and reads the answer back", async () => {

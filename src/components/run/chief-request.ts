@@ -3,7 +3,10 @@
 // adjacency. The Chief's zone ids are the manifest's zones and entries as
 // they are, and the floor's other rooms: by their room id on a hand-authored
 // fixture floor, and by an opaque `area-N` on a scanned (Matterport) floor,
-// so no scan id or label leaves the browser. Orders come back in those ids
+// so no scan id leaves the browser. Each goes with the board's own name for
+// the room, so the Chief says "the Kitchen", not "Area 3" (issue 172); a room
+// with no name stays "Area N", and a name two rooms share is numbered.
+// Orders come back in those ids
 // and are mapped to the engine's before the engine clamps them.
 import { ChiefRequest, strayHistoryIds, type ChiefAnswer, type ChiefHistory } from "@/agents/chief/request";
 import { ChiefOrders } from "@/domain";
@@ -56,12 +59,21 @@ export function chiefZones(placed: PlacedLevel): ChiefZones {
   // The rooms no zone holds: where a guard or the player can be outside every zone.
   const board = compileBoard(level);
   let area = 0;
+  const said = new Set(zones.map((z) => z.name.toLowerCase()));
+  const unique = (name: string) => {
+    let named = name;
+    for (let n = 2; said.has(named.toLowerCase()); n++) named = `${name} ${n}`;
+    said.add(named.toLowerCase());
+    return named;
+  };
   for (const node of level.floor.nodes) {
     const zone = zoneOf(board, node.id).zoneId;
     if (toChief.has(zone)) continue;
-    area += 1;
-    if (scanned) add(zone, `area-${area}`, `Area ${area}`);
-    else add(zone, zone, level.floor.rooms.find((r) => r.id === zone)?.label ?? zone);
+    const label = level.floor.rooms.find((r) => r.id === zone)?.label?.trim();
+    if (scanned) {
+      area += 1;
+      add(zone, `area-${area}`, unique(label || `Area ${area}`));
+    } else add(zone, zone, label || zone);
   }
   return { zones, toEngine, toChief };
 }

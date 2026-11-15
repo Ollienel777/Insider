@@ -40,6 +40,7 @@ import { usePlayMode } from "./play-mode";
 import { useTurnClock } from "./turn-clock";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
+import { ChiefCalls } from "./chief-calls";
 import { loadCrewPlan, PLAN_HEADING, planSourceOf, type StoredCrewPlan } from "./crew-plan-store";
 import { clearRunLog, keepRunLogInMemory, runLogOf, saveRunLog } from "./run-log-store";
 import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postureOf, runRecordOf, type RunRecord } from "./run-history";
@@ -128,6 +129,7 @@ export function RunScreen({
   const latestRun = useRef<RunState | null>(null);
   const latestSeq = useRef(-1);
   const pendingChief = useRef<AbortController | null>(null);
+  const chiefCalls = useRef(new ChiefCalls());
   /** Turn number → where the Chief's orders logged on that turn came from, for the Debrief. */
   const chiefSources = useRef(new Map<number, ChiefAnswer["source"]>());
   /** The Chief's answer that landed after the run ended, if one did. */
@@ -143,6 +145,7 @@ export function RunScreen({
   const startRun = useCallback((level: PlacedLevel["level"]) => {
     pendingChief.current?.abort();
     pendingChief.current = null;
+    chiefCalls.current.reset();
     latestSeq.current = -1;
     chiefSources.current = new Map();
     lateChief.current = null;
@@ -228,13 +231,20 @@ export function RunScreen({
   }, [run]);
   useEffect(() => () => pendingChief.current?.abort(), []);
 
+  // A call out is let finish when the alarm moves again; the newest event that waited is asked about after it (issue 172).
+  const callChiefNext = useRef<(state: RunState, seq: number, queued: boolean) => void>(() => {});
   const callChief = useCallback(
-    (state: RunState, seq: number) => {
+    (state: RunState, seq: number, queued = false) => {
       if (!placed || !zones) return;
-      pendingChief.current?.abort();
+      if (!queued && !chiefCalls.current.ask(seq)) return;
       const controller = new AbortController();
       pendingChief.current = controller;
       latestSeq.current = seq;
+      // This call is done: the newest event that waited behind it goes next, on the run as it stands now.
+      const next = () => {
+        const waiting = chiefCalls.current.settled(seq);
+        if (waiting !== null && latestRun.current) callChiefNext.current(latestRun.current, waiting, true);
+      };
       let request: ReturnType<typeof chiefRequest>;
       try {
         // The run's first transition carries the summary of earlier runs, so the Chief's first word can adapt.
@@ -247,13 +257,16 @@ export function RunScreen({
       } catch (error) {
         // A board the request can't carry: the panel says so, and the turn (and its log) goes on.
         setChief({ status: "error", seq, message: error instanceof Error ? error.message : String(error) });
+        next();
         return;
       }
       setChief({ status: "pending", seq });
       askChief(request, { signal: controller.signal }).then(
         (answer) => {
-          // A newer alarm event has its own call out; this answer is stale.
-          if (controller.signal.aborted || latestSeq.current !== seq || !latestRun.current) return;
+          // Aborted by a restart or by leaving the screen, or a call from before a restart: stale.
+          if (controller.signal.aborted || !chiefCalls.current.isOut(seq) || !latestRun.current) return;
+          // A newer alarm event may be waiting: its call goes once these orders are on the board.
+          queueMicrotask(next);
           const current = latestRun.current;
           const orders = toEngineOrders(answer.orders, zones);
           const result = applyChiefOrders(current, orders);
@@ -275,13 +288,21 @@ export function RunScreen({
           setChief({ status: "ready", seq, answer, applied: result });
         },
         (error: unknown) => {
-          if (controller.signal.aborted || latestSeq.current !== seq) return;
+          if (controller.signal.aborted || !chiefCalls.current.isOut(seq)) return;
           setChief({ status: "error", seq, message: error instanceof Error ? error.message : String(error) });
+          next();
         },
       );
     },
     [placed, zones, history, building.id, missionId],
   );
+  useEffect(() => {
+    callChiefNext.current = (state, seq, queued) => {
+      // A run that has ended asks nothing more.
+      if (state.status === "playing") callChief(state, seq, queued);
+      else chiefCalls.current.reset();
+    };
+  }, [callChief]);
 
   const play = useCallback(
     (action: Action) => {
