@@ -230,3 +230,34 @@ test("first person: holding E at a locked door picks it until the engine opens i
   await page.keyboard.up("e");
   await expect(view(page)).toHaveAttribute("data-node", "s1-sw");
 });
+
+test("first person: Fullscreen puts the stage, HUD and all, over the screen, and F or the button takes it back", async ({ page }) => {
+  test.setTimeout(90_000);
+  await open(page, "F1");
+  if (!(await firstPerson(page))) return;
+
+  const button = page.getByTestId("fullscreen-toggle");
+  await expect(button).toBeVisible();
+  await expect(button).toHaveAttribute("aria-pressed", "false");
+  await expect(button).toHaveAccessibleName("Fullscreen");
+  const canvasWidth = () => page.getByTestId("fp-canvas").evaluate((c: HTMLCanvasElement) => c.clientWidth);
+  const before = await canvasWidth();
+
+  await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+  // The stage goes fullscreen, not the canvas: the HUD and the view's own overlays are inside it.
+  expect(await page.evaluate(() => document.fullscreenElement?.hasAttribute("data-fullscreen-root") ?? false)).toBe(true);
+  expect(await page.evaluate(() => Boolean(document.fullscreenElement?.querySelector('[data-testid="fp-view"]')))).toBe(true);
+  expect(await page.evaluate(() => Boolean(document.fullscreenElement?.querySelector('[data-testid="play-hud"]')))).toBe(true);
+  // The canvas fills the screen's width, and its drawing buffer follows it.
+  await expect.poll(canvasWidth).toBe(await page.evaluate(() => window.innerWidth));
+  await expect
+    .poll(() => page.getByTestId("fp-canvas").evaluate((c: HTMLCanvasElement) => Math.abs(c.width / c.height - c.clientWidth / c.clientHeight) < 0.02))
+    .toBe(true);
+
+  await page.keyboard.press("f");
+  await expect(button).toHaveAttribute("aria-pressed", "false");
+  expect(await page.evaluate(() => document.fullscreenElement)).toBeNull();
+  // Out again, the canvas is the size it was.
+  await expect.poll(canvasWidth).toBe(before);
+});

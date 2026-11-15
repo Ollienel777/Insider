@@ -49,7 +49,7 @@ import { MuteToggle, useRunSound } from "./run-sound";
 import { RunStage } from "./run-stage";
 import { placeOrFixture } from "./scan-fallback";
 import { ScanWait, useWaitsOnScan } from "./scan-wait";
-import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useBark, useRunView, useScanPreload, ViewSwitch, type HeldAction } from "./fp/run-view";
+import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, FullscreenToggle, useBark, useRunView, useScanPreload, ViewSwitch, type HeldAction } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -667,7 +667,12 @@ export function RunScreen({
             ) : null}
             {/* Only over a board with a run on it: not over the loading or error state. Below md the
                 Live mode switch takes the top-right corner, so the mute button sits under it there. */}
-            {run ? <MuteToggle muted={muted} onToggle={toggleMute} className="absolute top-2 right-8 max-md:top-16 max-md:right-6" /> : null}
+            {run ? (
+              <div className="absolute top-2 right-8 flex items-center gap-2 max-md:top-16 max-md:right-6">
+                <FullscreenToggle />
+                <MuteToggle muted={muted} onToggle={toggleMute} />
+              </div>
+            ) : null}
             {fpOn && clock.awaitingMove ? <FirstMoveHint /> : null}
             {run && !fpOn ? <LiveControls mode={playMode} onChange={setPlayMode} clock={clock} /> : null}
           </div>

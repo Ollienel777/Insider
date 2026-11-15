@@ -20,6 +20,8 @@ export type { ScanHandle } from "./scan-preload";
 
 export { useRunView } from "./view-store";
 
+export { FullscreenToggle } from "./fullscreen-toggle";
+
 /** The view, in its own bundle and never rendered on the server: it needs a canvas and WebGL. */
 export const FirstPersonView = dynamic(() => import("./first-person-view"), {
   ssr: false,
@@ -166,8 +168,8 @@ const VIEWS: readonly { view: RunView; label: string; hint: string; icon: Lucide
  * board's area, towards the right, clear of the board's top bar, which is
  * full at 1280 px. The corners are spoken for: the mute button (PR 104) has
  * the top right one (`top-2 right-8`, about 70 px wide), the play mode switch
- * and the turn timer (PR 105) the bottom two, so this stands 128 px in from the
- * right edge, on the mute button's line. Nothing shows on a floor from a live
+ * and the turn timer (PR 105) the bottom two, so this stands 192 px in from the
+ * right edge, on the mute button's line, clear of it and the Fullscreen button. Nothing shows on a floor from a live
  * scan that first person can't stand on, or on a phone showing the board:
  * first person needs a keyboard.
  */
@@ -190,7 +192,7 @@ export function ViewSwitch({
       data-testid="run-view"
       data-view={state.view}
       className={cn(
-        "absolute top-2 z-10 flex rounded-sm bg-surface-1 shadow-e-1 max-md:left-3 md:right-32",
+        "absolute top-2 z-10 flex rounded-sm bg-surface-1 shadow-e-1 max-md:left-3 md:right-48",
         // A phone is not offered first person, but one that remembers it keeps the way back to the board.
         state.view === "board" ? "max-md:hidden" : null,
         className,
