@@ -77,19 +77,11 @@ function better(a: SetupMeasure, b: SetupMeasure): number {
   return open(a) !== open(b) ? open(a) - open(b) : b.coverage - a.coverage;
 }
 
-export interface DerivedPair {
-  demos: readonly DemoSetup[];
-  /** How long the rule took, in ms. */
-  ms: number;
-}
-
 /** The showcase building's demo pair, from the level placed on its board; none when no camera move helps. */
-export function derivedDemoPair(manifest: LevelManifest, floor: FloorGraph, placed: PlacedLevel): DerivedPair {
-  const started = performance.now();
-  const done = (demos: readonly DemoSetup[]): DerivedPair => ({ demos, ms: Math.round(performance.now() - started) });
+export function derivedDemoPair(manifest: LevelManifest, floor: FloorGraph, placed: PlacedLevel): readonly DemoSetup[] {
   const base = setupFromPlaced(placed, DERIVED_BASE_NAME);
   const baseMeasure = measureSetup(manifest, floor, base);
-  if (!baseMeasure || base.cameras.length === 0) return done([]);
+  if (!baseMeasure || base.cameras.length === 0) return [];
 
   const adj = adjacencyOf(floor);
   const way = waysIn(adj, placed);
@@ -117,16 +109,17 @@ export function derivedDemoPair(manifest: LevelManifest, floor: FloorGraph, plac
     const measure = measureSetup(manifest, floor, move.setup);
     if (measure && (!best || better(measure, best.measure) < 0)) best = { move, measure };
   }
-  if (!best || better(best.measure, baseMeasure) >= 0) return done([]);
+  if (!best || better(best.measure, baseMeasure) >= 0) return [];
 
   const { move } = best;
-  const room = floor.rooms.find((r) => r.id === floor.nodes.find((n) => n.id === move.node)?.roomId)?.label ?? move.node;
+  // A room with no label is named in words: a node id is no name for the screen.
+  const room = floor.rooms.find((r) => r.id === floor.nodes.find((n) => n.id === move.node)?.roomId)?.label ?? "a nearby room";
   const noun = objectiveNoun(placed.level.missionId);
   // A camera that stays where it hangs was turned, not moved, and its name says which.
   const turned = base.cameras.find((c) => c.id === move.cameraId)?.node === move.node;
   const facing = move.setup.cameras.find((c) => c.id === move.cameraId)?.facing.toUpperCase();
   const moved: OwnerSetup = { ...move.setup, name: `${DERIVED_BASE_NAME}, ${move.cameraId} ${turned ? "turned" : "moved"}` };
-  return done([
+  return [
     {
       setup: base,
       note: "Made up for the demo: the level's generated security, not this building's.",
@@ -137,5 +130,5 @@ export function derivedDemoPair(manifest: LevelManifest, floor: FloorGraph, plac
         ? `The same with ${move.cameraId} turned to face ${facing}, so the cameras see more of the ways to the ${noun}.`
         : `The same with ${move.cameraId} moved into ${room}, where the cameras see more of the ways to the ${noun}.`,
     },
-  ]);
+  ];
 }

@@ -44,10 +44,10 @@ const MadeUpChip = () => (
 );
 
 /** The prepared setups, each with a Load button: a demo is an ordinary setup, loaded in plain sight. */
-export function DemoList({ demos, onLoad, ms }: { demos: readonly DemoSetup[]; onLoad: (name: string) => void; ms?: number }) {
+export function DemoList({ demos, onLoad }: { demos: readonly DemoSetup[]; onLoad: (name: string) => void }) {
   if (demos.length === 0) return null;
   return (
-    <section aria-labelledby="owner-demo-label" className="flex flex-col gap-2" data-testid="owner-demos" data-ms={ms}>
+    <section aria-labelledby="owner-demo-label" className="flex flex-col gap-2" data-testid="owner-demos">
       <h2 id="owner-demo-label" className="label-caps text-text-3">
         Prepared for the demo
       </h2>

@@ -5,15 +5,22 @@
 // `localStorage` throws when site data is blocked, so it is reached inside the
 // `try`. Writes say whether they landed, so the editor can show the error state.
 // On a showcase building's live scan (issue 205) a setup is held in this tab's
-// memory instead (`inMemory`), never in storage (SPEC §4.5): it goes when
-// the tab closes.
+// memory instead (`memory`, under the building and the mission), never in
+// storage (SPEC §4.5): it goes when the tab closes.
 import { z } from "zod";
 import { OwnerSetup } from "@/domain/owner-setup";
 
 export const ownerSetupsKey = (buildingId: string) => `heist:owner-setups:${buildingId}`;
 
-/** The setups held in this tab's memory, per building (`inMemory`). */
+/** The setups held in this tab's memory, per building and mission (`memory`). */
 const held = new Map<string, OwnerSetup[]>();
+
+/** Where a setup is held instead of storage: this tab's memory, under the building and this mission. */
+export interface InMemory {
+  missionId: string;
+}
+
+const heldKey = (buildingId: string, memory: InMemory) => `${buildingId}.${memory.missionId}`;
 
 /** The browser's storage, read inside the caller's `try`: the getter itself throws when site data is blocked. */
 const browserStorage = (): Storage | undefined => globalThis.localStorage;
@@ -40,8 +47,8 @@ function read(buildingId: string, storage: Pick<Storage, "getItem"> | undefined)
 }
 
 /** The setups saved for `buildingId`, in the order saved; empty when there are none, they no longer parse, or storage is blocked. */
-export function loadOwnerSetups(buildingId: string, storage?: Pick<Storage, "getItem">, inMemory = false): OwnerSetup[] {
-  if (inMemory) return [...(held.get(buildingId) ?? [])];
+export function loadOwnerSetups(buildingId: string, storage?: Pick<Storage, "getItem">, memory?: InMemory): OwnerSetup[] {
+  if (memory) return [...(held.get(heldKey(buildingId, memory)) ?? [])];
   try {
     return read(buildingId, storage ?? browserStorage());
   } catch {
@@ -50,12 +57,12 @@ export function loadOwnerSetups(buildingId: string, storage?: Pick<Storage, "get
 }
 
 /** Saves `setup` under its building, replacing a saved setup of the same name. False when storage refused it. */
-export function saveOwnerSetup(setup: OwnerSetup, storage?: Pick<Storage, "getItem" | "setItem">, inMemory = false): boolean {
-  if (inMemory) {
+export function saveOwnerSetup(setup: OwnerSetup, storage?: Pick<Storage, "getItem" | "setItem">, memory?: InMemory): boolean {
+  if (memory) {
     const saved = OwnerSetup.safeParse(setup);
     if (!saved.success) return false;
-    const kept = (held.get(setup.buildingId) ?? []).filter((s) => s.name !== setup.name);
-    held.set(setup.buildingId, [...kept, saved.data]);
+    const key = heldKey(setup.buildingId, memory);
+    held.set(key, [...(held.get(key) ?? []).filter((s) => s.name !== setup.name), saved.data]);
     return true;
   }
   try {
@@ -71,9 +78,10 @@ export function saveOwnerSetup(setup: OwnerSetup, storage?: Pick<Storage, "getIt
 }
 
 /** Forgets the setup `name` saved for `buildingId`. False when storage refused it. */
-export function deleteOwnerSetup(buildingId: string, name: string, storage?: Pick<Storage, "getItem" | "setItem">, inMemory = false): boolean {
-  if (inMemory) {
-    held.set(buildingId, (held.get(buildingId) ?? []).filter((s) => s.name !== name));
+export function deleteOwnerSetup(buildingId: string, name: string, storage?: Pick<Storage, "getItem" | "setItem">, memory?: InMemory): boolean {
+  if (memory) {
+    const key = heldKey(buildingId, memory);
+    held.set(key, (held.get(key) ?? []).filter((s) => s.name !== name));
     return true;
   }
   try {
