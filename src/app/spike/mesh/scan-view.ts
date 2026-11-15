@@ -356,8 +356,14 @@ export class ScanView {
   }
 
   private async fetchManifest(): Promise<ScanManifest> {
-    const query = new URLSearchParams({ m: this.options.modelId, faces: this.faces, mesh: this.meshResolution });
-    const response = await fetch(`/api/scan-mesh?${query}`, { cache: "no-store", signal: this.abort.signal });
+    // The id goes in the body so the server's request log never shows it.
+    const response = await fetch("/api/scan-mesh", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ m: this.options.modelId, faces: this.faces, mesh: this.meshResolution }),
+      cache: "no-store",
+      signal: this.abort.signal,
+    });
     const body = (await response.json().catch(() => null)) as (ScanManifest & { message?: string }) | null;
     if (!response.ok || !body) {
       throw new LoadError(body?.message ?? "The scan couldn't be loaded.");
