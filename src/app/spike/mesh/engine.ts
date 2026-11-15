@@ -27,6 +27,8 @@ export interface WalkHud {
   projection: boolean;
   /** How the panoramas are weighted (lib/scan-mesh/blend.ts). */
   blend: BlendMode;
+  /** What is drawn: the panoramas as spheres, or the mesh. */
+  shows: "spheres" | "mesh";
   /** Whether the blend's fixes for doubles and unseen points are on (lib/scan-mesh/combine.ts). */
   fixes: boolean;
   /** The player's mouse sensitivity, as a multiple of the default. */
@@ -80,6 +82,8 @@ export interface WalkOptions {
   /** Whether to paint it with its own textures, and fill what nothing covers (scan-view.ts); both default on. */
   textured?: boolean;
   repair?: "all" | "none" | "shards" | "planes";
+  /** What is drawn: the panoramas as spheres (the default), or the mesh. */
+  view?: "spheres" | "mesh";
   fill?: boolean;
   reducedMotion: boolean;
   /** Exposes the engine on `window` for poking at from the console. */
@@ -157,6 +161,7 @@ export class ScanWalk {
       detail: options.detail,
       textured: options.textured,
       repair: options.repair,
+      view: options.view,
       fill: options.fill,
       onChange: () => this.push(),
     });
@@ -169,6 +174,7 @@ export class ScanWalk {
       speed: 0,
       projection: true,
       blend: "photo",
+      shows: options.view === "mesh" ? "mesh" : "spheres",
       fixes: true,
       exposure: null,
       detail: { state: "none", triangles: 0, megabytes: 0, seconds: 0 },
@@ -340,6 +346,10 @@ export class ScanWalk {
     if (event.repeat) return;
     if (event.code === "KeyT") this.setProjection(!this.projection);
     if (event.code === "KeyG") this.view.toggleWire();
+    if (event.code === "KeyV") {
+      this.view.setSpheres(this.view.shows === "mesh");
+      this.push();
+    }
     if (event.code === "KeyE") this.setExposure(!(this.hud.exposure?.on ?? true));
     if (event.code === "KeyB") this.setBlend(BLEND_MODES[(BLEND_MODES.indexOf(this.hud.blend) + 1) % BLEND_MODES.length]);
     if (event.code === "KeyF") this.setFixes({ agree: !this.fixes, fill: !this.fixes });
@@ -539,6 +549,7 @@ export class ScanWalk {
     this.hud.exposure = status.exposure;
     this.hud.timings = status.timings;
     this.hud.blend = this.view.blend;
+    this.hud.shows = this.view.shows;
     const counts = this.view.counts();
     this.hud.panos = this.view.inUse();
     this.hud.panosReady = counts?.sharp ?? 0;

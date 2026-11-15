@@ -43,6 +43,7 @@ import {
 import { fitLevels, type LevelSample } from "@/lib/scan-mesh/levels";
 import { TUNING, type MoveWorld } from "@/lib/scan-mesh/movement";
 import { packShelves, type Placement } from "@/lib/scan-mesh/atlas";
+import { cubeSphere } from "@/lib/scan-mesh/cube-sphere";
 import { PATCH_MARGIN, type PlanePatch } from "@/lib/scan-mesh/planes";
 import { parseObj } from "@/lib/scan-mesh/obj";
 import { feetUnder, linksFresh, poseVelocity, sharpLayer, viewStats, type ScanPose, type ViewStats } from "@/lib/scan-mesh/pose";
@@ -54,6 +55,7 @@ import { HoleFill } from "./hole-fill";
 import { blankCube, PanoStore, type PanoCounts, type PanoUse } from "./panos";
 import { createPhotoMaterial, createPhotoUniforms, type PhotoUniforms } from "./photo-material";
 import { createScanMaterial, SLOTS } from "./projection";
+import { createSphereMaterial } from "./sphere-material";
 
 export type { ScanPose } from "@/lib/scan-mesh/pose";
 export { eyePose, yawFromHeading } from "@/lib/scan-mesh/pose";
@@ -82,6 +84,13 @@ export interface ScanViewOptions {
    * by default; "none", or one of the two, to compare.
    */
   repair?: "all" | "none" | "shards" | "planes";
+  /**
+   * What is drawn. "spheres" (the default): the panoramas themselves, each
+   * a sphere pushed out to its own depth (sphere-material.ts); the mesh is
+   * then only walked on and measured against, never seen. "mesh": the mesh,
+   * painted from the panoramas and its textures.
+   */
+  view?: "spheres" | "mesh";
   /** Vertical field of view, degrees. */
   fov?: number;
   /** Called whenever `status()` has news: a phase, the detailed mesh, the exposure match. */
@@ -169,6 +178,12 @@ const UPLOADS_SMALL = 4;
 const UPLOADS_SHARP = 1;
 /** Full-size panorama cubes kept on the GPU beside the textures, at most (each 2k one is about 134 MB). */
 const SHARP_CUBES = 5;
+/** The same when the panoramas are drawn as spheres, one at a time: the one the eye is at, the one it is leaving, and the next. */
+const SPHERE_CUBES = 3;
+/** Squares along each edge of each of a sphere's six faces: about a degree each. */
+const SPHERE_CELLS = 96;
+/** Under this share the panorama the eye is leaving is no longer drawn. */
+const SPHERE_GONE = 0.004;
 /** A patch's picture is this fine, metres a pixel, and at most this many pixels a side. */
 const PATCH_TEXEL = 0.012;
 const PATCH_PIXELS = 256;
@@ -245,6 +260,9 @@ export class ScanView {
   private sharpClock = 0;
   private arrived: { group: number; sharp: boolean; image: ImageBitmap }[] = [];
   private readonly fill: HoleFill | null;
+  /** The panoramas as spheres (sphere-material.ts): the lead's, and the other's depth and colour while the lead changes. Empty when the mesh is what is drawn. */
+  private spheres: Mesh[] = [];
+  private readonly sphereView: boolean;
   private readonly fillMaterial: ShaderMaterial;
   /** For the fans that close small holes: a step farther behind, so a plane's patch over the same hole wins. */
   private readonly fanMaterial: ShaderMaterial;
@@ -283,6 +301,25 @@ export class ScanView {
     this.backdropMaterial = createPhotoMaterial(this.photo, "backdrop");
     this.fillMaterial = createPhotoMaterial(this.photo, "stand-in");
     this.fanMaterial = createPhotoMaterial(this.photo, "stand-in", null, 2);
+    this.sphereView = options.view !== "mesh";
+    if (this.sphereView) {
+      const { directions, index } = cubeSphere(SPHERE_CELLS);
+      const sphere = new BufferGeometry();
+      sphere.setAttribute("position", new BufferAttribute(directions, 3));
+      sphere.setIndex(new BufferAttribute(index, 1));
+      this.spheres = (["lead", "other-depth", "other"] as const).map((part, order) => {
+        const mesh = new Mesh(sphere, createSphereMaterial(this.photo, part));
+        // The shader moves every vertex: the geometry's own bounds say nothing of where it is.
+        mesh.frustumCulled = false;
+        // Before anything a game puts in the scene, in this order.
+        mesh.renderOrder = -10 + order;
+        mesh.visible = false;
+        this.scene.add(mesh);
+        return mesh;
+      });
+      // The other panorama's sphere is its own picture of the room: it hides itself, not the lead's.
+      this.spheres[1].onBeforeRender = (renderer) => renderer.clearDepth();
+    }
     this.backdrop = new Mesh(new BoxGeometry(1000, 1000, 1000), this.backdropMaterial);
     this.backdrop.renderOrder = -1;
     this.backdrop.frustumCulled = false;
@@ -331,6 +368,15 @@ export class ScanView {
       if (this.panos.needsLinks) void this.refreshLinks();
       this.startExposure();
     }
+    if (this.spheres.length > 0) {
+      const [lead, otherDepth, other] = this.spheres;
+      const show = this.sphereShown && this.used.length > 0;
+      const second = show && this.used.length > 1 && this.used[1].share > SPHERE_GONE;
+      lead.visible = show;
+      otherDepth.visible = second;
+      other.visible = second;
+      if (second) (other.material as ShaderMaterial).uniforms.uFade.value = this.used[1].share / (this.used[0].share + this.used[1].share);
+    }
     this.draw(null);
   }
 
@@ -344,6 +390,22 @@ export class ScanView {
     this.renderer.setRenderTarget(target);
     this.renderer.render(this.scene, this.camera);
     this.renderer.setRenderTarget(before);
+  }
+
+  /** Whether the spheres are what is shown (they are, in the sphere view, unless switched off to look at the mesh under them). */
+  private sphereShown = true;
+
+  /** In the sphere view: show the mesh under the spheres instead, or the spheres again. Nothing changes in the mesh view. */
+  setSpheres(on: boolean): void {
+    if (this.spheres.length === 0) return;
+    this.sphereShown = on;
+    if (this.drawn) this.drawn.visible = !on;
+    for (const mesh of this.fillMeshes) mesh.visible = !on;
+  }
+
+  /** What is drawn: the panoramas as spheres, or the mesh. */
+  get shows(): "spheres" | "mesh" {
+    return this.spheres.length > 0 && this.sphereShown ? "spheres" : "mesh";
   }
 
   /** The drawing size, CSS pixels. */
@@ -585,10 +647,12 @@ export class ScanView {
       state.timings.build = (performance.now() - at) / 1000;
       state.triangles = parsed.index.length / 3;
       this.drawn = new Mesh(geometry, this.material);
+      this.drawn.visible = this.shows === "mesh";
       this.scene.add(this.drawn);
 
       const sharp = sharpLayer(this.faces);
-      this.panos = new PanoStore(this.renderer, geometry, Math.min(sharp.capacity, SHARP_CUBES), sharp.size);
+      this.panos = new PanoStore(this.renderer, geometry, Math.min(sharp.capacity, this.sphereView ? SPHERE_CUBES : SHARP_CUBES), sharp.size);
+      this.panos.lone = this.sphereView;
       this.panos.onStale = () => void this.refreshLinks();
       const sight = new Ray();
       const world = this.meshWorld;
@@ -650,7 +714,8 @@ export class ScanView {
     }
     if (!detail || detail.bytes === null || !isAllowedAssetUrl(detail.url)) return;
     status.state = "loading";
-    const textured = this.options.textured !== false;
+    // The spheres have no use for the mesh's textures: the mesh is only their depth.
+    const textured = this.options.textured !== false && !this.sphereView;
     // The 9 MB or so of mesh first: the full-size faces, hundreds of megabytes, wait for it.
     if (this.panos) this.panos.holdSharp = true;
     const release = () => {
@@ -783,6 +848,7 @@ export class ScanView {
   }
 
   private addFill(mesh: Mesh): void {
+    mesh.visible = this.shows === "mesh";
     this.fillMeshes.push(mesh);
     this.scene.add(mesh);
   }
@@ -1220,6 +1286,8 @@ export class ScanView {
     for (const texture of [...this.small, ...this.sharp]) texture?.dispose();
     for (const material of this.groupMaterials) if (material !== this.material) material.dispose();
     for (const mesh of this.fillMeshes) mesh.geometry.dispose();
+    if (this.spheres.length > 0) this.spheres[0].geometry.dispose();
+    for (const mesh of this.spheres) (mesh.material as ShaderMaterial).dispose();
     for (const page of this.pages) {
       this.renderer.properties.remove(page.texture);
       this.renderer.getContext().deleteTexture(page.raw);

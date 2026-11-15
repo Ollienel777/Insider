@@ -17,6 +17,8 @@ interface Props {
   fill: boolean;
   /** Which of the mesh's repairs to make (scan-view.ts). */
   repair: "all" | "none" | "shards" | "planes";
+  /** What is drawn: the panoramas as spheres, or the mesh. */
+  view: "spheres" | "mesh";
   debug: boolean;
 }
 
@@ -37,6 +39,7 @@ const HINTS: [string, string][] = [
   ["T", "photo / textures"],
   ["P", "nearest scan position"],
   ["N", "next scan position"],
+  ["V", "photo spheres / mesh"],
   ["G", "mesh edges"],
   ["B", "blend rule"],
   ["F", "blend fixes"],
@@ -46,7 +49,7 @@ const HINTS: [string, string][] = [
 
 const seconds = (value: number | null) => (value === null ? "…" : `${value.toFixed(2)} s`);
 
-export function ScanWalkScreen({ faces, mesh, detail, textured, fill, repair, debug }: Props) {
+export function ScanWalkScreen({ faces, mesh, detail, textured, fill, repair, view, debug }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   // Null until the address has been read: the id lives after `#`, which only the browser sees.
   const [choice, setChoice] = useState<ModelChoice | null>(null);
@@ -73,7 +76,7 @@ export function ScanWalkScreen({ faces, mesh, detail, textured, fill, repair, de
     import("./engine")
       .then(({ ScanWalk }) => {
         if (gone) return;
-        engine = new ScanWalk(element, { modelId, faces, mesh, detail, textured, fill, repair, reducedMotion, debug, onHud: setHud });
+        engine = new ScanWalk(element, { modelId, faces, mesh, detail, textured, fill, repair, view, reducedMotion, debug, onHud: setHud });
       })
       .catch(() => setFailed("This browser couldn't start the 3D view (WebGL 2 is needed)."));
     return () => {
@@ -83,7 +86,7 @@ export function ScanWalkScreen({ faces, mesh, detail, textured, fill, repair, de
       setHud(null);
       setFailed(null);
     };
-  }, [modelId, faces, mesh, detail, textured, fill, repair, debug]);
+  }, [modelId, faces, mesh, detail, textured, fill, repair, view, debug]);
 
   if (choice === null) return <Shell>{null}</Shell>;
 
@@ -151,7 +154,9 @@ export function ScanWalkScreen({ faces, mesh, detail, textured, fill, repair, de
           <Row label="Speed">{hud ? `${hud.speed.toFixed(1)} m/s · ${Math.round(hud.fps)} fps` : "…"}</Row>
           <Row label="Mouse">{hud ? `${hud.sensitivity.toFixed(2)}× sensitivity` : "…"}</Row>
           <Row label="View">
-            {hud?.detail.textures
+            {hud?.shows === "spheres"
+              ? `Panoramas as spheres (${hud.faces}), each at its own depth`
+              : hud?.detail.textures
               ? `${hud.projection === false ? "Textures only" : hud.blend === "photo" ? "Photo" : hud.blend === "nearest" ? "Panoramas, nearest" : "Panoramas, by view"} · ${hud.detail.textures.small} of ${hud.detail.textures.total} textures under it`
               : hud?.projection === false
               ? "Mesh only"

@@ -8,7 +8,9 @@
 // `mesh=50k|500k`, `detail=0` (no Matterpak mesh), `textured=0` (paint it
 // from the panoramas alone, without its textures under them), `fill=0`
 // (leave holes open), `repair=0` (the mesh as scanned: shards in, no planes
-// carried across gaps; `shards` or `planes` for one of the two), `debug=1`.
+// carried across gaps; `shards` or `planes` for one of the two), `view=mesh`
+// (draw the mesh, painted from the panoramas and its textures, rather than
+// the panoramas themselves as spheres; V switches between them), `debug=1`.
 import type { Metadata } from "next";
 import { MESH_RESOLUTIONS, PANO_RESOLUTIONS, type MeshResolution, type PanoResolution } from "@/lib/scan-mesh/manifest";
 import { ScanWalkScreen } from "./scan-walk";
@@ -40,6 +42,7 @@ export default async function ScanMeshPage({ searchParams }: { searchParams: Pro
       textured={one(search.textured) !== "0"}
       fill={one(search.fill) !== "0"}
       repair={one(search.repair) === "0" ? "none" : pick(one(search.repair), ["all", "shards", "planes"] as const, "all")}
+      view={one(search.view) === "mesh" ? "mesh" : "spheres"}
       debug={one(search.debug) === "1"}
     />
   );
