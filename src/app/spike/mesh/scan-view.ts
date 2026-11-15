@@ -198,8 +198,6 @@ const LEAD_TAKES = 0.56;
 const LEAD_IN = 0.14;
 /** In the photo view: seconds one panorama takes to dissolve into the next. */
 const PHOTO_FADE = 0.25;
-/** In the photo view a panorama whose full-size cube is not in yet is not switched to, unless the one shown is this far off, metres. */
-const PHOTO_WAIT_SHARP = 2.5;
 /** A patch's picture is this fine, metres a pixel, and at most this many pixels a side. */
 const PATCH_TEXEL = 0.012;
 const PATCH_PIXELS = 256;
@@ -465,13 +463,9 @@ export class ScanView {
   private choosePhoto(dt: number): void {
     const lead = this.panos?.leadIndex ?? -1;
     const inUse = (index: number) => this.used.some((u) => u.index === index);
-    const slotOf = (index: number) => this.used.findIndex((u) => u.index === index);
-    const sharp = (index: number) => ((this.photo.uPanoSharp.value as number[])[slotOf(index)] ?? 0) >= 0.99;
-    const shown = this.used[slotOf(this.photoLead)];
-    const { x, y, z } = this.pose;
-    const far = !shown || Math.hypot(shown.origin[0] - x, shown.origin[1] - y, shown.origin[2] - z) > PHOTO_WAIT_SHARP;
-    // A blurry picture of the nearest place reads worse than a sharp one of the place a step back: wait for the new one's full cube.
-    if (lead !== -1 && lead !== this.photoLead && inUse(lead) && (sharp(lead) || far || !sharp(this.photoLead))) {
+    // The new lead comes in as soon as it is nearest, sharp or not: its small cube shows at once and
+    // the full one fades in when it arrives. Waiting for the sharp one froze the picture while walking.
+    if (lead !== -1 && lead !== this.photoLead && inUse(lead)) {
       // A first picture is simply there; a later one dissolves in from what was shown.
       this.photoFrom = this.photoLead !== -1 && inUse(this.photoLead) ? this.photoLead : -1;
       this.photoFade = this.photoFrom === -1 ? 1 : 0;

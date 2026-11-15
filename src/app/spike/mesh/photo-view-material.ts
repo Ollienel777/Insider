@@ -8,8 +8,8 @@
 // edge's colour rather than a hole. A stretched skin is only visible from
 // off the panorama's own line of sight, so the eye's offset from the scan
 // position, for the picture, is held to `REACH` metres: the parallax stays
-// mild and the sheet never tears open. Beyond that the picture is the one
-// from `REACH` metres out, floating a little with the player.
+// mild and the sheet never tears open. Beyond that it follows less and
+// less (up to three times `REACH`), floating a little with the player.
 //
 // The camera itself stays where the player is (walking and collision use
 // it). The sphere is moved by the difference instead: drawn from the
@@ -208,14 +208,21 @@ export function createPhotoViewMaterial(panos: PhotoUniforms, slot: number): Sha
   });
 }
 
-/** `uShift` for a panorama at `origin` seen from `eye`: the eye's offset past `REACH` metres, which the picture does not follow. */
+/**
+ * `uShift` for a panorama at `origin` seen from `eye`: the part of the eye's
+ * offset the picture does not follow. Up to `reach` metres it follows fully;
+ * beyond, less and less, approaching `reach` × 3 (a tanh, so the follow never
+ * stops at a stroke): walking on past the reach still moves the picture, and
+ * the confidence weighting keeps that from tearing.
+ */
 export function photoShift(eye: readonly [number, number, number], origin: readonly [number, number, number], reach = REACH): [number, number, number] {
   const dx = eye[0] - origin[0];
   const dy = eye[1] - origin[1];
   const dz = eye[2] - origin[2];
   const length = Math.hypot(dx, dy, dz);
-  if (length <= reach) return [0, 0, 0];
-  const keep = 1 - reach / length;
+  if (length <= reach || length === 0) return [0, 0, 0];
+  const followed = reach + 2 * reach * Math.tanh((length - reach) / (2 * reach));
+  const keep = 1 - followed / length;
   return [dx * keep, dy * keep, dz * keep];
 }
 
