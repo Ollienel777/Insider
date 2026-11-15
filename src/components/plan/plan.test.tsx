@@ -3,6 +3,7 @@
 // path on the board.
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
+import { SMOKE_KIT_BUILDING } from "@/adapters/costar/test-kit";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { BoardView } from "@/components/run/board-view";
 import { RUN_SEED } from "@/components/run/run-screen";
@@ -50,8 +51,8 @@ describe("the crew request", () => {
 
   it("says when the crew has no reply to give at all, so the Plan screen can work one out (issue 140)", async () => {
     const none = (async () =>
-      Response.json({ error: 'no recorded crew replies for "247386"', code: "no-recording" }, { status: 503 })) as unknown as typeof fetch;
-    await expect(askCrew(crewRequest("247386", "Go"), { fetch: none })).rejects.toBeInstanceOf(NoCrewReplyError);
+      Response.json({ error: `no recorded crew replies for "${SMOKE_KIT_BUILDING}"`, code: "no-recording" }, { status: 503 })) as unknown as typeof fetch;
+    await expect(askCrew(crewRequest(SMOKE_KIT_BUILDING, "Go"), { fetch: none })).rejects.toBeInstanceOf(NoCrewReplyError);
     const broken = (async () => Response.json({ error: "the crew could not answer" }, { status: 500 })) as unknown as typeof fetch;
     await expect(askCrew(crewRequest("F1", "Go"), { fetch: broken })).rejects.not.toBeInstanceOf(NoCrewReplyError);
   });
@@ -59,9 +60,9 @@ describe("the crew request", () => {
   it("treats a 503 that isn't the crew's own no-recording answer as an outage, not as no reply", async () => {
     // A proxy or the host: no JSON body, or a body without the crew's code.
     const proxy = (async () => new Response("Service Unavailable", { status: 503 })) as unknown as typeof fetch;
-    await expect(askCrew(crewRequest("247386", "Go"), { fetch: proxy })).rejects.not.toBeInstanceOf(NoCrewReplyError);
+    await expect(askCrew(crewRequest(SMOKE_KIT_BUILDING, "Go"), { fetch: proxy })).rejects.not.toBeInstanceOf(NoCrewReplyError);
     const other = (async () => Response.json({ error: "overloaded" }, { status: 503 })) as unknown as typeof fetch;
-    await expect(askCrew(crewRequest("247386", "Go"), { fetch: other })).rejects.not.toBeInstanceOf(NoCrewReplyError);
+    await expect(askCrew(crewRequest(SMOKE_KIT_BUILDING, "Go"), { fetch: other })).rejects.not.toBeInstanceOf(NoCrewReplyError);
   });
 });
 
@@ -71,7 +72,7 @@ describe("the Plan screen's brief on a building with no recording (issue 140)", 
     (async () =>
       Response.json(
         {
-          error: 'no recorded crew replies for "247386"',
+          error: `no recorded crew replies for "${SMOKE_KIT_BUILDING}"`,
           code: "no-recording",
           ...(reason && { reason }),
           ...(reason === "timeout" && { fallback: { service: "llm", id: "llm-test-1", message: "The model didn't answer in time, so the crew's plan is worked out from the board." } }),
@@ -80,14 +81,14 @@ describe("the Plan screen's brief on a building with no recording (issue 140)", 
       )) as unknown as typeof fetch;
 
   it("works the plan out from the board, marked with why the model gave none, and the demo status hears of the timeout", async () => {
-    const answer = await askCrewOrBoard(crewRequest("247386", "Go in quietly"), placed, { fetch: noRecording("timeout") });
+    const answer = await askCrewOrBoard(crewRequest(SMOKE_KIT_BUILDING, "Go in quietly"), placed, { fetch: noRecording("timeout") });
     expect(answer).toEqual({ plan: fallbackPlan(placed), recorded: false, source: "board", reason: "timeout" });
     expect(getStatus().toasts.map((t) => t.id)).toEqual(["llm-test-1"]);
     expect(getStatus().fellBack.has("llm")).toBe(true);
   });
 
   it("with the model off, the board plan says so and nothing is toasted", async () => {
-    const answer = await askCrewOrBoard(crewRequest("247386", "Go"), placed, { fetch: noRecording("fake mode") });
+    const answer = await askCrewOrBoard(crewRequest(SMOKE_KIT_BUILDING, "Go"), placed, { fetch: noRecording("fake mode") });
     expect(answer).toMatchObject({ source: "board", reason: "fake mode" });
     expect(getStatus().toasts).toEqual([]);
   });
@@ -96,8 +97,8 @@ describe("the Plan screen's brief on a building with no recording (issue 140)", 
     const reply = (async () => Response.json(recorded("dock-wait"))) as unknown as typeof fetch;
     expect(await askCrewOrBoard(crewRequest("F1", "Go"), placed, { fetch: reply })).toEqual(recorded("dock-wait"));
     const proxy = (async () => new Response("Service Unavailable", { status: 503 })) as unknown as typeof fetch;
-    await expect(askCrewOrBoard(crewRequest("247386", "Go"), placed, { fetch: proxy })).rejects.not.toBeInstanceOf(NoCrewReplyError);
-    await expect(askCrewOrBoard(crewRequest("247386", "Go"), null, { fetch: noRecording("timeout") })).rejects.toBeInstanceOf(NoCrewReplyError);
+    await expect(askCrewOrBoard(crewRequest(SMOKE_KIT_BUILDING, "Go"), placed, { fetch: proxy })).rejects.not.toBeInstanceOf(NoCrewReplyError);
+    await expect(askCrewOrBoard(crewRequest(SMOKE_KIT_BUILDING, "Go"), null, { fetch: noRecording("timeout") })).rejects.toBeInstanceOf(NoCrewReplyError);
   });
 });
 
