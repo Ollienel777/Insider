@@ -11,7 +11,7 @@ Clock (from `hackathon/EVENT.md`, converted with `harness utc`):
 | moment | local | UTC |
 |---|---|---|
 | hacking started | 2026-11-13 02:55 America/New_York | 2026-11-13T07:55Z |
-| feature freeze | 2026-11-15 01:48 America/New_York | 2026-11-15T06:48Z |
+| feature freeze | 2026-11-15 02:48 America/New_York | 2026-11-15T07:48Z |
 | submission deadline (estimate) | 2026-11-15 09:00 America/New_York | 2026-11-15T14:00Z |
 
 ---
@@ -477,7 +477,7 @@ funnel's first count is the inventory's own size in fake mode and the kit's
 | **M1 Demo path** | beats 1 to 7 work end to end on fakes, and the smoke walks them | + 18 h (2026-11-14T02:00Z) |
 | **M2 Wow** | the Chief re-plan and the crew run live on Anthropic within the latency budget; live CoStar, Vexcel and Matterport where keys and answers exist; every fallback still works | + 28 h (2026-11-14T12:00Z) |
 | **M3 Prizes** | every row of §3 visibly met | + 36 h (2026-11-14T20:00Z) |
-| **M4 Polish** | every demo screen passes the `ui-craft` rubric at 1440×900 | feature freeze (2026-11-15T06:48Z) |
+| **M4 Polish** | every demo screen passes the `ui-craft` rubric at 1440×900 | feature freeze (2026-11-15T07:48Z) |
 | **M5 Submission** | `SUBMIT.md`'s materials | deadline − 1 h (2026-11-15T13:00Z) |
 
 ## 9. The cut list, in order (first cut first)
