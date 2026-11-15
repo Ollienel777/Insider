@@ -60,9 +60,11 @@ export function chiefZones(placed: PlacedLevel): ChiefZones {
   const board = compileBoard(level);
   let area = 0;
   const said = new Set(zones.map((z) => z.name.toLowerCase()));
-  const unique = (name: string) => {
+  // Clamped first, so the number stays inside the request's limit and two long names stay apart.
+  const unique = (raw: string) => {
+    const name = clampName(raw, raw);
     let named = name;
-    for (let n = 2; said.has(named.toLowerCase()); n++) named = `${name} ${n}`;
+    for (let n = 2; said.has(named.toLowerCase()); n++) named = clampName(`${name.slice(0, MAX_NAME - String(n).length - 2)} ${n}`, name);
     said.add(named.toLowerCase());
     return named;
   };

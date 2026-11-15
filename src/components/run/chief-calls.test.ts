@@ -22,6 +22,13 @@ describe("one Chief call out at a time (issue 172)", () => {
     expect(calls.settled(2)).toBeNull();
   });
 
+  it("does not ask twice about the event already out (a retry while it is out)", () => {
+    const calls = new ChiefCalls();
+    calls.ask(3);
+    expect(calls.ask(3)).toBe(false);
+    expect(calls.settled(3)).toBeNull();
+  });
+
   it("ignores an answer for a call that is not the one out", () => {
     const calls = new ChiefCalls();
     calls.ask(0);

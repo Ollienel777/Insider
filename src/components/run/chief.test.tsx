@@ -110,6 +110,13 @@ describe("what the browser sends the Chief", () => {
     const live = chiefZones({ ...placedScan, level: { ...placedScan.level, floor: { ...placedScan.level.floor, rooms } } });
     expect(live.zones.find((z) => live.toEngine.get(z.id) === a)!.name).toMatch(/^Area \d+$/);
     expect(live.zones.find((z) => live.toEngine.get(z.id) === b)!.name).toBe(`${taken} 2`);
+    // Two rooms sharing a name past the request's 80 characters still go by two names, each inside the limit.
+    const long = "Northeast Mechanical And Electrical Plant Room Behind The Loading Dock Service Corridor";
+    const longRooms = placedScan.level.floor.rooms.map((r) => (r.id === a || r.id === b ? { ...r, label: long } : r));
+    const both = chiefZones({ ...placedScan, level: { ...placedScan.level, floor: { ...placedScan.level.floor, rooms: longRooms } } });
+    const [na, nb] = [a, b].map((id) => both.zones.find((z) => both.toEngine.get(z.id) === id)!.name);
+    expect(na).not.toBe(nb);
+    for (const n of [na, nb]) expect(n.length).toBeLessThanOrEqual(80);
   });
 
   it("posts exactly the request and reads the answer back", async () => {

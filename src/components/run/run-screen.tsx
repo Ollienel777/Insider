@@ -235,7 +235,11 @@ export function RunScreen({
   const callChiefNext = useRef<(state: RunState, seq: number, queued: boolean) => void>(() => {});
   const callChief = useCallback(
     (state: RunState, seq: number, queued = false) => {
-      if (!placed || !zones) return;
+      if (!placed || !zones) {
+        // No board to ask about: a queued call must not hold the queue shut.
+        if (queued) chiefCalls.current.reset();
+        return;
+      }
       if (!queued && !chiefCalls.current.ask(seq)) return;
       const controller = new AbortController();
       pendingChief.current = controller;
@@ -260,11 +264,13 @@ export function RunScreen({
         next();
         return;
       }
-      setChief({ status: "pending", seq });
+      // A queued call leaves the answer before it on the panel until its own lands, so that answer is seen.
+      if (!queued) setChief({ status: "pending", seq });
       askChief(request, { signal: controller.signal }).then(
         (answer) => {
           // Aborted by a restart or by leaving the screen, or a call from before a restart: stale.
-          if (controller.signal.aborted || !chiefCalls.current.isOut(seq) || !latestRun.current) return;
+          if (controller.signal.aborted || !chiefCalls.current.isOut(seq)) return;
+          if (!latestRun.current) return next();
           // A newer alarm event may be waiting: its call goes once these orders are on the board.
           queueMicrotask(next);
           const current = latestRun.current;

@@ -15,6 +15,8 @@ export class ChiefCalls {
       this.out = seq;
       return true;
     }
+    // Asked again about the event already out (a retry while it is out): its answer is coming.
+    if (seq === this.out) return false;
     this.waiting = Math.max(this.waiting ?? -1, seq);
     return false;
   }
