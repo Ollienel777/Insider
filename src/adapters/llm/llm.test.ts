@@ -130,6 +130,27 @@ describe("selecting the model", () => {
     expect(builder.calls[0].request.max_tokens).toBe(16_000);
   });
 
+  it("keeps a Claude 5 model's thinking out of the fast role's 400 tokens, and leaves the builder alone (issue 162)", async () => {
+    const sent = async (role: "fast" | "builder", model: string) => {
+      const stub = stubClient('{"say":"live"}');
+      const env = { ...LIVE, ANTHROPIC_MODEL_FAST: model, ANTHROPIC_MODEL_BUILDER: model };
+      await selectChatModel(role, env, { createAnthropicClient: stub.createClient }).model.invoke(PROMPT);
+      const { thinking, output_config } = stub.calls[0].request;
+      return { thinking, effort: (output_config as { effort?: string } | undefined)?.effort };
+    };
+    for (const model of ["claude-haiku-5-5", "claude-sonnet-5", "claude-opus-5"]) {
+      expect(await sent("fast", model), model).toEqual({ thinking: { type: "disabled" }, effort: undefined });
+    }
+    expect(await sent("fast", "claude-sonnet-5-5")).toEqual({ thinking: { type: "between_tools" }, effort: undefined });
+    // Thinking can't be turned off on these, so they think as little as they can.
+    for (const model of ["claude-opus-5-5", "claude-fable-5-2", "claude-mythos-5-2"]) {
+      expect(await sent("fast", model), model).toEqual({ thinking: undefined, effort: "low" });
+    }
+    // The 4.x models don't think unless asked: the request is unchanged.
+    expect(await sent("fast", "claude-sonnet-4-6")).toEqual({ thinking: undefined, effort: undefined });
+    expect(await sent("builder", "claude-haiku-5-5")).toEqual({ thinking: undefined, effort: undefined });
+  });
+
   it("refuses LLM_PROVIDER=bedrock without BEDROCK_ENABLED=1, with a clear configuration error", () => {
     const env = { ...LIVE, LLM_PROVIDER: "bedrock" };
     expect(() => selectChatModel("fast", env)).toThrow(LlmConfigurationError);
