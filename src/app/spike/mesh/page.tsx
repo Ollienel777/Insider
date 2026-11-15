@@ -11,7 +11,7 @@ import { MESH_RESOLUTIONS, PANO_RESOLUTIONS, type MeshResolution, type PanoResol
 import { ScanWalkScreen } from "./scan-walk";
 
 export const metadata: Metadata = {
-  title: "Scan free walk · Heist Anywhere",
+  title: "Scan free walk · Hobbs",
   robots: { index: false, follow: false },
   // The scan's links are signed for whoever holds them: never send them on.
   referrer: "no-referrer",

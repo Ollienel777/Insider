@@ -248,6 +248,18 @@ function DebriefReady({
               buildingId={placed.level.buildingId}
               className="absolute top-3 right-6 w-auto bg-surface-1/90 backdrop-blur-sm"
             />
+            {/* The way on, on a note clipped to the replay, so the report card keeps its height for the Chief's timeline;
+                the stamp on the desk is Try again (issue 166). */}
+            <div className="absolute bottom-3 left-6 flex max-w-[300px] -rotate-1 flex-col items-start gap-2 border-2 border-border bg-accent px-3 pt-2 pb-3 shadow-[3px_5px_0_rgb(0_0_0/0.18)]">
+              {debrief.outcome === "playing" ? null : (
+                <p data-testid="try-again-line" className="font-hand text-base leading-snug text-text-1">
+                  {tryAgainLine(debrief)}
+                </p>
+              )}
+              <Link href="/map" data-testid="debrief-to-map" className={cn(buttonVariants({ variant: "secondary" }), "h-10 px-3 text-sm")}>
+                Pick another building
+              </Link>
+            </div>
           </div>
 
           <div className="flex h-16 shrink-0 items-center gap-4 px-6">
@@ -289,32 +301,11 @@ function DebriefReady({
       }
       panel={<DebriefPanel debrief={debrief} frame={frame} onScrub={setFrame} runHref={runHref} />}
       action={
-        <div className="flex flex-col gap-3">
-          {debrief.outcome === "playing" ? null : (
-            <p data-testid="try-again-line" className="text-sm text-text-2">
-              {tryAgainLine(debrief)}
-            </p>
-          )}
-          {/* One row: the panel above keeps the height for the Chief's timeline. */}
-          <div className="flex gap-2">
-            {debrief.outcome === "playing" ? null : (
-              <Link
-                href={runHref}
-                data-testid="debrief-try-again"
-                className={cn(buttonVariants({ variant: "primary" }), "min-w-0 flex-1")}
-              >
-                Try again
-              </Link>
-            )}
-            <Link
-              href="/map"
-              data-testid="debrief-to-map"
-              className={cn(buttonVariants({ variant: "ghost" }), debrief.outcome === "playing" ? "flex-1" : "")}
-            >
-              Pick another building
-            </Link>
-          </div>
-        </div>
+        debrief.outcome === "playing" ? undefined : (
+          <Link href={runHref} data-testid="debrief-try-again" className={cn(buttonVariants({ variant: "primary" }), "min-w-0")}>
+            Try again
+          </Link>
+        )
       }
     />
   );

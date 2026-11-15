@@ -1,6 +1,8 @@
 // Coverage and open windows on screen (issue 120): what the floor plan
 // says about a setup, beside what the crew's attempts say. Read from
 // `measureSetup`, so it needs no batch and follows every edit.
+import type { ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { coverageLine, firstWindowLine, measureChange, timingLine, windowsLine, type SetupMeasure } from "./setup-measure";
 
@@ -30,23 +32,38 @@ export function MeasureLines({
       data-windows={measure.windows.measured ? measure.windows.open : undefined}
       data-moments={measure.windows.measured ? measure.windows.moments : undefined}
       data-entries={measure.entries}
-      className={cn("flex flex-col gap-1 text-sm text-text-2", className)}
+      className={cn("flex flex-col gap-2 text-sm text-text-2", className)}
     >
-      <p data-testid={`${testId}-coverage`}>{coverageLine(measure)}</p>
-      <p data-testid={`${testId}-windows`}>{windowsLine(measure)}</p>
-      {first ? (
-        <p data-testid={`${testId}-first`} className="text-xs">
-          {first}
-        </p>
-      ) : null}
+      {/* The two numbers at a glance; the sentences that say them in full fold under the tiles (issue 166). */}
+      <dl className="grid grid-cols-2 gap-2">
+        <MeasureTile term="Watched" value={`${measure.coverage}%`} note="of the floor, every night" />
+        <MeasureTile
+          term="Open windows"
+          value={measure.windows.measured ? `${measure.windows.open} / ${measure.windows.moments}` : "—"}
+          note={measure.windows.measured ? "moments to get in and out unseen" : "not measured on this floor"}
+        />
+      </dl>
       {timing ? (
         <p data-testid={`${testId}-timing`} className="text-text-1">
           {timing}
         </p>
       ) : null}
-      <p data-testid={`${testId}-note`} className="text-xs">
-        {MEASURE_NOTE(measure)}
-      </p>
+      <MeasureNote measure={measure} testId={`${testId}-note`}>
+        <p data-testid={`${testId}-coverage`}>{coverageLine(measure)}</p>
+        <p data-testid={`${testId}-windows`}>{windowsLine(measure)}</p>
+        {first ? <p data-testid={`${testId}-first`}>{first}</p> : null}
+      </MeasureNote>
+    </div>
+  );
+}
+
+/** One number in a small tile, as the Debrief's stats are drawn. */
+function MeasureTile({ term, value, note }: { term: string; value: string; note: string }) {
+  return (
+    <div className="flex flex-col rounded-md border border-border bg-surface-2 px-3 py-2">
+      <dt className="label-caps text-text-3">{term}</dt>
+      <dd className="font-mono text-xl font-medium text-text-1 tabular-nums">{value}</dd>
+      <dd className="text-xs text-text-2">{note}</dd>
     </div>
   );
 }
@@ -81,8 +98,36 @@ export function MeasureChange({ from, to, testId }: { from: SetupMeasure; to: Se
       >
         {measureChange(from, to)}.
       </p>
-      <p className="text-xs text-text-2">{MEASURE_NOTE(to)}</p>
+      <MeasureNote measure={to} />
     </div>
+  );
+}
+
+/**
+ * What the two numbers mean, folded under a one-line summary: printed in full
+ * under every count, its sixty words pushed the strategies and the Chief's fix
+ * below the fold on Owner Mode's panel (issue 166). The text is unchanged.
+ */
+function MeasureNote({
+  measure,
+  testId,
+  children,
+}: {
+  measure: Pick<SetupMeasure, "noun">;
+  testId?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <details className="text-xs text-text-2">
+      <summary className="inline-flex min-h-8 cursor-pointer list-none items-center gap-1 rounded-sm hover:text-text-1 [&::-webkit-details-marker]:hidden">
+        <ChevronRight aria-hidden className="size-4 stroke-[1.5] transition-transform duration-fast [[open]>summary_&]:rotate-90" />
+        What these numbers mean
+      </summary>
+      <div className="mt-1 flex flex-col gap-1">
+        {children}
+        <p data-testid={testId}>{MEASURE_NOTE(measure)}</p>
+      </div>
+    </details>
   );
 }
 

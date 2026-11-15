@@ -888,10 +888,11 @@ describe("the Run screen's layout", () => {
     for (const part of [...HUD, DETAILS, 'data-testid="play-hud"']) expect(before).not.toContain(part);
     for (const part of PANELS) expect(before).toContain(part);
     // The shell itself, as every other screen still gets it.
+    // The open case file's two pages (issue 166): the board on the left page, the panel on the right.
     expect(before).toMatch(
-      /^<div class="grid min-h-0 flex-1 grid-rows-\[minmax\(320px,1fr\)_auto\] lg:grid-cols-\[minmax\(0,1fr\)_400px\] lg:grid-rows-1"><section aria-label="Run board" class="relative min-h-0 overflow-hidden bg-surface-0"><div class="absolute inset-0 flex flex-col">/,
+      /^<div class="grid min-h-0 flex-1 gap-3 grid-rows-\[minmax\(320px,1fr\)_auto\] lg:grid-cols-\[minmax\(0,1fr\)_minmax\(340px,420px\)\] lg:grid-rows-1"><section aria-label="Run board" class="[^"]*bg-surface-0[^"]*relative min-h-0 overflow-hidden"><div class="absolute inset-0 flex flex-col">/,
     );
-    expect(before).toContain('<aside class="flex min-h-0 flex-col border-t border-border bg-surface-1 lg:border-t-0 lg:border-l">');
+    expect(before).toMatch(/<aside class="[^"]*bg-surface-0[^"]*flex min-h-0 flex-col">/);
   });
 
   it("reads what is on the screen: an element with the hidden attribute, and all inside it, is not", () => {

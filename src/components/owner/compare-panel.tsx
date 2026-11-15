@@ -267,7 +267,7 @@ export function ComparePanel({
                   variant={selected ? "secondary" : "ghost"}
                   data-testid={`owner-pair-show-${id}`}
                   aria-pressed={selected}
-                  className="self-start"
+                  className="h-auto min-h-10 w-full min-w-0 py-1.5 text-center whitespace-normal"
                   onClick={() => onSide(id)}
                 >
                   {selected ? "On the board" : "Show on the board"}
