@@ -49,11 +49,13 @@ test("the city tab and the address stay in step both ways: after Houston, /map s
   await expect(page).toHaveURL(/\/map\?city=Houston$/);
   await expect(tab(/Houston/)).toHaveAttribute("aria-selected", "true");
 
-  // Address → tab: the wordmark goes to the mission picker (`/`, #118); opening
-  // `/map` again, with no `?city=`, moves the tab to LA.
+  // Address → tab, by client-side navigation: the wordmark goes to the mission
+  // picker (`/`, #118), and the app's router (no full load, so a stale tab
+  // would show) takes it back to `/map`, whose tab moves to LA. The picker no
+  // longer links to `/map` (issue 166), so the spec drives the router itself.
   await page.getByRole("link", { name: "Hobbs." }).click();
   await expect(page).toHaveURL(/\/$/);
-  await page.goto("/map");
+  await page.evaluate(() => (window as unknown as { next: { router: { push: (href: string) => void } } }).next.router.push("/map"));
   await expect(page).toHaveURL(/\/map$/);
   await expect(tab(/Los Angeles/)).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("building-row")).toHaveCount(3);

@@ -14,6 +14,14 @@ const at = (current: string, missionId: string | null = "romaine-1974", building
 /** The tabs a rail draws as links, by label. */
 const linked = (html: string) => [...html.matchAll(/<a [^>]*data-state="(\w+)"[^>]*>.*?<span class="min-w-0 truncate">([^<]+)<\/span>/g)].map((m) => `${m[2]}:${m[1]}`);
 
+describe("the tabs on Run", () => {
+  it("open the Debrief mid-run, the demo script's fallback, and nothing after it", () => {
+    const html = renderToStaticMarkup(<StepRailView current="run" missionId="romaine-1974" buildingId="F1" />);
+    expect(html).toContain('href="/b/F1/debrief?m=romaine-1974"');
+    expect(linked(html)).toContain("Debrief:upcoming");
+  });
+});
+
 describe("the remembered tabs", () => {
   it("keep every tab up to the furthest opened, from any tab, the mission picker included", () => {
     at("cast", "romaine-1974", null);

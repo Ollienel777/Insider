@@ -21,14 +21,16 @@ a little cinematic. The data is the star; the game reads it.
 > **Case file theme (issue 166).** The look changed from a dark operations
 > console to a heist case file on a walnut desk: paper surfaces, ink text,
 > folder tabs for the steps, a rubber stamp for each screen's one action, and
-> a cover that opens on first load. Run takes the whole screen. The token
-> values below are the case file's; the names and their roles are unchanged.
+> a cover that opens on first load. Run keeps the top bar and the tabs. The
+> token values below are the case file's; the names and their roles are
+> unchanged.
 
-**Dark only.** The game is a night heist, a dark board makes cones and
-guard pieces readable, and dark reads as premium on the demo video and on
-a laptop screen at a judging table. A light theme is not shipped. Every
-text token is checked to AA (4.5:1) on `--surface-0` through `--surface-3`
-(`src/app/tokens.test.ts` enforces it).
+**Paper only.** The case file is one light theme: cream paper and manila
+folders on a walnut desk, in dark ink. There is no dark theme. Every text
+token is checked to AA (4.5:1) on `--surface-0` through `--surface-3` and on
+`--manila`, and so are `--success` and `--warning` as text; the board's
+`--accent-deep` is checked to 3:1 as a graphic (`src/app/tokens.test.ts`
+enforces all of it).
 
 ## Tokens
 
@@ -55,7 +57,7 @@ Tailwind theme. Components use these names only, never raw values.
   /* text */
   --text-1: var(--n-50);    /* primary */
   --text-2: var(--n-300);   /* secondary */
-  --text-3: var(--n-400);   /* labels only, 12px mono caps, never body; 4.7:1 on surface-3 */
+  --text-3: #665240;   /* labels only, never body; a shade under n-400, AA on manila too */
 
   /* the one accent: signal amber, the colour of a lit window at night */
   --accent: #f0bd4a;
@@ -63,10 +65,13 @@ Tailwind theme. Components use these names only, never raw values.
   --accent-active: #dfa52a;
   --accent-ink: #2b1d12;  /* text on accent */
   --accent-wash: rgb(240 189 74 / 0.22);
+  /* the accent as a line or piece on the paper board: 3:1 where --accent is 1.5:1 */
+  --accent-deep: #9a6400;
+  --accent-deep-shade: #6f4800;
 
   /* semantic, used only for their meaning */
-  --success: #2f7a5c;   /* objective taken, drill floor clear */
-  --warning: #b86e0e;   /* Suspicious, crew warning */
+  --success: #24654b;   /* objective taken, drill floor clear */
+  --warning: #8a4f06;   /* Suspicious, crew warning */
   --danger: #b8392a;   /* Alert, Lockdown, detected, blocked stair */
 
   /* data layers: only on 8px layer dots, the provenance thread, the Layer lens */
@@ -77,16 +82,21 @@ Tailwind theme. Components use these names only, never raw values.
 ```
 
 The accent is reserved for the primary action on each screen, the player's
-piece and path, and the selected element. Alarm states use the semantic
+piece and path, and the selected element. On the paper board the piece, its
+path, the plan's ghost path and the selection ring take `--accent-deep`, since
+the light accent does not show on cream. Alarm states use the semantic
 colours. Layer hues never fill a surface or a button.
 
 ### Type
 
-- **Family:** Inter (variable, preloaded via `next/font`), with
-  `font-feature-settings: "tnum", "cv11"` on every number.
-- **Mono:** JetBrains Mono for data values, ids (G2, C3, Suite 1802), the
-  trace and the uppercase labels.
-- **Weights:** 400, 500, 600. Nothing else.
+All self-hosted at build time through `next/font` (no request at runtime):
+- **Sans (`font-sans`):** Nunito, a rounded sans, for body copy and the
+  uppercase labels, with tabular numbers.
+- **Display (`font-display`):** Luckiest Guy for titles, buttons and the tabs' numbers.
+- **Typed (`font-mono`):** Special Elite, typewriter, for data values, ids
+  (G2, C3, Suite 1802), the trace and the case file's headers.
+- **Hand (`font-hand`):** Permanent Marker for sticky notes and handwritten asides.
+- **Weights:** Nunito 400, 600, 700 and 800; the others come in one weight.
 
 | step | size / line height | use |
 |---|---|---|
@@ -111,7 +121,9 @@ pad 12 × 16; the gap between panels is 16; screen gutters 24.
   for panels; `--e-2: 0 6px 0 var(--ink-shadow), 0 18px 36px rgb(0 0 0 / 0.45)` for the Why card and
   menus only. No glows.
 - **Motion:** `--t-fast: 150ms`, `--t-base: 200ms`, `--t-slow: 300ms`,
-  easing `cubic-bezier(0.2, 0, 0, 1)` (ease-out, no bounce). A guard's hop is
+  easing `--ease: cubic-bezier(0.2, 0, 0, 1)` (ease-out, no bounce) for the
+  board and its pieces; `--ease-bounce: cubic-bezier(0.34, 1.4, 0.64, 1)`, a
+  little bounce, for buttons and tabs only. A guard's hop is
   `--t-slow`; the player's hop `--t-base`; panel enter `--t-base`. Under
   `prefers-reduced-motion`, hops become instant and streams appear whole.
 - **Breakpoints:** `md 768`, `lg 1024`, `xl 1280`, `2xl 1440`. Designed at

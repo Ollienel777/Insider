@@ -49,11 +49,14 @@ function TabLink({ href, label, n, state }: { href: string; label: string; n: nu
 
 /**
  * The furthest tab the screen itself reaches: its own tab, or every tab on a
- * building page that has none (Drill) or on Owner Mode.
+ * building page that has none (Drill) or on Owner Mode. Run also opens the
+ * Debrief, so a run can be read mid-way (the demo script's fallback: "click
+ * Debrief in the step rail").
  */
 export function reachedIndex(current: string | null, buildingId: string | null): number {
   if (current === "owner") return RAIL_TABS.length;
   const at = RAIL_TABS.findIndex((t) => t.tab === current);
+  if (current === "run") return at + 1;
   return at >= 0 ? at : buildingId ? RAIL_TABS.length : 0;
 }
 

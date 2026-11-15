@@ -319,7 +319,7 @@ export function BoardView({
                 <polygon points={pointsAttr([front, right, down(right), down(front)])} style={{ fill: "var(--n-950)" }} />
                 <polygon
                   points={pointsAttr([back, right, front, left])}
-                  style={{ fill: "var(--n-850)", stroke: selected ? "var(--accent)" : "var(--n-700)" }}
+                  style={{ fill: "var(--n-850)", stroke: selected ? "var(--accent-deep)" : "var(--n-700)" }}
                   strokeWidth={selected ? 2 : 1}
                   strokeLinejoin="round"
                 />
@@ -399,7 +399,7 @@ export function BoardView({
             data-testid="player-path"
             points={pointsAttr(trail.map(at))}
             fill="none"
-            style={{ stroke: "var(--accent)" }}
+            style={{ stroke: "var(--accent-deep)" }}
             strokeOpacity="0.7"
             strokeWidth="2.5"
             strokeLinejoin="round"
@@ -524,7 +524,7 @@ export function BoardView({
                 y1={round(m.y - n.y)}
                 x2={round(m.x + n.x)}
                 y2={round(m.y + n.y)}
-                style={{ stroke: selected ? "var(--accent)" : "var(--n-200)" }}
+                style={{ stroke: selected ? "var(--accent-deep)" : "var(--n-200)" }}
                 strokeWidth="3"
                 strokeLinecap="round"
               />
@@ -758,8 +758,8 @@ function GhostPath({
           data-nodes={ghost.path.join(" ")}
           points={pointsAttr(ghost.path.map(at))}
           fill="none"
-          style={{ stroke: "var(--accent)" }}
-          strokeOpacity="0.5"
+          style={{ stroke: "var(--accent-deep)" }}
+          strokeOpacity="0.8"
           strokeWidth="4"
           strokeLinejoin="round"
           strokeLinecap="round"
@@ -1210,8 +1210,8 @@ export function Pawn({
   /** Where its lens marks start, clear of the board's labels (`movingLabels`); right of its head by default. */
   marksAt?: Point;
 }) {
-  const body = tone === "player" ? "var(--accent)" : tone === "guard" ? "var(--n-200)" : "var(--n-400)";
-  const shade = tone === "player" ? "var(--accent-active)" : tone === "guard" ? "var(--n-400)" : "var(--n-500)";
+  const body = tone === "player" ? "var(--accent-deep)" : tone === "guard" ? "var(--n-200)" : "var(--n-400)";
+  const shade = tone === "player" ? "var(--accent-deep-shade)" : tone === "guard" ? "var(--n-400)" : "var(--n-500)";
   const scale = tone === "cleaner" ? 0.8 : 1;
   const ref = useRef<SVGGElement>(null);
   const p = { x: round(at.x), y: round(at.y) };
@@ -1229,7 +1229,7 @@ export function Pawn({
     >
       {layers ? <LayerRings layers={layers} rx={selected ? 25 : 19} ry={selected ? 12.5 : 9.5} /> : null}
       {selected ? (
-        <ellipse cx="0" cy="0" rx="20" ry="10" fill="none" style={{ stroke: "var(--accent)" }} strokeWidth="2" />
+        <ellipse cx="0" cy="0" rx="20" ry="10" fill="none" style={{ stroke: "var(--accent-deep)" }} strokeWidth="2" />
       ) : null}
       <g transform={scale === 1 ? undefined : `scale(${scale})`}>
         <ellipse cx="0" cy="0" rx="16" ry="8" style={{ fill: "var(--n-950)" }} fillOpacity="0.6" />
@@ -1323,7 +1323,7 @@ export function CameraPiece({
         width="32"
         height="16"
         rx="3"
-        style={{ fill: "var(--n-300)", stroke: selected ? "var(--accent)" : "var(--n-950)" }}
+        style={{ fill: "var(--n-300)", stroke: selected ? "var(--accent-deep)" : "var(--n-950)" }}
         strokeWidth={selected ? 2 : 1}
       />
       <circle
