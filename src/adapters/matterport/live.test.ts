@@ -572,6 +572,53 @@ describe("waiting for the scan's collections", () => {
   });
 });
 
+describe("a load its caller gave up on (issue 145)", () => {
+  it("never opens a player when it was given up on before it started", async () => {
+    const { connect } = stubSdk();
+    const abandon = new AbortController();
+    abandon.abort();
+    const load = createLiveMatterport({ sdkKey: "k", connect }).loadFloor({ id: "x", matterportModelId: "m" }, abandon.signal);
+    await expect(load).rejects.toMatchObject({ name: "AbortError" });
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it("aborts a connection still opening, and the next load does not wait out its deadline", async () => {
+    let seen: AbortSignal | undefined;
+    const second = stubSdk();
+    let calls = 0;
+    const connect: ShowcaseConnect = (m, k, signal) => {
+      calls += 1;
+      if (calls > 1) return second.connect(m, k, signal);
+      seen = signal;
+      return new Promise(() => {});
+    };
+    const adapter = createLiveMatterport({ sdkKey: "k", connect });
+    const abandon = new AbortController();
+    const first = adapter.loadFloor({ id: "x", matterportModelId: "m" }, abandon.signal);
+    const next = adapter.loadFloor({ id: "x", matterportModelId: "m" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(seen?.aborted).toBe(false);
+    abandon.abort();
+    await expect(first).rejects.toMatchObject({ name: "AbortError" });
+    expect(seen?.aborted).toBe(true);
+    expect((await next)?.nodes).toHaveLength(5);
+  });
+
+  it("stops waiting for the sweeps, cancels its subscriptions and disconnects the player", async () => {
+    const cancel = vi.fn();
+    const silent: ObservableCollection<unknown> = { subscribe: () => ({ cancel }) };
+    const disconnect = vi.fn();
+    const connect: ShowcaseConnect = async () => ({ sdk: { Sweep: { data: silent }, Room: { data: silent } }, disconnect });
+    const abandon = new AbortController();
+    const load = createLiveMatterport({ sdkKey: "k", connect }).loadFloor({ id: "x", matterportModelId: "m" }, abandon.signal);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    abandon.abort();
+    await expect(load).rejects.toMatchObject({ name: "AbortError" });
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("deadlines let go of what they gave up on", () => {
   it("aborts the connection's signal at the deadline, so the hidden player can leave the page", async () => {
     vi.useFakeTimers();
