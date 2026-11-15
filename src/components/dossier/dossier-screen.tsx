@@ -211,7 +211,7 @@ export function DossierScreen(props: DossierScreenProps) {
                   <p className="mt-1 text-sm text-text-2">Fictional mission, written for the game.</p>
                 )}
                 <p className="mt-4 text-base text-text-1">{mission.briefing}</p>
-                <p className="mt-3 text-sm text-text-2"><span className="text-text-1">Objective</span> {mission.objective}</p>
+                <p data-testid="dossier-objective" className="mt-3 text-sm text-text-2"><span className="text-text-1">Objective</span> {mission.objective}</p>
                 <p data-testid="disclaimer" className="mt-4 text-sm text-text-2">
                   {DISCLAIMER}
                 </p>

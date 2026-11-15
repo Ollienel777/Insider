@@ -36,24 +36,51 @@ describe("stepStates", () => {
 describe("StepRailView", () => {
   const html = renderToStaticMarkup(<StepRailView buildingId="F1" current="scout" />);
 
-  it("lists the five run steps, a divider, then Drill", () => {
-    const items = [...html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)].map((m) => text(m[1]));
-    expect(items).toEqual(["Scout", "Dossier", "Plan", "Run", "Debrief", "", "Drill"]);
-    expect(html).toMatch(/<li aria-hidden="true" class="[^"]*w-px[^"]*bg-border/);
+  it("lists the whole game in order as numbered folder tabs, then Owner Mode, on one row", () => {
+    const items = [...html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)].map((m) => text(m[1]).replace(/\s*\(.*\)$/, ""));
+    expect(items).toEqual(["1Missions", "2Cast", "3Scout", "4Dossier", "5Plan", "6Run", "7Debrief", "8Owner Mode"]);
+    expect(html).not.toContain("Drill");
+    expect(html).toContain("flex-nowrap");
   });
 
-  it("marks the current route with aria-current and the accent underline", () => {
+  it("shows every tab on the mission picker, with only Missions and Owner Mode open", () => {
+    const picker = renderToStaticMarkup(<StepRailView current="missions" />);
+    expect([...picker.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1])).toEqual(["/", "/b/F1/owner"]);
+    expect(picker).toMatch(/aria-disabled="true" title="Pick a mission first" data-state="upcoming"/);
+    expect(picker.match(/aria-disabled="true"/g)).toHaveLength(6);
+  });
+
+  it("opens Cast on the cast screen, with the mission in its link", () => {
+    const cast = renderToStaticMarkup(<StepRailView current="cast" missionId="romaine-1974" />);
+    expect([...cast.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1])).toEqual(["/", "/m/romaine-1974/cast", "/b/F1/owner"]);
+    expect(cast).toMatch(/aria-disabled="true" title="Finish Cast first" data-state="upcoming"/);
+  });
+
+  it("marks the current step with aria-current and the front tab", () => {
     const current = [...html.matchAll(/<a [^>]*aria-current="page"[^>]*>/g)];
     expect(current).toHaveLength(1);
     expect(current[0][0]).toContain('href="/b/F1/scout"');
-    expect(current[0][0]).toContain("after:bg-accent");
-    expect(current[0][0]).toContain("text-text-1");
+    expect(current[0][0]).toContain("bg-manila ");
+  });
+
+  it("locks the steps not reached yet, says why, and keeps Owner Mode open", () => {
+    const links = [...html.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1]);
+    expect(links).toEqual(["/", "/b/F1/scout", "/b/F1/owner"]);
+    expect(html).toMatch(/aria-disabled="true" title="Finish Scout first" data-state="upcoming"/);
+    expect(html).toMatch(/aria-disabled="true" title="Finish Run first" data-state="upcoming"/);
+  });
+
+  it("opens every step on Owner Mode", () => {
+    const owner = renderToStaticMarkup(<StepRailView buildingId="F1" current="owner" missionId="romaine-1974" />);
+    expect(owner).not.toContain('aria-disabled="true"');
+    expect([...owner.matchAll(/<a [^>]*aria-current="page"[^>]*href="([^"]+)"/g)].map((m) => m[1])).toEqual(["/b/F1/owner?m=romaine-1974"]);
   });
 
   it("shows a check on done steps", () => {
     const run = renderToStaticMarkup(<StepRailView buildingId="F1" current="run" />);
-    expect(run.match(/data-state="done"/g)).toHaveLength(3);
-    expect(run.match(/lucide-check/g)).toHaveLength(3);
+    // Missions, Scout, Dossier and Plan (Cast needs the mission in the address to link).
+    expect(run.match(/data-state="done"/g)).toHaveLength(4);
+    expect(run.match(/lucide-check/g)).toHaveLength(4);
   });
 });
 
@@ -64,7 +91,7 @@ describe("TopBar", () => {
     const building = FIXTURE_BUILDINGS.find((b) => b.id === "F1")!;
     const html = renderToStaticMarkup(<TopBar status={status} building={building} />);
     expect(html).toContain("h-14");
-    expect(text(html)).toContain("Heist Anywhere");
+    expect(text(html)).toContain("Hobbs");
     const slot = html.match(/data-testid="building-slot"[^>]*>([\s\S]*?)<\/div>/)![1];
     expect(text(slot)).toBe("Halvorsen Tower · Los Angeles");
   });
@@ -112,13 +139,16 @@ describe("LayerDot", () => {
 
 describe("Button", () => {
   it.each(["primary", "secondary", "ghost"] as const)("%s is at least 40px tall", (variant) => {
-    expect(buttonVariants({ variant })).toContain("h-10");
+    expect(buttonVariants({ variant })).toMatch(/(^| )h-(10|11|12|14)( |$)/);
   });
 
-  it("uses the accent for primary only", () => {
-    expect(buttonVariants({ variant: "primary" })).toContain("bg-accent");
-    expect(buttonVariants({ variant: "secondary" })).not.toContain("accent");
-    expect(buttonVariants({ variant: "ghost" })).not.toContain("accent");
+  it("draws primary only as the stamp: a walnut block with a red handle", () => {
+    expect(buttonVariants({ variant: "primary" })).toContain("bg-walnut");
+    expect(buttonVariants({ variant: "primary" })).toContain("var(--stamp-handle)");
+    for (const variant of ["secondary", "ghost"] as const) {
+      expect(buttonVariants({ variant })).not.toContain("walnut");
+      expect(buttonVariants({ variant })).not.toContain("stamp-handle");
+    }
   });
 
   it("defaults to type=button so it never submits a form by accident", () => {

@@ -25,7 +25,11 @@ export default async function CastPage({ params }: { params: Promise<{ missionId
   const { missionId } = await params;
   const mission = MISSIONS.find((m) => m.id === missionId);
   if (!mission) notFound();
-  return <AppShell>{await Cast({ mission })}</AppShell>;
+  return (
+    <AppShell tab="cast" missionId={mission.id}>
+      {await Cast({ mission })}
+    </AppShell>
+  );
 }
 
 async function readShortlist(missionId: string, live: boolean): Promise<CastingResult | null> {

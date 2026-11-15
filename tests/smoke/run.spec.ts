@@ -177,9 +177,9 @@ test("beat 5: stepping into C2's cover from the dock raises the alarm to Alert",
 
   await expect(page.getByTestId("alarm-state")).toHaveText("Alert");
   await expect(banner(page)).toHaveAttribute("data-state", "alert");
-  // In DESIGN.md's --danger (#ff5a5f), not the calm colour.
-  await expect(page.getByTestId("alarm-state")).toHaveCSS("color", "rgb(255, 90, 95)");
-  expect(calmColour).not.toBe("rgb(255, 90, 95)");
+  // In DESIGN.md's --danger (#b8392a), not the calm colour.
+  await expect(page.getByTestId("alarm-state")).toHaveCSS("color", "rgb(184, 57, 42)");
+  expect(calmColour).not.toBe("rgb(184, 57, 42)");
   await expect(page.getByTestId("run-status")).toHaveText("C2 saw you in the Dock Corridor. The guards are converging.");
   await expect(page.getByTestId("sighting")).toHaveCount(1);
   await expect(page.getByTestId("guard-route").first()).toBeVisible();

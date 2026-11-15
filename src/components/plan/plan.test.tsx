@@ -224,8 +224,8 @@ describe("the ghost path", () => {
     const path = /<polyline data-testid="ghost-path" data-nodes="([^"]+)"[^>]*>/.exec(html);
     expect(path).not.toBeNull();
     expect(path![1]).toBe(checked.path.join(" "));
-    expect(path![0]).toContain('stroke-opacity="0.5"');
-    expect(path![0]).toContain("stroke:var(--accent)");
+    expect(path![0]).toContain('stroke-opacity="0.8"');
+    expect(path![0]).toContain("stroke:var(--accent-deep)");
     expect(html).toContain('data-testid="board-base" opacity="0.55"');
     expect(html).toMatch(/data-testid="ghost-sighting" data-node="dc-mid"/);
     expect(html).toContain("C2 · T12");

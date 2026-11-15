@@ -17,6 +17,8 @@ import { cn } from "@/lib/utils";
 import {
   buildImageViews,
   buildMassing,
+  compassEdges,
+  entriesFacing,
   entryFace,
   FRAME,
   VIEW_LABEL,
@@ -194,6 +196,7 @@ export function ScoutScreen({
             ) : (
               <AerialCanvas
                 views={views!}
+                facing={(dir) => (load.status === "ready" ? entriesFacing(dir, load.aerial) : [])}
                 current={view}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
@@ -303,7 +306,7 @@ type CanvasView = ({ kind: "image" } & ImageView) | ({ kind: "massing" } & Massi
  * image route and drawn with a plain <img>: next/image's optimiser would
  * write a copy to disk, and the imagery is never stored (SPEC §10).
  */
-function AerialPhoto({ view, onFailed }: { view: ImageView; onFailed: (dir: ViewDir) => void }) {
+function AerialPhoto({ view, facing, onFailed }: { view: ImageView; facing: string[]; onFailed: (dir: ViewDir) => void }) {
   const [failed, setFailed] = useState(false);
   const { box } = view;
   return (
@@ -328,6 +331,49 @@ function AerialPhoto({ view, onFailed }: { view: ImageView; onFailed: (dir: View
           className="size-full object-cover"
         />
       )}
+      {failed ? null : <PhotoCompass dir={view.dir} facing={facing} />}
+    </div>
+  );
+}
+
+const EDGE_AT = {
+  top: "top-1.5 left-1/2 -translate-x-1/2",
+  right: "right-1.5 top-1/2 -translate-y-1/2",
+  bottom: "bottom-1.5 left-1/2 -translate-x-1/2",
+  left: "left-1.5 top-1/2 -translate-y-1/2",
+} as const;
+
+/**
+ * The compass on a photo: N, E, S and W at its edges, turned to match where the
+ * camera looks, north in the accent. On an oblique, one small tag names the ways
+ * in on the face it looks at, so the photo stays clear.
+ */
+function PhotoCompass({ dir, facing }: { dir: ViewDir; facing: string[] }) {
+  const edges = compassEdges(dir);
+  return (
+    <div data-testid="photo-compass" data-dir={dir} aria-hidden className="pointer-events-none absolute inset-0">
+      {(Object.keys(EDGE_AT) as (keyof typeof EDGE_AT)[]).map((edge) => (
+        <span
+          key={edge}
+          data-edge={edge}
+          data-compass={edges[edge]}
+          className={cn(
+            "absolute grid size-6 place-items-center rounded-full border font-display text-xs leading-none shadow-e-1",
+            EDGE_AT[edge],
+            edges[edge] === "N" ? "border-accent bg-accent text-text-1" : "border-border-strong bg-surface-0/85 text-text-1",
+          )}
+        >
+          {edges[edge]}
+        </span>
+      ))}
+      {dir !== "ortho" && facing.length > 0 ? (
+        <span
+          data-testid="facing-entries"
+          className="absolute bottom-9 left-1/2 max-w-[80%] -translate-x-1/2 truncate rounded-sm border border-accent bg-surface-0/90 px-2 py-0.5 font-mono text-[11px] text-text-1 shadow-e-1"
+        >
+          This side: {facing.join(" · ")}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -339,6 +385,8 @@ interface CanvasProps {
   onSelect: (id: string) => void;
   onTurn: (by: 1 | -1) => void;
   onPhotoFailed: (dir: ViewDir) => void;
+  /** The ways in on the face a view looks at (an oblique), named on the photo. */
+  facing: (dir: ViewDir) => string[];
 }
 
 /**
@@ -346,7 +394,7 @@ interface CanvasProps {
  * transparent and inert, so changing view is a `--t-base` cross-fade (instant
  * under reduced motion, by the global rule in globals.css).
  */
-function AerialCanvas({ views, current, selectedId, onSelect, onTurn, onPhotoFailed }: CanvasProps) {
+function AerialCanvas({ views, facing, current, selectedId, onSelect, onTurn, onPhotoFailed }: CanvasProps) {
   const drag = useRef<{ id: number; x: number } | null>(null);
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -392,7 +440,7 @@ function AerialCanvas({ views, current, selectedId, onSelect, onTurn, onPhotoFai
               active ? "opacity-100" : "pointer-events-none opacity-0",
             )}
           >
-            {v.kind === "image" ? <AerialPhoto view={v} onFailed={onPhotoFailed} /> : <MassingSvg view={v} />}
+            {v.kind === "image" ? <AerialPhoto view={v} facing={facing(v.dir)} onFailed={onPhotoFailed} /> : <MassingSvg view={v} />}
             <Leaders markers={v.markers} selectedId={selectedId} />
             {v.markers.map((marker) => (
               <EntryMarker

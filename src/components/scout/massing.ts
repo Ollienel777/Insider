@@ -142,6 +142,48 @@ export const VIEW_LABEL: Record<ViewDir, { chip: string; caption: string }> = {
   ortho: { chip: "Ortho", caption: "Straight down" },
 };
 
+type Compass = "N" | "E" | "S" | "W";
+
+/**
+ * Which compass direction lies at each edge of a view's photo. The ortho is
+ * north up. An oblique is taken from its side looking across the building, so
+ * the side it is taken from is nearest (the bottom edge), the far side is at the
+ * top, and the camera's right hand is a quarter turn clockwise from where it
+ * looks.
+ */
+export function compassEdges(dir: ViewDir): { top: Compass; right: Compass; bottom: Compass; left: Compass } {
+  switch (dir) {
+    case "ortho":
+      return { top: "N", right: "E", bottom: "S", left: "W" };
+    case "N":
+      return { top: "S", right: "W", bottom: "N", left: "E" };
+    case "S":
+      return { top: "N", right: "E", bottom: "S", left: "W" };
+    case "E":
+      return { top: "W", right: "N", bottom: "E", left: "S" };
+    case "W":
+      return { top: "E", right: "S", bottom: "W", left: "N" };
+  }
+}
+
+/** The face each oblique looks at, in the words `entryFace` uses. */
+export const FACE_SEEN: Record<Exclude<ViewDir, "ortho">, string> = {
+  N: "North face",
+  E: "East face",
+  S: "South face",
+  W: "West face",
+};
+
+/**
+ * The ways in on the face an oblique looks at, by label: the entries are pinned
+ * on the ortho only, so an oblique names the ones facing the camera instead of
+ * guessing where they sit in the photo. The ortho has none: its entries are drawn.
+ */
+export function entriesFacing(dir: ViewDir, aerial: Pick<Aerial, "entries" | "heightM" | "footprint">): string[] {
+  if (dir === "ortho") return [];
+  return aerial.entries.filter((e) => entryFace(e, aerial.heightM, aerial.footprint) === FACE_SEEN[dir]).map((e) => e.label);
+}
+
 /**
  * Which face an entry is tagged on, in words. An entry seen from straight
  * down (a live aerial pins every entry on the ortho) is on the face nearest
