@@ -25,14 +25,14 @@ key, as in DEMO.md.
 | 2 | 0:10 | Point at the showcase card, then **Scout it** | "A casting agent runs a location scout's search: the right era, a floor that's empty tonight, a 3D scan. Tonight's set is a real building: [name]." | Slow: **Skip**. No card, or not built: [the F1 path](../DEMO.md#if-the-showcase-building-is-out-the-f1-path). |
 | 3 | 0:25 | **Plan the job** | Nothing. | No aerial, or it hangs: **Plan the job** anyway. |
 | 4 | 0:27 | Point at **Mission briefing** as it fills, then **Brief the crew** | "Then a game-master agent writes your briefing, for this building and this job. The building is real. The guards and cameras are game fiction." | Stalls: **Skip**. |
-| 5 | 0:39 | Paste the order, **Enter**. **Start the run** as the plan shows | "You brief your crew in plain English, and they talk back." Then: "The board checks their plan. Let's go." | **No crew reply**: "The model was slow, so the board worked out this plan." Greyed order box: the F1 tab. |
+| 5 | 0:39 | Paste `Go in by the roof hatch, straight to the files, and out the way we came.`, **Enter**. The reply: three steps, and one risk under **The crew pushes back**. Point at it. **Start the run** as the plan shows | "You brief your crew in plain English, and they talk back: they point out the weak spot." Then: "The board checks their plan. Let's go." | **No crew reply** (2 of 6 tries on 15 Nov, after 4.2 s): "The model was slow, so the board worked out this plan." Greyed order box: the F1 tab. |
 | 6 | 0:51 | Click the view once; hand over. **See the debrief** on the end card | "You're in the real building, its own scan. W to move, the mouse to look, hold E at a door. That light is a camera: stand in it for a second." At the alarm: "That camera has you. The Chief is re-planning live: watch the guards converge. Keep going, towards the guards." At the catch: "Caught. The debrief shows how." | No capture by **1:24**: "The Chief is still hunting you. Here's the replay." Then tab **7 Debrief**. Scan fails: the F1 tab. |
 | 7 | 1:24 | Drag **Turn**; point at the **Security Chief** decisions | "Every heist gets a debrief: the whole run, move by move, and every call the Chief made, with its reason." | "No run yet": "The debrief replays the run move by move; you just saw how it ended." |
 | 8 | 1:37 | The **last browser tab**, the Owner tab you prepared | "Turn it around: Owner Mode tests a building's own security, here made up. Turn one camera: open windows drop from [before] to [after]." | DEMO.md's [beat 8 fallback](../DEMO.md#beat-8--145155--owner-mode), or F1's pair: "Seven get out; move C2, one in fifty." |
 | — | 1:47 | Nothing | "Next: the agent casts from CoStar's whole inventory, and we make a real building you can beat." | — |
 
-Ends at **1:55**, with 5 s spare for beat 5's crew reply, which wasn't
-measured live.
+Ends at **1:55**, with 5 s spare for beat 5's crew reply: 1.7–4.3 s live
+on 15 Nov, or the board's plan after 4.2 s.
 
 Against DEMO.md's clock:
 

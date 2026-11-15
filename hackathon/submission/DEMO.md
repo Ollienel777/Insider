@@ -51,13 +51,13 @@ out of this public repo.
 | 2 | 0:10 | Point at the showcase card, then **Scout it** | "The agent searches CoStar's inventory for this heist: the right era and class, a floor on the market tonight, a 3D scan. For this mission, a real building: [name]. Each row checks it against a need, from its CoStar record." | Slow: **Skip**. No card, or not built: the F1 path. |
 | 3 | 0:30 | **Plan the job** | "The building from above, from Vexcel." | No aerial: "No aerial for this one yet." Then **Plan the job**. |
 | 4 | 0:33 | **Brief the crew** | "Its real CoStar record. A deep agent built the level from it: built [year], so key locks and sweeping cameras. Class [X]: [N] guards. Its vacant floor is the stage. The security is game fiction." | Stalls: **Skip**. |
-| 5 | 0:47 | Paste the order, **Enter**. Click a camera on the board, then **Esc**. **Start the run** as the plan shows | "Every guard, camera and lock says which data put it there." Then: "The crew answers in plain English, and the board checks its plan." | **No crew reply**: "The model was slow, so the board worked out this plan, with no model." Greyed order box: the F1 tab. |
+| 5 | 0:47 | Paste `Go in by the roof hatch, straight to the files, and out the way we came.`, **Enter**. Click a camera on the board, then **Esc**. The reply: three steps, and one risk under **The crew pushes back**. Point at it. **Start the run** as the plan shows | "Every guard, camera and lock says which data put it there." Then: "The crew answers in plain English, and pushes back on the weak point. The board checks its plan." | **No crew reply** (2 of 6 tries on 15 Nov, after 4.2 s): "The model was slow, so the board worked out this plan, with no model." Greyed order box: the F1 tab. |
 | 6 | 1:00 | Click the view once; hand over. **See the debrief** on the end card | "You're in the real building, its own scan. W to move, the mouse to look, hold E at a door. That light is a camera: stand in it for a second." At the alarm: "That camera has you. The Chief is re-planning live: watch the guards converge on you. Keep going, towards the guards." At the catch: "Caught. The debrief shows how." | No capture by **1:30**: "The Chief is still hunting you. Here's the replay." Then tab **7 Debrief**. Scan fails: the F1 tab. |
 | 7 | 1:30 | Drag **Turn**; point at the Chief's decisions | "The debrief replays every move. And here's why: every decision the Chief made, with its reason. And that search, era, class, a floor on the market tonight, is the one a location scout runs on Monday, on CoStar's own availability." | "No run yet": "The debrief replays the run turn by turn; you just saw how it ended." |
 | 8 | 1:45 | The **last browser tab**, the Owner tab you prepared (not the app's tab 8) | Showcase (#206): "And for the owner, a made-up setup: turn one camera, and its open windows drop from [before] to [after]." (figures on the printed note) F1's pair instead: "And for the owner: their own security, here made up. Seven get out; move C2, one in fifty." | Result gone: scroll to **Compare two setups**, then **Compare**. On the showcase, fill its 4.2 s: "The crew tries fifty ways in, on each." |
 
-Ends at **1:55**, with 5 s spare for beat 5's crew reply, which wasn't
-measured live.
+Ends at **1:55**, with 5 s spare for beat 5's crew reply: 1.7–4.3 s live
+on 15 Nov, or the board's plan after 4.2 s.
 
 - **What was walked:** on c08ae94, in fake mode (a production build with every
   service on `fake`, at 1440×900):
@@ -136,7 +136,7 @@ measured live.
 | 7 | Debrief | 1:30–1:45 | 15 s | Debrief |
 | 8 | Owner Mode | 1:45–1:55 | 10 s | the Owner browser tab |
 
-**1:55**, with 5 s spare for beat 5's live crew reply, which wasn't measured.
+**1:55**, with 5 s spare for beat 5's live crew reply: 1.7–4.3 s on 15 Nov.
 The clock has no room for a wait: the scan is loaded before the pitch
 (checklist), and a pitch that would have to wait runs the F1 path instead.
 Against SPEC §2's slots, Owner Mode's 10 s and the 5 s spare come from:
@@ -316,7 +316,7 @@ The run starts at the roof hatch, so the order names it, and the crew's plan
 and the run agree. At the rehearsal, an order naming the street lobby got a
 plan beginning "Enter through the street lobby", for a run that started at
 the roof hatch. The order also asks for no wait, so the crew should have no
-reason to stop in a suite. That is untested live (Open items, 2).
+reason to stop in a suite. On 15 Nov no live plan waited (below).
 
 1. Click the **Your order** box, paste, and press **Enter**.
 2. While the crew answers, click a camera on the board. Its Why card opens. Say: **"Every guard, camera and lock says which data put it
@@ -326,6 +326,17 @@ reason to stop in a suite. That is untested live (Open items, 2).
    English, and the board checks its plan."** Click **Start the run** at once,
    in this same tab. Plan has already started the scan, and Run takes it
    (#181). At the rehearsal, Run was playable 1.2–2.3 s later.
+
+What the live crew said to this order, six tries on 15 Nov (the words are on
+the printed note):
+
+- **Four answered live**, in 1.7–4.3 s. Each plan had three steps: in by the
+  hatch, take the files, back out by the hatch. No step waits.
+- **Each live reply pushed back**, under **The crew pushes back**. Three times
+  the risk was that the hatch is the only way out, and once the cameras on
+  the route.
+- **Two timed out** after 4.2 s and got the board's plan, headed **No crew
+  reply** (the fallback below).
 
 Fallbacks:
 
@@ -355,8 +366,10 @@ Walked here:
 
 Not walked here:
 
-- #142's board plan, which merged after the walk;
-- this order to the live crew (live only).
+- #142's board plan, which merged after the walk.
+
+Asked of the crew's route directly, on 15 Nov, with the body the Plan page
+sends: this order, six times on the showcase building and once on F1.
 
 ## Beat 6 · 1:00–1:30 · Run, in the real scan
 
@@ -637,7 +650,7 @@ Say once: **"Our fixture building, shaped like a CoStar record."**
 | 2 | **Finalist 1 · F1 Halvorsen Tower**, then **Scout it** | the three finalists |
 | 3 | **→** once, then **Plan the job** | five tagged entries: Loading dock, Garage ramp, Main lobby, Stair B exit, Roof hatch |
 | 4 | let it play (5.6 s), then **Brief the crew** | Data → Level, starting with "Cast because: …", then 1974, Class A, floor 22 and the dock |
-| 5 | paste (the checklist put this order on the clipboard) `Go in through the dock, wait for the 2 am round to pass, take the records room.`, then **Enter**, then **Start the run** | four steps, and the warning "Camera C2 sees you in the Dock Corridor on turn N…" |
+| 5 | paste (the checklist put this order on the clipboard) `Go in through the dock, wait for the 2 am round to pass, take the records room.`, then **Enter**, then **Start the run** | four steps, and the warning "Camera C2 sees you in the Dock Corridor on turn N…". A live crew pushes back too, for example "The dock is a guard route, and a round may pass it during the wait. Hold in a vacant suite until the round clears before moving." |
 
 Notes:
 
@@ -818,8 +831,10 @@ in the repo or the video's files.
 2. **The live crew can name a zone the board doesn't have.** It plans on the
    manifest's zones, not the placed board's, and the board strikes such a
    step out.
-   - Beat 5's order asks for no wait, which should avoid it. That is untested
-     live.
+   - Beat 5's order asks for no wait, which should avoid it. On 15 Nov the
+     four live plans named only the roof and the objective, with no wait.
+     The board's strike-out wasn't checked: those tries went to the route,
+     not the Plan screen.
    - The fix is #142's review finding M4: send the placed zones with the crew
      request. It has no ticket yet.
 3. **The showcase path was not walked for this script.** That covers the cast

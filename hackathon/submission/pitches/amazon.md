@@ -72,14 +72,15 @@ mode:
 | # | at | click | say | if it breaks |
 |---|---|---|---|---|
 | 8 | 0:00 | Start on the **last browser tab**, the Owner tab you prepared. **Show on the board** under A, if time allows | "A building's security lead has one question: how would someone get to the files? Owner Mode is a first answer, before a consultant visits. This setup is made up, on the building's real scan. The engine plays fifty break-ins on each setup, from the crew's strategies. Turn one camera: open windows drop from [before] to [after]." | Result gone: DEMO.md's [beat 8 fallback](../DEMO.md#beat-8--145155--owner-mode). The crew chip reads **Rule-based**: add "here rule-based, as the tag says." |
-| 5 | 0:25 | The **first browser tab**, on Plan. Paste the order, **Enter**. **Start the run** as the plan shows | "How it reasons and plans: brief the crew in plain English. It answers, pushes back on the weak point, and the board checks its plan." | **No crew reply**: "The model was slow, so the board worked out this plan, with no model." Greyed order box: the F1 tab, and go to 6b. |
+| 5 | 0:25 | The **first browser tab**, on Plan. Paste `Go in by the roof hatch, straight to the files, and out the way we came.`, **Enter**. The reply: three steps, and one risk under **The crew pushes back**. Point at it. **Start the run** as the plan shows | "How it reasons and plans: brief the crew in plain English. It answers, pushes back on the weak point, and the board checks its plan." | **No crew reply** (2 of 6 tries on 15 Nov, after 4.2 s): "The model was slow, so the board worked out this plan, with no model." Greyed order box: the F1 tab, and go to 6b. |
 | 6 | 0:38 | Click the view once; hand over | "It acts: you're in the real building's scan. W to move, the mouse to look; stand in that camera's light." At the alarm: "It adapts within the run: the Chief re-plans the guards live, and says why." | Cut at **1:03**, caught or not: "Caught." or "The Chief is still hunting you." Scan fails: go to 6b. |
 | 6b | 1:03 | The **F1 browser tab**. **Board**. Click guard **G3**, then **Esc**. Press **1**, **1** | "And between runs. Before the pitch we played this fixture building once, in by the dock. Tonight G3 starts by the dock; its card says why." After the keys: "Same way in: caught on the spot. The Chief answers after, and opens with why: [its first sentence, off the panel]." Point at the bar: "Forget wipes that memory." | No **Forget 1 earlier run** in the bar: the history is gone. Press 1, 1, then **W** until caught, then **Restart**, and say "One run, and G3 moves." Live words don't name the post: point at G3's card instead. |
 | — | 1:36 | Nothing | "Reason, plan, act, adapt: the crew plans, the engine plays, the Chief re-plans, and the level remembers. With no keys at all it still runs, and the screen says what's live." | — |
 
 Ends at **1:48**, with 12 s spare. The spare covers four things:
 
-- beat 5's crew reply, which wasn't measured live;
+- beat 5's crew reply: 1.7–4.3 s live on 15 Nov, or the board's plan after
+  4.2 s;
 - the **Rule-based** line;
 - the Chief's word-by-word reveal in 6b;
 - 6b's fallback run.
