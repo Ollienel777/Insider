@@ -34,7 +34,7 @@ out of this public repo.
 | 2 | 0:10 | Point at the showcase card, then **Scout it** | "The agent searches CoStar's inventory for this heist: the right era and class, a floor on the market tonight, a 3D scan. For this mission, a real building: [name]. Each row checks it against a need, from its CoStar record." | Slow: **Skip**. No card, or not built: the F1 path. |
 | 3 | 0:30 | **Plan the job** | "The building from above, from Vexcel." | No aerial: "No aerial for this one yet." Then **Plan the job**. |
 | 4 | 0:33 | **Brief the crew** | "Its real CoStar record. A deep agent built the level from it: built [year], so key locks and sweeping cameras. Class [X]: [N] guards. Its vacant floor is the stage. The security is game fiction." | Stalls: **Skip**. |
-| 5 | 0:47 | Paste the order, **Enter**. Camera **C1** on the board, then **Esc**. **Start the run** as the plan shows | "Every guard, camera and lock says which data put it there." Then: "The crew answers in plain English, and the board checks its plan." | **No crew reply**: "The model was slow, so the board worked out this plan, with no model." Greyed order box: the F1 tab. |
+| 5 | 0:47 | Paste the order, **Enter**. Click a camera on the board, then **Esc**. **Start the run** as the plan shows | "Every guard, camera and lock says which data put it there." Then: "The crew answers in plain English, and the board checks its plan." | **No crew reply**: "The model was slow, so the board worked out this plan, with no model." Greyed order box: the F1 tab. |
 | 6 | 1:00 | Click the view once; hand over. **See the debrief** on the end card | "You're in the real building, its own scan. W to move, the mouse to look, hold E at a door. That light is a camera: stand in it for a second." At the alarm: "That camera has you. The Chief is re-planning live: watch the guards converge on you. Keep going, towards the guards." At the catch: "Caught. The debrief shows how." | No capture by **1:30**: "The Chief is still hunting you. Here's the replay." Then tab **7 Debrief**. Scan fails: the F1 tab. |
 | 7 | 1:30 | Drag **Turn**; point at the Chief's decisions | "The debrief replays every move. And here's why: every decision the Chief made, with its reason. And that search, era, class, a floor on the market tonight, is the one a location scout runs on Monday, on CoStar's own availability." | "No run yet": "The debrief replays the run turn by turn; you just saw how it ended." |
 | 8 | 1:45 | The **last browser tab**, the Owner tab you prepared (not the app's tab 8) | **[swap: #206]** "And for the owner: their own security, here made up. Seven get out; move C2, one in fifty." | Result gone: scroll to **Compare two setups**, then **Compare**. |
@@ -302,8 +302,7 @@ the roof hatch. The order also asks for no wait, so the crew should have no
 reason to stop in a suite. That is untested live (Open items, 2).
 
 1. Click the **Your order** box, paste, and press **Enter**.
-2. While the crew answers, click camera **C1** on the board. Its Why card
-   opens. Say: **"Every guard, camera and lock says which data put it
+2. While the crew answers, click a camera on the board. Its Why card opens. Say: **"Every guard, camera and lock says which data put it
    there."** Press **Esc**.
 3. The crew's plan appears, headed **The crew's plan** and checked on the
    board. A live reply carries no tag. Say: **"The crew answers in plain
