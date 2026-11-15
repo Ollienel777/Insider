@@ -390,6 +390,60 @@ describe("a doorway two board edges cross, each with its own door", () => {
   });
 });
 
+describe("areas behind a wall, where the nearest nodes are all on the far side", () => {
+  // A 10 m square floor, and one solid wall at x = 4.9..5.1 from z = 0 to z = 7; the way round it is north
+  // of z = 7. "w" and "w2" are west of the wall. Six nodes "e0".."e5" stand half a metre apart just east of
+  // it, so a point just west of the wall has all six nearer than "w", every one of them through the wall.
+  const walled = (): BufferGeometry => {
+    const wall: Quad[] = [
+      upright(WALL_W, 0, WALL_W, ROOM_N),
+      upright(WALL_E, 0, WALL_E, ROOM_N),
+      upright(WALL_W, ROOM_N, WALL_E, ROOM_N),
+      upright(WALL_W, 0, WALL_E, 0),
+      flat(WALL_W, 0, WALL_E, ROOM_N, WALL_H),
+    ];
+    return geometryOf([flat(0, 0, 10, 10), ...wall]);
+  };
+  const east = [0.5, 1, 1.5, 2, 2.5, 3].map((y, i) => ({ id: `e${i}`, x: 5.4, y, roomId: "east", tags: [] }));
+  const floor = FloorGraph.parse({
+    source: "matterport",
+    rooms: [
+      { id: "west", label: "West", rect: { x: 0, y: 0, w: 5, h: 10 } },
+      { id: "east", label: "East", rect: { x: 5, y: 0, w: 5, h: 10 } },
+    ],
+    nodes: [{ id: "w", x: 1, y: 1, roomId: "west", tags: [] }, { id: "w2", x: 2, y: 8.5, roomId: "west", tags: [] }, ...east],
+    edges: [{ a: "w", b: "w2" }, { a: "w2", b: "e5" }, ...east.slice(1).map((n, i) => ({ a: east[i].id, b: n.id }))],
+    sightlines: { w: ["w2"], w2: ["w", "e5"] },
+  });
+  const on = scanGround(floor, meshSolid(new MeshWorld(walled(), STEP_UP)), { eye: new Map(), floor: new Map() });
+  const at = (id: string) => on.nodes.get(id)!;
+
+  it("gives a point just west of the wall to the node it can see, not the nearer ones through the wall", () => {
+    const here: Vec = { x: 4.7, y: 1.75 };
+    // The set-up as described: the six nearest are all east of the wall, out of view; "w" is in view.
+    for (const n of east) expect(on.clear(here, at(n.id), [])).toBe(false);
+    expect(on.clear(here, at("w"), [])).toBe(true);
+    expect(on.regionOf(here)).toBe("w");
+  });
+
+  it("never gives any point west of the wall to a node east of it, along the whole wall", () => {
+    for (let z = 0.2; z < ROOM_N; z += 0.25) {
+      for (const x of [4.3, 4.5, 4.7]) {
+        const region = on.regionOf({ x, y: z });
+        expect(region === null || !region.startsWith("e"), `(${x}, ${z}) → ${region}`).toBe(true);
+      }
+    }
+  });
+
+  it("gives no area where no node is in view, rather than the nearest node through a wall", () => {
+    // Every ray hits something at once: nothing but the node itself is ever in view.
+    const boxed: ScanSolid = { floorBelow: () => 0, pushOut: (x, _y, z) => ({ x, z }), hit: () => 0.01 };
+    const shut = scanGround(floor, boxed, { eye: new Map(), floor: new Map() });
+    expect(shut.regionOf(at("w"))).toBe("w");
+    expect(shut.regionOf({ x: 4.7, y: 1.75 })).toBeNull();
+  });
+});
+
 describe("the scan's ground over a solid that answers nothing", () => {
   // No mesh under any camera: the floor comes from the spots, or from the cameras' heights.
   const none: ScanSolid = { floorBelow: () => null, pushOut: (x, _y, z) => ({ x, z }), hit: () => null };

@@ -58,7 +58,9 @@ export interface Ground {
   /** The way to walk the engine's edge from node `a` to node `b`: through its doorway, not the wall. */
   path(a: string, b: string): Vec[];
   /**
-   * The node whose area `pos` stands in, or null off the floor. The floor is
+   * The node whose area `pos` stands in, or null off the floor, or where no
+   * node can be reached without crossing a wall (the walker then keeps the
+   * body in the area it was in). The floor is
    * split into one area per node: each point belongs to exactly one node,
    * reachable from it without crossing a wall, and each node's area is in one
    * piece. Standing in an area is standing on that node, as the engine sees it.
