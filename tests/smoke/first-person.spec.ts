@@ -226,3 +226,229 @@ test("first person: holding E at a locked door picks it until the engine opens i
   await page.keyboard.up("e");
   await expect(view(page)).toHaveAttribute("data-node", "s1-sw");
 });
+
+// ---- the whole heist in first person (issue 115) -----------------------------------------------
+
+/** Plays the board's numbered neighbour `nodeId`, as the Run screen's number keys do. */
+async function boardTo(page: Page, nodeId: string) {
+  const key = await page.locator(`[data-testid="choice"][data-node="${nodeId}"]`).getAttribute("data-key");
+  expect(key, `${nodeId} is numbered`).toMatch(/^[1-9]$/);
+  await page.keyboard.press(key!);
+  await expect(page.getByTestId("player-piece")).toHaveAttribute("data-node", nodeId);
+}
+
+/** Pauses or resumes first person's clock with P, as the player does. */
+async function setPaused(page: Page, on: boolean) {
+  const paused = page.getByTestId("fp-paused");
+  if (((await paused.count()) > 0) !== on) await page.keyboard.press("p");
+  await expect(paused).toHaveCount(on ? 1 : 0);
+}
+
+/**
+ * One hop along the corner map's route, as a player reading the map would: read the player's place
+ * and facing and the route, face the route point ahead, walk to it, and again, until the engine has
+ * the player off `from` or the run is over. "Ahead" is the far end of the route segment nearest the
+ * player (the player projected onto the route), or the point after it once within 3 map pixels:
+ * the route starts at the engine node's centre, so a player past a doorway's first point goes on
+ * through the doorway rather than back to that point.
+ *
+ * Software WebGL draws few frames, at a rate that depends on the machine, and the view moves the
+ * body by the time since the last frame, so nothing here counts frames or holds a key for a set
+ * time. It runs in the page, so a leg costs no round trips to the test runner. Every input goes
+ * to the view's own handlers, as a player's does: the turn is a drag of the view (its drag-to-look,
+ * 0.004 rad a pixel, the same at any frame rate), and W is held from a keydown until a
+ * MutationObserver sees the map show the player at the point or past it, the engine's node change,
+ * or the run end, and lets go before the frames that would carry the body on. A leg in which the
+ * body stops moving for a second (held against a wall) ends too, and the next sets off from there.
+ * Resolves to "moved" once the player is off `from`; anything else is the reason it is not.
+ */
+async function hop(page: Page, from: string, legs = 6): Promise<string> {
+  return page.evaluate(
+    async ({ from, legs }) => {
+      type Point = [number, number];
+      const view = document.querySelector('[data-testid="fp-view"]')!;
+      const off = () => view.getAttribute("data-node") !== from || document.querySelector('[data-testid="fp-end"]') !== null;
+      const at = () => {
+        const t = document.querySelector('[data-testid="fp-minimap-player"]')?.getAttribute("transform") ?? "";
+        const m = /translate\(([-\d.]+),([-\d.]+)\) rotate\(([-\d.]+)\)/.exec(t);
+        return m ? { x: Number(m[1]), y: Number(m[2]), yaw: (Number(m[3]) * Math.PI) / 180 } : null;
+      };
+      const route = (): Point[] => {
+        const points = document.querySelector('[data-testid="fp-minimap-route"]')?.getAttribute("points")?.trim() ?? "";
+        return points ? points.split(/\s+/).map((p) => p.split(",").map(Number) as Point) : [];
+      };
+      const ahead = (x: number, y: number, r: Point[]): Point => {
+        let best = 1;
+        let bestD = Infinity;
+        for (let i = 1; i < r.length; i++) {
+          const [ax, ay] = r[i - 1];
+          const [dx, dy] = [r[i][0] - ax, r[i][1] - ay];
+          const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)));
+          const d = Math.hypot(ax + t * dx - x, ay + t * dy - y);
+          if (d < bestD) [best, bestD] = [i, d];
+        }
+        if (best < r.length - 1 && Math.hypot(r[best][0] - x, r[best][1] - y) <= 3) best++;
+        return r[best];
+      };
+      const drag = (px: number) => {
+        const send = (type: string, x: number) => view.dispatchEvent(new PointerEvent(type, { button: 0, clientX: x, clientY: 0, pointerId: 1, bubbles: true }));
+        send("pointerdown", 0);
+        send("pointermove", px);
+        send("pointerup", px);
+      };
+      // The map's marker follows the body a frame behind: two frames, and it shows where the body stopped.
+      const settle = () => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+      const walk = (target: Point) =>
+        new Promise<void>((resolve) => {
+          const start = at()!;
+          const reached = () => {
+            const p = at();
+            if (!p) return false;
+            const [tx, ty] = [target[0] - p.x, target[1] - p.y];
+            return Math.hypot(tx, ty) <= 2 || tx * (target[0] - start.x) + ty * (target[1] - start.y) <= 0;
+          };
+          let last = `${start.x},${start.y}`;
+          const finish = () => {
+            clearInterval(still);
+            watch.disconnect();
+            window.dispatchEvent(new KeyboardEvent("keyup", { key: "w", code: "KeyW", bubbles: true }));
+            resolve();
+          };
+          const still = setInterval(() => {
+            const p = at();
+            const now = p ? `${p.x},${p.y}` : last;
+            if (now === last) finish();
+            last = now;
+          }, 1_000);
+          const watch = new MutationObserver(() => {
+            if (off() || reached()) finish();
+          });
+          watch.observe(document.body, { subtree: true, childList: true, attributes: true });
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: "w", code: "KeyW", bubbles: true }));
+        });
+      for (let leg = 0; leg < legs && !off(); leg++) {
+        // A move re-renders the map, which puts its marker on the new node's centre, unturned, until the
+        // body or the view next moves: a turn of a thousandth of a radian and back brings it to the body.
+        if (!at()) {
+          drag(0.25);
+          await settle();
+          drag(-0.25);
+          await settle();
+        }
+        const p = at();
+        const r = route();
+        if (!p) return "the map does not show the player";
+        if (r.length < 2) return "the map shows no route";
+        const target = ahead(p.x, p.y, r);
+        const want = Math.atan2(target[1] - p.y, target[0] - p.x);
+        drag(Math.atan2(Math.sin(want - p.yaw), Math.cos(want - p.yaw)) / 0.004);
+        await walk(target);
+        await settle();
+      }
+      return off() ? "moved" : `still on ${from} after ${legs} legs`;
+    },
+    { from, legs },
+  );
+}
+
+/** Follows the corner map's route a hop at a time until `arrived`, each hop checked by the engine's node. */
+async function followMap(page: Page, arrived: () => Promise<boolean>, hops = 12) {
+  for (let i = 0; i < hops && !(await arrived()); i++) {
+    const from = (await view(page).getAttribute("data-node"))!;
+    expect(await hop(page, from), `the walk leaves ${from}`).toBe("moved");
+  }
+  expect(await arrived(), "arrived within the walk's hops").toBe(true);
+}
+
+test("first person, beat 6: the alarm, the guards on the map, and F opens the Why card on what is in view while the clock holds", async ({ page }) => {
+  test.setTimeout(90_000);
+  await open(page, "F1");
+  // Straight into C2's cover, on the board: the alarm goes to Alert.
+  await boardTo(page, "fl-lobby");
+  await boardTo(page, "dc-west");
+  if (!(await firstPerson(page))) return;
+  // First person's clock waits for the first move (issue 171): a tap of W starts it, so the hold below is real.
+  await page.keyboard.press("w");
+  await expect(page.getByTestId("fp-first-move")).toHaveCount(0);
+  await setPaused(page, true);
+
+  // The alarm in first person: the view's edges, and the map's guards hunting.
+  await expect(view(page)).toHaveAttribute("data-alarm", /alert|lockdown/);
+  await expect(page.getByTestId("fp-alarm-tint")).toBeVisible();
+  const map = page.getByTestId("fp-minimap");
+  await expect(map).toHaveAttribute("data-room", "dock-corridor");
+  await expect(page.getByTestId("fp-minimap-room")).toHaveText("Dock Corridor");
+  await expect(map.locator('[data-chasing="true"]').first()).toBeAttached();
+  await expect(page.getByTestId("fp-minimap-player")).not.toHaveAttribute("visibility", "hidden");
+
+  // Turn until a watcher is under the crosshair; F opens its Why card, and the clock holds while it is open.
+  const aim = page.getByTestId("fp-aim");
+  for (let i = 0; i < 200 && (await aim.count()) === 0; i++) {
+    await page.keyboard.down("ArrowLeft");
+    await page.waitForTimeout(40);
+    await page.keyboard.up("ArrowLeft");
+  }
+  await expect(aim).toBeVisible();
+  const key = (await aim.getAttribute("data-why"))!;
+  expect(key).toMatch(/^(guard|cleaner|camera):/);
+  await page.keyboard.press("f");
+  const card = page.getByTestId("why-card");
+  await expect(card).toBeVisible();
+  await expect(card).toHaveAttribute("data-why", key);
+  await expect(card.getByTestId("why-row").first()).toBeVisible();
+  await setPaused(page, false);
+  const turn = await turnOf(page);
+  await page.waitForTimeout(1_500);
+  expect(await turnOf(page), "the clock holds while the card is open").toBe(turn);
+  await page.keyboard.press("Escape");
+  await expect(card).toHaveCount(0);
+
+  // Let the guards close in: the catch shows in the view, with the way to the Debrief.
+  await expect(page.getByTestId("fp-end")).toHaveAttribute("data-status", "caught", { timeout: 30_000 });
+  await expect(page.getByTestId("fp-over")).toContainText("Caught in the");
+  await page.getByTestId("fp-debrief").click();
+  await expect(page).toHaveURL(/\/b\/F1\/debrief/);
+});
+
+test("first person: take the files, then follow the map's route out to a clean exit", async ({ page }) => {
+  // The board's moves to the files, then the walk out: at five frames a second it takes nearly two
+  // minutes, all of it waiting on the page, so the budget is three.
+  test.setTimeout(180_000);
+  await open(page, "F1");
+  // The quiet route on the board (run.spec.ts) as far as the files.
+  await boardTo(page, "fl-lobby");
+  await page.keyboard.press("w");
+  for (const nodeId of ["dc-west", "dc-mid", "dc-east"]) await boardTo(page, nodeId);
+  for (let i = 0; i < 2; i++) {
+    const key = await page.locator('[data-testid="choice"][data-kind="pick"]').getAttribute("data-key");
+    await page.keyboard.press(key!);
+  }
+  await boardTo(page, "rr-door");
+  await boardTo(page, "rr-files");
+  if (!(await firstPerson(page))) return;
+  await setPaused(page, true);
+
+  // At the files: the prompt says to hold E, the map marks them, and E takes them.
+  const prompt = page.getByTestId("fp-prompt");
+  await expect(prompt).toHaveAttribute("data-kind", "take");
+  await expect(prompt).toContainText("to take the files");
+  await expect(page.getByTestId("fp-minimap-objective")).toHaveCount(1);
+  await page.keyboard.down("e");
+  await expect(page.getByTestId("fp-minimap-objective")).toHaveCount(0);
+  await page.keyboard.up("e");
+  await expect(page.getByTestId("fp-minimap")).toHaveAttribute("data-waypoint", /^(fl-car|es-landing)$/);
+
+  // Out the way in, paused but for the quiet route's one wait at the corridor's east end.
+  const node = () => view(page).getAttribute("data-node");
+  await followMap(page, async () => (await node()) === "dc-east");
+  const turn = await turnOf(page);
+  await setPaused(page, false);
+  await expect.poll(() => turnOf(page)).toBeGreaterThan(turn);
+  await setPaused(page, true);
+  await followMap(page, async () => (await page.getByTestId("fp-end").count()) > 0);
+
+  await expect(page.getByTestId("fp-end")).toHaveAttribute("data-status", "won");
+  await expect(page.getByTestId("fp-over")).toHaveText("Out with the files.");
+  await page.getByTestId("fp-debrief").click();
+  await expect(page).toHaveURL(/\/b\/F1\/debrief/);
+});

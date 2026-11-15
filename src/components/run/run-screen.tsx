@@ -634,6 +634,7 @@ export function RunScreen({
                 onHeld={holdFp}
                 onWalking={setWalking}
                 paused={clock.state === "paused"}
+                crewPlan={crewPlan?.plan ?? null}
                 scan={scan}
                 onReady={setFpReady}
                 endAction={
