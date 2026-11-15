@@ -473,6 +473,15 @@ export function RunScreen({
 
   const options = useMemo(() => (run ? choicesOf(run, mode) : []), [run, mode]);
   const over = run !== null && run.status !== "playing";
+  // In first person the panel with "See the debrief" is closed: a run that ends carries the player on to the
+  // Debrief after a beat, so the end is never a dead stop (issue 166). On the board the stamp is in view.
+  const debriefHref = buildingHref(building.id, "debrief", missionId);
+  useEffect(() => {
+    if (!over || !fpOn) return;
+    // A full load: the Debrief reads the run's log from storage, as it does when opened from its address.
+    const timer = setTimeout(() => window.location.assign(debriefHref), 2000);
+    return () => clearTimeout(timer);
+  }, [over, fpOn, debriefHref]);
   // A kit building's label, once the board is placed: it names the scan only when the board stands on it.
   const placedOn = load.status === "ready" ? placedFloor(load.floor.source) : null;
   const label = placedOn ? recordLabel(source, placedOn) : null;
