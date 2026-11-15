@@ -367,6 +367,9 @@ test("first person, beat 6: the alarm, the guards on the map, and F opens the Wh
   await boardTo(page, "fl-lobby");
   await boardTo(page, "dc-west");
   if (!(await firstPerson(page))) return;
+  // First person's clock waits for the first move (issue 171): a tap of W starts it, so the hold below is real.
+  await page.keyboard.press("w");
+  await expect(page.getByTestId("fp-first-move")).toHaveCount(0);
   await setPaused(page, true);
 
   // The alarm in first person: the view's edges, and the map's guards hunting.
