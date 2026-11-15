@@ -35,11 +35,12 @@ import { cameraMount, choices, roomName } from "../board";
 import { scanStageOf, type HeldAction, type ScanHandle, type ScanPreload } from "./run-view";
 import { Actors, type Marks } from "./actors";
 import { Controller } from "./controller";
+import { FrameRateWatch } from "./flashlight";
 import { endState } from "./end-state";
 import type { Ground, Vec } from "./ground";
 import { hintDone, hintPhase, hintTicks, NO_PROGRESS, type HintPhase, type HintProgress } from "./hint";
 import { ControlsHint } from "./hint-card";
-import { noticeOf } from "./notice";
+import { earshot, noticeOf } from "./notice";
 import { readPalette } from "./palette";
 import { joinRefusal, joinScan } from "./scan-join";
 import { scanGround } from "./scan-ground";
@@ -246,6 +247,9 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       let doneAt: number | null = null;
       let hintKey = "";
       let looked = { yaw: controller.yaw, pitch: controller.pitch };
+      // The flashlights' real lights go, once, if the frame rate drops (issue 153). The rate is on the view for a readout.
+      const watch = new FrameRateWatch();
+      let rateAt = 0;
       let last = performance.now();
       let owed = 0;
       let use = false;
@@ -270,9 +274,16 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         raf = requestAnimationFrame(frame);
         const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
         last = now;
+        if (watch.frame(dt)) actors.dropLights();
+        if (now - rateAt > 1000) {
+          rateAt = now;
+          host.dataset.fps = watch.fps.toFixed(0);
+          host.dataset.lights = actors.lightsOn ? "real" : "unlit";
+        }
         const { run: current, onAct: play } = latest.current;
         if (current !== seen) {
           actors.sync(current, now);
+          actors.showHeard(new Set(earshot(current)));
           seen = current;
         }
 
@@ -324,7 +335,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         const speed = Math.hypot(walker.vel.x, walker.vel.y);
         bob += ((still ? 0 : Math.min(1, speed / FP.runMps)) - bob) * Math.min(1, dt * 12);
         const lift = Math.sin((walker.walked / FP.strideM) * Math.PI * 4) * FP.bobM * bob;
-        actors.update(now);
+        actors.update(now, walker.pos);
         const camera = on.draw(walker, lift, controller.yaw, controller.pitch, dt);
 
         // Labels: each at its piece, hidden behind the view and behind walls (a beacon shows through).

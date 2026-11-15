@@ -1,6 +1,7 @@
 // Everything in the first-person scene that the run changes (issue 115):
-// guards and night cleaners as pawns that glide from node to node, cameras on
-// their mounts, what each of them sees drawn on the floor, the doors that
+// guards and night cleaners as people that walk from node to node (issue 153:
+// guard-figure.ts, a guard's flashlight in flashlight.ts), cameras on their
+// mounts, what each of them sees drawn on the floor, the doors that
 // shut and open, the rings on the nodes the player may move to, and the
 // objective's and the exits' markers.
 //
@@ -32,6 +33,8 @@ import type { RunState } from "@/engine";
 import type { Ground, Vec } from "./ground";
 import type { Palette } from "./palette";
 import { CrossFade } from "./fade";
+import { Flashlight, FlashlightRig } from "./flashlight";
+import { GuardFigure } from "./guard-figure";
 import { sightOf, watchedNodes } from "./sight";
 import { FP } from "./tuning";
 
@@ -105,6 +108,9 @@ const flatMaterial = (colour: Color, opacity: number) =>
 
 interface Pawn {
   group: Group;
+  /** The person drawn for it, and a guard's flashlight (issue 153). */
+  figure: GuardFigure;
+  light: Flashlight | null;
   nodeId: string;
   at: Vec;
   glide: { path: Vec[]; length: number; from: number; ms: number; leg: number } | null;
@@ -143,6 +149,10 @@ interface Leaf {
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
+/** How far a guard's flashlight reaches at most, and how many of them light the scene for real (issue 153). */
+const FLASHLIGHT_RANGE_M = 8;
+const FLASHLIGHT_REAL = 3;
+
 export class Actors {
   readonly group = new Group();
   private readonly pawns = new Map<string, Pawn>();
@@ -165,10 +175,11 @@ export class Actors {
   private turn = -1;
   private turnAt = 0;
   private lastFrame = 0;
+  /** Issue 153: the real lights lent to the nearest flashlights, and who is in earshot. */
+  private readonly rig: FlashlightRig;
+  private heard: ReadonlySet<string> = new Set();
+  private lockedNow: readonly string[] = [];
 
-  private readonly pawnParts: { base: BufferGeometry; body: BufferGeometry; head: BufferGeometry; visor: BufferGeometry };
-  private readonly pawnMaterial: Record<"guard" | "cleaner", MeshLambertMaterial>;
-  private readonly visorMaterial: MeshLambertMaterial;
   private readonly sightMaterial: Record<"calm" | "after" | "tripped" | "next" | "camera", MeshBasicMaterial>;
   /** The cameras' view cones, and the colour of one that sees the player. */
   private readonly coneMaterial: MeshBasicMaterial;
@@ -192,18 +203,6 @@ export class Actors {
       else this.shared.materials.push(thing);
       return thing;
     };
-    // Abstract pawns, as on the board (DESIGN.md: no people are depicted).
-    this.pawnParts = {
-      base: keep(new CylinderGeometry(0.2, 0.27, 0.1, 20)),
-      body: keep(new CylinderGeometry(0.09, 0.23, 1.15, 20)),
-      head: keep(new SphereGeometry(0.17, 20, 14)),
-      visor: keep(new BoxGeometry(0.06, 0.07, 0.2)),
-    };
-    this.pawnMaterial = {
-      guard: keep(new MeshLambertMaterial({ color: palette.n200 })),
-      cleaner: keep(new MeshLambertMaterial({ color: palette.n400 })),
-    };
-    this.visorMaterial = keep(new MeshLambertMaterial({ color: palette.n950 }));
     this.sightMaterial = {
       calm: keep(flatMaterial(palette.n300, 0.2)),
       after: keep(flatMaterial(palette.n300, 0.12)),
@@ -216,6 +215,8 @@ export class Actors {
     this.coneMaterial = keep(new MeshBasicMaterial({ color: palette.warning, transparent: true, opacity: 0.1, depthWrite: false, side: DoubleSide }));
     this.coneTripped = keep(new MeshBasicMaterial({ color: palette.danger, transparent: true, opacity: 0.2, depthWrite: false, side: DoubleSide }));
     this.ringFill = keep(new MeshBasicMaterial({ color: palette.accent, side: DoubleSide }));
+    this.rig = new FlashlightRig(FLASHLIGHT_REAL, palette.n100);
+    this.group.add(this.rig.group);
     this.group.add(this.floor);
     this.floorFade = new CrossFade(this.floor, turnMs, still);
     this.areas.visible = false;
@@ -357,21 +358,18 @@ export class Actors {
     const existing = this.pawns.get(id);
     if (existing) return existing;
     const at = this.ground.nodes.get(nodeId) ?? { x: 0, y: 0 };
-    const group = new Group();
-    const material = this.pawnMaterial[kind];
-    const base = new Mesh(this.pawnParts.base, material);
-    base.position.y = 0.05;
-    const body = new Mesh(this.pawnParts.body, material);
-    body.position.y = 0.1 + 1.15 / 2;
-    const head = new Mesh(this.pawnParts.head, material);
-    head.position.y = 1.38;
-    // The way it faces: a dark band across the front of the head.
-    const visor = new Mesh(this.pawnParts.visor, this.visorMaterial);
-    visor.position.set(0.15, 1.4, 0);
-    group.add(base, body, head, visor);
+    // A simple figure (issue 153): a guard in a dark uniform and cap with a flashlight, a cleaner in grey.
+    const p = this.palette;
+    const figure =
+      kind === "guard"
+        ? new GuardFigure({ uniform: p.n600, trousers: p.n800, skin: p.n300, cap: p.n850 })
+        : new GuardFigure({ uniform: p.n400, trousers: p.n600, skin: p.n300 }, { armed: false });
+    const light = kind === "guard" ? new Flashlight({ colour: p.n100, range: FLASHLIGHT_RANGE_M, halfAngle: 0.3 }) : null;
+    if (light) figure.hand.add(light.group);
+    const group = figure.group;
     group.position.set(at.x, 0, at.y);
     this.group.add(group);
-    const pawn: Pawn = { group, nodeId, at: { x: at.x, y: at.y }, glide: null };
+    const pawn: Pawn = { group, figure, light, nodeId, at: { x: at.x, y: at.y }, glide: null };
     this.pawns.set(id, pawn);
     this.pawnKind.set(id, kind);
     return pawn;
@@ -382,6 +380,7 @@ export class Actors {
     const restarted = run.turn < this.turn;
     if (run.turn !== this.turn) this.turnAt = now;
     this.turn = run.turn;
+    this.lockedNow = run.locked;
 
     const walkers = [
       ...run.guards.map((g) => ({ ...g, kind: "guard" as const })),
@@ -423,6 +422,12 @@ export class Actors {
     }
 
     this.drawFloor(run, now);
+    // A guard whose sight covers the player's node this turn: its beam turns to the danger colour.
+    const seeing = new Set(sightOf(run, this.ground.unitM).filter((s) => s.nodes.includes(run.playerNode)).map((s) => s.id));
+    for (const [id, pawn] of this.pawns) {
+      const on = seeing.has(id);
+      pawn.light?.setColour(on ? this.palette.danger : this.palette.n100, on ? 0.34 : undefined);
+    }
     if (this.areas.visible) this.drawAreas(run.playerNode, run.locked);
     this.objective.visible = !run.carrying;
     const exitColour = run.carrying ? this.palette.success : this.palette.n400;
@@ -552,35 +557,95 @@ export class Actors {
     this.areasKey = key;
   }
 
-  /** Advances the glides and the doors to `now`. */
-  update(now: number): void {
+  /**
+   * The guards and cleaners within earshot of the player (notice.ts `earshot`):
+   * one of them the player cannot see is drawn faintly through the walls.
+   */
+  showHeard(ids: ReadonlySet<string>): void {
+    this.heard = ids;
+  }
+
+  /** Takes the real flashlight lights away for good, when the frame rate drops: the beams stay. */
+  dropLights(): void {
+    this.rig.drop();
+  }
+
+  get lightsOn(): boolean {
+    return this.rig.lit;
+  }
+
+  /** Advances the glides and the doors to `now`. `player` is the body, in metres, for the flashlights and the outlines. */
+  update(now: number, player?: Vec): void {
     const dt = this.lastFrame === 0 ? 0 : Math.min(0.1, (now - this.lastFrame) / 1000);
     this.lastFrame = now;
     // Where a sweeping camera looks next firms up as the turn runs out: the sweep reads before it flips.
     this.sightMaterial.next.opacity = this.still ? 0.4 : 0.12 + 0.5 * clamp((now - this.turnAt) / this.turnMs, 0, 1);
     for (const pawn of this.pawns.values()) {
-      const glide = pawn.glide;
-      if (!glide) continue;
-      const k = glide.ms <= 0 ? 1 : clamp((now - glide.from) / glide.ms, 0, 1);
-      let left = k * glide.length;
-      let at = glide.path[glide.path.length - 1];
-      for (let i = 1; i < glide.path.length; i++) {
-        const a = glide.path[i - 1];
-        const b = glide.path[i];
-        const leg = Math.hypot(b.x - a.x, b.y - a.y);
-        if (left <= leg || i === glide.path.length - 1) {
-          const f = leg === 0 ? 1 : clamp(left / leg, 0, 1);
-          at = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
-          glide.leg = i;
-          if (leg > 1e-6) pawn.group.rotation.y = -Math.atan2(b.y - a.y, b.x - a.x);
-          break;
-        }
-        left -= leg;
-      }
-      pawn.at = at;
-      pawn.group.position.set(at.x, 0, at.y);
-      if (k >= 1) pawn.glide = null;
+      const was = pawn.at;
+      this.glidePawn(pawn, now);
+      const moved = Math.hypot(pawn.at.x - was.x, pawn.at.y - was.y);
+      pawn.figure.step(moved, dt > 0 ? moved / dt : 0, this.still);
     }
+    this.people(player);
+    this.doorsAndRest(now, dt);
+  }
+
+  /** Where each flashlight's beam stops, who shows through walls, and which beams get the real lights. */
+  private people(player: Vec | undefined): void {
+    const lit: { light: Flashlight; far: number }[] = [];
+    for (const [id, pawn] of this.pawns) {
+      if (!pawn.group.visible) continue;
+      if (pawn.light) {
+        const yaw = -pawn.group.rotation.y;
+        pawn.light.setReach(this.clearAhead(pawn.at, { x: Math.cos(yaw), y: Math.sin(yaw) }, FLASHLIGHT_RANGE_M));
+        if (player) lit.push({ light: pawn.light, far: Math.hypot(pawn.at.x - player.x, pawn.at.y - player.y) });
+      }
+      const behindWall = player !== undefined && !this.ground.clear(player, pawn.at, this.lockedNow);
+      pawn.figure.setGhost(behindWall && this.heard.has(id), this.palette.n200);
+    }
+    lit.sort((a, b) => a.far - b.far);
+    this.rig.assign(lit.map((l) => l.light));
+  }
+
+  /** How far from `from` along `dir` nothing solid stands, up to `max` metres, to a quarter metre. */
+  private clearAhead(from: Vec, dir: Vec, max: number): number {
+    const at = (d: number) => ({ x: from.x + dir.x * d, y: from.y + dir.y * d });
+    if (this.ground.clear(from, at(max), this.lockedNow)) return max;
+    let lo = 0;
+    let hi = max;
+    while (hi - lo > 0.25) {
+      const mid = (lo + hi) / 2;
+      if (this.ground.clear(from, at(mid), this.lockedNow)) lo = mid;
+      else hi = mid;
+    }
+    return lo + 0.15;
+  }
+
+  private glidePawn(pawn: Pawn, now: number): void {
+    const glide = pawn.glide;
+    if (!glide) return;
+    const k = glide.ms <= 0 ? 1 : clamp((now - glide.from) / glide.ms, 0, 1);
+    let left = k * glide.length;
+    let at = glide.path[glide.path.length - 1];
+    for (let i = 1; i < glide.path.length; i++) {
+      const a = glide.path[i - 1];
+      const b = glide.path[i];
+      const leg = Math.hypot(b.x - a.x, b.y - a.y);
+      if (left <= leg || i === glide.path.length - 1) {
+        const f = leg === 0 ? 1 : clamp(left / leg, 0, 1);
+        at = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+        glide.leg = i;
+        if (leg > 1e-6) pawn.group.rotation.y = -Math.atan2(b.y - a.y, b.x - a.x);
+        break;
+      }
+      left -= leg;
+    }
+    pawn.at = at;
+    pawn.group.position.set(at.x, 0, at.y);
+    if (k >= 1) pawn.glide = null;
+  }
+
+  private doorsAndRest(now: number, dt: number): void {
     for (const leaf of this.leaves.values()) {
       // A picked door slides into the wall; a door the Chief locks is shut at once.
       if (!leaf.shut && leaf.open < 1) leaf.open = Math.min(1, leaf.open + dt / 0.45);
@@ -635,6 +700,11 @@ export class Actors {
 
   dispose(): void {
     this.floorFade.dispose();
+    for (const pawn of this.pawns.values()) {
+      pawn.light?.dispose();
+      pawn.figure.dispose();
+    }
+    this.rig.dispose();
     for (const ring of this.rings.values()) for (const mesh of ring.fill) if (mesh.name !== "pick-track") mesh.geometry.dispose();
     for (const child of this.areas.children) {
       (child as Mesh).geometry.dispose();
