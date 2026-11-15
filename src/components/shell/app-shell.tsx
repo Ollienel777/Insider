@@ -43,7 +43,7 @@ export function serverStatus(forced: ReadonlySet<Service>): ServerStatus {
 /**
  * The desk every screen sits on (issue 166): the game's card and the mode chip
  * along the top, the folder's tabs under them, then the open case file, which
- * holds the screen. Run takes the whole screen (`body.playing`, set by Run).
+ * holds the screen. Run keeps them too: the mode chip and the way back stay in sight.
  */
 export async function AppShell({ children, building, tab = "missions", missionId }: AppShellProps) {
   // Read the mode per request, not at build time, so the chip reports how the

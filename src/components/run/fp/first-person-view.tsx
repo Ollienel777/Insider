@@ -727,7 +727,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
       {/* The end of the run: what happened and why, and the way on. The view takes no more input. */}
       {end ? (
-        <div data-testid="fp-end" data-status={run.status} className="absolute inset-0 grid place-items-center bg-surface-0/55 p-6">
+        <div data-testid="fp-end" data-status={run.status} className="absolute inset-0 grid place-items-center bg-n-50/55 p-6">
           <div role="status" className="flex max-w-lg flex-col items-center gap-3 rounded-md border border-border bg-surface-1 px-8 py-6 text-center shadow-e-2">
             <p className="label-caps text-text-3">{end.outcome === "won" ? "Run complete" : "Run over"}</p>
             <p data-testid="fp-over" className={cn("text-2xl font-semibold", end.outcome === "won" ? "text-success" : "text-danger")}>

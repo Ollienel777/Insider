@@ -175,7 +175,8 @@ export function RunScreen({
     [building.id, startRun, missionId, source],
   );
 
-  // Playing takes the whole screen: no desk, no tabs (issue 166). Leaving Run puts the desk back.
+  // The board needs the room: while Run is open the desk's margins are thinner (globals.css). The game's
+  // card, the mode chip and the tabs stay.
   useEffect(() => {
     document.body.classList.add("playing");
     return () => document.body.classList.remove("playing");
@@ -475,15 +476,6 @@ export function RunScreen({
 
   const options = useMemo(() => (run ? choicesOf(run, mode) : []), [run, mode]);
   const over = run !== null && run.status !== "playing";
-  // In first person a run that ends shows its end card (with "See the debrief"), then carries the player on to
-  // the Debrief by itself, so the end is never a dead stop (issue 166). On the board the stamp is in view.
-  const debriefHref = buildingHref(building.id, "debrief", missionId);
-  useEffect(() => {
-    if (!over || !fpOn) return;
-    // A full load: the Debrief reads the run's log from storage, as it does when opened from its address.
-    const timer = setTimeout(() => window.location.assign(debriefHref), 3500);
-    return () => clearTimeout(timer);
-  }, [over, fpOn, debriefHref]);
   // A kit building's label, once the board is placed: it names the scan only when the board stands on it.
   const placedOn = load.status === "ready" ? placedFloor(load.floor.source) : null;
   const label = placedOn ? recordLabel(source, placedOn) : null;
@@ -519,12 +511,12 @@ export function RunScreen({
       record={record}
       bar={
           <div className="flex h-14 shrink-0 items-center gap-3 px-6">
-            <span className="flex items-center gap-2 label-caps text-text-2">
+            <span className="flex min-w-0 items-center gap-2 label-caps whitespace-nowrap text-text-2">
               <LayerDot layer="matterport" decorative />
               Matterport
               {/* A kit building's label (below) names its floor, so the line doesn't say it twice. */}
               {source === "costar" ? null : (
-                <span className="max-md:hidden">
+                <span className="truncate max-md:hidden">
                   {load.status === "ready" && load.live ? " · floor plan from the scan" : sourcePending ? null : " · floor plan from fixtures"}
                 </span>
               )}
@@ -532,8 +524,9 @@ export function RunScreen({
             {/* Closed with the bar in Live, where the HUD carries it instead: one label on the page. */}
             {open ? record : null}
             <span aria-hidden className="h-4 w-px bg-border" />
-            <span className="truncate text-sm text-text-1">{manifest?.mission.title}</span>
-            <div className="ml-auto flex items-center gap-2">
+            <span className="min-w-0 truncate text-sm text-text-1">{manifest?.mission.title}</span>
+            {/* The buttons keep their width: the labels to their left give way first. */}
+            <div className="ml-auto flex shrink-0 items-center gap-2">
               {storedRuns > 0 ? (
                 <Button
                   variant="ghost"
@@ -681,8 +674,9 @@ export function RunScreen({
           chief={<ChiefPanel state={chief} revealed={revealed} zoneName={(id) => (placed ? zoneName(placed, id) : id)} onRetry={retryChief} />}
         />
       }
+      // In first person the end card carries "See the debrief": one way on, not two.
       action={
-        over ? (
+        over && !fpOn ? (
           <Link
             href={buildingHref(building.id, "debrief", missionId)}
             className={buttonVariants({ variant: "primary" })}
