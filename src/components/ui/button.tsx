@@ -29,9 +29,9 @@ export const buttonVariants = cva(
         ghost: "border-transparent bg-transparent text-text-2 shadow-none hover:bg-surface-3 hover:text-text-1 active:shadow-none",
       },
       size: {
-        default: "h-11 px-5",
+        default: "h-10 px-5",
         lg: "h-14 px-6 text-lg",
-        icon: "size-11",
+        icon: "size-10",
       },
     },
     defaultVariants: { variant: "secondary", size: "default" },
