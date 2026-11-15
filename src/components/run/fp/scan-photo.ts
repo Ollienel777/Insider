@@ -275,6 +275,7 @@ export class PhotoSet {
         uTile: { value: PHOTO.ceilingTileM },
         uAtlas: { value: this.atlas.texture },
         uHasAtlas: { value: 0 },
+        uCeilY: { value: this.plan.ceilingY },
         uGrain: { value: 0.05 },
       },
       vertexShader: /* glsl */ `
@@ -302,6 +303,7 @@ uniform float uTile;
 uniform sampler2D uAtlas;
 uniform float uGrain;
 uniform float uHasAtlas;
+uniform float uCeilY;
 varying vec2 vUv;
 varying vec3 vColour;
 varying vec3 vWorld;
@@ -320,14 +322,23 @@ void main() {
     // At the edge of what was seen the filter mixes in the unseen (black): take the seen part's own colour.
     photo.rgb /= max(photo.a, 1e-3);
     // A feature differs plainly from its wall (a door, a board, a cupboard); paint a shade lighter or darker is the same wall.
-    float differs = smoothstep(0.2, 0.36, distance(photo.rgb, c));
+    float differs = smoothstep(0.28, 0.45, distance(photo.rgb, c));
     float seen = smoothstep(0.85, 1.0, photo.a);
     if (vKind > 2.5) differs = 1.0;
     c = mix(c, photo.rgb, differs * seen);
     if (vKind < 0.5 && vWorld.y - uFloorY < 0.1) c = uBase;
+    // Soft occlusion where a wall meets the floor and the ceiling.
+    if (vKind < 0.5) c *= (1.0 - 0.16 * exp(-(vWorld.y - uFloorY) / 0.22)) * (1.0 - 0.1 * exp(-(uCeilY - vWorld.y) / 0.18));
   } else if (vKind < 1.5) {
     // The floor: a carpet's grain, as varied as the photographs' carpet.
-    c *= 1.0 + uGrain * (2.0 * hash(floor(square / 0.02)) - 1.0) + 0.5 * uGrain * (2.0 * hash(floor(square / 0.11) + 7.0) - 1.0);
+    // Loop pile: fine speckle, a coarser mottle, and the faint seams of 60 cm carpet tiles laid quarter-turned.
+    vec2 tile = floor(square / 0.6);
+    float turned = mod(tile.x + tile.y, 2.0);
+    vec2 pile = turned > 0.5 ? square.yx : square;
+    c *= 1.0 + uGrain * (2.0 * hash(floor(pile / 0.006)) - 1.0) * 0.8 + 0.5 * uGrain * (2.0 * hash(floor(pile / 0.03) + 7.0) - 1.0) + 0.25 * uGrain * (turned - 0.5);
+    vec2 seam = abs(fract(square / 0.6) - 0.5) * 0.6;
+    if (min(0.3 - seam.x, 0.3 - seam.y) < 0.003) c *= 0.94;
+    // Soft occlusion along the walls' feet is in the walls; the floor darkens under the ceiling's own light only.
   } else if (vKind < 2.5) {
     // The ceiling: a drop ceiling's grid.
     vec2 g = abs(fract(square / uTile) - 0.5) * uTile;
@@ -930,6 +941,50 @@ void main() {
     }
   }
 
+  /**
+   * The ceiling's lights, where the photographs saw them: bright patches of the ceiling, gathered on a 1.2 m
+   * grid of the building's square, each drawn as a glowing 1.2 × 0.6 m troffer.
+   */
+  private lightPanels(bright: { x: number; y: number; l: number }[], ceiling: number): void {
+    const { floor, ceilingY } = this.plan;
+    const c = Math.cos(floor.angle);
+    const s = Math.sin(floor.angle);
+    const cells = new Map<string, { u: number; v: number; n: number }>();
+    for (const p of bright) {
+      if (p.l < Math.min(2.9, ceiling + 0.25)) continue;
+      const u = p.x * c + p.y * s;
+      const v = -p.x * s + p.y * c;
+      const key = `${Math.round(u / 1.2)}:${Math.round(v / 1.2)}`;
+      const cell = cells.get(key) ?? { u: 0, v: 0, n: 0 };
+      cell.u += u;
+      cell.v += v;
+      cell.n++;
+      cells.set(key, cell);
+    }
+    const positions: number[] = [];
+    for (const cell of cells.values()) {
+      if (cell.n < 2) continue;
+      const [u, v] = [cell.u / cell.n, cell.v / cell.n];
+      const at = (du: number, dv: number) => fromCellFrame(floor, u + du, v + dv);
+      const corners = [at(-0.6, -0.3), at(0.6, -0.3), at(0.6, 0.3), at(-0.6, 0.3)];
+      for (const k of [0, 1, 2, 0, 2, 3]) positions.push(corners[k].x, ceilingY - 0.012, corners[k].y);
+    }
+    if (positions.length === 0) return;
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
+    const panel = new Mesh(
+      geometry,
+      new ShaderMaterial({
+        vertexShader: `varying vec3 vWorld; void main() { vWorld = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vWorld, 1.0); }`,
+        // A troffer's lens: bright, a touch warm, its louvres faint.
+        fragmentShader: `varying vec3 vWorld; void main() { float l = 0.97 + 0.03 * step(0.5, fract(vWorld.x * 12.0)); gl_FragColor = vec4(vec3(1.0, 0.99, 0.96) * l, 1.0); }`,
+        side: DoubleSide,
+      }),
+    );
+    panel.name = "ceiling-lights";
+    this.group.add(panel);
+  }
+
   /** Each surface's colour: the median of what its well-seen texels saw, gathered by room. */
   private finish(renderer: WebGLRenderer): void {
     const full = PHOTO.atlasPx;
@@ -981,6 +1036,7 @@ void main() {
     const allWalls: Rgb[] = [];
     const allFloors: Rgb[] = [];
     const allPieces: Rgb[] = [];
+    const bright: { x: number; y: number; l: number }[] = [];
     const push = (map: Map<string | number, Rgb[]>, key: string | number, value: Rgb) => {
       const list = map.get(key);
       if (list) list.push(value);
@@ -1010,7 +1066,10 @@ void main() {
             push(floorsBy, this.roomOf(at), c);
             allFloors.push(c);
             grains.push(c[0] + c[1] + c[2]);
-          } else if (s.kind === "ceiling") ceiling.push(c);
+          } else if (s.kind === "ceiling") {
+            ceiling.push(c);
+            bright.push({ x: s.o.x + s.u.x * a * s.w + s.v.x * b * s.h, y: s.o.z + s.u.z * a * s.w + s.v.z * b * s.h, l: c[0] + c[1] + c[2] });
+          }
           else {
             push(pieces, s.piece, c);
             allPieces.push(c);
@@ -1041,6 +1100,7 @@ void main() {
       for (let v = start; v < start + count; v++) colour.setXYZ(v, c[0], c[1], c[2]);
     };
     const ceilingColour = median(ceiling, FALLBACK.ceiling);
+    this.lightPanels(bright, ceilingColour[0] + ceilingColour[1] + ceilingColour[2]);
     // A wall face keeps its own colour only near its room's: one whose photographs were mostly a window's view is room paint.
     const wallColour = (si: number): Rgb => {
       const room = median(wallsBy.get(wallRoom[si]), wallAll);

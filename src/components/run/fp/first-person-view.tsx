@@ -164,10 +164,12 @@ function scanLook(): "set" | "blockout" | "photo" {
 /** The view's height, degrees: a shooter's 72, narrower on a wide view so it never spans more than `MAX_ACROSS` across. */
 const FOV_DEGREES = 72;
 const MAX_ACROSS = 100;
-function fovFor(aspect: number): number {
+/** The scan's set: the panoramas' own camera, a little narrower than a shooter's. */
+const SET_FOV_DEGREES = 64;
+function fovFor(aspect: number, upright = FOV_DEGREES): number {
   const across = (MAX_ACROSS * Math.PI) / 360;
   const capped = (2 * Math.atan(Math.tan(across) / Math.max(aspect, 1e-3)) * 180) / Math.PI;
-  return Math.min(FOV_DEGREES, capped);
+  return Math.min(upright, capped);
 }
 
 /** The longest the set waits for the scan's detailed mesh (its furniture) before standing without it, ms. */
@@ -466,7 +468,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       floorGroup: Group,
       ground: Stage["ground"],
       floorY: number,
-      extra: Partial<Pick<Stage, "cameraMount" | "settled" | "counts" | "doorColour">> & { tick?: (renderer: WebGLRenderer) => void; dispose?: () => void } = {},
+      extra: Partial<Pick<Stage, "cameraMount" | "settled" | "counts" | "doorColour">> & {
+        fov?: number; tick?: (renderer: WebGLRenderer) => void; dispose?: () => void } = {},
     ): Stage | null => {
       if (!hasWebGL()) return null;
       let renderer: WebGLRenderer;
@@ -510,7 +513,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
           renderer.setSize(w, h, false);
           camera.aspect = w / h;
-          camera.fov = fovFor(w / h);
+          camera.fov = fovFor(w / h, extra.fov ?? FOV_DEGREES);
           camera.updateProjectionMatrix();
         },
         draw(walker, lift, yaw, pitch) {
@@ -691,6 +694,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         ourStage(set, ground, floorY, {
           cameraMount: scanCameraMount(ground),
           doorColour: DRESS.wood,
+          fov: SET_FOV_DEGREES,
           tick(renderer) {
             photos?.step(renderer);
             if (photos && !told && photos.progress().done) {
@@ -855,6 +859,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       className={cn("absolute inset-0 overflow-hidden bg-surface-0 select-none", hud.locked ? "cursor-none" : "cursor-pointer")}
     >
       <canvas ref={canvas} data-testid="fp-canvas" className="absolute inset-0 block h-full w-full" />
+      {/* On a scan's set, a lens's soft vignette: the photographs' own falloff. */}
+      {onScan ? <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(0,0,0,0.22)_100%)]" /> : null}
       <div ref={labelLayer} aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden" />
 
       {/* The alarm on the edges of the view, in the banner's colours. No transition: the trip shows on the next frame. */}

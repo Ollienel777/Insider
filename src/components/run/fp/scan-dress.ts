@@ -42,6 +42,36 @@ export const DRESS = Object.freeze({
   openingM: 1.8,
 });
 
+/** A door's veneer, drawn once: long streaks of grain, darker and lighter, over white (the leaf's colour tints it). */
+export function woodGrain(): CanvasTexture {
+  const w = 128;
+  const h = 512;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const context = canvas.getContext("2d");
+  if (context) {
+    context.fillStyle = "white";
+    context.fillRect(0, 0, w, h);
+    let seed = 7;
+    const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let k = 0; k < 90; k++) {
+      const x = random() * w;
+      const shade = 0.72 + random() * 0.4;
+      const v = Math.round(255 * Math.min(1, shade));
+      context.strokeStyle = `rgba(${v},${v},${v},${0.25 + random() * 0.35})`;
+      context.lineWidth = 0.5 + random() * 2.5;
+      context.beginPath();
+      context.moveTo(x, 0);
+      for (let y = 0; y <= h; y += 16) context.lineTo(x + Math.sin(y / (40 + random() * 60) + k) * (2 + random() * 3), y);
+      context.stroke();
+    }
+  }
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  return texture;
+}
+
 /** A soft diagonal sheen, drawn once: what tells a pane of glass from a hole. */
 function sheenTexture(): CanvasTexture {
   const size = 256;
@@ -83,7 +113,7 @@ export function buildDress(plan: ScanPlan, gameDoors: readonly Vec[]): Group {
   };
   // Unlit, as the photographs are: the scene's lights are the fixture floors' night, not this building's day.
   const metal = keep(new MeshBasicMaterial({ color: DRESS.metal }));
-  const wood = keep(new MeshBasicMaterial({ color: DRESS.wood }));
+  const wood = keep(new MeshBasicMaterial({ color: DRESS.wood, map: woodGrain() }));
   const handle = keep(new MeshBasicMaterial({ color: srgb(0.784, 0.784, 0.761) }));
   const { floorY: y0, ceilingY: y1, floor } = plan;
   const doorTop = Math.min(y0 + FP.doorHeightM, y1 - 0.1);

@@ -34,6 +34,7 @@ import type { Ground, Vec } from "./ground";
 import type { Palette } from "./palette";
 import { CrossFade } from "./fade";
 import { sightOf, watchedNodes } from "./sight";
+import { woodGrain } from "./scan-dress";
 import { FP } from "./tuning";
 
 /** What the level fixes on the floor, placed by the view from the placed level. */
@@ -230,7 +231,7 @@ export class Actors {
 
   private buildDoors(keep: <T extends BufferGeometry | Material>(thing: T) => T): void {
     // A door of the scan's set is unlit, as the set is; our own floors' doors take their light.
-    const body = keep(this.doorColour ? new MeshBasicMaterial({ color: this.doorColour }) : new MeshLambertMaterial({ color: this.palette.n500 }));
+    const body = keep(this.doorColour ? new MeshBasicMaterial({ color: this.doorColour, map: woodGrain() }) : new MeshLambertMaterial({ color: this.palette.n500 }));
     const plate = keep(new MeshLambertMaterial({ color: this.palette.n700 }));
     const bar = keep(new MeshLambertMaterial({ color: this.palette.n300 }));
     const lock = keep(new MeshBasicMaterial({ color: this.palette.danger }));
