@@ -41,7 +41,7 @@ import { useTurnClock } from "./turn-clock";
 import { FirstMoveHint } from "./fp/first-move-hint";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
-import { ChiefCalls } from "./chief-calls";
+import { ChiefCalls, askDelay, afterFailure, type AskedAbout } from "./chief-calls";
 import { loadCrewPlan, PLAN_HEADING, planSourceOf, type StoredCrewPlan } from "./crew-plan-store";
 import { clearRunLog, keepRunLogInMemory, runLogOf, saveRunLog } from "./run-log-store";
 import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postureOf, runRecordOf, type RunRecord } from "./run-history";
@@ -142,6 +142,12 @@ export function RunScreen({
   const latestRun = useRef<RunState | null>(null);
   const pendingChief = useRef<AbortController | null>(null);
   const chiefCalls = useRef(new ChiefCalls());
+  /** The last event a Chief call went out about, so a Lockdown re-sighting doesn't re-ask on every sweep (issue 190). */
+  const askedAbout = useRef<AskedAbout | null>(null);
+  /** A Lockdown re-sighting in a new zone that came too soon: asked about once the radio has had its time. */
+  const deferredChief = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Whether the turns run on the clock (Live, or first person): only then does a re-plan wait for the radio. */
+  const clocked = useRef(false);
   /** Turn number → where the Chief's orders logged on that turn came from, for the Debrief. */
   const chiefSources = useRef(new Map<number, ChiefAnswer["source"]>());
   /** The Chief's answer that landed after the run ended, if one did. */
@@ -158,6 +164,9 @@ export function RunScreen({
     pendingChief.current?.abort();
     pendingChief.current = null;
     chiefCalls.current.reset();
+    askedAbout.current = null;
+    if (deferredChief.current) clearTimeout(deferredChief.current);
+    deferredChief.current = null;
     chiefSources.current = new Map();
     lateChief.current = null;
     setChief({ status: "idle" });
@@ -265,18 +274,54 @@ export function RunScreen({
   useEffect(() => {
     latestRun.current = run;
   }, [run]);
-  useEffect(() => () => pendingChief.current?.abort(), []);
+  useEffect(
+    () => () => {
+      pendingChief.current?.abort();
+      if (deferredChief.current) clearTimeout(deferredChief.current);
+    },
+    [],
+  );
 
   // A call out is let finish when the alarm moves again; the newest event that waited is asked about after it (issue 172).
   const callChiefNext = useRef<(state: RunState, seq: number, queued: boolean) => void>(() => {});
   const callChief = useCallback(
-    (state: RunState, seq: number, queued = false) => {
+    (state: RunState, seq: number, queued = false, force = false) => {
       if (!placed || !zones) {
         // No board to ask about: a queued call must not hold the queue shut.
         if (queued) chiefCalls.current.reset();
         return;
       }
+      const event = state.alarmEvents[seq];
+      // A Lockdown re-sighting in the same place asks nothing: the orders out still stand. One in a new
+      // zone too soon after the last re-plan waits, so the radio reads that re-plan in full (issue 190).
+      const now = performance.now();
+      // Retry is the player asking: it always goes, whatever was asked about last.
+      const delay = event && !force ? askDelay(event, askedAbout.current, now, clocked.current) : 0;
+      if (delay !== 0) {
+        // A queued call skipped: free the queue, so the next event can ask.
+        if (queued) chiefCalls.current.reset();
+        if (delay !== null) {
+          // Only the newest waits: when its time comes, the run's newest event is asked about, if still worth it.
+          if (deferredChief.current) clearTimeout(deferredChief.current);
+          deferredChief.current = setTimeout(() => {
+            deferredChief.current = null;
+            const current = latestRun.current;
+            if (current && current.alarmEvents.length > 0) callChiefNext.current(current, current.alarmEvents.length - 1, false);
+          }, delay);
+        }
+        return;
+      }
       if (!queued && !chiefCalls.current.ask(seq)) return;
+      // Asked about now: a re-sighting waiting for its time has nothing left to ask.
+      if (deferredChief.current) clearTimeout(deferredChief.current);
+      deferredChief.current = null;
+      const before = askedAbout.current;
+      const asked: AskedAbout | null = event ? { to: event.to, zone: event.lastKnownZone, at: now } : null;
+      if (asked) askedAbout.current = asked;
+      // A call that fails counts as not asked, so Retry, or the next re-sighting there, asks again.
+      const forget = () => {
+        if (asked) askedAbout.current = afterFailure(askedAbout.current, asked, before);
+      };
       const controller = new AbortController();
       pendingChief.current = controller;
       // This call is done: the newest event that waited behind it goes next, on the run as it stands now.
@@ -298,12 +343,15 @@ export function RunScreen({
       } catch (error) {
         // A board the request can't carry: the panel says so, and the turn (and its log) goes on.
         setChief({ status: "error", seq, message: error instanceof Error ? error.message : String(error) });
+        forget();
         next();
         return;
       }
       // A queued call leaves an answer before it on the panel until its own lands, so that answer is seen;
       // an error before it gives way to "pending", so the panel never reads as failed while a call is out.
-      setChief((shown) => (queued && shown.status === "ready" ? shown : { status: "pending", seq }));
+      // So does a re-plan at Lockdown: the radio keeps reading the answer on air until the new one lands.
+      const reask = event?.from === "lockdown" && event.to === "lockdown";
+      setChief((shown) => ((queued || reask) && shown.status === "ready" ? shown : { status: "pending", seq }));
       askChief(request, { signal: controller.signal }).then(
         (answer) => {
           // Aborted by a restart or by leaving the screen, or a call from before a restart: stale.
@@ -334,6 +382,7 @@ export function RunScreen({
         (error: unknown) => {
           if (controller.signal.aborted || !chiefCalls.current.isOut(seq)) return;
           setChief({ status: "error", seq, message: error instanceof Error ? error.message : String(error) });
+          forget();
           next();
         },
       );
@@ -393,6 +442,9 @@ export function RunScreen({
   }, []);
   const fpTurn = useCallback((current: RunState): Action => fpHeld.current?.(current) ?? { kind: "wait" }, []);
   const layoutMode = fpOn ? "live" : playMode;
+  useEffect(() => {
+    clocked.current = layoutMode === "live";
+  }, [layoutMode]);
   // On a scan, the clock waits until first person lets the player loose (the picture around them is in).
   const [fpReady, setFpReady] = useState(false);
   const clock = useTurnClock({
@@ -411,7 +463,7 @@ export function RunScreen({
 
   const retryChief = useCallback(() => {
     const current = latestRun.current;
-    if (current && current.alarmEvents.length > 0) callChief(current, current.alarmEvents.length - 1);
+    if (current && current.alarmEvents.length > 0) callChief(current, current.alarmEvents.length - 1, false, true);
   }, [callChief]);
 
   /** Forgets the earlier runs and places the level again, in its default posture. */
