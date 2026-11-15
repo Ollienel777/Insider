@@ -37,7 +37,7 @@ out of this public repo.
 | 5 | 0:47 | Paste the order, **Enter**. Click a camera on the board, then **Esc**. **Start the run** as the plan shows | "Every guard, camera and lock says which data put it there." Then: "The crew answers in plain English, and the board checks its plan." | **No crew reply**: "The model was slow, so the board worked out this plan, with no model." Greyed order box: the F1 tab. |
 | 6 | 1:00 | Click the view once; hand over. **See the debrief** on the end card | "You're in the real building, its own scan. W to move, the mouse to look, hold E at a door. That light is a camera: stand in it for a second." At the alarm: "That camera has you. The Chief is re-planning live: watch the guards converge on you. Keep going, towards the guards." At the catch: "Caught. The debrief shows how." | No capture by **1:30**: "The Chief is still hunting you. Here's the replay." Then tab **7 Debrief**. Scan fails: the F1 tab. |
 | 7 | 1:30 | Drag **Turn**; point at the Chief's decisions | "The debrief replays every move. And here's why: every decision the Chief made, with its reason. And that search, era, class, a floor on the market tonight, is the one a location scout runs on Monday, on CoStar's own availability." | "No run yet": "The debrief replays the run turn by turn; you just saw how it ended." |
-| 8 | 1:45 | The **last browser tab**, the Owner tab you prepared (not the app's tab 8) | Showcase (#206): "And for the owner, a made-up setup: turn one camera, and its open windows drop from 40 to 24." F1's pair instead: "And for the owner: their own security, here made up. Seven get out; move C2, one in fifty." | Result gone: scroll to **Compare two setups**, then **Compare**. On the showcase, fill its 4.2 s: "The crew tries fifty ways in, on each." |
+| 8 | 1:45 | The **last browser tab**, the Owner tab you prepared (not the app's tab 8) | Showcase (#206): "And for the owner, a made-up setup: turn one camera, and its open windows drop from [before] to [after]." (figures on the printed note) F1's pair instead: "And for the owner: their own security, here made up. Seven get out; move C2, one in fifty." | Result gone: scroll to **Compare two setups**, then **Compare**. On the showcase, fill its 4.2 s: "The crew tries fifty ways in, on each." |
 
 Ends at **1:55**, with 5 s spare for beat 5's crew reply, which wasn't
 measured live.
@@ -542,21 +542,26 @@ board:
 
 - "A made-up setup for the demo, not this building's real security.";
 - **Two setups, side by side**, tagged **Rule-based**;
-- A, "Demo: generated security"; B, "Demo: generated security, C2 turned";
-- "Coverage 21% → 31%, open windows 40 of 40 → 24 of 40.";
-- the counts out of 50, read off the screen: "50 → 19 of 50" on #206's runs.
+- A, "Demo: generated security", and B, the same setup with one camera
+  turned;
+- the compare's line: coverage and open windows, before → after;
+- the counts out of 50.
+
+The figures come from the real scan's board, so they aren't in this public
+repo. The printed note carries them, beside the answer key (checklist).
 
 1. Click the last browser tab, the Owner tab you prepared.
 2. Say: **"And for the owner, a made-up setup: turn one camera, and its open
-   windows drop from 40 to 24."** That's about 7 s.
+   windows drop from [before] to [after]."** Read the two figures off the
+   screen, or the printed note. That's about 7 s.
 3. If time allows, click **Show on the board** under B.
 
 Say the open windows, not the counts out of 50. Coverage and open windows
 depend only on the board, so they hold on every run. The counts hold only
 while the crew model misses its 4 s window and the rule-based stand-in plays,
 which it did on every run on #206. If the model answers in time, the counts
-change. The Chief's fix changes nothing here (50 → 50), so the beat shows the
-compare, not the fix.
+change. The Chief's fix changes nothing here, so the beat shows the compare,
+not the fix.
 
 Fallback: the tab lost its result, because it was reloaded.
 
@@ -566,7 +571,7 @@ Fallback: the tab lost its result, because it was reloaded.
    call's timeout. Fill it: **"The crew tries fifty ways in, on each."** That
    uses the 5 s spare.
 
-Live only, not walked here. The numbers and the timing are #206's, from its
+Live only, not walked here. The figures and the timing are #206's, from its
 author's live walk.
 
 ### Fallback: F1's prepared pair
@@ -687,7 +692,9 @@ in the server's memory.
   - which camera to stand in on the run, and where;
   - which way to send the judge after the alarm, towards the guards;
   - which door's picture tears, to steer around;
-  - the room the end card names.
+  - the room the end card names;
+  - the showcase building's Owner Mode figures (beat 8): which camera turns,
+    and the coverage, open windows and counts out of 50, before and after.
 
 **The last few minutes, in this order:**
 
@@ -706,10 +713,11 @@ in the server's memory.
   2. Check for "A made-up setup for the demo, not this building's real
      security."
   3. Scroll the side panel to **Compare two setups**. A is "Demo: generated
-     security" and B is "Demo: generated security, C2 turned".
-  4. Click **Compare**, and wait about 4.2 s. Check for "Coverage 21% → 31%,
-     open windows 40 of 40 → 24 of 40." The counts out of 50 can differ from
-     "50 → 19" if the model answered in time; the beat doesn't say them.
+     security", and B is the same setup with one camera turned.
+  4. Click **Compare**, and wait about 4.2 s. Check that the compare shows
+     fewer open windows for the turned camera, matching the printed note. The
+     counts out of 50 can differ from the note if the model answered in time;
+     the beat doesn't say them.
   5. Leave the tab on the result.
 
   **If #206 isn't merged, or this tab won't load, prepare F1's pair
@@ -816,7 +824,7 @@ in the repo or the video's files.
    when it merges:
    - #202, the scan floor fill;
    - #195, the Hobbs header and page titles;
-   - #206, Owner Mode on the showcase building. Beat 8 is written for it, from
-     its author's live numbers: coverage 21% → 31%, open windows 40 → 24 of
-     40, and about 4.2 s per compare. F1's pair is the marked fallback until
-     it merges, or if the showcase's Owner tab won't load.
+   - #206, Owner Mode on the showcase building. Beat 8 is written for it, with
+     about 4.2 s per compare; its figures are on the printed note, not here.
+     F1's pair is the marked fallback until it merges, or if the showcase's
+     Owner tab won't load.
