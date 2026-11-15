@@ -2,7 +2,13 @@
 // `patrolTempo` turns: along its patrol loop, or, once ordered, toward its
 // target by A* (see `GuardTarget` for what each intent does there). Guards
 // carry keys, so locked doors do not stop them. Cleaners walk the same way.
+//
+// Under a run's pursuit (real-time play, state.ts), a guard that has reached
+// the node the player was last seen on, and found nobody, does not stand
+// there: it searches the nodes round it, each guard starting somewhere
+// different, until a sighting or new orders move it or the alarm falls to Calm.
 import type { GuardIntent } from "@/domain";
+import { withinHops } from "./noise";
 import { shortestPath } from "./path";
 import { convergeOn, zoneTarget, type Board, type Facing, type GuardState, type GuardTarget, type RunState } from "./state";
 
@@ -22,6 +28,10 @@ export function moveGuards(board: Board, guards: readonly GuardState[]): GuardSt
 export function hop(board: Board, guard: GuardState): GuardState {
   let { waypoint, target } = guard;
   let goals: readonly string[];
+  // Standing on the last-seen node with nobody there: the search round it starts (a pursuit only).
+  if (target?.intent === "converge" && target.search && target.nodes.length === 1 && target.nodes[0] === guard.nodeId) {
+    target = searchRound(board, guard, target) ?? target;
+  }
   if (target?.intent === "sweep") {
     // Skip past the sweep node it is standing on, round the zone.
     let visit = target.visit;
@@ -97,7 +107,7 @@ export function orderGuard(
     if (!zone) return { ok: false, reason: `no zone "${zoneId}"` };
     const guard = run.guards[index];
     if (intent === "converge" && run.lastSeen && zone.nodes.includes(run.lastSeen.nodeId)) {
-      target = convergeOn(zoneId, run.lastSeen);
+      target = convergeOn(zoneId, run.lastSeen, run.pursuit?.searchHops);
     } else if (intent === "sweep") {
       target = { zoneId, nodes: sweepOrder(run.board, guard.nodeId, zone.nodes), intent, visit: 0 };
     } else {
@@ -106,6 +116,22 @@ export function orderGuard(
   }
   const guards = run.guards.map((g, i) => (i === index ? { ...g, target } : g));
   return { ok: true, run: { ...run, guards } };
+}
+
+/**
+ * The search a guard starts from the last-seen node `target` sent it to: a
+ * sweep of every node within `target.search` hops of it. Each guard starts at
+ * a different point of the round, by its id, so guards that arrive together
+ * fan out. Null when the node has no neighbours to search.
+ */
+function searchRound(board: Board, guard: GuardState, target: GuardTarget): GuardTarget | null {
+  const centre = target.nodes[0];
+  const round = [...withinHops(board, centre, target.search ?? 0)].filter((id) => id !== centre);
+  if (round.length === 0) return null;
+  const nodes = sweepOrder(board, guard.nodeId, round);
+  let start = 0;
+  for (let i = 0; i < guard.id.length; i++) start = (start * 31 + guard.id.charCodeAt(i)) % nodes.length;
+  return { zoneId: target.zoneId, nodes, intent: "sweep", visit: start, search: target.search };
 }
 
 /** A sweep's order: from the zone node nearest `from`, each next one the nearest not yet taken. */
