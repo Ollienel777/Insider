@@ -127,7 +127,6 @@ export function RunScreen({
   // Nothing waits on it: the engine already has the guards converging.
   const [chief, setChief] = useState<ChiefState>({ status: "idle" });
   const latestRun = useRef<RunState | null>(null);
-  const latestSeq = useRef(-1);
   const pendingChief = useRef<AbortController | null>(null);
   const chiefCalls = useRef(new ChiefCalls());
   /** Turn number → where the Chief's orders logged on that turn came from, for the Debrief. */
@@ -146,7 +145,6 @@ export function RunScreen({
     pendingChief.current?.abort();
     pendingChief.current = null;
     chiefCalls.current.reset();
-    latestSeq.current = -1;
     chiefSources.current = new Map();
     lateChief.current = null;
     setChief({ status: "idle" });
@@ -243,11 +241,12 @@ export function RunScreen({
       if (!queued && !chiefCalls.current.ask(seq)) return;
       const controller = new AbortController();
       pendingChief.current = controller;
-      latestSeq.current = seq;
       // This call is done: the newest event that waited behind it goes next, on the run as it stands now.
       const next = () => {
         const waiting = chiefCalls.current.settled(seq);
-        if (waiting !== null && latestRun.current) callChiefNext.current(latestRun.current, waiting, true);
+        if (waiting === null) return;
+        if (latestRun.current) callChiefNext.current(latestRun.current, waiting, true);
+        else chiefCalls.current.reset();
       };
       let request: ReturnType<typeof chiefRequest>;
       try {
@@ -264,8 +263,9 @@ export function RunScreen({
         next();
         return;
       }
-      // A queued call leaves the answer before it on the panel until its own lands, so that answer is seen.
-      if (!queued) setChief({ status: "pending", seq });
+      // A queued call leaves an answer before it on the panel until its own lands, so that answer is seen;
+      // an error before it gives way to "pending", so the panel never reads as failed while a call is out.
+      setChief((shown) => (queued && shown.status === "ready" ? shown : { status: "pending", seq }));
       askChief(request, { signal: controller.signal }).then(
         (answer) => {
           // Aborted by a restart or by leaving the screen, or a call from before a restart: stale.

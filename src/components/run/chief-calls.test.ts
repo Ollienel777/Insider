@@ -16,7 +16,6 @@ describe("one Chief call out at a time (issue 172)", () => {
     expect(calls.ask(1)).toBe(false);
     expect(calls.ask(2)).toBe(false);
     expect(calls.isOut(0)).toBe(true);
-    expect(calls.newest()).toBe(2);
     expect(calls.settled(0)).toBe(2);
     expect(calls.isOut(2)).toBe(true);
     expect(calls.settled(2)).toBeNull();

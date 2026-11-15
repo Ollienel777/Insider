@@ -4,6 +4,13 @@
 // landed. Now a call out is let finish, and its orders apply; the events that
 // arrived meanwhile wait, and only the newest of them is asked about next,
 // with the run as it stands then. A run's restart drops everything.
+//
+// An answer about an older event applies even when the alarm has moved since
+// (Alert's orders landing at Suspicious), its locks included: they are real
+// orders the player watched arrive, and the next call re-plans from the board
+// they left. Nothing unlocks a superseded answer's doors; only calm drops
+// orders (`applyChiefOrders`). A call has the browser's own deadline
+// (`CHIEF_CLIENT_TIMEOUT_MS`), so a hung one fails and frees the queue.
 
 export class ChiefCalls {
   private out: number | null = null;
@@ -21,7 +28,10 @@ export class ChiefCalls {
     return false;
   }
 
-  /** The call for `seq` answered or failed: the newest event that waited, to ask about next, or null. */
+  /**
+   * The call for `seq` answered or failed: the newest event that waited, to ask about next, or null.
+   * That event is marked out, so the caller sends its call, or calls `reset` when it can't.
+   */
   settled(seq: number): number | null {
     if (this.out !== seq) return null;
     this.out = null;
@@ -35,11 +45,6 @@ export class ChiefCalls {
   /** Whether `seq`'s call is the one out. */
   isOut(seq: number): boolean {
     return this.out === seq;
-  }
-
-  /** The newest event asked about or waiting, or null. */
-  newest(): number | null {
-    return this.waiting ?? this.out;
   }
 
   /** A restart: no call out, nothing waiting. */

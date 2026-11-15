@@ -38,6 +38,17 @@ const clampName = (name: string, fallback: string) => {
   return trimmed.length > MAX_NAME ? `${trimmed.slice(0, MAX_NAME - 1)}…` : trimmed;
 };
 
+/**
+ * A scan's room label as a plain name for the model's prompt: free text from whoever made the scan, so
+ * only letters, digits, spaces and simple punctuation stay, on one line (issue 172).
+ */
+export function plainName(label: string): string {
+  return label
+    .replace(/[^\p{L}\p{N} .,'&()/-]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** The zones the Chief may name on this placed level. */
 export function chiefZones(placed: PlacedLevel): ChiefZones {
   const { level } = placed;
@@ -74,7 +85,7 @@ export function chiefZones(placed: PlacedLevel): ChiefZones {
     const label = level.floor.rooms.find((r) => r.id === zone)?.label?.trim();
     if (scanned) {
       area += 1;
-      add(zone, `area-${area}`, unique(label || `Area ${area}`));
+      add(zone, `area-${area}`, unique(plainName(label ?? "") || `Area ${area}`));
     } else add(zone, zone, label || zone);
   }
   return { zones, toEngine, toChief };
@@ -142,19 +153,41 @@ export function toEngineOrders(orders: ChiefOrders, zones: ChiefZones): ChiefOrd
   };
 }
 
-/** Asks the Chief; throws with the server's message on a failure. */
+/**
+ * The browser's own deadline for a Chief call: a little over the server's 4 s budget, so a hung
+ * request (a dropped route, a stalled server) fails here and the next alarm event's call can go (issue 172).
+ */
+export const CHIEF_CLIENT_TIMEOUT_MS = 8_000;
+
+/** Asks the Chief; throws with the server's message on a failure, and on no answer within `timeoutMs`. */
 export async function askChief(
   request: ChiefRequest,
-  options: { signal?: AbortSignal; fetch?: typeof fetch } = {},
+  options: { signal?: AbortSignal; fetch?: typeof fetch; timeoutMs?: number } = {},
 ): Promise<ChiefAnswer> {
   const doFetch = options.fetch ?? fetch;
-  const response = await doFetch("/api/chief", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(request),
-    signal: options.signal,
-  });
-  const body = (await response.json().catch(() => null)) as (Partial<ChiefAnswer> & { error?: string }) | null;
+  const timeoutMs = options.timeoutMs ?? CHIEF_CLIENT_TIMEOUT_MS;
+  const deadline = new AbortController();
+  const timer = setTimeout(() => deadline.abort(), timeoutMs);
+  const signal = options.signal ? AbortSignal.any([options.signal, deadline.signal]) : deadline.signal;
+  let response: Response;
+  let body: (Partial<ChiefAnswer> & { error?: string }) | null;
+  try {
+    response = await doFetch("/api/chief", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+      signal,
+    });
+    body = (await response.json().catch(() => null)) as typeof body;
+    if (deadline.signal.aborted) throw new Error("timed out");
+  } catch (error) {
+    if (deadline.signal.aborted && !options.signal?.aborted) {
+      throw new Error(`the Chief didn't answer within ${Math.round(timeoutMs / 1000)} s`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
   if (!response.ok || !body) throw new Error(body?.error ?? `the Chief didn't answer (HTTP ${response.status})`);
   noteResponse(body);
   // Only an answer that says the model wrote it reads as live. A missing or unknown source reads as recorded:
