@@ -1,6 +1,7 @@
 // Coverage and open windows on screen (issue 120): what the floor plan
 // says about a setup, beside what the crew's attempts say. Read from
 // `measureSetup`, so it needs no batch and follows every edit.
+import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { coverageLine, firstWindowLine, measureChange, timingLine, windowsLine, type SetupMeasure } from "./setup-measure";
 
@@ -44,9 +45,7 @@ export function MeasureLines({
           {timing}
         </p>
       ) : null}
-      <p data-testid={`${testId}-note`} className="text-xs">
-        {MEASURE_NOTE(measure)}
-      </p>
+      <MeasureNote measure={measure} testId={`${testId}-note`} />
     </div>
   );
 }
@@ -81,8 +80,27 @@ export function MeasureChange({ from, to, testId }: { from: SetupMeasure; to: Se
       >
         {measureChange(from, to)}.
       </p>
-      <p className="text-xs text-text-2">{MEASURE_NOTE(to)}</p>
+      <MeasureNote measure={to} />
     </div>
+  );
+}
+
+/**
+ * What the two numbers mean, folded under a one-line summary: printed in full
+ * under every count, its sixty words pushed the strategies and the Chief's fix
+ * below the fold on Owner Mode's panel (issue 166). The text is unchanged.
+ */
+function MeasureNote({ measure, testId }: { measure: Pick<SetupMeasure, "noun">; testId?: string }) {
+  return (
+    <details className="text-xs text-text-2">
+      <summary className="inline-flex min-h-8 cursor-pointer list-none items-center gap-1 rounded-sm hover:text-text-1 [&::-webkit-details-marker]:hidden">
+        <ChevronRight aria-hidden className="size-4 stroke-[1.5] transition-transform duration-fast [[open]>summary_&]:rotate-90" />
+        What these numbers mean
+      </summary>
+      <p data-testid={testId} className="mt-1">
+        {MEASURE_NOTE(measure)}
+      </p>
+    </details>
   );
 }
 
