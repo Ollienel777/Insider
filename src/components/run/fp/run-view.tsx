@@ -10,8 +10,10 @@ import { Footprints, Grid3x3, type LucideIcon } from "lucide-react";
 import type { FloorGraph } from "@/domain";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import type { Pace } from "../play-hud";
 import type { ScanHandle } from "./scan-preload";
 import { FP } from "./tuning";
+import { buildWorld, edgePath, type World } from "./world";
 import type { RunView, RunViewState } from "./view-store";
 
 export type { ScanHandle } from "./scan-preload";
@@ -28,8 +30,24 @@ export const FirstPersonView = dynamic(() => import("./first-person-view"), {
 /** First person's turn: short enough that the guards never seem to wait on the player (issue 115). */
 export { FP_TURN_MS as FIRST_PERSON_TURN_MS } from "./tuning";
 
-/** First person's pace, for the HUD to speak in seconds rather than hops and turns (`usePlayHud`). */
-export const FIRST_PERSON_PACE = Object.freeze({ unitM: FP.unitM, runMps: FP.runMps, turnMs: FP.turnMs });
+/** Each floor's walls, built once for the HUD's pace however often it asks. */
+const worlds = new WeakMap<FloorGraph, World>();
+
+/**
+ * First person's pace on `floor`, for the HUD to speak in seconds rather than
+ * hops and turns (`usePlayHud`): the controller's own speed, a walk while
+ * Shift is held and a run otherwise, and each edge walked through its doorway
+ * as the body walks it.
+ */
+export function firstPersonPace(floor: FloorGraph, walking: boolean): Pace {
+  const pace = { unitM: FP.unitM, mps: walking ? FP.walkMps : FP.runMps, turnMs: FP.turnMs };
+  // A live scan's floor has no walls of ours to walk through: node to node in a straight line.
+  if (floor.source !== "fixture") return pace;
+  let world = worlds.get(floor);
+  if (!world) worlds.set(floor, (world = buildWorld(floor)));
+  const built = world;
+  return { ...pace, edge: (a, b) => edgePath(built, a, b) };
+}
 
 /** The turn the clock plays for first person, which the view supplies: the next pick while E is held, or a wait. */
 export type HeldAction = (run: import("@/engine").RunState) => import("@/engine").Action;

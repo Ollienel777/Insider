@@ -150,7 +150,7 @@ export function OwnerReady({
     return boardOf(manifest, floor, fix.rerun.fixed, OWNER_SEED) ?? batchBefore;
   }, [batchBefore, fix, side, manifest, floor]);
 
-  // Coverage and unwatched routes (issue 120): measured over the nights each setup's batch plays (issue 132),
+  // Coverage and open windows (issue 120): measured over the nights each setup's batch plays (issue 132),
   // so they follow every edit with no batch. A draft with a problem gets none: the batch would not play it, and
   // the board shows only the part of it that fits.
   const editMeasure = useMemo(

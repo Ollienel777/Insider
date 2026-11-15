@@ -66,6 +66,8 @@ export interface FirstPersonViewProps {
   scan?: ScanHandle | null;
   /** The player is let loose (true), or the view is gone (false): on a scan the Run screen holds the clock until then. */
   onReady?: (ready: boolean) => void;
+  /** Shift went down or up: the HUD's time left is then at a walk or a run. */
+  onWalking?: (walking: boolean) => void;
 }
 
 /** What a scan's stage says while it loads: null once the player is let loose. */
@@ -129,7 +131,7 @@ function hasWebGL(): boolean {
   }
 }
 
-export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, scan = null, onReady }: FirstPersonViewProps) {
+export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, scan = null, onReady, onWalking }: FirstPersonViewProps) {
   const surface = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const labelLayer = useRef<HTMLDivElement>(null);
@@ -142,10 +144,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
   // The loop reads the latest run and the latest `play` without being rebuilt for each turn. Updated in a
   // layout effect, before the browser paints, so no animation frame reads the run before last.
-  const latest = useRef({ run, onAct, onUnavailable, onHeld, onReady });
+  const latest = useRef({ run, onAct, onUnavailable, onHeld, onReady, onWalking });
   useLayoutEffect(() => {
-    latest.current = { run, onAct, onUnavailable, onHeld, onReady };
-  }, [run, onAct, onUnavailable, onHeld, onReady]);
+    latest.current = { run, onAct, onUnavailable, onHeld, onReady, onWalking };
+  }, [run, onAct, onUnavailable, onHeld, onReady, onWalking]);
 
   useEffect(() => {
     const host = surface.current;
@@ -224,6 +226,9 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       let bob = 0;
       let hudKey = "";
       let areas = false;
+      // Each mount starts at a run, whatever the Run screen last heard.
+      let walking = false;
+      latest.current.onWalking?.(false);
       // The turn clock asks the view what a turn the player lets run out should be.
       latest.current.onHeld((state) => heldAction(walker, ground, state, { use: controller.using, yaw: controller.yaw }));
       // For poking at from the console in development (a scripted walk): never in a production build.
@@ -249,6 +254,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         const waiting = !drawn && now < looseAt && !on.settled(walker.pos);
         if (waiting) owed = 0;
         const controls = controller.controls();
+        if (controls.walk !== walking) {
+          walking = controls.walk;
+          latest.current.onWalking?.(walking);
+        }
         use ||= controls.usePressed;
         owed += dt;
         const stood = walker.pos;
