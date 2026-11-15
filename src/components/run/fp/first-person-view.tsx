@@ -23,7 +23,7 @@ import { Actors, type Marks } from "./actors";
 import { Controller } from "./controller";
 import { ControlsHint } from "./controls-hint";
 import { hintDone, hintPhase, hintTicks, type HintPhase, type HintProgress } from "./hint";
-import { noiseCue, noticeOf, type NoiseCue, type Notice } from "./notice";
+import { noticeOf, type Notice } from "./notice";
 import { readPalette } from "./palette";
 import { buildFloorGroup, disposeGroup, type RoomTone } from "./scene";
 import { sightOf, type Sight } from "./sight";
@@ -89,7 +89,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
     phase: "shown",
     progress: { walkedM: 0, lookedRad: 0, sneaked: false, used: false },
   });
-  const [notice, setNotice] = useState<{ notice: Notice; noise: NoiseCue } | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
 
   const world = useMemo(() => buildWorld(placed.level.floor), [placed]);
   const ground = useMemo(() => groundOf(world), [world]);
@@ -198,7 +198,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
     const point = new Vector3();
     let seen: RunState | null = null;
     let sight: Sight[] = [];
-    let noise: NoiseCue = noiseCue(first);
     // What the player has tried, for the hint; when it was done, for its fade.
     const progress: HintProgress = { walkedM: 0, lookedRad: 0, sneaked: false, used: false };
     let doneAt: number | null = null;
@@ -225,7 +224,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         actors.sync(current, now);
         seen = current;
         sight = sightOf(current, ground.unitM);
-        noise = noiseCue(current);
       }
 
       // The movement runs at a fixed step, however fast the screen draws.
@@ -332,7 +330,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       // The meter changes only with the run: read once a new state has come in.
       if (seen !== noticedRun) {
         noticedRun = seen;
-        setNotice({ notice: noticeOf(current, sight), noise });
+        setNotice(noticeOf(current, sight));
       }
       if (!drawn) {
         drawn = true;
@@ -388,7 +386,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         />
       ) : null}
 
-      {notice && !over ? <SuspicionMeter notice={notice.notice} noise={notice.noise} turn={run.turn} /> : null}
+      {notice && !over ? <SuspicionMeter notice={notice} /> : null}
       {over ? null : <ControlsHint phase={hint.phase} ticks={hintTicks(hint.progress)} dragToLook={hud.refused} />}
 
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-end px-6 py-3">
