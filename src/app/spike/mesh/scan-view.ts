@@ -59,7 +59,7 @@ import { blankCube, PanoStore, type PanoCounts, type PanoUse } from "./panos";
 import { createPhotoMaterial, createPhotoUniforms, type PhotoUniforms } from "./photo-material";
 import { createScanMaterial, SLOTS } from "./projection";
 import { createSphereMaterial } from "./sphere-material";
-import { createPhotoViewMaterial, photoShift, planesFor } from "./photo-view-material";
+import { createPhotoViewMaterial, photoShift, planesFor, REACH } from "./photo-view-material";
 
 export type { ScanPose } from "@/lib/scan-mesh/pose";
 export { eyePose, yawFromHeading } from "@/lib/scan-mesh/pose";
@@ -97,6 +97,8 @@ export interface ScanViewOptions {
    * (photo-view-material.ts), dissolving into the next when it changes.
    */
   view?: "spheres" | "mesh" | "photo";
+  /** In the photo view: how far from its scan position the picture follows the eye, metres (photo-view-material.ts's REACH by default). */
+  reach?: number;
   /** Vertical field of view, degrees. */
   fov?: number;
   /** Called whenever `status()` has news: a phase, the detailed mesh, the exposure match. */
@@ -290,6 +292,7 @@ export class ScanView {
   private photoFade = 1;
   /** In the photo view: tint what the depth is not trusted to move (debug, setConfidenceView). */
   private showConfidence = false;
+  private reachShown: number;
   /** The detailed mesh's fitted planes (five numbers each), once the repair is in; and which were last handed to each slot's sphere. */
   private planes: Float32Array | null = null;
   private planesShown: string[] = [];
@@ -345,6 +348,7 @@ export class ScanView {
     this.fanMaterial = createPhotoMaterial(this.photo, "stand-in", null, 2);
     this.sphereView = options.view === "spheres";
     this.photoView = options.view === undefined || options.view === "photo";
+    this.reachShown = options.reach ?? REACH;
     if (this.photoView) {
       const { directions, index } = cubeSphere(SPHERE_CELLS);
       const sphere = new BufferGeometry();
@@ -481,7 +485,7 @@ export class ScanView {
   private drawPhotoSlot(slot: number, target: WebGLRenderTarget | null): void {
     const origin = (this.photo.uPanoPos.value as Vector3[])[slot];
     const eye = this.camera.position;
-    const shift = photoShift([eye.x, eye.y, eye.z], [origin.x, origin.y, origin.z]);
+    const shift = photoShift([eye.x, eye.y, eye.z], [origin.x, origin.y, origin.z], this.reachShown);
     this.photoMeshes.forEach((mesh, i) => (mesh.visible = i === slot));
     const uniforms = (this.photoMeshes[slot].material as ShaderMaterial).uniforms;
     (uniforms.uShift.value as Vector3).set(shift[0], shift[1], shift[2]);
@@ -670,6 +674,15 @@ export class ScanView {
   }
 
   /** 0 the picture, 1 the coverage, 2 the doubles (projection.ts says what the colours mean). */
+  /** In the photo view: how far from its scan position the picture follows the eye, metres. Less warps less and floats more. */
+  get reach(): number {
+    return this.reachShown;
+  }
+
+  setReach(metres: number): void {
+    this.reachShown = Math.min(1.5, Math.max(0, metres));
+  }
+
   /** In the photo view: tint red what is held still because its depth is not trusted. */
   setConfidenceView(on: boolean): void {
     this.showConfidence = on;

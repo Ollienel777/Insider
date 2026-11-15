@@ -11,7 +11,8 @@
 // carried across gaps; `shards` or `planes` for one of the two), `view=mesh`
 // (draw the mesh, painted from the panoramas and its textures), `view=spheres`
 // (the panoramas as depth spheres over the mesh), or by default `view=photo`
-// (the nearest panorama alone, warped a little; V shows the mesh), `debug=1`.
+// (the nearest panorama alone, warped a little; V shows the mesh), `reach=0.38`
+// (how far the photo view's picture follows the eye, metres; [ and ] change it), `debug=1`.
 import type { Metadata } from "next";
 import { MESH_RESOLUTIONS, PANO_RESOLUTIONS, type MeshResolution, type PanoResolution } from "@/lib/scan-mesh/manifest";
 import { ScanWalkScreen } from "./scan-walk";
@@ -33,6 +34,12 @@ function pick<T extends string>(value: string | null, allowed: readonly T[], fal
   return (allowed as readonly string[]).includes(value ?? "") ? (value as T) : fallback;
 }
 
+/** `reach=0.35`: the photo view's reach, metres, from 0 to 1.5; anything else is the default. */
+function reachOf(value: string | null): number | null {
+  const metres = value === null ? NaN : Number(value);
+  return Number.isFinite(metres) && metres >= 0 && metres <= 1.5 ? metres : null;
+}
+
 export default async function ScanMeshPage({ searchParams }: { searchParams: Promise<Search> }) {
   const search = await searchParams;
   return (
@@ -44,6 +51,7 @@ export default async function ScanMeshPage({ searchParams }: { searchParams: Pro
       fill={one(search.fill) !== "0"}
       repair={one(search.repair) === "0" ? "none" : pick(one(search.repair), ["all", "shards", "planes"] as const, "all")}
       view={one(search.view) === "mesh" ? "mesh" : one(search.view) === "spheres" ? "spheres" : "photo"}
+      reach={reachOf(one(search.reach))}
       debug={one(search.debug) === "1"}
     />
   );

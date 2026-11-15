@@ -22,7 +22,7 @@ import { DEPTH_FAR, DEPTH_NEAR, DEPTH_STEP } from "./sphere-material";
 export const PLANES = 48;
 
 /** How far from its scan position the picture follows the eye, metres. */
-export const REACH = 0.6;
+export const REACH = 0.38;
 /**
  * Nothing is moved as if it were nearer than this, metres. A door frame
  * half a metre from the scan position against a room six metres behind it

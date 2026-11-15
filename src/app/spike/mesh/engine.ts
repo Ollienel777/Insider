@@ -29,6 +29,8 @@ export interface WalkHud {
   blend: BlendMode;
   /** What is drawn: the panoramas as spheres, or the mesh. */
   shows: "spheres" | "mesh";
+  /** In the photo view, how far the picture follows the eye, metres; null in the other views. */
+  reach: number | null;
   /** Whether the blend's fixes for doubles and unseen points are on (lib/scan-mesh/combine.ts). */
   fixes: boolean;
   /** The player's mouse sensitivity, as a multiple of the default. */
@@ -84,6 +86,8 @@ export interface WalkOptions {
   repair?: "all" | "none" | "shards" | "planes";
   /** What is drawn: the panoramas as spheres (the default), or the mesh. */
   view?: "spheres" | "mesh" | "photo";
+  /** In the photo view: how far the picture follows the eye from its scan position, metres. */
+  reach?: number;
   fill?: boolean;
   reducedMotion: boolean;
   /** Exposes the engine on `window` for poking at from the console. */
@@ -168,6 +172,7 @@ export class ScanWalk {
       textured: options.textured,
       repair: options.repair,
       view: options.view,
+      reach: options.reach,
       fill: options.fill,
       onChange: () => this.push(),
     });
@@ -181,6 +186,7 @@ export class ScanWalk {
       projection: true,
       blend: "photo",
       shows: options.view === "mesh" ? "mesh" : "spheres",
+      reach: null,
       fixes: true,
       exposure: null,
       detail: { state: "none", triangles: 0, megabytes: 0, seconds: 0 },
@@ -349,6 +355,11 @@ export class ScanWalk {
     }
     if (event.code === "Minus" || event.code === "NumpadSubtract") this.setSensitivity(this.sensitivity / 1.1);
     if (event.code === "Equal" || event.code === "NumpadAdd") this.setSensitivity(this.sensitivity * 1.1);
+    // [ and ]: how far the photo view's picture follows the eye.
+    if (event.code === "BracketLeft" || event.code === "BracketRight") {
+      this.view.setReach(this.view.reach + (event.code === "BracketRight" ? 0.05 : -0.05));
+      this.push();
+    }
     if (event.repeat) return;
     if (event.code === "KeyT") this.setProjection(!this.projection);
     if (event.code === "KeyG") this.view.toggleWire();
@@ -556,6 +567,7 @@ export class ScanWalk {
     this.hud.timings = status.timings;
     this.hud.blend = this.view.blend;
     this.hud.shows = this.view.shows;
+    this.hud.reach = this.options.view === "photo" || this.options.view === undefined ? this.view.reach : null;
     const counts = this.view.counts();
     this.hud.panos = this.view.inUse();
     this.hud.panosReady = counts?.sharp ?? 0;
