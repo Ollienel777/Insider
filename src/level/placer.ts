@@ -819,10 +819,23 @@ export function placeLevel(
     const seen = (chain: readonly string[]) =>
       new Set(chain.flatMap((id) => (floor.sightlines[id] ?? []).filter((s) => keepClear.has(s)))).size;
     const outOfSight = new Set(floor.nodes.filter((n) => keepClear.has(n.id) || seen([n.id]) > 0).map((n) => n.id));
-    const hidden = roundsOf(outOfSight);
+    // The engine walks each leg of a round by a shortest way over the whole floor (any one:
+    // its ties go by the seed), not along the chain. A pocket whose ends are nearer by the
+    // way through would walk its guard across it, so a round is kept only when no shortest
+    // way of any leg its guard can walk, from any start it can take, steps on `barred`.
+    const fromNode = new Map<string, Map<string, number>>();
+    const movesFrom = (id: string) => fromNode.get(id) ?? fromNode.set(id, hops(adj, [id])).get(id)!;
+    const walksOff = ({ chain, starts }: { chain: readonly string[]; starts: readonly number[] }, barred: ReadonlySet<string>) => {
+      const first = chain[0];
+      const last = chain[chain.length - 1];
+      const legs = [[first, last], ...starts.flatMap((i) => [[chain[i], last], [first, chain[i]]])];
+      return legs.every(([a, b]) => ![...onShortestWays(movesFrom(a), movesFrom(b), b)].some((id) => barred.has(id)));
+    };
+    const hidden = roundsOf(outOfSight).filter((r) => walksOff(r, outOfSight));
     const used = new Set(hidden.flatMap((r) => r.chain));
     const off = roundsOf(keepClear)
       .filter((r) => !r.chain.some((id) => used.has(id)))
+      .filter((r) => walksOff(r, keepClear))
       .map((r) => ({ r, n: seen(r.chain) }))
       .sort((a, b) => a.n - b.n || b.r.chain.length - a.r.chain.length || a.r.chain[0].localeCompare(b.r.chain[0]))
       .map(({ r }) => r);

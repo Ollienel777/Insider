@@ -9,14 +9,16 @@ import { act, type Action, compileBoard, createRun, type RunState, shortestPath,
 import f1 from "../../data/levels/F1.romaine-1974.json";
 import f2 from "../../data/levels/F2.sunset-1986.json";
 import f3 from "../../data/levels/F3.night-desk.json";
-import { placeLevel } from "./placer";
+import { type PlacedLevel, placeLevel } from "./placer";
 
 /**
  * A scan-like floor: a straight corridor c0–c8 that is the only way from the
  * stair (the start) to the records room, side pockets off it (pa, pb, pc),
  * and two offices hanging off it. Sightlines are each node's neighbours.
+ * With `loop`, a pocket q1–q10 also leaves the corridor at c4 and comes back
+ * onto it at c5: its ends are 9 moves apart inside it, 3 by the corridor.
  */
-function scanFloor(): FloorGraph {
+function scanFloor({ loop = false } = {}): FloorGraph {
   const nodes: FloorGraph["nodes"] = [];
   const edges: FloorGraph["edges"] = [];
   const node = (id: string, x: number, y: number, roomId: string, tags: FloorGraph["nodes"][number]["tags"] = []) =>
@@ -38,6 +40,11 @@ function scanFloor(): FloorGraph {
     node(`${o}b`, x, -6, o);
     node(`${o}c`, x, -9, o);
     edges.push({ a: at, b: `${o}a` }, { a: `${o}a`, b: `${o}b` }, { a: `${o}b`, b: `${o}c` });
+  }
+  if (loop) {
+    for (let i = 1; i <= 10; i++) node(`q${i}`, i <= 5 ? 12 : 15, -3 * (i <= 5 ? i : 11 - i), "hall");
+    edges.push({ a: "c4", b: "q1" }, { a: "q10", b: "c5" });
+    for (let i = 1; i < 10; i++) edges.push({ a: `q${i}`, b: `q${i + 1}` });
   }
   node("r0", 27, 0, "records");
   edges.push({ a: "c8", b: "r0", door: { id: "d-records", lockable: false } });
@@ -76,6 +83,33 @@ function scanManifest(): LevelManifest {
 
 const CORRIDOR = Array.from({ length: 9 }, (_, i) => `c${i}`);
 
+/** Every node each guard steps on over its round, walked leg by leg as the engine walks it. */
+function roundSteps(placed: PlacedLevel): [string, string[]][] {
+  const board = compileBoard(placed.level);
+  return placed.level.guards.map((g) => [
+    g.id,
+    g.patrol.flatMap((id, i) => shortestPath(board, id, [g.patrol[(i + 1) % g.patrol.length]]) ?? []),
+  ]);
+}
+
+/** A straight walk down the corridor, the pick, and the take: the run after it. */
+function walkThrough(placed: PlacedLevel): RunState {
+  let run: RunState = createRun(placed.level);
+  const actions: Action[] = [
+    ...CORRIDOR.map((to): Action => ({ kind: "move", to })),
+    { kind: "pick", doorId: "d-records" },
+    { kind: "pick", doorId: "d-records" },
+    { kind: "move", to: "r0" },
+    { kind: "take" },
+  ];
+  for (const a of actions) {
+    const r = act(run, a);
+    if (!r.ok) throw new Error(`${JSON.stringify(a)} refused: ${r.reason}`);
+    run = r.run;
+  }
+  return run;
+}
+
 describe("placeLevel on a scan floor with a single way through (issue 176)", () => {
   const placed = placeLevel(scanManifest(), scanFloor(), 7);
 
@@ -96,27 +130,11 @@ describe("placeLevel on a scan floor with a single way through (issue 176)", () 
   });
 
   it("walks no guard's round over the corridor", () => {
-    const board = compileBoard(placed.level);
-    for (const g of placed.level.guards) {
-      const legs = g.patrol.flatMap((id, i) => shortestPath(board, id, [g.patrol[(i + 1) % g.patrol.length]]) ?? []);
-      for (const id of legs) expect(CORRIDOR, g.id).not.toContain(id);
-    }
+    for (const [id, steps] of roundSteps(placed)) for (const step of steps) expect(CORRIDOR, id).not.toContain(step);
   });
 
   it("leaves a careful walk through unseen", () => {
-    let run: RunState = createRun(placed.level);
-    const actions: Action[] = [
-      ...CORRIDOR.map((to): Action => ({ kind: "move", to })),
-      { kind: "pick", doorId: "d-records" },
-      { kind: "pick", doorId: "d-records" },
-      { kind: "move", to: "r0" },
-      { kind: "take" },
-    ];
-    for (const a of actions) {
-      const r = act(run, a);
-      if (!r.ok) throw new Error(`${JSON.stringify(a)} refused: ${r.reason}`);
-      run = r.run;
-    }
+    const run = walkThrough(placed);
     expect(run.carrying).toBe(true);
     expect(run.alarmEvents.filter((e) => e.to !== "calm")).toEqual([]);
   });
@@ -125,6 +143,28 @@ describe("placeLevel on a scan floor with a single way through (issue 176)", () 
     const fixture = { ...scanFloor(), source: "fixture" as const };
     const p = placeLevel(scanManifest(), fixture, 7);
     expect(p.cameras.flatMap((c) => c.cover).some((id) => CORRIDOR.includes(id))).toBe(true);
+  });
+});
+
+describe("placeLevel on a scan floor with a pocket that meets the corridor twice (issue 176)", () => {
+  // The far side of the loop, q2–q9, is out of sight of the corridor and the
+  // longest round off it. But the engine walks a round's legs the short way
+  // over the whole floor, and from q2 to q9 that is across c4 and c5.
+  for (const seed of [0, 1, 2, 3, 7]) {
+    it(`walks no guard's round over the corridor, and keeps the counts (seed ${seed})`, () => {
+      const placed = placeLevel(scanManifest(), scanFloor({ loop: true }), seed);
+      expect(placed.cameras).toHaveLength(2);
+      expect(placed.guards).toHaveLength(3);
+      expect(placed.guards.every((g) => !g.post)).toBe(true);
+      for (const [id, steps] of roundSteps(placed)) for (const step of steps) expect(CORRIDOR, id).not.toContain(step);
+      for (const camera of placed.cameras) for (const id of camera.cover) expect(CORRIDOR, camera.id).not.toContain(id);
+    });
+  }
+
+  it("leaves a careful walk through unseen", () => {
+    const run = walkThrough(placeLevel(scanManifest(), scanFloor({ loop: true }), 7));
+    expect(run.carrying).toBe(true);
+    expect(run.alarmEvents.filter((e) => e.to !== "calm")).toEqual([]);
   });
 });
 
