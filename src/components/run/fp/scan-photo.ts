@@ -953,8 +953,11 @@ void main() {
     renderer.render(this.bakeScene, this.orthographic);
   }
 
-  /** A bounded piece of the painting, once a frame. */
-  step(renderer: WebGLRenderer): void {
+  /**
+   * A bounded piece of the painting, once a frame. `depthsAtMost` caps the depth cubes drawn in one piece: painted
+   * unseen behind first person, the GPU must not be handed more than a frame's worth at once.
+   */
+  step(renderer: WebGLRenderer, depthsAtMost = Infinity): void {
     if (this.disposed || this.finished) return;
     const before = renderer.getRenderTarget();
     const clear = renderer.getClearColor(new Color());
@@ -969,7 +972,8 @@ void main() {
       }
       const t0 = performance.now();
       // First every panorama's depth cube and its score: they need no photo.
-      while (this.nextDepth < this.entries.length && performance.now() - t0 < 6) {
+      let drawnDepths = 0;
+      while (this.nextDepth < this.entries.length && performance.now() - t0 < 6 && drawnDepths++ < depthsAtMost) {
         if (this.nextDepth === 0) {
           for (const t of [this.accum, this.best]) {
             renderer.setRenderTarget(t);
@@ -982,7 +986,7 @@ void main() {
         this.nextDepth++;
       }
       if (this.nextDepth < this.entries.length) return;
-      while (this.nextScore < this.entries.length && performance.now() - t0 < 6) {
+      while (this.nextScore < this.entries.length && performance.now() - t0 < 6 && drawnDepths++ < depthsAtMost) {
         const i = this.nextScore++;
         this.scoreMaterial.uniforms.uDepth.value = this.depths[i]!.texture;
         this.scoreMaterial.uniforms.uReal.value = (this.reals[i] ?? this.depths[i])!.texture;

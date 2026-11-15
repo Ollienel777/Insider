@@ -36,6 +36,7 @@ import { objectiveLabel, objectiveNoun } from "@/lib/objective-noun";
 import { cn } from "@/lib/utils";
 import { cameraMount, choices, roomName } from "../board";
 import { scanStageOf, type HeldAction, type ScanHandle, type ScanPreload } from "./run-view";
+import { primeScan } from "./scan-preload";
 import { actionLabel, announcement, lockOf, lockWords } from "./action";
 import { ActionAnnouncer, ActionLabelView, PickupToast } from "./action-hud";
 import { Actors, type Marks } from "./actors";
@@ -58,7 +59,7 @@ import { meshSolid } from "./scan-solid";
 import { buildFloorGroup, disposeGroup, type RoomTone } from "./scene";
 import { SuspicionMeter } from "./suspicion-meter";
 import { FP } from "./tuning";
-import { createWalker, heldAction, promptFor, stepWalker, type Prompt } from "./walker";
+import { createWalker, heldAction, promptFor, stepWalker, type Prompt, type Walker } from "./walker";
 import { buildWorld, groundOf, type World } from "./world";
 import { useMoment } from "../moment";
 
@@ -127,7 +128,65 @@ interface Stage {
   resize(): void;
   /** Draws the frame from the walker's place, the bob's lift, and where the player looks; returns the camera it drew from. */
   draw(walker: { pos: Vec; vel: Vec }, lift: number, yaw: number, pitch: number, dt: number): Camera;
+  /** Puts the stage's canvas on show, or hides it while the other stage of a scan shows: hidden, it is kept, not rebuilt. */
+  show(on: boolean): void;
+  /** A bounded piece of the stage's own building while it is hidden (the set's painting); true once there is none left. */
+  idle?(): boolean;
+  /** Draws one unseen frame from `pos`, so the shaders compile and the textures upload before the stage first shows. */
+  warm?(pos: Vec, yaw: number): Promise<void>;
+  /** What the stage holds on the GPU, roughly, in bytes. */
+  memory?(): { geometry: number; textures: number };
   dispose(): void;
+}
+
+/** How a scan is drawn: what `scanLook` gives. */
+type Look = "set" | "blockout" | "photo";
+
+/** Where the player stood and looked in the stage left behind: the stage switched to carries it on. */
+interface Carry {
+  walker: Walker;
+  yaw: number;
+  pitch: number;
+}
+
+/** Hands the browser back a frame between pieces of a stage's building: an idle moment, or the next task. */
+function slice(): Promise<void> {
+  return new Promise((resolve) => {
+    const idle = (globalThis as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+    if (idle) idle(() => resolve(), { timeout: 50 });
+    else setTimeout(resolve, 0);
+  });
+}
+
+/** Roughly what `root` holds on the GPU: its geometry's buffers and its materials' textures, each counted once. */
+function gpuBytes(root: Object3D): { geometry: number; textures: number } {
+  const seen = new Set<unknown>();
+  let geometry = 0;
+  let textures = 0;
+  const texture = (t: unknown) => {
+    if (!t || typeof t !== "object" || seen.has(t) || !(t as { isTexture?: boolean }).isTexture) return;
+    seen.add(t);
+    const tex = t as { image?: unknown; images?: unknown[]; generateMipmaps?: boolean; isRenderTargetTexture?: boolean; isCubeTexture?: boolean };
+    const faces = tex.isCubeTexture ? 6 : 1;
+    const image = (tex.isCubeTexture ? (tex.image as unknown[] | undefined)?.[0] : tex.image) as { width?: number; height?: number } | undefined;
+    const px = (image?.width ?? 0) * (image?.height ?? 0) * faces;
+    textures += px * 4 * (tex.generateMipmaps || tex.isRenderTargetTexture ? 1.33 : 1);
+  };
+  root.traverse((o) => {
+    const mesh = o as { geometry?: { attributes?: Record<string, { array?: ArrayBufferView }>; index?: { array?: ArrayBufferView } | null }; material?: unknown };
+    if (mesh.geometry && !seen.has(mesh.geometry)) {
+      seen.add(mesh.geometry);
+      for (const a of Object.values(mesh.geometry.attributes ?? {})) geometry += a.array?.byteLength ?? 0;
+      geometry += mesh.geometry.index?.array?.byteLength ?? 0;
+    }
+    for (const m of [mesh.material].flat()) {
+      if (!m || typeof m !== "object") continue;
+      for (const v of Object.values(m as Record<string, unknown>)) texture(v);
+      const uniforms = (m as { uniforms?: Record<string, { value?: unknown }> }).uniforms;
+      for (const u of Object.values(uniforms ?? {})) texture(u?.value);
+    }
+  });
+  return { geometry, textures };
 }
 
 interface Hud {
@@ -244,6 +303,11 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
     latest.current = { run, onAct, onUnavailable, onHeld, onReady };
   }, [run, onAct, onUnavailable, onHeld, onReady]);
 
+  // The look chosen, read by the stage effect without rebuilding it: a switch between first person and the 3D model
+  // swaps between the scan's two stages, each built once and kept while the view is up (issue 118).
+  const lookChosen = useRef(chosenLook);
+  const switchLook = useRef<((look: Look) => void) | null>(null);
+
   useEffect(() => {
     const host = surface.current;
     const target = canvas.current;
@@ -261,8 +325,18 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
     };
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const palette = readPalette(document.documentElement);
-    let stage: Stage | null = null;
-    let stopSession: (() => void) | null = null;
+    // The stages built, by look, kept until the view goes or the scan changes; the one showing, and its session.
+    const stages = new Map<Look, Stage>();
+    const builds = new Map<Look, Promise<Stage | null>>();
+    let active: Look | "fixture" | null = null;
+    let stopSession: (() => Carry) | null = null;
+    // Where the player is in the session showing, for warming the stage built behind it.
+    let pose: (() => Carry) | null = null;
+    let stopPrime = () => {};
+    let carry: Carry | null = null;
+    // What the player has tried, for the hint, and when it was done, for its fade: across switches, so the hint does not come back.
+    const progress: HintProgress = { ...NO_PROGRESS };
+    let doneAt: number | null = null;
     let loadKey = "";
     const loading = (next: ScanLoad) => {
       const key = JSON.stringify(next);
@@ -272,7 +346,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
     };
 
     /** The walker, the controller, the actors and the labels on `on`, and the frame loop that draws it. */
-    const runSession = (on: Stage): (() => void) => {
+    const runSession = (on: Stage, look: Look | "fixture", carried: Carry | null, onDrawn?: () => void): (() => Carry) => {
       const { ground } = on;
       const { level } = placed;
       const first = latest.current.run;
@@ -295,7 +369,11 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       on.add(actors.group);
 
       // Facing the first way on from where the engine has the player.
-      let walker = createWalker(ground, first);
+      // Or, switched to from the scan's other stage, where the player stood there, when this stage's walls let them stand there.
+      const fresh = createWalker(ground, first);
+      const stoodAt = carried && carried.walker.node === first.playerNode && carried.walker.turn === first.turn ? carried.walker : null;
+      const keep = stoodAt !== null && ground.clear(fresh.pos, stoodAt.pos, first.locked);
+      let walker: Walker = keep && stoodAt ? { ...stoodAt, vel: { x: 0, y: 0 } } : fresh;
       const wayOn = (state: RunState, from: { x: number; y: number }): number | null => {
         const ahead = choices(state)[0];
         const towards = ahead ? ground.path(state.playerNode, ahead.nodeId)[1] : null;
@@ -303,10 +381,11 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       };
       const controller = new Controller(
         host,
-        wayOn(first, walker.pos) ?? 0,
+        carried ? carried.yaw : (wayOn(first, walker.pos) ?? 0),
         (locked) => setHud((h) => (h.locked === locked ? h : { ...h, locked, refused: locked ? false : h.refused })),
         () => setHud((h) => (h.refused ? h : { ...h, refused: true })),
       );
+      if (carried) controller.pitch = carried.pitch;
 
       on.resize();
       const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => on.resize());
@@ -318,10 +397,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       const labelEls = new Map<string, HTMLSpanElement>();
       const point = new Vector3();
       let seen: RunState | null = null;
-      // What the player has tried, for the hint; when it was done, for its fade.
-      const progress: HintProgress = { ...NO_PROGRESS };
-      let doneAt: number | null = null;
       let hintKey = "";
+      pose = () => ({ walker, yaw: controller.yaw, pitch: controller.pitch });
       let looked = { yaw: controller.yaw, pitch: controller.pitch };
       let last = performance.now();
       let owed = 0;
@@ -418,6 +495,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         const lift = Math.sin((walker.walked / FP.strideM) * Math.PI * 4) * FP.bobM * bob;
         actors.update(now);
         const camera = on.draw(walker, lift, controller.yaw, controller.pitch, dt);
+        // Which stage drew the last frame, and when: for timing a switch in development.
+        if (debug) (debug as { __fpFrame?: unknown }).__fpFrame = { look, at: now };
 
         // Labels: each at its piece, hidden behind the view and behind walls (a beacon shows through).
         // Nearest first, and one that would cover another is drawn above it.
@@ -482,6 +561,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           loading(null);
           setReady(true);
           latest.current.onReady?.(true);
+          onDrawn?.();
         }
       };
       raf = requestAnimationFrame(frame);
@@ -500,6 +580,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         for (const el of labelEls.values()) el.remove();
         actors.group.removeFromParent();
         actors.dispose();
+        pose = null;
+        return { walker, yaw: controller.yaw, pitch: controller.pitch };
       };
     };
 
@@ -513,7 +595,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       ground: Stage["ground"],
       floorY: number,
       extra: Partial<Pick<Stage, "cameraMount" | "settled" | "counts" | "doorColour">> & {
-        fov?: number; tick?: (renderer: WebGLRenderer) => void; dispose?: () => void } = {},
+        fov?: number; tick?: (renderer: WebGLRenderer) => void; idle?: (renderer: WebGLRenderer) => boolean; dispose?: () => void } = {},
     ): Stage | null => {
       if (!hasWebGL()) return null;
       let renderer: WebGLRenderer;
@@ -573,7 +655,21 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           renderer.render(scene, camera);
           return camera;
         },
+        show(on) {
+          target.style.visibility = on ? "" : "hidden";
+        },
+        idle: extra.idle ? () => extra.idle!(renderer) : undefined,
+        async warm(at, yaw) {
+          const eye = floorY + FP.eyeM;
+          camera.position.set(at.x, eye, at.y);
+          camera.lookAt(at.x + Math.cos(yaw), eye, at.y + Math.sin(yaw));
+          // The shaders compiled off the main thread where the browser can (KHR_parallel_shader_compile), then one frame for the uploads.
+          await renderer.compileAsync(scene, camera).catch(() => {});
+          if (!gone) renderer.render(scene, camera);
+        },
+        memory: () => gpuBytes(scene),
         dispose() {
+          target.style.visibility = "";
           target.removeEventListener("webglcontextlost", onLost);
           extra.dispose?.();
           disposeGroup(floorGroup);
@@ -610,7 +706,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
      * scan's own picture is not shown. Null, with the board back and a line
      * saying why, when the board doesn't stand on the scan.
      */
-    const planStage = (handle: ScanHandle, dressed: boolean, overrides: PlanOverrides | null = null): Stage | null => {
+    const planStage = async (handle: ScanHandle, dressed: boolean, overrides: PlanOverrides | null = null): Promise<Stage | null> => {
       const { view } = handle;
       const tree = view.meshTree;
       if (!tree) return null;
@@ -623,7 +719,18 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         unavailable(`${refusal} You're on the board.`);
         return null;
       }
-      const started = performance.now();
+      // Worked out a piece at a time, handing the browser a frame between pieces: built while first person shows, it must not stall it.
+      let busy = 0;
+      let longest = 0;
+      let mark = performance.now();
+      const pause = async (): Promise<boolean> => {
+        const took = performance.now() - mark;
+        busy += took;
+        longest = Math.max(longest, took);
+        await slice();
+        mark = performance.now();
+        return gone;
+      };
       const mesh = meshSolid(tree);
       const floors = [...nodeFloors(floor, mesh, join.heights).values()].sort((p, q) => p - q);
       const floorY = floors.length > 0 ? floors[Math.floor(floors.length / 2)] : 0;
@@ -637,6 +744,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       }
       ups.sort((p, q) => p - q);
       const ceilingY = Math.min(floorY + 4, Math.max(floorY + 2.4, ups.length > 0 ? ups[Math.floor(ups.length / 2)] : floorY + FP.wallHeightM));
+      if (await pause()) return null;
       const byId = new Map(floor.nodes.map((n) => [n.id, n]));
       const paths = floor.edges.flatMap((e) => {
         const a = byId.get(e.a);
@@ -659,6 +767,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           return y !== null && Math.abs(y - floorY) < 0.3;
         },
       });
+      if (await pause()) return null;
       // One door to a room: extra doorways no one went through become wall.
       // Glass the photographs saw through, from where they stood.
       const eyes = floor.nodes.flatMap((n) => {
@@ -670,15 +779,30 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       const detailWorld = dressed && detailed ? new MeshWorld(detailed, 0.45) : null;
       const seer = detailWorld ? meshSolid(detailWorld) : mesh;
       const glassWalls = glassFromSight(plan, eyes, paths, (from, dir, far) => seer.hit(from, dir, far));
+      if (await pause()) return null;
       // The set against the scan, from every scan camera: doorways it lacks, walls it lacks. Fixed, then counted again.
       const scanSees = (from: readonly [number, number, number], dir: readonly [number, number, number], far: number) => mesh.hit(from, dir, far);
-      const before = mismatches(plan, eyes, scanSees);
+      // Asked a few scan cameras at a time: each camera's disagreements are its own.
+      const disagreements = async (): Promise<ReturnType<typeof mismatches> | null> => {
+        const found: ReturnType<typeof mismatches> = [];
+        for (let i = 0; i < eyes.length; i += 8) {
+          found.push(...mismatches(plan, eyes.slice(i, i + 8), scanSees));
+          if (await pause()) return null;
+        }
+        return found;
+      };
+      const before = await disagreements();
+      if (!before) return null;
       const reconciled = reconcile(plan, before, paths, eyes);
-      const after = mismatches(plan, eyes, scanSees);
+      if (await pause()) return null;
+      const after = await disagreements();
+      if (!after) return null;
+      if (await pause()) return null;
       // The scan's hand-made corrections, where this machine has any; then walls as rooms have them.
       const overridden = overrides ? applyOverrides(plan, overrides) : 0;
       const tidied = regularise(plan, paths, eyes);
       const walledUp = oneDoorPerRoom(plan, circulation);
+      if (await pause()) return null;
       // The furniture, on the set only: the blockout draws none, and none may stop the player unseen.
       if (dressed) {
         // The detailed mesh has the desks the walkable one smooths away; without it, the walkable one.
@@ -698,15 +822,18 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           }),
         );
       }
+      if (await pause()) return null;
       // Windows on the outside walls, where the scan cameras saw out.
       if (dressed) plan.windows = windowsFromSight(plan, eyes, scanSees);
       // Nothing in any doorway's way, either side; no fragment, nothing through a wall.
       const cleared = clearDoorways(plan) + tidyFurniture(plan);
+      if (await pause()) return null;
       // Counts only.
       console.info(
-        `First person draws the scan's plan: ${plan.walls.length} walls (${plan.stats.boundary} at the floor's edge), ${plan.doorways.length} doorways (${walledUp} more walled up, one door to a room), ${plan.glass.length} panes of glass (${glassWalls} walls seen through); the scan disagreed in ${before.length} places, ${reconciled} put right, ${after.length} left; ${overridden} corrections, ${tidied.extended} walls run on, ${tidied.removed} stubs gone, ${cleared} things out of doorways, ${plan.furniture.length} pieces of furniture, ${plan.windows?.length ?? 0} windows, in ${Math.round(performance.now() - started)} ms`,
+        `First person draws the scan's plan: ${plan.walls.length} walls (${plan.stats.boundary} at the floor's edge), ${plan.doorways.length} doorways (${walledUp} more walled up, one door to a room), ${plan.glass.length} panes of glass (${glassWalls} walls seen through); the scan disagreed in ${before.length} places, ${reconciled} put right, ${after.length} left; ${overridden} corrections, ${tidied.extended} walls run on, ${tidied.removed} stubs gone, ${cleared} things out of doorways, ${plan.furniture.length} pieces of furniture, ${plan.windows?.length ?? 0} windows, in ${Math.round(busy)} ms of work, ${Math.round(longest)} ms at most at once`,
       );
       const ground = scanGround(floor, planSolid(plan), join.heights, { leashM: PLAN.leashM + 1 });
+      if (await pause()) return null;
       const nodeRoom = new Map(floor.nodes.map((n) => [n.id, n.roomId]));
       const all = [...ground.nodes.values()];
       // The room a point is in: flooded from the scan positions, never through a wall.
@@ -726,6 +853,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         }
         return best ? toneOfRoom(nodeRoom.get(best.id) ?? "") : "plain";
       };
+      if (await pause()) return null;
       const blockout = buildPlanGroup(plan, palette, tone);
       if (!dressed) {
         // The glass stops the player here too, so it is drawn here too.
@@ -745,7 +873,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
             photosFailed = true;
             return;
           }
+          const at = performance.now();
           photos = new PhotoSet(plan, panos, startNode ?? { x: 0, y: 0 }, roomOfPoint, undefined, handle.view.detailMesh ?? tree.bvh.geometry);
+          // Counts only.
+          console.info(`First person laid out the set's painting in ${Math.round(performance.now() - at)} ms`);
           blockout.visible = false;
           set.add(photos.group);
           // Counts only.
@@ -755,18 +886,24 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           photosFailed = true;
         });
       let told = false;
+      const paint = (renderer: WebGLRenderer, depthsAtMost?: number) => {
+        photos?.step(renderer, depthsAtMost);
+        if (photos && !told && photos.progress().done) {
+          told = true;
+          console.info(`First person painted the set in ${photos.seconds?.toFixed(1)} s`);
+          if (process.env.NODE_ENV !== "production") (window as unknown as { __fpPainted?: boolean }).__fpPainted = true;
+        }
+      };
       return finishPlan(
         ourStage(set, ground, floorY, {
           cameraMount: scanCameraMount(ground),
           doorColour: DRESS.wood,
           fov: SET_FOV_DEGREES,
-          tick(renderer) {
-            photos?.step(renderer);
-            if (photos && !told && photos.progress().done) {
-              told = true;
-              console.info(`First person painted the set in ${photos.seconds?.toFixed(1)} s`);
-              if (process.env.NODE_ENV !== "production") (window as unknown as { __fpPainted?: boolean }).__fpPainted = true;
-            }
+          tick: paint,
+          // Hidden behind first person, the painting goes on a piece at a time: the "N of 75" is not started again on a switch.
+          idle(renderer) {
+            paint(renderer, 1);
+            return photosFailed || (photos?.progress().done ?? false);
           },
           settled: () => photosFailed || (photos?.progress().done ?? false),
           counts: () => (photos ? { held: photos.progress().painted, total: photos.progress().total } : { held: 0, total: 0 }),
@@ -837,67 +974,186 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           view.render(dt);
           return view.camera;
         },
+        show(on) {
+          // The scan's canvas, under the labels and the HUD, while this stage shows; off the page while the set does.
+          if (on) {
+            host.insertBefore(handle.canvas, labels);
+            const { clientWidth: w, clientHeight: h } = host;
+            if (w > 0 && h > 0) view.resize(w, h);
+          } else handle.canvas.remove();
+        },
+        memory: () => gpuBytes(view.scene),
         dispose() {
+          handle.canvas.remove();
           pieces.removeFromParent();
           unfill();
         },
       };
     };
 
+    /** Shows `made`, built for `look`: the stage showing is hidden (kept, not disposed), and the player carries on where they stood. */
+    const swap = (look: Look | "fixture", made: Stage) => {
+      if (gone || active === look) return;
+      stopPrime();
+      if (stopSession) carry = stopSession();
+      stopSession = null;
+      const left = active !== null && active !== "fixture" ? active : null;
+      const leftStage = left ? stages.get(left) : undefined;
+      leftStage?.show(false);
+      made.show(true);
+      // A stage left before its painting was done goes on painting, hidden.
+      if (left && leftStage?.idle && !warmed.has(left)) pump(left, leftStage);
+      active = look;
+      stopSession = runSession(made, look, carry, () => prebuild(look));
+    };
+
     const begin = (made: Stage | null) => {
       if (gone) return;
       if (!made) return unavailable();
-      stage = made;
-      stopSession = runSession(made);
+      stages.set("photo", made);
+      swap("fixture", made);
     };
 
     let stopListening = () => {};
-    const look = scanLook(chosenLook);
-    const photo = look === "photo";
+    let pumping = 0;
+    // The stages built behind the other, painted and drawn once unseen.
+    const warmed = new Set<Look>();
+    const choice = world ? null : scanStageOf(scanGiven ? { handle: scanHandle, failed: scanFailed, ready: false } : null);
+    const scan = choice?.kind === "walk" ? choice.handle : null;
+
+    /** The stage for `look`, built once: a second ask while it is building waits on the same build. */
+    const build = (look: Look): Promise<Stage | null> => {
+      const known = builds.get(look);
+      if (known) return known;
+      const made = (async (): Promise<Stage | null> => {
+        if (!scan) return null;
+        const ok = await scan.ready;
+        if (gone || !ok) return null;
+        // The set's furniture is found in the scan's detailed mesh (fetched in a worker from the start): wait for it a while. Its corrections, meanwhile.
+        const [, overrides] = await Promise.all([look === "set" ? detailIn(scan, DETAIL_WAIT_MS) : Promise.resolve(), loadOverrides(scan.modelId)]);
+        if (gone) return null;
+        const stage = look === "photo" ? scanStage(scan) : await planStage(scan, look === "set", overrides);
+        if (!stage) return null;
+        if (gone) {
+          stage.dispose();
+          return null;
+        }
+        stage.show(false);
+        stage.resize();
+        stages.set(look, stage);
+        return stage;
+      })();
+      builds.set(look, made);
+      return made;
+    };
+
+    /** While `stage` is hidden, its own building goes on in slices, and once done it draws one unseen frame so it shows at once. */
+    const pump = (look: Look, stage: Stage) => {
+      const id = ++pumping;
+      const started = performance.now();
+      // Each piece just after a frame of the stage showing, and the GPU given a rest three times the piece's own length
+      // after it: the two stages share one GPU, and first person keeps its frame rate.
+      const later = (rest: number) => setTimeout(() => requestAnimationFrame(() => setTimeout(() => void step(), 0)), Math.min(400, rest));
+      const step = async () => {
+        if (gone || id !== pumping || active === look || warmed.has(look)) return;
+        const t = performance.now();
+        const done = stage.idle ? stage.idle() : true;
+        if (!done) return void later((performance.now() - t) * 3);
+        warmed.add(look);
+        const now = pose?.() ?? carry;
+        await stage.warm?.(now?.walker.pos ?? { x: 0, y: 0 }, now?.yaw ?? 0);
+        if (gone) return;
+        // The photo view's panoramas round the player, fetched unseen (the Plan screen's warm-up).
+        if (look === "photo" && scan) stopPrime = primeScan(scan, latest.current.run.playerNode);
+        // Counts only.
+        console.info(`First person built the ${look === "photo" ? "photo view" : "3D model"} behind the other in ${((performance.now() - started) / 1000).toFixed(1)} s`);
+      };
+      later(0);
+    };
+
+    // The looks a switch moves between; with `?scanlook=` in development, only the one asked for.
+    const forced = scanLook("photo") !== "photo" || scanLook("set") !== "set";
+    /** Once the stage showing has drawn, the scan's other stage is built behind it. */
+    const prebuild = (shown: Look | "fixture") => {
+      if (!scan || forced || shown === "fixture" || shown === "blockout") return;
+      const other: Look = shown === "photo" ? "set" : "photo";
+      if (builds.has(other)) return;
+      void build(other).then((stage) => {
+        if (stage && active !== other) pump(other, stage);
+      });
+    };
+
+    /** Shows `look`: at once when its stage is built; else the build goes on (or starts), saying so, and shows it when done. */
+    const choose = (look: Look) => {
+      if (gone || !scan || active === look) return;
+      wanted = look;
+      const made = stages.get(look);
+      if (made) return swap(look, made);
+      // Off the stage showing, if any: the player waits for the one asked for.
+      if (stopSession) carry = stopSession();
+      stopSession = null;
+      if (active !== null && active !== "fixture") stages.get(active)?.show(false);
+      active = null;
+      if (scan.status().phase === "ready") loading({ line: look === "photo" ? "Loading the building" : "Building the 3D model", held: 0, total: 0 });
+      void build(look).then((stage) => {
+        if (gone || wanted !== look) return;
+        if (!stage) return unavailable();
+        swap(look, stage);
+      });
+    };
+    let wanted: Look = scanLook(lookChosen.current);
+
+    // In development: what is built, and roughly what it holds on the GPU.
+    const debug = process.env.NODE_ENV !== "production" ? (window as unknown as { __fpCache?: unknown; __fpMemory?: unknown }) : null;
+    if (debug) {
+      debug.__fpCache = () => ({ active, built: [...stages.keys()], building: [...builds.keys()].filter((k) => !stages.has(k)), set: warmed.has("set") ? "ready" : stages.has("set") ? "painting" : builds.has("set") ? "building" : "none", photo: stages.has("photo") ? "ready" : "none" });
+      debug.__fpMemory = () => Object.fromEntries([...stages].map(([k, s]) => [k, s.memory?.()]));
+    }
+
     if (world) {
       begin(fixtureStage(world));
     }
-    const choice = world ? null : scanStageOf(scanGiven ? { handle: scanHandle, failed: scanFailed, ready: false } : null);
-    const scan = choice?.kind === "walk" ? choice.handle : null;
     if (choice?.kind === "wait") {
       // The preload's own module is still on its way: the scan comes as a new handle, which runs this again.
       loading({ line: "Opening the scan", held: 0, total: 0 });
     } else if (choice?.kind === "refuse") {
       unavailable(choice.line);
     } else if (scan) {
-      // The scan's own picture only when asked for (`?scanlook=photo`); by default its plan, drawn as ours.
-      if (photo) {
-        // The scan's canvas, under the labels and the HUD, while this view shows.
-        host.insertBefore(scan.canvas, labels);
-        scan.canvas.addEventListener("webglcontextlost", onLost);
-      }
+      scan.canvas.addEventListener("webglcontextlost", onLost);
       const phase = () => {
         const status = scan.status().phase;
-        if (status !== "ready") loading({ line: SCAN_PHASE[status] ?? "Loading the building", held: 0, total: 0 });
+        if (status !== "ready" && active === null) loading({ line: SCAN_PHASE[status] ?? "Loading the building", held: 0, total: 0 });
       };
       stopListening = scan.subscribe(phase);
       phase();
-      void scan.ready.then(async (ok) => {
-        if (gone || !ok) return;
-        // The set's furniture is found in the scan's detailed mesh: wait for it a while. Its corrections, meanwhile.
-        const [, overrides] = await Promise.all([look === "set" ? detailIn(scan, DETAIL_WAIT_MS) : Promise.resolve(), loadOverrides(scan.modelId)]);
-        if (gone) return;
-        const made = photo ? scanStage(scan) : planStage(scan, look === "set", overrides);
-        if (made) begin(made);
-      });
+      switchLook.current = choose;
+      choose(wanted);
     }
 
     return () => {
       gone = true;
+      switchLook.current = null;
+      stopPrime();
       stopListening();
       stopSession?.();
-      stage?.dispose();
+      for (const stage of stages.values()) stage.dispose();
+      stages.clear();
+      if (debug) {
+        delete debug.__fpCache;
+        delete debug.__fpMemory;
+      }
       if (scan) {
         scan.canvas.removeEventListener("webglcontextlost", onLost);
         scan.canvas.remove();
       }
     };
-  }, [world, placed, scanGiven, scanHandle, scanFailed, chosenLook]);
+  }, [world, placed, scanGiven, scanHandle, scanFailed]);
+
+  // A switch between first person and the 3D model: the stage effect swaps stages, built once each, with no rebuild.
+  useEffect(() => {
+    lookChosen.current = chosenLook;
+    switchLook.current?.(scanLook(chosenLook));
+  }, [chosenLook]);
 
   const noun = objectiveNoun(placed.level.missionId);
   const moment = useMoment(placed, run);
