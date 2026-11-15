@@ -10,12 +10,37 @@ The product is **Hobbs**; #183 renamed it from Heist Anywhere. The demo plays
   building, is the marked fallback. On the night, the checklist's
   [go / no-go rule](#go--no-go-decided-before-the-pitch) still checks this
   machine, never on stage.
-- **Owner Mode** gets 15 seconds after the Debrief (Q9, decided on status
-  issue #1).
+- **Owner Mode** gets its own beat after the Debrief (Q9, decided on status
+  issue #1), trimmed to 10 s.
 
-Written against `main` at 9134816, at about 06:15 UTC on 15 November. The
-rehearsal's findings were added at about 05:40 UTC, and the Chief's re-timing
-at about 06:15 UTC.
+Written against `main` as of about 09:30 UTC on 15 November, after #167 (the
+numbered tabs), #192, #193 (no Shift walk) and #201. These still have to land
+before the rehearsal; re-check the lines they touch then:
+
+- #202, the scan floor fill;
+- #195, the Hobbs header and page titles;
+- #206, Owner Mode on the showcase building. Its numbers would replace F1's
+  in the lines marked **[swap: #206]**.
+
+## Cue card
+
+One line per beat. The detail and the fallbacks are in the beats below.
+Brackets are read off the screen, or off the printed answer key, which stays
+out of this public repo.
+
+| # | at | click | say | if it breaks |
+|---|---|---|---|---|
+| 1 | 0:00 | Judge: **The Romaine Street Papers** (open by default), then **Take the job** | "This is Hobbs. Every heist in history needed a building. Our agent finds one that's empty tonight. Pick a heist." | Click Romaine yourself, then **Take the job**. |
+| 2 | 0:10 | Point at the showcase card, then **Scout it** | "The agent searches CoStar's inventory for this heist: the right era and class, a floor on the market tonight, a 3D scan. For this mission, a real building: [name]. Each row checks it against a need, from its CoStar record." | Slow: **Skip**. No card, or not built: the F1 path. |
+| 3 | 0:30 | **Plan the job** | "The building from above, from Vexcel." | No aerial: "No aerial for this one yet." Then **Plan the job**. |
+| 4 | 0:33 | **Brief the crew** | "Its real CoStar record. A deep agent built the level from it: built [year], so key locks and sweeping cameras. Class [X]: [N] guards. Its vacant floor is the stage. The security is game fiction." | Stalls: **Skip**. |
+| 5 | 0:47 | Paste the order, **Enter**. Camera **C1** on the board, then **Esc**. **Start the run** as the plan shows | "Every guard, camera and lock says which data put it there." Then: "The crew answers in plain English, and the board checks its plan." | **No crew reply**: "The model was slow, so the board worked out this plan, with no model." Greyed order box: the F1 tab. |
+| 6 | 1:00 | Click the view once; hand over. **See the debrief** on the end card | "You're in the real building, its own scan. W to move, the mouse to look, hold E at a door. That light is a camera: stand in it for a second." At the alarm: "That camera has you. The Chief is re-planning live: watch the guards converge on you. Keep going, towards the guards." At the catch: "Caught. The debrief shows how." | No capture by **1:30**: "The Chief is still hunting you. Here's the replay." Then tab **7 Debrief**. Scan fails: the F1 tab. |
+| 7 | 1:30 | Drag **Turn**; point at the Chief's decisions | "The debrief replays every move. And here's why: every decision the Chief made, with its reason. And that search, era, class, a floor on the market tonight, is the one a location scout runs on Monday, on CoStar's own availability." | "No run yet": "The debrief replays the run turn by turn; you just saw how it ended." |
+| 8 | 1:45 | The **last browser tab**, the Owner tab you prepared (not the app's tab 8) | **[swap: #206]** "And for the owner: their own security, here made up. Seven get out; move C2, one in fifty." | Result gone: scroll to **Compare two setups**, then **Compare**. |
+
+Ends at **1:55**, with 5 s spare for beat 5's crew reply, which wasn't
+measured live.
 
 - **What was walked:** on c08ae94, in fake mode (a production build with every
   service on `fake`, at 1440×900):
@@ -39,9 +64,13 @@ at about 06:15 UTC.
   - #150: first person in real time, the controls card, a readable HUD and the
     suspicion meter;
   - #178: a live aerial on kit buildings (beat 3);
-  - #183: the README and the agents' prompts say "Hobbs". The wordmark and the
-    page title still show the old name;
-  - #173: the Chief uses the scan's real room names.
+  - #183 and #167: the product is "Hobbs", in the prompts, the README, the
+    wordmark and the page title;
+  - #173: the Chief uses the scan's real room names;
+  - #167: the screens as a case file, with numbered tabs (1 Missions, 2 Cast,
+    3 Scout, 4 Dossier, 5 Plan, 6 Run, 7 Debrief, 8 Owner Mode). A tab past
+    the one reached is locked, except that Run also opens Debrief;
+  - #193: first person drops the Shift walk.
 - **What needs keys:** none were used here, so every step that needs live
   CoStar, Matterport, Vexcel or a model says **live only, not walked here**.
 
@@ -60,17 +89,21 @@ at about 06:15 UTC.
   doesn't show in first person. Never click **Live**.
 - **Do not reload the showcase page.** Its crew plan and run log live in the
   tab's memory only, so a reload empties the Debrief. **Plan, Run and Debrief
-  happen in ONE tab; do not switch tabs or reload between them.** Move with
-  the step rail and the buttons, with a plain click. If the Run's label says **stand-in floor plan**, don't
-  reload and don't wait: switch to the prepared F1 tab (beat 6's fallback).
+  happen in ONE browser tab; do not switch browser tabs or reload between
+  them.** Move with the app's numbered tab row and the buttons, with a plain
+  click. If the Run's label says **stand-in floor plan**, don't reload and
+  don't wait: switch to the prepared F1 browser tab (beat 6's fallback).
+- **Two kinds of tab.** The app's tab row (1 Missions … 8 Owner Mode) is not
+  the browser's tabs. The F1 tab and the Owner tab in this script are browser
+  tabs, prepared before the pitch.
 - **Keep the window in front, and its tab active, while a page loads.** A
   hidden tab pauses a scan's load. If the load still fails, the board drops to
   the fixture floor, with this toast: "The Matterport scan's viewer didn't
   start (the window was hidden), so the board uses the fixture floor. Open it
   again with the window in front to load the scan." On stage, the rule above
   wins over the toast: don't open it again, switch to the F1 tab.
-- Never click **Drill** (on hold, Q8). On the board, never press **S**: it arms
-  a sprint, and the numbers then mark rooms two hops away.
+- On the board, never press **S**: it arms a sprint, and the numbers then mark
+  rooms two hops away.
 - If a beat breaks, say its fallback line, do its fallback click, move on.
 
 ## The clock
@@ -82,20 +115,21 @@ at about 06:15 UTC.
 | 3 | Scout | 0:30–0:33 | 3 s | Scout |
 | 4 | Dossier | 0:33–0:47 | 14 s | Dossier |
 | 5 | Plan | 0:47–1:00 | 13 s | Plan |
-| 6 | Run, in the real scan | 1:00–1:28 | 28 s | Run |
-| 7 | Debrief | 1:28–1:43 | 15 s | Debrief |
-| 8 | Owner Mode | 1:43–1:58 | 15 s | the Owner tab |
+| 6 | Run, in the real scan | 1:00–1:30 | 30 s, cut at 1:30 | Run |
+| 7 | Debrief | 1:30–1:45 | 15 s | Debrief |
+| 8 | Owner Mode | 1:45–1:55 | 10 s | the Owner browser tab |
 
-**1:58**, with 2 s spare. The clock has no room for a wait: the scan is loaded
-before the pitch (checklist), and a pitch that would have to wait runs the F1
-path instead. Against SPEC §2's slots, Owner Mode's 15 s and the 2 s spare
-come from:
+**1:55**, with 5 s spare for beat 5's live crew reply, which wasn't measured.
+The clock has no room for a wait: the scan is loaded before the pitch
+(checklist), and a pitch that would have to wait runs the F1 path instead.
+Against SPEC §2's slots, Owner Mode's 10 s and the 5 s spare come from:
 
 - Scout: 10 s → 3 s.
 - Debrief: 20 s → 15 s.
 - Cast: 22 s → 20 s.
 - Dossier: 15 s → 14 s.
-- Run: 30 s → 28 s.
+
+The run keeps its 30 s, and is cut at 1:30, caught or not.
 
 The spoken lines are sized at about 2.5 words a second. Rehearse once against
 a timer, and cut words, not beats.
@@ -112,15 +146,17 @@ Live waits were not measured here: the crew's reply, the Chief's re-plan, the
 scan's load, and first person since it went real time (#150). The rehearsal
 measured the run beat, live:
 
-| from **Start the run** | time |
+| what | time |
 |---|---|
-| Run playable | 1.2–2.3 s |
-| the first camera's label in sight | about 2 s |
-| the alarm | 3–6 s |
+| Run playable | 1.2–2.3 s after **Start the run** |
+| the first camera's label in sight | about 2 s after **Start the run** |
+| the alarm | 3–6 s after **Start the run**, with the judge moving at once |
 | the Chief's first line | 2.5–5.7 s after the alarm |
 | a capture, walking on towards the guards | 15–31 s after the alarm |
 
-The last two rows were re-timed on current `main` at about 06:00 UTC.
+The clock starts on the judge's first move (#174), so the alarm row includes
+any time the judge spends looking around first. The last two rows were
+re-timed on `main` at about 06:00 UTC.
 
 ## What the judge should notice
 
@@ -147,16 +183,18 @@ it.
 
 ## Beat 1 · 0:00–0:10 · Missions
 
-Screen: **Pick a mission**, five mission cards.
+Screen: **Pick a mission**, the case file: one tab per job, and **The Romaine
+Street Papers** (the Summa Corporation burglary, 1974) is open by default.
 
 1. Say: **"This is Hobbs. Every heist in history needed a building. Our agent
    finds one that's empty tonight. Pick a heist."**
-2. The judge clicks **The Romaine Street Papers** (the Summa Corporation
-   burglary, 1974). Point at it if they hesitate.
+2. The judge clicks **The Romaine Street Papers** tab, then the **Take the
+   job** stamp. Clicking a job's tab only opens its page; **Take the job**
+   opens Cast. Point at both if they hesitate.
 
-Fallback: if the judge picks another mission, press the browser's Back
-button and click **The Romaine Street Papers** yourself. Say: **"Tonight's
-building is cast for this one."**
+Fallback: if the judge opens another job, click **The Romaine Street Papers**
+tab yourself, then **Take the job**. No Back button is needed. Say:
+**"Tonight's building is cast for this one."**
 
 Walked here.
 
@@ -213,7 +251,8 @@ Fallbacks:
 - **A No aerial card shows instead**, "Vexcel has no imagery for this
   building yet.". Say: **"No aerial for this one yet."** Click **Plan the
   job**.
-- **Scout hangs.** Click **Dossier** in the step rail.
+- **The aerial hangs.** Click **Plan the job** anyway; it doesn't wait for
+  the aerial. Tab 4, Dossier, is locked from Scout ("Finish Scout first").
 
 Walked here on the fictional test building: the **No aerial** card only. The
 live aerial is live only, not walked here.
@@ -303,7 +342,7 @@ Not walked here:
 - #142's board plan, which merged after the walk;
 - this order to the live crew (live only).
 
-## Beat 6 · 1:00–1:28 · Run, in the real scan
+## Beat 6 · 1:00–1:30 · Run, in the real scan
 
 **A GO** at the rehearsal, and on the night if the checklist's go / no-go
 passed. The run plays in first person inside the showcase building's own scan.
@@ -317,55 +356,57 @@ first person, a note top left says "The building is the real scan. Security
 shown is game fiction."
 
 1. Check that the label says **real Matterport scan**.
-2. The Run opens in first person, playable 1.2–2.3 s after **Start the run**.
-   The checklist chose first person once on this browser, and the browser
-   remembers it. If it opens on the board, click **First person**: the right
-   button of the **Board** / **First person** pair, at the top left of the
-   board, under the scan stage's header. If a loading line shows, wait for it
-   to clear. It runs, in order: "Asking for
-   the scan", "Downloading the building", "Building the walls and floor",
-   then "Loading the picture around you".
+2. The Run opens in first person, its default (`DEFAULT_RUN_VIEW` in
+   `view-store.ts`), playable 1.2–2.3 s after **Start the run**. If a loading
+   line shows, wait for it to clear. It runs, in order: "Asking for the
+   scan", "Downloading the building", "Building the walls and floor", then
+   "Loading the picture around you". If it opens on the board, click **First
+   person**: the right button of the **Board** / **First person** pair, at the
+   top left of the board, under the scan stage's header.
 3. Click the view once: mouse look starts only after that click. The radio
    opens with "You're in at the roof hatch. W to walk, the mouse to look."
    (#185). The pill says "Look around. The clock starts when you move.", so
-   nothing moves until the judge does. A controls card at the left lists the keys; it fades
-   once the judge has walked and looked around.
+   nothing moves until the judge does. A controls card at the left lists the
+   keys; it fades once the judge has walked and looked around.
 4. Hand the judge the keyboard and mouse. Say: **"You're in the real building,
    its own scan. W to move, the mouse to look, hold E at a door. That light is
-   a camera: step into it and see what happens."** Don't promise a win. W
-   runs by default, and Shift walks.
-5. Tell the judge, if they need it: **hold E** at a locked door to pick it, and
-   at the files to take them; **P** pauses; **Esc** frees the mouse. The same
-   keys are on the line at the bottom of the view.
+   a camera: stand in it for a second."** Don't promise a win.
+5. Tell the judge, if they need it: **W A S D** move, the arrow keys turn,
+   **hold E** at a locked door to pick it and at the files to take them, **P**
+   pauses, and **Esc** frees the mouse. The same keys are on the line at the
+   bottom of the view.
 6. The cameras are visible: each has a light cone to the floor it watches.
-   At the rehearsal, the first camera's label was in sight about 2 s in.
-   - A camera sees the judge. The suspicion meter reads "Next to [camera]'s
-     sight", then "[camera] has you in view", then "[camera] saw you".
-   - The alarm comes 3–6 s in: **Alert**, then **Lockdown**.
+   At the rehearsal, the first camera's label was in sight about 2 s in. Which
+   camera to stand in, and where, is on the printed answer key (below).
+   - The judge stands in its light. The suspicion meter reads "Next to
+     [camera]'s sight", then "[camera] has you in view", then "[camera] saw
+     you".
+   - The alarm goes to **Alert** on the first turn in sight, and to
+     **Lockdown** only on a second one: each turn in sight raises it one step
+     (`alarm.ts`). A turn is 0.7 s, so "a second" in the light is enough. A
+     judge who steps straight through gets Alert, which calms after 3 turns
+     unseen.
    - The Chief's first line comes 2.5–5.7 s after the alarm.
-   - At **Lockdown**, the radio mostly repeats one line, "Intruder last seen
-     in the [room].", and rarely reads the Chief's orders (#190, left for after
-     the freeze). The orders still apply: the guards converge, and the Debrief
-     lists every decision.
+   - At **Lockdown**, the radio mostly repeats a short line about where the
+     player was last seen, and rarely reads the Chief's orders (#190, left for
+     after the freeze). That line is written by the model, so its words vary.
+     The orders still apply: the guards converge, and the Debrief lists every
+     decision.
 
    Narrate the re-plan; don't wait for the radio to read it. Say: **"That
    camera has you. The Chief is re-planning live: watch the guards converge on
-   the corridor."** The "read why" moment is the Debrief's list of decisions
-   (beat 7).
-
-   The team knows from the rehearsal which camera this is, and which door
-   tears. Those answers stay out of the repo.
+   you."** The "read why" moment is the Debrief's list of decisions (beat 7).
 7. **Steer, because the capture isn't certain within the beat.** As soon as
-   the camera fires, say: **"Keep going down the corridor."** That sends the
-   judge towards the guards.
-   - On current `main`, walks that kept heading for the guards were caught
-     15–31 s after the alarm.
+   the alarm goes, say: **"Keep going, towards the guards."** The answer key
+   says which way that is.
+   - On `main`, walks that kept heading for the guards were caught 15–31 s
+     after the alarm.
    - At the rehearsal, two walks that stopped after the alarm weren't caught
      in 54 turns, because the alarm calmed down.
 
-   On those timings the capture lands between about 1:18 and 1:37, so the
-   slower half runs past this beat's 1:28. **Cut at 1:30, caught or not**
-   (fallbacks below). That uses the 2 s spare, and keeps the clock at 2:00.
+   On those timings the capture lands between about 1:18 and 1:37. **Cut at
+   1:30, caught or not** (fallbacks below). That is this beat's end, so the
+   clock holds.
 8. The guards close in, and the run ends in a capture. The capture is the
    beat: the alarm and the Chief's re-plan are the wow. The view stops taking
    input and frees the mouse. A card says **Run over**, "Caught in the
@@ -384,7 +425,8 @@ Fallbacks:
 - **The judge stops after the alarm,** and the alarm starts to calm. Say:
   **"Keep moving. The guards are coming."**
 - **No capture by 1:30**, for any reason. Say **"The Chief is still hunting
-  you. Here's the replay."** and click **Debrief** in the step rail. The
+  you. Here's the replay."** and click tab **7, Debrief**, in the app's tab
+  row. Run unlocks that tab (`reachedIndex` in `step-rail-view.tsx`). The
   Debrief shows a run still in progress (`main` handles a playing run; not
   walked here), with the Chief's decisions so far for beat 7.
 - **The judge can't pick the lock or take the files.** Say: **"Hold E right at
@@ -392,10 +434,10 @@ Fallbacks:
   ends the run, and its card has **See the debrief**.
 - **The Chief's first line is late.** On current `main` it comes 2.5–5.7 s
   after the alarm; before #173 it took 1.2–14 s. Keep narrating the guards
-  meanwhile. If a recorded or
-  rule-based reply stands in, the toast says "The model didn't answer in time,
-  so a recorded reply stands in." Say: **"The model was slow, so a stand-in
-  reply takes over. The guards never wait for it."**
+  meanwhile. If a recorded or rule-based reply stands in, the toast says "The
+  model didn't answer in time, so a recorded reply stands in." Say: **"The
+  model was slow, so a stand-in reply takes over. The guards never wait for
+  it."**
 - **The judge tries one of the scan's own doors.** Say: **"Those are the
   scan's real doors. The mission's one door is at the files."**
 - **The picture tears.** Say: **"That's where two panoramas meet."** Keep
@@ -416,12 +458,13 @@ the fixture building, open in its own tab (checklist). First person on F1 was
 walked on c08ae94, before it went real time; the steps below are written
 from `main`.
 
-1. On the showcase path, click the **F1 Run tab**. Say: **"Tonight's run is
-   on our hand-built floor, a fixture building."** On
+1. On the showcase path, click the **F1 browser tab**. Say: **"Tonight's run
+   is on our hand-built floor, a fixture building."** On
    [the F1 path](#if-the-showcase-building-is-out-the-f1-path), skip this
-   step: stay in the first tab, where **Start the run** opened the Run.
-2. Click **First person**, at the top right of the board, left of the mute
-   button.
+   step: stay in the first browser tab, where **Start the run** opened the
+   Run.
+2. The Run is in first person, its default. If it shows the board, click
+   **First person**, at the top right of the board, left of the mute button.
 3. Click the view once, so the mouse looks, then hand over. Say: **"W to move,
    the mouse to look. Through the lobby, then left, down the dock
    corridor."**
@@ -441,17 +484,20 @@ live model, F1's Chief answers live. Say what the tag says.
 
 Fallbacks:
 
-- First person doesn't come up ("First person needs WebGL…", and the board
-  shows). Play the Tactical board instead:
-  1. Press **1**, **1**: the Freight Lift Lobby, then the Dock Corridor, in
+- First person doesn't come up, or doesn't play. Play the Tactical board
+  instead:
+  1. If the board isn't showing, click **Board**, the left button of the
+     **Board** / **First person** pair. ("First person needs WebGL…" puts
+     you on the board already.)
+  2. Press **1**, **1**: the Freight Lift Lobby, then the Dock Corridor, in
      C2's view.
-  2. The alarm goes to **Alert**, and the Chief's orders fill the side panel.
-  3. Click guard **G4** for its Why card ("the 4th guard comes from Class A"),
+  3. The alarm goes to **Alert**, and the Chief's orders fill the side panel.
+  4. Click guard **G4** for its Why card ("the 4th guard comes from Class A"),
      then **Esc**.
-  4. Press **W** until the outcome shows (twice on the walk).
+  5. Press **W** until the outcome shows (twice on the walk).
 - The judge wanders off: click **Restart**, and give the directions again.
 
-## Beat 7 · 1:28–1:43 · Debrief
+## Beat 7 · 1:30–1:45 · Debrief
 
 Screen:
 
@@ -472,7 +518,8 @@ Screen:
 Don't click either of these:
 
 - **Try again**: it starts a new run.
-- **Owner mode: test your own security**: beat 8 uses its prepared tab.
+- **Owner mode: test your own security**, or tab **8, Owner Mode**: beat 8
+  uses the prepared Owner browser tab.
 
 Fallback: the Debrief says "No run yet", because a reload lost the run. Say:
 **"The debrief replays the run turn by turn; you just saw how it ended."**
@@ -482,10 +529,13 @@ Walked here on F1: grade D, "Caught in the Dock Corridor", two Chief
 decisions, the slider. Live only, not walked here: the showcase building's
 Debrief. At the rehearsal, it scrubbed through every turn.
 
-## Beat 8 · 1:43–1:58 · Owner Mode
+## Beat 8 · 1:45–1:55 · Owner Mode
 
-Screen: the Owner tab, prepared before the pitch (checklist). It shows Owner
-Mode on Halvorsen Tower:
+Screen: the Owner browser tab, the last browser tab, prepared before the
+pitch (checklist). It is not the app's tab 8, **Owner Mode**: that opens a
+fresh Owner page, without the prepared result, and on the showcase building
+without F1's prepared pair. The prepared tab shows Owner Mode on Halvorsen
+Tower:
 
 - "Made-up setup on a fixture building. Real setups stay on this device.";
 - **Two setups, side by side**, tagged **Recorded**;
@@ -495,11 +545,10 @@ Mode on Halvorsen Tower:
 - "7 → 1 of 50: 6 fewer got out.";
 - "Coverage 43% → 50%, open windows 40 of 80 → 20 of 80."
 
-1. Click the **Owner tab**.
-2. Say: **"And for the owner: their own security, here a made-up setup on our
-   fixture building. Fifty AI break-ins: seven get out. Move camera C2:
-   coverage 43 to 50 percent, open windows 40 to 20 of 80, and one in
-   fifty."**
+1. Click the last browser tab, the Owner tab you prepared.
+2. **[swap: #206]** Say: **"And for the owner: their own security, here made
+   up. Seven get out; move C2, one in fifty."** That's about 8 s. The coverage
+   and open-window numbers stay on screen, unspoken.
 3. If time allows, click **Show on the board** under B. C2 is ringed, as what
    noticed the crew first most often.
 
@@ -524,10 +573,10 @@ switch.
 
 Use this when the go / no-go fails. Everything is on F1, Halvorsen Tower, and
 every step was walked here. Beats 1, 7 and 8 are unchanged, and beat 6 is its
-F1 fallback. Beats 2 to 7 all play in the first tab: **Start the run** opens
-the Run there, with the crew's plan just shown. Don't use the prepared F1 tab
-on this path: it opened before the plan, and a Run reads the plan only as it
-opens.
+F1 fallback. Beats 2 to 7 all play in the first browser tab: **Start the
+run** opens the Run there, with the crew's plan just shown. Don't use the
+prepared F1 browser tab on this path: it opened before the plan, and a Run
+reads the plan only as it opens.
 
 Say once: **"Our fixture building, shaped like a CoStar record."**
 
@@ -592,8 +641,8 @@ in the server's memory.
     `NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE` must be **empty** on the demo
     machine.
 - [ ] **Build after setting them.** `NEXT_PUBLIC_*` is fixed at build time:
-      `npm ci`, then `npm run build`, then `npm start`, on `main` at d9be7fc
-      or later.
+      `npm ci`, then `npm run build`, then `npm start`, on current `main`.
+      Rebuild after #202, #195 and #206 land.
 - [ ] **Start the server a few minutes before the pitch.** The showcase level
       builds when the server starts, which takes minutes. When it is done,
       the cast card's level line says "Its level is built: Plan and Run are
@@ -603,47 +652,52 @@ in the server's memory.
 - [ ] **Sound on.** The system volume is up and checked, and the browser tab
       is not muted. On a Run, the speaker button at the top right of the
       board, marked **M**, is not pressed; **M** toggles it.
+- [ ] **Print the answer key**, and keep it by the laptop. It stays out of
+      this public repo, because it holds facts from the real scan. It has:
+  - which camera to stand in on the run, and where;
+  - which way to send the judge after the alarm, towards the guards;
+  - which door's picture tears, to steer around;
+  - the room the end card names.
 
 **The last few minutes, in this order:**
 
 - [ ] `npm run demo:reset`, then reload the browser on `/`. The reset needs
       that reload, so it comes first.
-- [ ] **Open the F1 fallback tab.** In a second tab, open
-      `/b/F1/run?m=romaine-1974` on the board. F1 has no scan, so a
+- [ ] **Open the F1 fallback browser tab.** In a second browser tab, open
+      `/b/F1/run?m=romaine-1974`. It opens in first person, its default, and
+      its clock waits for the first move (#174). F1 has no scan, so a
       background tab is fine.
-- [ ] **Open the Owner tab as the last tab.** It is
-      `/b/F1/owner?m=romaine-1974`.
+- [ ] **Open the Owner browser tab as the last browser tab.** It is
+      `/b/F1/owner?m=romaine-1974`, typed in the address bar. Don't use the
+      app's tab 8 for this.
   1. Press **Shift+?** and switch **Model** to fixtures.
   2. Scroll the side panel to **Compare two setups**. A is "Demo: night
      shift" and B is "Demo: night shift, C2 moved".
-  3. Click **Compare**. Check for **7 / 50**, **1 / 50** and **Recorded**.
+  3. **[swap: #206]** Click **Compare**. Check for **7 / 50**, **1 / 50** and
+     **Recorded**.
   4. Press **Shift+?**, switch **Model** back, and press **Esc**.
   5. Check that the result is still there and the chip reads `LIVE`.
 
   Why: with a live model, Compare asks the model for new strategies, and the
   counts are no longer 7 and 1.
-- [ ] **Last: back to the first tab, and load the scan from Plan.** Do this
-      last, because switching tabs hides the window and pauses a scan's load
-      (#159).
+- [ ] **Last: back to the first browser tab, and load the scan from Plan.**
+      Do this last, because switching browser tabs hides the window and
+      pauses a scan's load (#159).
   1. Check that the chip reads `LIVE`.
-  2. **Set first person once.** In this window, in front, open the showcase
-     building's **Run** from the cast card's **Run** link, and click **First
-     person**.
-     - The browser remembers the view choice. A fresh browser opens Run on
-       the board, and so does this one after `demo:reset`.
-     - Don't move: the clock waits for the first move (#174), so no turn is
-       played.
-  3. Click **Plan** in the step rail. Plan starts the scan and its board, and
-     Run takes them from it (#181).
-  4. Leave it there, with the window in front, until the board is drawn.
-  5. **Decide [go / no-go](#go--no-go-decided-before-the-pitch) now, with
+  2. In this window, in front, open the showcase building's **Plan** from the
+     cast card's **Plan** link. Plan starts the scan and its board, and Run
+     takes them from it (#181). Run opens in first person by default, so
+     there's nothing to set.
+  3. Leave it there, with the window in front, until the board is drawn.
+  4. **Decide [go / no-go](#go--no-go-decided-before-the-pitch) now, with
      this Plan on screen.**
-  6. **Put that path's order on the clipboard.** The board is drawn, so
+  5. **Put that path's order on the clipboard.** The board is drawn, so
      leaving the window now is safe. Come back to it after.
      - Go: `Go in by the roof hatch, straight to the files, and out the way we came.`
      - F1 path: `Go in through the dock, wait for the 2 am round to pass, take the records room.`
-  7. To start beat 1, go to `/` with the wordmark top left. That isn't a
-     reload, so the scan survives it. A reload lets the scan go.
+  6. To start beat 1, go to `/` with the wordmark top left, or tab **1,
+     Missions**. Neither is a reload, so the scan survives it. A reload lets
+     the scan go.
 
   Time a cold load from Plan once on the demo machine, so you know how early
   to open it.
@@ -669,7 +723,7 @@ not on stage, and never wait on stage.
 If "Loading the scan" offers **Use the stand-in floor plan**, don't take it.
 It forces Matterport to fixtures for the rest of the session, so every page
 after it is on the stand-in until the demo settings or `npm run demo:reset`
-switch it back. The F1 tab is the better move.
+switch it back. The F1 browser tab is the better move.
 
 **Before the event:** one full rehearsal against a timer. Then reset and run
 the last-minutes list again.
@@ -677,8 +731,7 @@ the last-minutes list again.
 ## The video
 
 Q10, per status issue #1 (23:10 UTC on 14 November), and in the SPEC since
-#180: **the
-public demo video doesn't show the scan.**
+#180: **the public demo video doesn't show the scan.**
 
 - It shows the run on F1, which is beat 6's F1 fallback, in first person or
   on the board.
@@ -692,8 +745,8 @@ in the repo or the video's files.
 1. **Beat 6 on the scan was rehearsed, not walked here.** The team's live
    rehearsal on `main`, at about 05:00 UTC with #181, #179, #150 and #173 in,
    called it a GO. Its timings, and the steer towards the guards, are in beat
-   6. The team knows which camera has the player and which door tears. Those
-   answers stay out of the repo.
+   6. Which camera has the player, which door tears, and the room on the end
+   card are on the printed answer key, out of the repo.
 2. **The live crew can name a zone the board doesn't have.** It plans on the
    manifest's zones, not the placed board's, and the board strikes such a
    step out.
@@ -707,7 +760,8 @@ in the repo or the video's files.
    Esun4's earlier walks are reported on #157.
 4. **The radio repeats one line at Lockdown (#190).** In first person, at
    Lockdown, the Chief is asked on every re-sighting, so the radio mostly
-   repeats "Intruder last seen in the [room]." and rarely reads its orders.
+   repeats a short, model-written line about where the player was last seen,
+   and rarely reads its orders.
    Nelson's call is to leave the code as it is for the demo, and fix it after
    the freeze. Beat 6 narrates the re-plan instead, and beat 7 reads the
    reasons off the Debrief.
@@ -715,6 +769,10 @@ in the repo or the video's files.
    tab.** Fake mode locks the switch. Expect the result to stay on screen when
    you switch it back, since the page re-renders without a reload. The
    checklist checks it.
-6. **Still open on GitHub, not in this script:** the visual restyle (#167). It
-   will change how screens look, and renames the wordmark and page title to
-   Hobbs.
+6. **Still to land before the rehearsal.** Re-check the lines each one touches
+   when it merges:
+   - #202, the scan floor fill;
+   - #195, the Hobbs header and page titles;
+   - #206, Owner Mode on the showcase building. Its numbers replace F1's in
+     the lines marked **[swap: #206]**: the cue card's beat 8 row, beat 8's
+     spoken line, and the checklist's Compare check.
