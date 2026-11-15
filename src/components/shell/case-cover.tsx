@@ -78,7 +78,7 @@ export function CaseCover() {
         <div data-sheet className="cover-sheet" />
         <template
           dangerouslySetInnerHTML={{
-            __html: `<div class="cover-art"><span class="cover-tab">Case files</span><div class="cover-label"><b>Heist Anywhere</b><span>Case files · Los Angeles &amp; Houston</span><i>Open</i></div></div>`,
+            __html: `<div class="cover-art"><span class="cover-tab">Case files</span><div class="cover-label"><b>Hobbs</b><span>Case files · Los Angeles &amp; Houston</span><i>Open</i></div></div>`,
           }}
         />
       </div>

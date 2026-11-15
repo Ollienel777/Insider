@@ -91,7 +91,7 @@ describe("TopBar", () => {
     const building = FIXTURE_BUILDINGS.find((b) => b.id === "F1")!;
     const html = renderToStaticMarkup(<TopBar status={status} building={building} />);
     expect(html).toContain("h-14");
-    expect(text(html)).toContain("Heist Anywhere");
+    expect(text(html)).toContain("Hobbs");
     const slot = html.match(/data-testid="building-slot"[^>]*>([\s\S]*?)<\/div>/)![1];
     expect(text(slot)).toBe("Halvorsen Tower · Los Angeles");
   });

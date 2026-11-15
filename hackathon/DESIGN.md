@@ -1,4 +1,4 @@
-# Design direction: Heist Anywhere
+# Design direction: Hobbs
 
 Every screen is built and reviewed against this file and the `ui-craft`
 skill. The primary path is the seven screens of the demo script in
@@ -120,7 +120,7 @@ pad 12 × 16; the gap between panels is 16; screen gutters 24.
 
 ## Layout
 
-- **App shell.** A 56px top bar: the wordmark "Heist Anywhere" left; the
+- **App shell.** A 56px top bar: the wordmark "Hobbs." left; the
   building name and city centre once one is picked; the **mode chip** right
   (`FIXTURES` in `--text-2` mono, or `LIVE` with a 6px `--success` dot; when
   mixed, it lists the services on fixtures in its tooltip). Under it, on
@@ -176,7 +176,7 @@ thread, from a piece to a field, is the product's picture in a gallery.
 ## The hero screen: Run, at the wow beat
 
 ```
-┌ top bar ─ Heist Anywhere ───── Halvorsen Tower · Los Angeles ───── FIXTURES ┐
+┌ top bar ─ Hobbs. ───────────── Halvorsen Tower · Los Angeles ───── FIXTURES ┐
 ├ Scout ✓ · Dossier ✓ · Plan ✓ · Run · Debrief                       │ Drill  ┤
 │                                                     │ ALERT          (48px, │
 │        isometric board (orthographic camera,        │  danger)  turn 14     │

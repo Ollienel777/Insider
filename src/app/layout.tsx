@@ -14,7 +14,7 @@ const marker = Permanent_Marker({ subsets: ["latin"], weight: "400", variable: "
 const display = Luckiest_Guy({ subsets: ["latin"], weight: "400", variable: "--font-display-face", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Heist Anywhere",
+  title: "Hobbs",
   description: "Stealth levels built from real buildings.",
 };
 
