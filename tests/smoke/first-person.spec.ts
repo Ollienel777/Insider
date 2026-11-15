@@ -38,6 +38,9 @@ async function open(page: Page, building: string) {
 }
 
 test("first person runs in real time, and walking into the next node's area plays the engine's move", async ({ page }) => {
+  // Its own waits add up past the default 30 s (up to 30 s for software WebGL to be ready, then
+  // 10 s and 15 s), so on a busy machine it timed out mid-walk; the E test below has the same budget.
+  test.setTimeout(90_000);
   await open(page, "F1");
   if (!(await firstPerson(page))) return;
 
