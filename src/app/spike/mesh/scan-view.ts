@@ -20,6 +20,7 @@ import {
   LinearMipmapLinearFilter,
   Mesh,
   MeshBasicMaterial,
+  OrthographicCamera,
   PerspectiveCamera,
   Ray,
   Scene,
@@ -41,11 +42,13 @@ import {
 } from "@/lib/scan-mesh/manifest";
 import { fitLevels, type LevelSample } from "@/lib/scan-mesh/levels";
 import { TUNING, type MoveWorld } from "@/lib/scan-mesh/movement";
+import { packShelves, type Placement } from "@/lib/scan-mesh/atlas";
+import { PATCH_MARGIN, type PlanePatch } from "@/lib/scan-mesh/planes";
 import { parseObj } from "@/lib/scan-mesh/obj";
 import { feetUnder, linksFresh, poseVelocity, sharpLayer, viewStats, type ScanPose, type ViewStats } from "@/lib/scan-mesh/pose";
 import { distanceToGroup, type TexturedGroup } from "@/lib/scan-mesh/textured";
 import { MeshWorld } from "./collider";
-import type { DetailReply, DetailRequest } from "./detail-worker";
+import type { DetailReply, DetailRequest, RepairStats } from "./detail-worker";
 import { matchExposure } from "./exposure-match";
 import { HoleFill } from "./hole-fill";
 import { blankCube, PanoStore, type PanoCounts, type PanoUse } from "./panos";
@@ -73,6 +76,12 @@ export interface ScanViewOptions {
   textured?: boolean;
   /** Whether to fill what no scanned surface covers from the pixels around it, and close the mesh's small holes. Default true. */
   fill?: boolean;
+  /**
+   * The detailed mesh's repairs: its shards left out, and its flat surfaces
+   * carried across their gaps and over what no panorama saw of them. "all"
+   * by default; "none", or one of the two, to compare.
+   */
+  repair?: "all" | "none" | "shards" | "planes";
   /** Vertical field of view, degrees. */
   fov?: number;
   /** Called whenever `status()` has news: a phase, the detailed mesh, the exposure match. */
@@ -89,6 +98,16 @@ export interface ScanDetailStatus {
   textures?: ScanTextureStatus;
   /** Small holes in the detailed mesh that were closed. */
   holes?: number;
+  /** The mesh's repairs: its shards left out, and its planes' patches. */
+  repair?: ScanRepairStatus;
+}
+
+export interface ScanRepairStatus {
+  /** Null until the repair is in. */
+  stats: RepairStats | null;
+  /** Patches carried across gaps in planes, and how many have a texture made for them so far. */
+  patches: number;
+  synthesized: number;
 }
 
 export interface ScanTextureStatus {
@@ -150,6 +169,18 @@ const UPLOADS_SMALL = 4;
 const UPLOADS_SHARP = 1;
 /** Full-size panorama cubes kept on the GPU beside the textures, at most (each 2k one is about 134 MB). */
 const SHARP_CUBES = 5;
+/** A patch's picture is this fine, metres a pixel, and at most this many pixels a side. */
+const PATCH_TEXEL = 0.012;
+const PATCH_PIXELS = 256;
+/** How far either side of a patch's plane its picture takes the mesh from, metres. */
+const PATCH_SLAB = 0.07;
+/** Patches this far from the eye, metres, wait for their own texture until it comes nearer; and frames between two pictures. */
+const PATCH_REACH = 18;
+const PATCH_EVERY = 3;
+/** The patches' textures share pages this many pixels square, each with this much clear round it, sampled down to this many smaller copies. */
+const PAGE_SIZE = 2048;
+const PAGE_GUTTER = 4;
+const PAGE_LEVELS = 3;
 const SOURCE_WIDTH = 160;
 const SOURCE_HEIGHT = 90;
 
@@ -215,7 +246,23 @@ export class ScanView {
   private arrived: { group: number; sharp: boolean; image: ImageBitmap }[] = [];
   private readonly fill: HoleFill | null;
   private readonly fillMaterial: ShaderMaterial;
+  /** For the fans that close small holes: a step farther behind, so a plane's patch over the same hole wins. */
+  private readonly fanMaterial: ShaderMaterial;
   private fillMeshes: Mesh[] = [];
+  private patchWait = 0;
+  /**
+   * The planes' patches: where each one's own texture has got to, the size
+   * of the picture taken of its surroundings, the part of that picture the
+   * patch itself covers (x, y, width, height), and where that part goes on
+   * the patches' shared pages.
+   */
+  private patches: { patch: PlanePatch; centre: Vector3; state: "idle" | "asked" | "done" | "none"; picture: [number, number]; scale: number; crop: [number, number, number, number]; place: Placement }[] = [];
+  private pages: { raw: WebGLTexture; texture: Texture; material: ShaderMaterial; mesh: Mesh }[] = [];
+  private patchAsked = -1;
+  /** The detailed mesh again in a scene of its own, for taking a patch's picture of the surface round it. */
+  private readonly patchScene = new Scene();
+  private patchMesh: Mesh | null = null;
+  private readonly patchCamera = new OrthographicCamera(0, 1, 1, 0, 0.01, 1);
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -235,6 +282,7 @@ export class ScanView {
     this.photo = createPhotoUniforms(this.blank);
     this.backdropMaterial = createPhotoMaterial(this.photo, "backdrop");
     this.fillMaterial = createPhotoMaterial(this.photo, "stand-in");
+    this.fanMaterial = createPhotoMaterial(this.photo, "stand-in", null, 2);
     this.backdrop = new Mesh(new BoxGeometry(1000, 1000, 1000), this.backdropMaterial);
     this.backdrop.renderOrder = -1;
     this.backdrop.frustumCulled = false;
@@ -355,7 +403,11 @@ export class ScanView {
   status(): ScanViewStatus {
     return {
       ...this.state,
-      detail: { ...this.state.detail, textures: this.state.detail.textures ? { ...this.state.detail.textures } : undefined },
+      detail: {
+        ...this.state.detail,
+        textures: this.state.detail.textures ? { ...this.state.detail.textures } : undefined,
+        repair: this.state.detail.repair ? { ...this.state.detail.repair } : undefined,
+      },
       exposure: this.state.exposure ? { ...this.state.exposure } : null,
       timings: { ...this.state.timings },
     };
@@ -630,8 +682,12 @@ export class ScanView {
           }
           return;
         }
-        if (reply.kind === "fill") {
-          this.useFill(reply.fill, reply.holes);
+        if (reply.kind === "repair") {
+          this.useRepair(reply);
+          return;
+        }
+        if (reply.kind === "inpainted") {
+          this.usePatchPicture(reply.id, reply.pixels);
           return;
         }
         if (reply.kind === "texture") {
@@ -643,7 +699,16 @@ export class ScanView {
         this.push();
       };
       worker.onerror = (event) => fail(`worker: ${event.message}`);
-      const request: DetailRequest = { kind: "load", url: detail.url, bytes: detail.bytes, textures: textured, small: SMALL_TEXTURE, sharp: SHARP_TEXTURE };
+      const request: DetailRequest = {
+        kind: "load",
+        url: detail.url,
+        bytes: detail.bytes,
+        textures: textured,
+        small: SMALL_TEXTURE,
+        sharp: SHARP_TEXTURE,
+        repair: this.options.repair ?? "all",
+        panos: (this.manifest?.panos ?? []).filter((p) => p.faces !== null).map((p) => [p.position[0], p.position[1], p.position[2]]),
+      };
       worker.postMessage(request);
     } catch {
       release();
@@ -677,7 +742,30 @@ export class ScanView {
       megabytes: reply.megabytes,
       seconds: reply.seconds,
       textures: reply.textured > 0 ? { total: reply.textured, small: 0, sharp: 0, megabytes: 0, seconds: 0, done: false, gpuMegabytes: 0 } : undefined,
+      repair: { stats: null, patches: 0, synthesized: 0 },
     });
+    this.push();
+  }
+
+  /**
+   * The repaired mesh: its triangles without the unseen ones a patch stands
+   * in for, the patches themselves, and the fans closing its small holes.
+   * The panoramas' depth is rendered again from the result.
+   */
+  private useRepair(reply: Extract<DetailReply, { kind: "repair" }>): void {
+    const geometry = this.detailGeometry;
+    if (!geometry) return;
+    geometry.setIndex(new BufferAttribute(reply.index, 1));
+    if (this.groups.length > 0) {
+      geometry.clearGroups();
+      reply.groups.forEach((g, i) => geometry.addGroup(g.start, g.count, i));
+      this.groups = reply.groups;
+    }
+    this.useFill(reply.fans, reply.stats.holes);
+    if (this.fill && reply.patches.length > 0) this.usePatches(reply.patches, reply.patchPositions, reply.patchUvs);
+    this.panos?.setGeometry(geometry);
+    const repair = this.state.detail.repair;
+    if (repair) Object.assign(repair, { stats: reply.stats, patches: reply.patches.length });
     this.push();
   }
 
@@ -687,7 +775,7 @@ export class ScanView {
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", new BufferAttribute(triangles, 3));
     geometry.computeBoundingSphere();
-    this.addFill(new Mesh(geometry, this.fillMaterial));
+    this.addFill(new Mesh(geometry, this.fanMaterial));
     // A closed hole hides what is behind it from a panorama, like the surface it stands for.
     this.panos?.addOccluder(geometry);
   }
@@ -751,6 +839,7 @@ export class ScanView {
 
     this.sharpClock -= dt;
     const textures = this.state.detail.textures;
+    if (textures?.done && this.arrived.length === 0) this.askPatchPicture();
     if (this.sharpClock <= 0) {
       this.sharpClock = SHARP_EVERY;
       this.chooseSharp();
@@ -814,6 +903,225 @@ export class ScanView {
     const asked = near.filter((i) => !this.sharpWanted.has(i));
     this.sharpWanted = wanted;
     if (asked.length > 0) this.detailWorker?.postMessage({ kind: "sharp", groups: asked } satisfies DetailRequest);
+  }
+
+  /**
+   * The planes' patches, drawn a page at a time: each patch's part of its
+   * picture has a place on a shared page (lib/scan-mesh/atlas.ts), its
+   * corners' texture coordinates are moved there, and one mesh a page draws
+   * every patch on it. A page starts empty (alpha 0): a patch is painted by
+   * the panoramas and the fill until its own texture is written.
+   */
+  private usePatches(list: PlanePatch[], positions: Float32Array, uvs: Float32Array): void {
+    const gl = this.renderer.getContext() as WebGL2RenderingContext;
+    const sized = list.map((patch) => {
+      const scale = Math.max(PATCH_TEXEL, Math.max(patch.width, patch.height) / PATCH_PIXELS);
+      const width = Math.max(8, Math.round(patch.width / scale));
+      const height = Math.max(8, Math.round(patch.height / scale));
+      // The picture has a margin of the surface round the gap, to fill it from; the patch covers the middle.
+      const mx = Math.min(Math.floor(PATCH_MARGIN / scale), (width - 2) >> 1);
+      const my = Math.min(Math.floor(PATCH_MARGIN / scale), (height - 2) >> 1);
+      return { scale, picture: [width, height] as [number, number], crop: [mx, my, width - 2 * mx, height - 2 * my] as [number, number, number, number] };
+    });
+    const packed = packShelves(sized.map((s) => [s.crop[2], s.crop[3]] as const), PAGE_SIZE, PAGE_GUTTER);
+    const corners: number[] = Array.from({ length: packed.pages }, () => 0);
+    list.forEach((patch, i) => {
+      const { picture, crop } = sized[i];
+      const place = packed.placements[i];
+      corners[place.page] += patch.count;
+      for (let k = patch.start; k < patch.start + patch.count; k++) {
+        // Half a pixel in from the picture's edge, so the page's empty texels beside it are never sampled at full size.
+        const px = Math.min(crop[2] - 0.5, Math.max(0.5, uvs[k * 2] * picture[0] - crop[0]));
+        const py = Math.min(crop[3] - 0.5, Math.max(0.5, uvs[k * 2 + 1] * picture[1] - crop[1]));
+        uvs[k * 2] = (place.x + px) / PAGE_SIZE;
+        uvs[k * 2 + 1] = (place.y + py) / PAGE_SIZE;
+      }
+      const centre = new Vector3(...patch.origin).addScaledVector(new Vector3(...patch.u), patch.width / 2).addScaledVector(new Vector3(...patch.v), patch.height / 2);
+      this.patches.push({ patch, centre, state: "idle", place, ...sized[i] });
+    });
+    for (let page = 0; page < packed.pages; page++) {
+      const pagePositions = new Float32Array(corners[page] * 3);
+      const pageUvs = new Float32Array(corners[page] * 2);
+      let at = 0;
+      list.forEach((patch, i) => {
+        if (packed.placements[i].page !== page) return;
+        pagePositions.set(positions.subarray(patch.start * 3, (patch.start + patch.count) * 3), at * 3);
+        pageUvs.set(uvs.subarray(patch.start * 2, (patch.start + patch.count) * 2), at * 2);
+        at += patch.count;
+      });
+      const geometry = new BufferGeometry();
+      geometry.setAttribute("position", new BufferAttribute(pagePositions, 3));
+      geometry.setAttribute("uv", new BufferAttribute(pageUvs, 2));
+      geometry.computeBoundingSphere();
+      // The page, made and written here rather than by three.js: a patch's picture goes up alone, not the whole page again.
+      const raw = gl.createTexture();
+      this.renderer.state.bindTexture(gl.TEXTURE_2D, raw);
+      gl.texStorage2D(gl.TEXTURE_2D, PAGE_LEVELS + 1, gl.RGBA8, PAGE_SIZE, PAGE_SIZE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      this.renderer.state.unbindTexture();
+      const texture = new Texture();
+      const properties = this.renderer.properties.get(texture) as { __webglTexture?: WebGLTexture; __webglInit?: boolean };
+      properties.__webglTexture = raw;
+      properties.__webglInit = true;
+      const material = createPhotoMaterial(this.photo, "stand-in", texture);
+      const mesh = new Mesh(geometry, material);
+      this.addFill(mesh);
+      this.pages.push({ raw, texture, material, mesh });
+    }
+    const all = new BufferGeometry();
+    all.setAttribute("position", new BufferAttribute(positions, 3));
+    this.panos?.addOccluder(all);
+  }
+
+  /**
+   * Asks for the next patch's own texture, the nearest the eye first: a
+   * picture of the mesh's surface in the patch's plane round the gap, as its
+   * textures have it, whose missing part the worker fills with more of the
+   * same surface (lib/scan-mesh/inpaint.ts). One at a time, and the picture
+   * is read back from the GPU without holding the frame for it.
+   */
+  private askPatchPicture(): void {
+    if (this.patchAsked !== -1 || !this.detailWorker || !this.detailGeometry || this.patches.length === 0) return;
+    if (this.patchWait-- > 0) return;
+    let next = -1;
+    let near = PATCH_REACH * PATCH_REACH;
+    const eye = this.camera.position;
+    this.patches.forEach((p, i) => {
+      if (p.state !== "idle") return;
+      const d = p.centre.distanceToSquared(eye);
+      if (d < near) {
+        near = d;
+        next = i;
+      }
+    });
+    if (next === -1) return;
+    const { patch, scale, picture, crop: part } = this.patches[next];
+    const [width, height] = picture;
+    if (!this.patchMesh) {
+      this.patchMesh = new Mesh(this.detailGeometry, this.groupMaterials);
+      this.patchMesh.frustumCulled = false;
+      this.patchScene.add(this.patchMesh);
+    }
+    this.patchAsked = next;
+    this.patchWait = PATCH_EVERY;
+    this.patches[next].state = "asked";
+    const side = patch.donor ? Math.max(8, Math.round(patch.donor.size / scale)) : 0;
+    // Nothing seen of its own plane beside it: a well-seen square of another goes beside the picture, to be carried on from.
+    const donor = patch.donor;
+    const pictures = Promise.all([
+      this.patchPicture(patch.origin, patch.u, patch.v, patch.width, patch.height, width, height),
+      donor ? this.patchPicture(donor.origin, donor.u, donor.v, donor.size, donor.size, side, side) : null,
+    ]);
+    void pictures
+      .then(([own, beside]) => {
+        if (this.disposed || !this.detailWorker) return;
+        let pixels = own;
+        let total: [number, number] = [width, height];
+        let crop: [number, number, number, number] = [...part];
+        if (beside) {
+          total = [side + width, Math.max(side, height)];
+          crop = [side + part[0], part[1], part[2], part[3]];
+          pixels = new Uint8Array(total[0] * total[1] * 4);
+          for (let y = 0; y < side; y++) pixels.set(beside.subarray(y * side * 4, (y + 1) * side * 4), y * total[0] * 4);
+          for (let y = 0; y < height; y++) pixels.set(own.subarray(y * width * 4, (y + 1) * width * 4), (y * total[0] + side) * 4);
+        }
+        this.detailWorker.postMessage({ kind: "inpaint", id: next, width: total[0], height: total[1], pixels, crop } satisfies DetailRequest, [pixels.buffer]);
+      })
+      .catch(() => {
+        // The GPU would not give the picture back: the patch stays as the panoramas and the fill paint it.
+        this.patches[next].state = "none";
+        if (this.patchAsked === next) this.patchAsked = -1;
+      });
+  }
+
+  /**
+   * The detailed mesh as it is painted now, looking square at a plane: the
+   * rectangle from `origin` along `u` and `v`, `width` by `height` pixels,
+   * and a thin slab of the scene either side of the plane. Alpha 0 where the
+   * mesh has nothing there. Painted as the eye sees it, from the panoramas
+   * in use where they saw the surface: a patch's texture is then made from
+   * the same sharp picture that will lie beside it.
+   */
+  private async patchPicture(origin: Vec3, uAxis: Vec3, vAxis: Vec3, across: number, up: number, width: number, height: number): Promise<Uint8Array> {
+    const u = new Vector3(...uAxis);
+    const v = new Vector3(...vAxis);
+    const w = new Vector3().crossVectors(u, v);
+    const camera = this.patchCamera;
+    camera.right = across;
+    camera.top = up;
+    camera.near = 1 - PATCH_SLAB;
+    camera.far = 1 + PATCH_SLAB;
+    camera.updateProjectionMatrix();
+    camera.matrixAutoUpdate = false;
+    camera.matrix.makeBasis(u, v, w).setPosition(new Vector3(...origin).add(w));
+    camera.matrixWorld.copy(camera.matrix);
+    camera.matrixWorldInverse.copy(camera.matrix).invert();
+    camera.matrixWorldAutoUpdate = false;
+
+    const target = new WebGLRenderTarget(width, height);
+    const pixels = new Uint8Array(width * height * 4);
+    const before = this.renderer.getRenderTarget();
+    const clear = this.renderer.getClearColor(new Color());
+    const alpha = this.renderer.getClearAlpha();
+    const standing = [...(this.photo.uPanoOn.value as number[])];
+    try {
+      // What each panorama really saw, by its depth: standing on one does not make it see round corners here.
+      (this.photo.uPanoOn.value as number[]).fill(0);
+      this.renderer.setRenderTarget(target);
+      this.renderer.setClearColor(clear, 0);
+      this.renderer.clear();
+      this.renderer.render(this.patchScene, camera);
+    } finally {
+      standing.forEach((on, slot) => ((this.photo.uPanoOn.value as number[])[slot] = on));
+      this.renderer.setClearColor(clear, alpha);
+      this.renderer.setRenderTarget(before);
+    }
+    try {
+      // Read back when the GPU has it ready, a frame or two on: reading at once would hold this frame for it.
+      const read = this.renderer.readRenderTargetPixelsAsync(target, 0, 0, width, height, pixels);
+      // three.js leaves its pack buffer bound while it waits, and any plain read in the meantime would fail.
+      const gl = this.renderer.getContext() as WebGL2RenderingContext;
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      await read;
+    } finally {
+      target.dispose();
+    }
+    return pixels;
+  }
+
+  /** A patch's own texture, written to its place on its page. */
+  private usePatchPicture(id: number, pixels: Uint8ClampedArray | null): void {
+    const entry = this.patches[id];
+    if (this.patchAsked === id) this.patchAsked = -1;
+    if (!entry) return;
+    const page = this.pages[entry.place.page];
+    if (!pixels || !page || pixels.length !== entry.crop[2] * entry.crop[3] * 4) {
+      entry.state = "none";
+      return;
+    }
+    const gl = this.renderer.getContext() as WebGL2RenderingContext;
+    this.renderer.state.bindTexture(gl.TEXTURE_2D, page.raw);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, entry.place.x, entry.place.y, entry.crop[2], entry.crop[3], gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(pixels.buffer));
+    gl.generateMipmap(gl.TEXTURE_2D);
+    this.renderer.state.unbindTexture();
+    entry.state = "done";
+    const repair = this.state.detail.repair;
+    if (repair) repair.synthesized++;
+  }
+
+  /** Whether the repair is in and every patch that gets a texture of its own has it. */
+  repairReady(): boolean {
+    const repair = this.state.detail.repair;
+    if (this.state.detail.state !== "ready" || !repair) return true;
+    const eye = this.camera.position;
+    return repair.stats !== null && this.patches.every((p) => p.state === "done" || p.state === "none" || p.centre.distanceTo(eye) > PATCH_REACH);
   }
 
   /**
@@ -910,7 +1218,13 @@ export class ScanView {
     for (const texture of [...this.small, ...this.sharp]) texture?.dispose();
     for (const material of this.groupMaterials) if (material !== this.material) material.dispose();
     for (const mesh of this.fillMeshes) mesh.geometry.dispose();
+    for (const page of this.pages) {
+      this.renderer.properties.remove(page.texture);
+      this.renderer.getContext().deleteTexture(page.raw);
+      page.material.dispose();
+    }
     this.fillMaterial.dispose();
+    this.fanMaterial.dispose();
     this.fill?.dispose();
     this.material.dispose();
     this.backdropMaterial.dispose();

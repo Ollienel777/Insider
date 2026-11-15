@@ -18,6 +18,8 @@ interface Props {
   /** Whether to paint the detailed mesh with its own textures, and fill what nothing covers. */
   textured: boolean;
   fill: boolean;
+  /** Which of the mesh's repairs to make (scan-view.ts). */
+  repair: "all" | "none" | "shards" | "planes";
   debug: boolean;
 }
 
@@ -47,7 +49,7 @@ const HINTS: [string, string][] = [
 
 const seconds = (value: number | null) => (value === null ? "…" : `${value.toFixed(2)} s`);
 
-export function ScanWalkScreen({ modelId, given, faces, mesh, detail, textured, fill, debug }: Props) {
+export function ScanWalkScreen({ modelId, given, faces, mesh, detail, textured, fill, repair, debug }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [hud, setHud] = useState<WalkHud | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -62,14 +64,14 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, detail, textured, 
     import("./engine")
       .then(({ ScanWalk }) => {
         if (gone) return;
-        engine = new ScanWalk(element, { modelId, faces, mesh, detail, textured, fill, reducedMotion, debug, onHud: setHud });
+        engine = new ScanWalk(element, { modelId, faces, mesh, detail, textured, fill, repair, reducedMotion, debug, onHud: setHud });
       })
       .catch(() => setFailed("This browser couldn't start the 3D view (WebGL 2 is needed)."));
     return () => {
       gone = true;
       engine?.dispose();
     };
-  }, [modelId, faces, mesh, detail, textured, fill, debug]);
+  }, [modelId, faces, mesh, detail, textured, fill, repair, debug]);
 
   if (!modelId) {
     return (
@@ -141,6 +143,13 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, detail, textured, 
               ? "Mesh only"
               : `Panoramas (${hud?.faces ?? faces}) · ${hud?.blend === "nearest" ? "nearest" : hud?.blend === "photo" ? "photo" : "by view"}${hud && !hud.fixes ? " · fixes off" : ""}`}
           </Row>
+          {hud?.detail.repair && (
+            <Row label="Repair">
+              {hud.detail.repair.stats
+                ? `${hud.detail.repair.stats.shards.toLocaleString("en-US")} shards out · ${hud.detail.repair.patches.toLocaleString("en-US")} gaps in ${hud.detail.repair.stats.planes} planes closed, ${hud.detail.repair.synthesized.toLocaleString("en-US")} textured · ${hud.detail.repair.stats.holes.toLocaleString("en-US")} holes`
+                : "finding shards and planes"}
+            </Row>
+          )}
           <Row label="In use">
             {hud && hud.panos.length > 0
               ? hud.panos.map((p) => `${p.index + 1}: ${Math.round(p.share * 100)}%`).join(" · ")

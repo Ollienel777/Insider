@@ -9,6 +9,11 @@
 // the next panorama in line that did, and a point none of them saw keeps the
 // mesh's texture. The lead changes by a short cross-fade, never a cut, and
 // standing on a scan position the picture is that panorama alone.
+//
+// A panorama counts for as much as its picture is worth. Each has a small
+// cube from the start and a full-size one once it is near; the small one is
+// coarser than the mesh's texture, so until the full-size cube has faded in
+// a surface that has a texture keeps it rather than turn to a blur first.
 import type { Vec3 } from "./coords";
 
 /** Each rank's say: the lead, then the ones that paint only what the lead missed. */
@@ -83,12 +88,19 @@ export function seenBy(reach: number, seenTo: number): number {
   return 1 - smoothstep(limit, limit + DEPTH_SOFT, reach);
 }
 
+/** What a panorama's small cube counts for beside a surface's own texture: nothing. Its full-size cube counts fully. */
+export const SMALL_CUBE = 0;
+
 export interface PhotoSample {
   /** The panorama's say from its rank, eased over time (`PRIORITY`). */
   priority: number;
   /** `seenBy`. */
   seen: number;
-  /** The cosine between the surface's normal and the direction back to the panorama. */
+  /**
+   * The cosine between the surface's normal and the direction back to the
+   * panorama, either way round: a wall the scan has one skin of is painted
+   * on both faces by the panorama that saw the one.
+   */
   facing: number;
   /**
    * `standingOn` for the eye and this panorama. It overrides the two above:
@@ -96,6 +108,12 @@ export interface PhotoSample {
    * the depth cube's coarse texels say and however the surface slants.
    */
   on?: number;
+  /**
+   * How far the panorama's full-size cube has faded in, 0 to 1, for a
+   * surface that has a texture of its own to show meanwhile. Leave out for a
+   * surface with none: the small cube is then better than nothing.
+   */
+  sharp?: number;
 }
 
 export interface PhotoBlend {
@@ -110,7 +128,8 @@ export function photoBlend(samples: readonly PhotoSample[]): PhotoBlend {
   let cover = 0;
   const raw = samples.map((s) => {
     if (s.priority <= 0) return 0;
-    const usable = Math.max(s.seen * smoothstep(GRAZE_NONE, GRAZE_FULL, s.facing), s.on ?? 0);
+    const worth = SMALL_CUBE + (1 - SMALL_CUBE) * (s.sharp ?? 1);
+    const usable = Math.max(s.seen * smoothstep(GRAZE_NONE, GRAZE_FULL, Math.abs(s.facing)), s.on ?? 0) * worth;
     // A panorama fading in or out of use takes its points with it.
     cover += usable * Math.min(1, s.priority / floor);
     return s.priority * usable;

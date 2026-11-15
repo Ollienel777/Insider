@@ -72,6 +72,8 @@ const DEPTH_SIZE = 256;
 const STRIPS = 8;
 /** A frame hands the GPU no new work once it has spent this long on it, ms. */
 const BUDGET = 4;
+/** Depth cubes rendered in one frame at most: each is the whole mesh six times, which the clock above does not see (the GPU does it later). */
+const DEPTHS = 2;
 /** After a refused fetch, none starts for this long (new links are on their way), ms. */
 const BACK_OFF = 1500;
 const TRIES = 3;
@@ -186,6 +188,7 @@ export class PanoStore {
   private blockedUntil = 0;
   private lowJobs: LowJob[] = [];
   private depthQueue: Entry[] = [];
+  private depthsLeft = 0;
   private sharpJob: SharpJob | null = null;
   private sharpBusy = false;
   /** Sharp cubes made and not in use, all `sharpSize` across; `warming` more are still to be made. */
@@ -780,7 +783,8 @@ export class PanoStore {
     }
     // Small cubes and depth cubes are cheap: several a frame. A sharp cube's
     // strip is real work for the GPU however quick the call returns: one a frame.
-    while (this.lowJobs.length + this.depthQueue.length > 0 && performance.now() - start < BUDGET) this.step();
+    this.depthsLeft = DEPTHS;
+    while (this.lowJobs.length + (this.depthsLeft > 0 ? this.depthQueue.length : 0) > 0 && performance.now() - start < BUDGET) this.step();
     if (performance.now() - start < BUDGET) this.step();
   }
 
@@ -811,8 +815,9 @@ export class PanoStore {
       return true;
     }
 
-    const seen = this.depthQueue.shift();
+    const seen = this.depthsLeft > 0 ? this.depthQueue.shift() : undefined;
     if (seen) {
+      this.depthsLeft--;
       const old = seen.depth;
       seen.depth = this.renderDepth(seen.origin);
       old?.dispose();

@@ -1,8 +1,10 @@
-// Fills what no surface of the scan covers on screen (issue 118): the
-// background through a gap in the mesh, and the stand-in surfaces that close
-// the mesh's holes (they draw nothing of their own, only depth). Each such
-// pixel takes the colour of the scanned pixels nearest it, so a gap in a
-// carpet shows carpet, not void and not grey.
+// Fills what nothing paints on screen (issue 118): a stand-in surface (a
+// closed hole, a plane carried across a gap, a level's floor or ceiling
+// plane) where no panorama in use saw it and it has no texture of its own
+// yet (photo-material.ts leaves alpha under 1 there). Each such pixel takes
+// the colour of the painted pixels nearest it, never void and never grey.
+// It is the last resort: the panoramas, then a texture made for the patch
+// (lib/scan-mesh/inpaint.ts), come first.
 //
 // Push-pull: the frame is rendered with alpha 1 where a scanned surface
 // drew and 0 elsewhere, then halved again and again, each level averaging

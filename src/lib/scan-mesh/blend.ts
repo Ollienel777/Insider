@@ -66,7 +66,7 @@ export function blendWeights(
     const reach = Math.max(length(ray), 1e-4);
     const along: Vec3 = [ray[0] / reach, ray[1] / reach, ray[2] / reach];
     // The photo rule: the share is the panorama's rank, and it paints what it saw squarely enough.
-    if (mode === "photo") return s.share * s.seen * smoothstep(GRAZE_NONE, GRAZE_FULL, -dot(n, along));
+    if (mode === "photo") return s.share * s.seen * smoothstep(GRAZE_NONE, GRAZE_FULL, Math.abs(dot(n, along)));
     const facing = smoothstep(0.02, 0.3, -dot(n, along));
     if (mode === "nearest") {
       const aligned = Math.max(dot(sight, along), 0);

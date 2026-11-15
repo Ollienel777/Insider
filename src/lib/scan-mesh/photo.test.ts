@@ -110,4 +110,23 @@ describe("photoBlend", () => {
     const { weights } = photoBlend([{ ...lead, priority: 0.5 }, { ...second, priority: 0.5 }]);
     expect(weights[0]).toBeCloseTo(0.5);
   });
+
+  it("keeps a surface's own texture until the panorama's full-size cube is in", () => {
+    expect(photoBlend([{ ...lead, sharp: 0 }]).cover).toBe(0);
+    expect(photoBlend([{ ...lead, sharp: 0.5 }]).cover).toBeCloseTo(0.5);
+    expect(photoBlend([{ ...lead, sharp: 1 }]).cover).toBe(1);
+  });
+
+  it("turns to a panorama behind the lead whose full-size cube is in, while the lead's is not", () => {
+    const { weights, cover } = photoBlend([{ ...lead, sharp: 0 }, { ...second, sharp: 1 }]);
+    expect(weights).toEqual([0, 1]);
+    expect(cover).toBe(1);
+  });
+
+  it("paints the back of a one-skinned wall from the panorama that saw its front", () => {
+    const { weights, cover } = photoBlend([{ ...lead, facing: -0.8 }]);
+    expect(weights).toEqual([1]);
+    expect(cover).toBe(1);
+  });
 });
+

@@ -79,6 +79,7 @@ export interface WalkOptions {
   detail: boolean;
   /** Whether to paint it with its own textures, and fill what nothing covers (scan-view.ts); both default on. */
   textured?: boolean;
+  repair?: "all" | "none" | "shards" | "planes";
   fill?: boolean;
   reducedMotion: boolean;
   /** Exposes the engine on `window` for poking at from the console. */
@@ -155,6 +156,7 @@ export class ScanWalk {
       mesh: options.mesh,
       detail: options.detail,
       textured: options.textured,
+      repair: options.repair,
       fill: options.fill,
       onChange: () => this.push(),
     });

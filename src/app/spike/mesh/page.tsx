@@ -5,7 +5,9 @@
 //
 // Options: `faces=high|2k|4k` (panorama sharpness, default 2k),
 // `mesh=50k|500k`, `detail=0` (no Matterpak mesh), `textured=0` (paint it
-// from the panoramas, not its textures), `fill=0` (leave holes open), `debug=1`.
+// from the panoramas alone, without its textures under them), `fill=0`
+// (leave holes open), `repair=0` (the mesh as scanned: shards in, no planes
+// carried across gaps; `shards` or `planes` for one of the two), `debug=1`.
 import type { Metadata } from "next";
 import { MESH_RESOLUTIONS, MODEL_ID, PANO_RESOLUTIONS, type MeshResolution, type PanoResolution } from "@/lib/scan-mesh/manifest";
 import { ScanWalkScreen } from "./scan-walk";
@@ -39,6 +41,7 @@ export default async function ScanMeshPage({ searchParams }: { searchParams: Pro
       detail={one(search.detail) !== "0"}
       textured={one(search.textured) !== "0"}
       fill={one(search.fill) !== "0"}
+      repair={one(search.repair) === "0" ? "none" : pick(one(search.repair), ["all", "shards", "planes"] as const, "all")}
       debug={one(search.debug) === "1"}
     />
   );

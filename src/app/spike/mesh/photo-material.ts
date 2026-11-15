@@ -9,14 +9,16 @@
 //   - a stand-in (a closed hole, a plane carried across a gap, a level's
 //     floor or ceiling plane): its fallback is a texture made for it where
 //     there is one, else nothing: alpha says how much was painted, and
-//     hole-fill.ts fills the rest;
+//     hole-fill.ts fills the rest. The patches' textures share a page
+//     (lib/scan-mesh/atlas.ts) whose alpha is 0 wherever nothing has been
+//     written yet;
 //   - the backdrop, the box behind everything: the panoramas' far view, so
 //     a window shows what the camera saw through it.
 //
 // The panoramas' uniforms are one set, shared by every material made here:
 // the store writes them once a frame.
 import { BackSide, DoubleSide, Matrix3, ShaderMaterial, Vector3, type CubeTexture, type IUniform, type Texture } from "three";
-import { DEPTH_SCALE, DEPTH_SLACK, DEPTH_SOFT, GRAZE_FULL, GRAZE_NONE, PRIORITY } from "@/lib/scan-mesh/photo";
+import { DEPTH_SCALE, DEPTH_SLACK, DEPTH_SOFT, GRAZE_FULL, GRAZE_NONE, PRIORITY, SMALL_CUBE } from "@/lib/scan-mesh/photo";
 import { SLOTS } from "./projection";
 
 export type PhotoUniforms = Record<string, IUniform>;
@@ -103,8 +105,14 @@ void slot(samplerCube pano, samplerCube low, float sharp, samplerCube depth, vec
   // The panorama's own depth: a point farther than it saw that way is behind something.
   float limit = textureCube(depth, ray).r * ${f(DEPTH_SCALE)} + ${f(DEPTH_SLACK)};
   float seen = 1.0 - smoothstep(limit, limit + ${f(DEPTH_SOFT)}, reach);
-  float graze = smoothstep(${f(GRAZE_NONE)}, ${f(GRAZE_FULL)}, dot(normal, -along));
+  // Either face: a wall the scan has one skin of, seen from the room behind it, still shows the
+  // photograph of its other side (a door where the door is) rather than nothing.
+  float graze = smoothstep(${f(GRAZE_NONE)}, ${f(GRAZE_FULL)}, abs(dot(normal, along)));
   float usable = max(seen * graze, on);
+#ifndef STANDIN
+  // A surface with its own texture keeps it until the panorama's full-size cube has faded in: the small one is coarser.
+  usable *= mix(${f(SMALL_CUBE)}, 1.0, sharp);
+#endif
   if (usable <= 0.0) return;
 #endif
   vec3 lookup = toPano * ray;
@@ -138,17 +146,22 @@ void main() {
   vec3 sky = mix(vec3(0.027, 0.035, 0.047), vec3(0.067, 0.086, 0.114), smoothstep(-0.2, 0.6, sight.y));
   gl_FragColor = vec4(mix(sky, photo, cover), 1.0);
 #else
-  vec3 own = texture2D(uMap, vUv).rgb;
 #ifdef STANDIN
+  // A page's texel: alpha 0 where nothing is written yet. Sampled small or at a
+  // picture's edge it is mixed with such texels, so its colour is divided back out.
+  vec4 texel = texture2D(uMap, vUv);
+  float has = uHasMap * step(0.02, texel.a);
+  vec3 own = texel.rgb / max(texel.a, 0.02);
   if (uDebug > 2.5) {
     // The sources: the panoramas (red), a texture made for the stand-in (green); blue marks a stand-in.
-    gl_FragColor = vec4(cover, (1.0 - cover) * uHasMap, 1.0, 1.0);
+    gl_FragColor = vec4(cover, (1.0 - cover) * has, 1.0, 1.0);
     return;
   }
   // Alpha is how much was painted; hole-fill.ts fills the rest.
-  float painted = cover + (1.0 - cover) * uHasMap;
-  gl_FragColor = vec4(photo * cover + own * (1.0 - cover) * uHasMap, painted);
+  float painted = cover + (1.0 - cover) * has;
+  gl_FragColor = vec4(photo * cover + own * (1.0 - cover) * has, painted);
 #else
+  vec3 own = texture2D(uMap, vUv).rgb;
   if (uDebug > 2.5) {
     // The sources: the panoramas (red), the mesh's own texture (green).
     gl_FragColor = vec4(cover, 1.0 - cover, 0.0, 1.0);
@@ -165,9 +178,11 @@ export type PhotoSurface = "mesh" | "stand-in" | "backdrop";
 /**
  * A material that paints `surface` by the photo rule, on the shared
  * `panos` uniforms. `map` is the surface's own texture (a stand-in may have
- * none). Stand-ins draw just behind the scanned surfaces where the two meet.
+ * none). Stand-ins draw just behind the scanned surfaces where the two
+ * meet, `behind` steps back: a fan closing a hole sits behind the patch of
+ * a plane that closes the same hole.
  */
-export function createPhotoMaterial(panos: PhotoUniforms, surface: PhotoSurface, map: Texture | null = null): ShaderMaterial {
+export function createPhotoMaterial(panos: PhotoUniforms, surface: PhotoSurface, map: Texture | null = null, behind = 1): ShaderMaterial {
   const uniforms: PhotoUniforms = { ...panos };
   const defines: Record<string, string> = {};
   if (surface === "backdrop") defines.BACKDROP = "";
@@ -188,7 +203,7 @@ export function createPhotoMaterial(panos: PhotoUniforms, surface: PhotoSurface,
     depthTest: surface !== "backdrop",
     toneMapped: false,
     polygonOffset: standIn,
-    polygonOffsetFactor: standIn ? 1 : 0,
-    polygonOffsetUnits: standIn ? 4 : 0,
+    polygonOffsetFactor: standIn ? behind : 0,
+    polygonOffsetUnits: standIn ? 4 * behind : 0,
   });
 }
