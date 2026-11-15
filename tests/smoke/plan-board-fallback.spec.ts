@@ -7,7 +7,7 @@ import { expect, test } from "@playwright/test";
 // the board's. The 503 is stubbed with the route's own body, on F1's board, so
 // this needs no kit building and no live model.
 
-const TOAST = "The model didn't answer in time, so the crew's plan is worked out from the board.";
+const TOAST = "The model didn't answer in time, so the plan is worked out from the board.";
 
 test("a no-recording 503 becomes the board's plan on Plan, with its toast, and reaches the Run as the board's", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });

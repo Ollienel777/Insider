@@ -42,7 +42,7 @@ describe("POST /api/crew on a kit building when the live model fails", () => {
     expect(response.status).toBe(503);
     const body = (await response.json()) as { code: string; reason: string; fallback: { service: string; message: string } };
     expect(body).toMatchObject({ code: "no-recording", reason: "error" });
-    expect(body.fallback).toMatchObject({ service: "llm", message: "The model didn't answer, so the crew's plan is worked out from the board." });
+    expect(body.fallback).toMatchObject({ service: "llm", message: "The model didn't answer, so the plan is worked out from the board." });
     expect(body.fallback.message).not.toContain("recorded");
     // The browser toasts exactly that line.
     noteResponse(body);

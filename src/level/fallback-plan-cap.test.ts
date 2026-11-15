@@ -16,7 +16,7 @@ vi.mock("./validate-plan", async (original) => {
     ...real,
     validatePlan: (...args: Parameters<typeof real.validatePlan>) => {
       plays.count += 1;
-      return { ...real.validatePlan(...args), outcome: "caught" as const };
+      return { ...real.validatePlan(...args), outcome: "seen" as const };
     },
   };
 });

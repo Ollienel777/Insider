@@ -75,7 +75,7 @@ export function CrewReply({ answer, checked }: { answer: CrewAnswer; checked: Ch
             Worked out on the board
           </span>
         ) : null}
-        <span className="ml-auto font-mono text-xs text-text-2" title={board ? "How sure the board's plan is: higher when it plays clean, lower when it is seen" : "The crew's confidence in this plan"}>
+        <span className="ml-auto font-mono text-xs text-text-2" title={board ? "How sure the board's plan is: higher when it plays clean on the board, lower when it doesn't" : "The crew's confidence in this plan"}>
           {Math.round(plan.confidence * 100)}% sure
         </span>
       </div>

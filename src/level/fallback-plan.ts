@@ -4,7 +4,8 @@
 // building's level lives in memory, so it has none). No model is called and
 // nothing is sent or stored: the floor never leaves the browser (SPEC §4.5).
 //
-// The plan is in the crew's own shape, steps to zones, and it is the quiet way
+// The plan is the board's, not the crew's speech: its pushback reads as the board
+// does ("Camera C1 sees you..."). It is in the crew's shape, steps to zones, and it is the quiet way
 // when the floor has one. A crew step walks the shortest way to its zone and
 // then waits as its words say, so the plan can wait only where a zone is: at
 // the way in, in a quiet zone the quiet route passes through (on the way in,
@@ -42,8 +43,6 @@ type Step = CrewPlan["steps"][number];
 /** A zone's name in the plan's words, without the board's "(vacant)" tag (as the Chief says it). */
 const placeLabel = (placed: PlacedLevel, zoneId: string) => zoneLabel(placed, zoneId).replace(/\s*\(vacant\)\s*$/i, "");
 
-/** A warning's text in the crew's voice: "sees you" becomes "sees us". */
-const ours = (text: string) => text.replace(/\b(sees|hears|spots) you\b/g, "$1 us");
 
 export function fallbackPlan(placed: PlacedLevel, options: { maxTries?: number } = {}): CrewPlan {
   const maxTries = options.maxTries ?? MAX_TRIES;
@@ -100,9 +99,9 @@ export function fallbackPlan(placed: PlacedLevel, options: { maxTries?: number }
   const clearOf = (steps: Step[]): string => {
     const path = new Set(validatePlan(placed, { steps, pushback: "", confidence: 0 }).path);
     const guard = placed.guards.find((g) => g.patrol.some((n) => path.has(n)));
-    if (guard) return `${guard.id}'s round crosses it, but never while we're on it.`;
+    if (guard) return `${guard.id}'s round crosses it, but never while you're on it.`;
     const camera = placed.cameras.find((c) => c.cover.some((n) => path.has(n)));
-    if (camera) return `${camera.id} covers it, but it's looking away when we pass.`;
+    if (camera) return `${camera.id} covers it, but it's looking away when you pass.`;
     const ids = [...placed.cameras.map((c) => c.id), ...placed.guards.map((g) => g.id)].slice(0, 3);
     if (ids.length === 0) return "There's no camera or guard on this floor.";
     const named = ids.length === 1 ? ids[0] : `${ids.slice(0, -1).join(", ")} and ${ids.at(-1)}`;
@@ -120,7 +119,8 @@ export function fallbackPlan(placed: PlacedLevel, options: { maxTries?: number }
           const waitAtObjective = total - waitIn - (stop?.wait ?? 0);
           if (waitAtObjective < 0 || waitAtObjective > MAX_WAIT) continue;
           for (const exit of exitOrder) {
-            for (const back of [null, ...quietStops.map((z) => ({ zoneId: z.zoneId, wait: 0 }))]) {
+            // Back out through the quiet zone it came in by; with none on the way in, any on the route.
+            for (const back of stop ? [null, stop] : [null, ...quietStops.map((z) => ({ zoneId: z.zoneId, wait: 0 }))]) {
               if (++tries > maxTries) break search;
               const steps = shape(waitIn, stop, waitAtObjective, exit, back);
               const checked = validatePlan(placed, { steps, pushback: "", confidence: 0 });
@@ -144,10 +144,10 @@ export function fallbackPlan(placed: PlacedLevel, options: { maxTries?: number }
     const straight = caughtOn(shape(0, null, 0, exit));
     const stop = best.find((s) => s.action.startsWith("Through "));
     const pushback = hurried?.by
-      ? `${ours(hurried.text)} The waits in this plan let ${hurried.by} look away: hold where it says, then move.`
+      ? `${hurried.text} The waits in this plan let ${hurried.by} look away: hold where it says, then move.`
       : straight?.by && stop
-        ? `${ours(straight.text)} Going through ${placeLabel(placed, stop.zoneId)} keeps us out of ${straight.by}'s way.`
-        : `Nothing catches us this way if we keep moving: in by the ${way(start)}, out by the ${way(exit)}. ${clearOf(best)}`;
+        ? `${straight.text} Going through ${placeLabel(placed, stop.zoneId)} keeps out of ${straight.by}'s way.`
+        : `Nothing catches this way if you keep moving: in by the ${way(start)}, out by the ${way(exit)}. ${clearOf(best)}`;
     return { steps: best, pushback, confidence: SURE_CLEAN };
   }
 
@@ -156,12 +156,12 @@ export function fallbackPlan(placed: PlacedLevel, options: { maxTries?: number }
   const shortest = validatePlan(placed, { steps, pushback: "", confidence: 0 });
   // The objective can't be reached at all: say so plainly, rather than a plan with its middle struck out.
   if (shortest.dropped.some((d) => d.zoneId === placed.objective.zoneId)) {
-    return { steps, pushback: `There's no way to the ${noun} on this board.`, confidence: SURE_CAUGHT };
+    return { steps: steps.slice(0, 1), pushback: `There's no way to the ${noun} on this board.`, confidence: SURE_CAUGHT };
   }
   const warning = shortest.warnings[0];
-  const caughtLine = warning ? ` ${ours(warning.text)}` : "";
+  const caughtLine = warning ? ` ${warning.text}` : "";
   const pushback = advice
-    ? `I can't fit the quiet way into a plan here; follow the waits the board marks.${caughtLine}`
+    ? `No plan's shape fits the quiet way here; follow the waits the board marks.${caughtLine}`
     : `There's no way through this floor unseen.${caughtLine}`;
   return { steps, pushback, confidence: SURE_CAUGHT };
 }
