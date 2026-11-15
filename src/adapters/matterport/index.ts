@@ -28,6 +28,7 @@ import { isForced, reportFallback, reportLive } from "@/lib/demo-status";
 import { fallbackMessage, newFallback, type Fallback } from "@/lib/fallback";
 import { missingForLive, serviceModes, type ServiceMode } from "@/lib/mode";
 import { createFakeMatterport } from "./fake";
+import { holdFloor } from "./floor-hold";
 import { connectInsideView, createLiveMatterport, type InsideView } from "./live";
 import type { MatterportAdapter } from "./types";
 import type { Building } from "@/domain";
@@ -84,7 +85,12 @@ export function selectMatterport(env: Env): MatterportSelection {
   }
   const live = createLiveMatterport({ sdkKey });
   const adapter: MatterportAdapter = {
-    loadFloor: (building) => live.loadFloor({ ...building, matterportModelId: scanModelId(building, env) }),
+    loadFloor: (building) => {
+      const modelId = scanModelId(building, env);
+      const read = () => live.loadFloor({ ...building, matterportModelId: modelId });
+      // A scan's board is read once per tab and kept in memory (floor-hold.ts): Plan reads it, Run takes it.
+      return modelId ? holdFloor(modelId, read) : read();
+    },
   };
   return { adapter, mode: "live", reason: "Matterport: live" };
 }
