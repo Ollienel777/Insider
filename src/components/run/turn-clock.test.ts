@@ -5,12 +5,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { F1_DEMO, FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { LevelManifest } from "@/domain";
-import { act, createRun, type Action, type RunState } from "@/engine";
+import { act, applyChiefOrders, createRun, type Action, type RunState } from "@/engine";
 import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.romaine-1974.json";
 import { choices } from "./board";
 import { RUN_SEED } from "./run-screen";
-import { awaitingMove, clockAction, clockState, createTurnClock, followRun, LIVE_TURN_MS, NO_FIRST_MOVE, pressKey, sameTurn } from "./turn-clock";
+import { FP_TURN_MS } from "./fp/tuning";
+import { RADIO_HOLD_MS } from "./radio";
+import {
+  ALARM_BEAT_MS,
+  alarmBeat,
+  awaitingMove,
+  clockAction,
+  clockState,
+  createTurnClock,
+  followRun,
+  LIVE_TURN_MS,
+  NO_FIRST_MOVE,
+  pressKey,
+  sameTurn,
+  turnLength,
+} from "./turn-clock";
 
 const manifest = LevelManifest.parse(structuredClone(cached));
 const placed = placeLevel(manifest, structuredClone(FIXTURE_FLOORS.F1), RUN_SEED);
@@ -39,20 +54,27 @@ const kinds = (run: RunState) => run.turns.map((t) => t.player.kind);
 /**
  * The clock wired to the engine the way the Run screen wires it: a timeout
  * plays `clockAction` on the run as it stands, every turn played (the clock's
- * or the player's) starts the countdown over, and a run that has ended holds it.
+ * or the player's) starts the countdown over (for the alarm beat after a
+ * sighting that raised the alarm), and a run that has ended holds it. The
+ * Chief's orders land mid-turn through `land`, as `applyChiefOrders` on the run.
  */
-function liveTable(from: RunState) {
+function liveTable(from: RunState, turnMs: number = LIVE_TURN_MS) {
   let run = from;
   const turn = (action: Action) => {
     const result = act(run, action);
     if (!result.ok) throw new Error(`${JSON.stringify(action)} refused: ${result.reason}`);
     run = result.run;
-    clock.restart();
+    clock.restart(turnLength(run, turnMs));
     if (run.status !== "playing") clock.hold(true);
   };
-  const clock = createTurnClock(() => turn(clockAction(run)));
+  const clock = createTurnClock(() => turn(clockAction(run)), turnMs);
   clock.hold(false);
-  return { clock, act: turn, run: () => run };
+  const land = (orders: Parameters<typeof applyChiefOrders>[1]) => {
+    const applied = applyChiefOrders(run, orders);
+    run = applied.run;
+    return applied;
+  };
+  return { clock, act: turn, land, run: () => run };
 }
 
 beforeEach(() => {
@@ -295,7 +317,10 @@ describe("the clock on a run", () => {
     vi.advanceTimersByTime(LIVE_TURN_MS);
     expect(table.run().alarm).toBe("alert");
     expect(table.run().alarmEvents.at(-1)).toMatchObject({ from: "calm", to: "alert", cause: { kind: "camera", id: "C2" } });
-    vi.advanceTimersByTime(LIVE_TURN_MS * 2);
+    // The alarm beat, then one turn: the two turns that catch the player.
+    vi.advanceTimersByTime(ALARM_BEAT_MS + LIVE_TURN_MS - 1);
+    expect(table.run().status).toBe("playing");
+    vi.advanceTimersByTime(1);
     expect(table.run().status).toBe("caught");
     const turns = table.run().turn;
     vi.advanceTimersByTime(LIVE_TURN_MS * 10);
@@ -322,7 +347,7 @@ function firstPersonTable(from: RunState, { scanHold = false } = {}) {
     const result = act(run, action);
     if (!result.ok) throw new Error(`${JSON.stringify(action)} refused: ${result.reason}`);
     run = result.run;
-    clock.restart();
+    clock.restart(turnLength(run, LIVE_TURN_MS));
     sync();
   };
   const clock = createTurnClock(() => turn(clockAction(run)));
@@ -441,5 +466,72 @@ describe("first person's clock, which starts on the first move", () => {
     expect(followRun(moved, true, fresh)).toBe(moved);
     // A new run (a level placed again) waits again.
     expect(awaitingMove(followRun(moved, true, start()))).toBe(true);
+  });
+});
+
+/**
+ * The alarm beat (issue 222): seen by C2 in the dock corridor in first
+ * person, the player used to be caught two 700 ms turns later, before the
+ * radio had read the Chief's re-plan. The turn after the sighting now waits
+ * `ALARM_BEAT_MS`, so the re-plan is on the air, and the guards move on it,
+ * before the capture; the turns played are the same.
+ */
+describe("the alarm beat", () => {
+  const inC2 = () => play(start(), [move(F1_DEMO.freightLiftWait), wait, move("dc-west")]);
+
+  /** Lets first person's clock run in 10 ms steps until the run ends; when the alarm rose and when it ended. */
+  function standInTheLight(onAir?: (table: ReturnType<typeof liveTable>) => void) {
+    const table = liveTable(inC2(), FP_TURN_MS);
+    let now = 0;
+    let seenAt: number | null = null;
+    let aired = false;
+    while (table.run().status === "playing" && now < 20_000) {
+      vi.advanceTimersByTime(10);
+      now += 10;
+      if (seenAt === null && table.run().alarm !== "calm") seenAt = now;
+      // The radio reads the sighting's callout for its hold, then the Chief's re-plan: his orders land then at the latest.
+      if (onAir && seenAt !== null && !aired && now >= seenAt + RADIO_HOLD_MS) {
+        aired = true;
+        onAir(table);
+      }
+    }
+    return { run: table.run(), seenAt: seenAt!, caughtAt: now };
+  }
+
+  it("follows only the turn whose sighting raised the alarm into Alert or Lockdown", () => {
+    const seen = play(inC2(), [wait]);
+    expect(seen.alarmEvents.at(-1)).toMatchObject({ turn: seen.turn - 1, from: "calm", to: "alert" });
+    expect(alarmBeat(seen)).toBe(true);
+    expect(turnLength(seen, FP_TURN_MS)).toBe(ALARM_BEAT_MS);
+    expect(alarmBeat(inC2())).toBe(false);
+    expect(alarmBeat(null)).toBe(false);
+    expect(turnLength(inC2(), FP_TURN_MS)).toBe(FP_TURN_MS);
+  });
+
+  it("gives the player 2 to 4 s between the sighting and the capture, the same turns as without it", () => {
+    const { run, seenAt, caughtAt } = standInTheLight();
+    expect(run.status).toBe("caught");
+    expect(caughtAt - seenAt).toBeGreaterThanOrEqual(2000);
+    expect(caughtAt - seenAt).toBeLessThanOrEqual(4000);
+    // Time, not turns: the log (and so the Debrief and Owner Mode) is the one waits by hand give.
+    const turns = run.turns.length - inC2().turns.length;
+    expect(run.turns).toEqual(play(inC2(), Array.from({ length: turns }, () => wait)).turns);
+  });
+
+  it("has the Chief's re-plan event out on the sighting turn, and his orders move a guard before the capture", () => {
+    let applied: ReturnType<ReturnType<typeof liveTable>["land"]> | null = null;
+    const { run, seenAt, caughtAt } = standInTheLight((table) => {
+      const now = table.run();
+      // The re-plan the Chief is asked for: the event the sighting appended.
+      expect(now.alarmEvents.at(-1)).toMatchObject({ from: "calm", to: "alert", cause: { kind: "camera", id: "C2" } });
+      expect(now.status).toBe("playing");
+      const zoneId = now.lastKnown!.zoneId;
+      applied = table.land({ orders: now.guards.map((g) => ({ guardId: g.id, zoneId, intent: "converge" as const })), lockZones: [], rationale: "C2 has them." });
+    });
+    expect(applied!.applied.length).toBeGreaterThan(0);
+    expect(run.status).toBe("caught");
+    // A turn was played on his orders (its log entry carries them) before the run ended, a second or more after he went on air.
+    expect(run.turns.some((t) => t.chief)).toBe(true);
+    expect(caughtAt - (seenAt + RADIO_HOLD_MS)).toBeGreaterThanOrEqual(1000);
   });
 });

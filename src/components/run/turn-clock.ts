@@ -21,6 +21,32 @@ import type { Action, RunState } from "@/engine";
 export const LIVE_TURN_MS = 1100;
 
 /**
+ * The alarm beat (issue 222): the turn after a sighting first raises the alarm
+ * to Alert or Lockdown waits at least this long for the player, in
+ * milliseconds. The guards were sent converging on the sighting turn and the
+ * Chief re-plans on it; without the beat the next one or two turns, 0.7 s
+ * each in first person, catch the player before the radio has read the
+ * re-plan. With it, the sighting's callout, then the Chief's re-plan, are on
+ * the air and the guards move on his orders before a capture can end the run.
+ * It is time, not a turn: the engine, and so the log, the Debrief's replay and
+ * Owner Mode's runs, are the same turns either way. It never waits on the
+ * Chief: the beat is the same length whether his answer is in or not.
+ */
+export const ALARM_BEAT_MS = 2500;
+
+/** Whether the turn just played raised the alarm into Alert or Lockdown from below them: the turn the beat follows. */
+export function alarmBeat(run: RunState | null): boolean {
+  if (!run) return false;
+  const high = (alarm: string) => alarm === "alert" || alarm === "lockdown";
+  return run.alarmEvents.some((e) => e.turn === run.turn - 1 && !high(e.from) && high(e.to));
+}
+
+/** How long the clock gives the turn `run` is on: `turnMs`, or the alarm beat after a sighting that raised the alarm. */
+export function turnLength(run: RunState | null, turnMs: number): number {
+  return alarmBeat(run) ? Math.max(turnMs, ALARM_BEAT_MS) : turnMs;
+}
+
+/**
  * The turn the clock plays when the player lets one run out: a `wait`, or the
  * next `pick` of the lock they are part-way through, so a pick that takes two
  * turns is not thrown away by the clock between them. A door that has come
@@ -38,8 +64,8 @@ export function sameTurn(a: RunState | null, b: RunState | null): boolean {
 }
 
 export interface TurnClock {
-  /** Starts the countdown over with a whole turn left. A held clock stays held. */
-  restart(): void;
+  /** Starts the countdown over with a whole turn left, or `ms` for this one turn (the alarm beat). A held clock stays held. */
+  restart(ms?: number): void;
   /** Holds the countdown where it is, or lets it run on from there. */
   hold(held: boolean): void;
   /** Milliseconds left in the turn. */
@@ -78,8 +104,8 @@ export function createTurnClock(onTimeout: () => void, turnMs: number = LIVE_TUR
   const remaining = () => (since === null ? left : Math.max(0, left - (performance.now() - since)));
 
   return {
-    restart() {
-      left = turnMs;
+    restart(ms) {
+      left = ms ?? turnMs;
       if (since !== null) arm();
     },
     hold(held) {
@@ -219,7 +245,8 @@ const tabHidden = () => document.visibilityState === "hidden";
  *
  * In Live a countdown of `LIVE_TURN_MS` runs for each turn of `run`. A new
  * turn or a new run (the player acted, Restart, a level placed again) starts
- * it over; the Chief's orders landing mid-turn do not. When it runs out the
+ * it over, for `ALARM_BEAT_MS` after a sighting that raised the alarm; the
+ * Chief's orders landing mid-turn do not. When it runs out the
  * clock plays `clockAction` through `play`. `P` pauses and resumes, except
  * while typing. It also holds while a Why card is open, while the tab is
  * hidden and while the caller says `hold`, then, with `startOnMove`, until
@@ -303,9 +330,10 @@ export function useTurnClock({
 
   const tracked = live ? run : null;
   useEffect(() => {
-    if (!sameTurn(timed.current, tracked)) clock.current?.restart();
+    // The turn after a sighting that raised the alarm is the alarm beat's length (issue 222).
+    if (!sameTurn(timed.current, tracked)) clock.current?.restart(turnLength(tracked, turnMs));
     timed.current = tracked;
-  }, [tracked]);
+  }, [tracked, turnMs]);
 
   // A new turn length makes a new clock, which starts held: release it here too.
   useEffect(() => {
