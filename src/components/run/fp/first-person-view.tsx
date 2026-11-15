@@ -640,8 +640,9 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         </div>
       ) : null}
 
-      {ready && !over ? <SuspicionMeter notice={notice} /> : null}
-      {over || !ready ? null : <ControlsHint phase={hint.phase} ticks={hintTicks(hint.progress)} dragToLook={hud.refused} />}
+      {/* The controls hint and the meter are for a run being played: both go when the end card comes up (issue 146). */}
+      {ready && !end ? <SuspicionMeter notice={notice} /> : null}
+      {ready && !end ? <ControlsHint phase={hint.phase} ticks={hintTicks(hint.progress)} dragToLook={hud.refused} /> : null}
 
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-end px-6 py-3">
         <div className="flex flex-col items-center gap-2">
