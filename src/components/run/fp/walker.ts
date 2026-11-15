@@ -189,7 +189,7 @@ export function doorInView(ground: Ground, run: RunState, pos: Vec, yaw: number,
   if (hits.length === 0) return null;
   hits.sort((p, q) => p.t - q.t);
   if (hits.length === 1) return hits[0].door;
-  const here = ground.regionOf(pos);
+  const here = ground.regionOf(pos, run.locked);
   const own = hits.find((h) => h.t - hits[0].t < 0.3 && nearSide(ground, h.door, pos) === here);
   return (own ?? hits[0]).door;
 }
@@ -202,7 +202,7 @@ export function promptFor(walker: Walker, ground: Ground, run: RunState, yaw: nu
     const node = nearSide(ground, door, walker.pos);
     // Picked only from the door's own node, standing in its area: E then plays no move, so the engine's node
     // stays where the body is. From anywhere else, the player steps up to it, and that walk plays the moves.
-    if (ground.regionOf(walker.pos) !== node) return { kind: "far", doorId: door.doorId };
+    if (ground.regionOf(walker.pos, run.locked) !== node) return { kind: "far", doorId: door.doorId };
     const done = run.picking?.doorId === door.doorId ? run.picking.progress : 0;
     return { kind: "pick", doorId: door.doorId, node, done, of: picksToOpen(run.board.level, door.doorId) };
   }
@@ -262,14 +262,14 @@ export function stepWalker(
   }
 
   // Into another area: the legal moves there, or held at the edge of this one.
-  const region = ground.regionOf(walker.pos);
+  const region = ground.regionOf(walker.pos, run.locked);
   if (region !== null && region !== walker.region) {
     const moves = legalMoves(run, destination(walker), region);
     if (moves) {
       walker = { ...walker, region, queue: [...walker.queue.filter((a) => a.kind === "move"), ...moves] };
     } else {
       // Held back at the edge of its own area: the step that crossed is not taken.
-      const back = ground.regionOf(from) === walker.region ? from : walker.home;
+      const back = ground.regionOf(from, run.locked) === walker.region ? from : walker.home;
       walker = { ...walker, pos: back, vel: { x: 0, y: 0 } };
     }
   }

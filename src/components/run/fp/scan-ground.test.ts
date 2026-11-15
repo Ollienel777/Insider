@@ -9,8 +9,9 @@ import { FloorGraph } from "@/domain";
 import type { Collision, Ground, Vec } from "./ground";
 import { doorBar, SCAN, scanGround, type ScanHeights, type ScanSolid, type Vec3 } from "./scan-ground";
 import { meshSolid } from "./scan-solid";
-import { doorInView } from "./walker";
-import type { RunState } from "@/engine";
+import { FP } from "./tuning";
+import { createWalker, doorInView, promptFor, stepWalker, type Controls } from "./walker";
+import type { Action, Board, Exit, RunState } from "@/engine";
 
 const DT = 1 / 120;
 const STEP_UP = 0.45;
@@ -441,6 +442,107 @@ describe("areas behind a wall, where the nearest nodes are all on the far side",
     const shut = scanGround(floor, boxed, { eye: new Map(), floor: new Map() });
     expect(shut.regionOf(at("w"))).toBe("w");
     expect(shut.regionOf({ x: 4.7, y: 1.75 })).toBeNull();
+  });
+});
+
+describe("an area behind a locked door, with a second way round within reach", () => {
+  // The made-up building, with a second doorway through the dividing wall at z = 0..1.6, open, so "a" reaches
+  // "b" round by "c" and "d" in three hops. The door on "a"–"b" is locked. Its bar stands east of the middle of
+  // the edge, so before the fix "b" in view across the bar owned the floor west of the door.
+  const SOUTH_N = 1.6;
+  const twoWays = (): BufferGeometry => {
+    const floor: Quad[] = [
+      flat(0, 0, 20, HOLE.z0),
+      flat(0, HOLE.z1, 20, ROOM_N),
+      flat(0, HOLE.z0, HOLE.x0, HOLE.z1),
+      flat(HOLE.x1, HOLE.z0, 20, HOLE.z1),
+    ];
+    const outer: Quad[] = [upright(0, 0, 10, 0), upright(0, ROOM_N, 10, ROOM_N)];
+    const wall = (z0: number, z1: number): Quad[] => [
+      upright(WALL_W, z0, WALL_W, z1),
+      upright(WALL_E, z0, WALL_E, z1),
+      upright(WALL_W, z0, WALL_E, z0),
+      upright(WALL_W, z1, WALL_E, z1),
+      flat(WALL_W, z0, WALL_E, z1, WALL_H),
+    ];
+    const head: Quad[] = [
+      flat(WALL_W, DOOR_S, WALL_E, DOOR_N, HEAD_H),
+      upright(WALL_W, DOOR_S, WALL_W, DOOR_N, HEAD_H, WALL_H),
+      upright(WALL_E, DOOR_S, WALL_E, DOOR_N, HEAD_H, WALL_H),
+    ];
+    return geometryOf([...floor, ...outer, ...wall(SOUTH_N, DOOR_S), ...wall(DOOR_N, ROOM_N), ...head]);
+  };
+  // "a" and "b" are moved west of their places in `board`, as in the review's reproduction, so the middle of
+  // their edge (x = 3.5) is well west of the doorway (x = 5).
+  const floor = FloorGraph.parse({
+    ...board,
+    nodes: board.nodes.map((n) => (n.id === "a" ? { ...n, x: 1 } : n.id === "b" ? { ...n, x: 6 } : n)),
+    edges: [...board.edges, { a: "c", b: "d" }],
+  });
+  const on = scanGround(floor, meshSolid(new MeshWorld(twoWays(), STEP_UP)), heights());
+  const at = (id: string) => on.nodes.get(id)!;
+  const door = on.doors.find((d) => d.doorId === "door:a:b")!;
+
+  /** A run the engine would hold: the player on `playerNode`, `locked` shut. Only what the walker reads. */
+  const runOn = (playerNode: string, locked: readonly string[], turn = 0): RunState => {
+    const adjacency = new Map<string, Exit[]>();
+    for (const e of floor.edges) {
+      const doorId = e.door?.lockable ? e.door.id : undefined;
+      adjacency.set(e.a, [...(adjacency.get(e.a) ?? []), { to: e.b, doorId } as Exit]);
+      adjacency.set(e.b, [...(adjacency.get(e.b) ?? []), { to: e.a, doorId } as Exit]);
+    }
+    return { status: "playing", playerNode, turn, locked: [...locked], picking: null, board: { adjacency, level: { pickTurns: 2 } } as unknown as Board } as unknown as RunState;
+  };
+  const IDLE: Controls = { forward: 0, strafe: 0, walk: false, yaw: 0, use: false, usePressed: false };
+
+  it("stands the locked door's bar east of the middle of its edge, with the second doorway open", () => {
+    expect(door.centre.x).toBeGreaterThan((at("a").x + at("b").x) / 2 + 1);
+    expect(on.clear(at("c"), at("d"), LOCKED)).toBe(true);
+  });
+
+  it("gives the floor west of a locked door to a node on this side, never to the one behind the door", () => {
+    for (let x = 3.6; x <= 4.7; x += 0.1) {
+      const here: Vec = { x, y: 3.5 };
+      expect(on.clear(here, at("b"), LOCKED), `(${x}, 3.5) sees "b" across the bar`).toBe(false);
+      const region = on.regionOf(here, LOCKED);
+      expect(region === "a" || region === "c", `(${x.toFixed(1)}, 3.5) → ${region}`).toBe(true);
+    }
+  });
+
+  it("gives the same floor to the node behind the door once the door is open", () => {
+    const here: Vec = { x: 4.7, y: 3.5 };
+    expect(on.clear(here, at("b"), [])).toBe(true);
+    expect(on.regionOf(here, [])).toBe("b");
+  });
+
+  it("never walks the engine round into the locked room while the body stays outside it", () => {
+    let run = runOn("a", LOCKED);
+    let walker = createWalker(on, run);
+    const played: Action[] = [];
+    for (let i = 0; i < 5 / FP.stepS; i++) {
+      const { walker: next, action } = stepWalker(walker, on, run, { ...IDLE, forward: 1 });
+      walker = next;
+      if (action) {
+        played.push(action);
+        if (action.kind === "move") run = runOn(action.to, LOCKED, run.turn + 1);
+      }
+    }
+    // The body is held west of the locked door, and the engine stays on this side with it: at most a step
+    // into "c"'s area (in view, through no door), never round by "d" into "b".
+    expect(walker.pos.x).toBeLessThan(door.centre.x);
+    expect(played.filter((a) => a.kind === "move" && (a.to === "b" || a.to === "d"))).toEqual([]);
+    expect(["a", "c"]).toContain(run.playerNode);
+    expect(on.regionOf(walker.pos, run.locked)).toBe(run.playerNode);
+  });
+
+  it("offers the pick from \"a\"'s area at the door, where the far node's area used to reach", () => {
+    // Before the fix this point was "b"'s area, so the prompt said "far" and the door was never picked.
+    const here: Vec = { x: 4.2, y: 3.8 };
+    const run = runOn("a", LOCKED);
+    const walker = { ...createWalker(on, run), pos: here };
+    expect(on.regionOf(here, [])).toBe("b");
+    expect(on.regionOf(here, LOCKED)).toBe("a");
+    expect(promptFor(walker, on, run, 0)).toMatchObject({ kind: "pick", doorId: "door:a:b", node: "a" });
   });
 });
 
