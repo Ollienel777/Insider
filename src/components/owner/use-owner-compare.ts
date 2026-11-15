@@ -13,7 +13,7 @@ import { compareOwnerSetups, type PairSide } from "./owner-batch";
 export type OwnerPair =
   | { status: "idle" }
   | { status: "planning" }
-  | { status: "done"; sides: [PairSide, PairSide]; recorded: boolean; reason?: string }
+  | { status: "done"; sides: [PairSide, PairSide]; recorded: boolean; reason?: string; derived?: boolean }
   | { status: "error"; message: string };
 
 export function useOwnerCompare(manifest: LevelManifest, floor: FloorGraph) {
@@ -31,7 +31,13 @@ export function useOwnerCompare(manifest: LevelManifest, floor: FloorGraph) {
         .then((answer) => {
           if (controller.signal.aborted) return;
           const sides = compareOwnerSetups(manifest, floor, a, b, answer);
-          setPair({ status: "done", sides, recorded: answer.recorded, ...(answer.reason && { reason: answer.reason }) });
+          setPair({
+            status: "done",
+            sides,
+            recorded: answer.recorded,
+            ...(answer.reason && { reason: answer.reason }),
+            ...(answer.derived && { derived: true }),
+          });
         })
         .catch((error: unknown) => {
           if (!controller.signal.aborted) setPair({ status: "error", message: error instanceof Error ? error.message : String(error) });

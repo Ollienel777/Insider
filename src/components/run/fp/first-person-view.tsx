@@ -30,11 +30,14 @@ import {
 } from "three";
 import { MeshWorld } from "@/app/spike/mesh/collider";
 import { act, type Action, type RunState } from "@/engine";
+import type { LockKind } from "@/domain/manifest";
 import type { PlacedLevel } from "@/level/placer";
 import { objectiveLabel, objectiveNoun } from "@/lib/objective-noun";
 import { cn } from "@/lib/utils";
 import { cameraMount, choices, roomName } from "../board";
 import { scanStageOf, type HeldAction, type ScanHandle, type ScanPreload } from "./run-view";
+import { actionLabel, announcement, lockOf, lockWords } from "./action";
+import { ActionAnnouncer, ActionLabelView, PickupToast } from "./action-hud";
 import { Actors, type Marks } from "./actors";
 import { Controller } from "./controller";
 import { endState } from "./end-state";
@@ -45,6 +48,7 @@ import { ControlsHint } from "./hint-card";
 import { noticeOf } from "./notice";
 import { readPalette } from "./palette";
 import { joinRefusal, joinScan } from "./scan-join";
+import { fillScan } from "./scan-fill";
 import { nodeFloors, scanGround } from "./scan-ground";
 import { addFurniture, applyOverrides, clearDoorways, tidyFurniture, windowsFromSight, derivePlan, FURNITURE, glassFromSight, mismatches, oneDoorPerRoom, reconcile, regularise, type PlanOverrides, PLAN, planSolid, roomLabels, type ScanPlan } from "./scan-plan";
 import { buildDress, DRESS } from "./scan-dress";
@@ -59,6 +63,8 @@ import { buildWorld, groundOf, type World } from "./world";
 import { useMoment } from "../moment";
 
 export interface FirstPersonViewProps {
+  /** On a scan: its photographed mesh ("photo", first person) or its rebuilt rooms ("set", the 3D model). */
+  look?: "photo" | "set";
   placed: PlacedLevel;
   run: RunState;
   /** The mission's objective, as the panel words it. */
@@ -79,10 +85,10 @@ export interface FirstPersonViewProps {
   scan?: ScanPreload | null;
   /** The player is let loose (true), or the view is gone (false): on a scan the Run screen holds the clock until then. */
   onReady?: (ready: boolean) => void;
-  /** Shift went down or up: the HUD's time left is then at a walk or a run. */
-  onWalking?: (walking: boolean) => void;
   /** What the end of the run offers next to its outcome (the Run screen's "See the debrief"). */
   endAction?: ReactNode;
+  /** The floor's lock kind (the rules table's era), for the words E's label says. */
+  lockKind?: LockKind | null;
 }
 
 /** What a scan's stage says while it loads: null once the player is let loose. */
@@ -147,17 +153,19 @@ const LABEL_BASE = "absolute left-0 top-0 rounded-sm border px-1.5 py-0.5 font-m
 const LABEL_PITCH = 26;
 
 /**
- * How a live scan is drawn in first person: as a set built to its plan and
- * dressed in its own photographs (the default); as one of our floors, its
- * plan in the fixture floors' colours (`?scanlook=blockout`); or as its own
- * photographed mesh, kept to compare (`?scanlook=photo`).
+ * How a live scan is drawn in first person: as its own photographed mesh
+ * (first person), or as a set built to its plan and coloured from its
+ * photographs (the 3D model): the player's choice, `chosen`. In development,
+ * `?scanlook=photo|set|blockout` overrides it (blockout: the plan in the
+ * fixture floors' colours).
  */
-function scanLook(): "set" | "blockout" | "photo" {
+function scanLook(chosen: "photo" | "set"): "set" | "blockout" | "photo" {
+  if (process.env.NODE_ENV === "production") return chosen;
   try {
     const look = new URLSearchParams(window.location.search).get("scanlook");
-    return look === "photo" || look === "blockout" ? look : "set";
+    return look === "photo" || look === "blockout" || look === "set" ? look : chosen;
   } catch {
-    return "set";
+    return chosen;
   }
 }
 
@@ -211,7 +219,7 @@ function hasWebGL(): boolean {
   }
 }
 
-export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, scan = null, onReady, onWalking, endAction = null }: FirstPersonViewProps) {
+export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, scan = null, onReady, endAction = null, lockKind = null, look: chosenLook = "photo" }: FirstPersonViewProps) {
   const surface = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const labelLayer = useRef<HTMLDivElement>(null);
@@ -231,10 +239,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
   // The loop reads the latest run and the latest `play` without being rebuilt for each turn. Updated in a
   // layout effect, before the browser paints, so no animation frame reads the run before last.
-  const latest = useRef({ run, onAct, onUnavailable, onHeld, onReady, onWalking });
+  const latest = useRef({ run, onAct, onUnavailable, onHeld, onReady });
   useLayoutEffect(() => {
-    latest.current = { run, onAct, onUnavailable, onHeld, onReady, onWalking };
-  }, [run, onAct, onUnavailable, onHeld, onReady, onWalking]);
+    latest.current = { run, onAct, onUnavailable, onHeld, onReady };
+  }, [run, onAct, onUnavailable, onHeld, onReady]);
 
   useEffect(() => {
     const host = surface.current;
@@ -303,6 +311,9 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       on.resize();
       const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => on.resize());
       observer?.observe(host);
+      // Entering and leaving fullscreen, and a window resize, size the canvas again even where the observer is late or absent.
+      window.addEventListener("resize", on.resize);
+      document.addEventListener("fullscreenchange", on.resize);
 
       const labelEls = new Map<string, HTMLSpanElement>();
       const point = new Vector3();
@@ -318,9 +329,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       let bob = 0;
       let hudKey = "";
       let areas = false;
-      // Each mount starts at a run, whatever the Run screen last heard.
-      let walking = false;
-      latest.current.onWalking?.(false);
       // The turn clock asks the view what a turn the player lets run out should be.
       latest.current.onHeld((state) => heldAction(walker, ground, state, { use: controller.using, yaw: controller.yaw }));
       // For poking at from the console in development (a scripted walk): never in a production build.
@@ -376,10 +384,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         const waiting = !drawn && now < looseAt && !on.settled(walker.pos);
         if (waiting) owed = 0;
         const controls = controller.controls();
-        if (controls.walk !== walking) {
-          walking = controls.walk;
-          latest.current.onWalking?.(walking);
-        }
         use ||= controls.usePressed;
         owed += dt;
         const stood = walker.pos;
@@ -403,7 +407,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         }
         looked = { yaw: controller.yaw, pitch: controller.pitch };
         progress.walkedM += walker.walked - walkedBefore;
-        if (controls.walk && walker.walked - walkedBefore > 0) progress.sneaked = true;
         if (controller.areas !== areas) {
           areas = controller.areas;
           actors.showAreas(areas, current.playerNode, current.locked);
@@ -466,7 +469,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         if (doneAt === null && hintDone(progress)) doneAt = now;
         const phase = hintPhase(doneAt === null ? null : now - doneAt, still);
         const ticks = hintTicks(progress);
-        const nextHint = `${phase}${ticks.move}${ticks.look}${ticks.sneak}${ticks.use}`;
+        const nextHint = `${phase}${ticks.move}${ticks.look}${ticks.use}`;
         if (nextHint !== hintKey) {
           hintKey = nextHint;
           setHint({ phase, progress: { ...progress } });
@@ -488,6 +491,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         observer?.disconnect();
         where?.remove();
         if (where) window.removeEventListener("keydown", noteSpot);
+        window.removeEventListener("resize", on.resize);
+        document.removeEventListener("fullscreenchange", on.resize);
         latest.current.onHeld(null);
         latest.current.onReady?.(false);
         if (debug) delete debug.__fp;
@@ -798,6 +803,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         return null;
       }
       const ground = scanGround(placed.level.floor, meshSolid(tree), join.heights);
+      // The blurred patch under each scan position is painted from a panorama that saw that floor from the side (scan-fill.ts).
+      const unfill = fillScan(view);
       const pieces = new Group();
       pieces.name = "run-pieces";
       // The scan's picture needs no light; the guards, cameras and doors do.
@@ -832,6 +839,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         },
         dispose() {
           pieces.removeFromParent();
+          unfill();
         },
       };
     };
@@ -844,7 +852,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
     };
 
     let stopListening = () => {};
-    const look = scanLook();
+    const look = scanLook(chosenLook);
     const photo = look === "photo";
     if (world) {
       begin(fixtureStage(world));
@@ -889,7 +897,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         scan.canvas.remove();
       }
     };
-  }, [world, placed, scanGiven, scanHandle, scanFailed]);
+  }, [world, placed, scanGiven, scanHandle, scanFailed, chosenLook]);
 
   const noun = objectiveNoun(placed.level.missionId);
   const moment = useMoment(placed, run);
@@ -899,6 +907,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
   useEffect(() => {
     if (over && surface.current && document.pointerLockElement === surface.current) document.exitPointerLock();
   }, [over]);
+  // What E does, in words (action.ts). Carrying is the objective line's chip (issue 192); the toast marks the take.
+  const wordsFor = (doorId: string) => lockWords(lockOf(placed, doorId, lockKind));
+  const action = over ? null : actionLabel(hud.prompt, hud.using, wordsFor, noun, moment?.kind === "door" ? moment : null);
+  const said = over ? null : announcement(moment?.kind === "door" ? { kind: "door", doorId: moment.doorId } : moment ? { kind: "take" } : null, wordsFor, noun);
   const tint = run.alarm === "calm" ? null : run.alarm === "suspicious" ? "var(--warning)" : "var(--danger)";
 
   return (
@@ -958,6 +970,9 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
       {/* The controls hint and the meter are for a run being played: both go when the end card comes up (issue 146). */}
       {ready && !end ? <SuspicionMeter notice={notice} /> : null}
+      {ready && action ? <ActionLabelView label={action} /> : null}
+      {ready && !over && moment?.kind === "take" ? <PickupToast title={`${noun.charAt(0).toUpperCase()}${noun.slice(1)} collected`} line={moment.text.split(". ").slice(1).join(". ") || "Get to the exit."} /> : null}
+      <ActionAnnouncer text={said} />
       {ready && !end ? <ControlsHint phase={hint.phase} ticks={hintTicks(hint.progress)} dragToLook={hud.refused} /> : null}
 
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-end px-6 py-3">
@@ -967,42 +982,14 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
               Paused. <Key>P</Key> to go on
             </p>
           ) : null}
-          {over ? null : hud.prompt ? (
+          {over ? null : hud.prompt && hud.prompt.kind !== "pick" && hud.prompt.kind !== "take" ? (
             <p
               data-testid="fp-prompt"
               data-kind={hud.prompt.kind}
               data-using={hud.using ? "true" : undefined}
               className={cn(PROMPT, hud.prompt.kind === "exit" && "border border-success")}
             >
-              {hud.prompt.kind === "far" ? (
-                "A locked door. Step up to it and hold E to pick it."
-              ) : hud.prompt.kind === "take" ? (
-                <>
-                  Hold <Key>E</Key> to take the {noun}
-                </>
-              ) : hud.prompt.kind === "exit" ? (
-                exitPrompt(placed, hud.prompt.nodeId, noun)
-              ) : hud.using ? (
-                <>
-                  Picking… hold <Key>E</Key>
-                  <span className="font-mono text-text-2">
-                    {hud.prompt.done} of {hud.prompt.of}
-                  </span>
-                </>
-              ) : hud.prompt.done > 0 ? (
-                <>
-                  Hold <Key>E</Key> to go on picking. Let go and the lock starts over.
-                </>
-              ) : (
-                <>
-                  Hold <Key>E</Key> to pick the lock
-                </>
-              )}
-            </p>
-          ) : moment?.kind === "door" ? (
-            // The picked door's prompt does not just vanish: it says the door is open, for the moment's turns (issue 188).
-            <p data-testid="fp-prompt" data-kind="open" className={cn(PROMPT, "border border-success")}>
-              Door open. Walk on through.
+              {hud.prompt.kind === "far" ? "A locked door. Step up to it and hold E to open it." : exitPrompt(placed, hud.prompt.nodeId, noun)}
             </p>
           ) : null}
           {over ? null : (
@@ -1017,9 +1004,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
               <Key>A</Key>
               <Key>S</Key>
               <Key>D</Key> move
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Key>Shift</Key> walk
             </span>
             {hud.locked ? null : (
               <span className="flex items-center gap-1.5">

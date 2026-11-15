@@ -146,7 +146,11 @@ test("first person: the controls hint is up for a first-time player, and fades o
   // Issue 146: at the left of the view, every control named, and the suspicion meter up with it.
   const hint = page.getByTestId("fp-controls-hint");
   await expect(hint).toBeVisible();
-  for (const words of ["move", "look around", "walk", "pick the lock"]) await expect(hint).toContainText(words);
+  for (const words of ["move", "look around", "pick the lock"]) await expect(hint).toContainText(words);
+  // Issue 189: no walk key. WASD, the mouse and hold E are the whole of it.
+  await expect(hint.locator("li")).toHaveCount(3);
+  await expect(hint).not.toContainText("Shift");
+  await expect(page.getByTestId("fp-hint")).not.toContainText("Shift");
   await expect(page.getByTestId("fp-notice")).toHaveAttribute("data-tone", /calm|warning|danger/);
 
   // Looking alone does not clear it. A drag turns the view by a set angle (0.004 rad a pixel), whatever
@@ -192,13 +196,15 @@ test("first person: holding E at a locked door picks it until the engine opens i
   // Paused the whole way to the door, so no turn passes and nothing on the floor moves meanwhile.
   await page.keyboard.press("p");
   await expect(page.getByTestId("fp-paused")).toBeVisible();
-  const prompt = page.getByTestId("fp-prompt");
+  // A door in view but out of reach is the bottom prompt's; one in reach is the label under the crosshair's.
+  const prompt = page.locator('[data-testid="fp-prompt"], [data-testid="fp-action"]');
+  const action = page.getByTestId("fp-action");
 
   // Turn until the view's line first meets the door (its prompt shows): the line is then within a frame's
   // turn of the door's edge. A drag of the view turns it on by a set angle, 0.004 rad a pixel whatever the
   // frame rate: 45 px, about 10 degrees, takes the line in off the edge. The door, with its frame, spans
   // about 30 degrees from here, and a frame turns the view at most 14 (0.1 s at 2.4 rad/s).
-  if (await holdUntil(page, { key: "ArrowRight", code: "ArrowRight" }, '[data-testid="fp-prompt"]', 30_000)) {
+  if (await holdUntil(page, { key: "ArrowRight", code: "ArrowRight" }, '[data-testid="fp-prompt"], [data-testid="fp-action"]', 30_000)) {
     // Through the view's own drag-to-look handlers, as a mouse drag where the pointer is not locked.
     await page.evaluate((px) => {
       const surface = document.querySelector('[data-testid="fp-view"]')!;
@@ -208,21 +214,60 @@ test("first person: holding E at a locked door picks it until the engine opens i
       at("pointerup", px);
     }, 45);
   }
-  await expect(prompt).toHaveAttribute("data-kind", /far|pick/);
+  await expect(prompt.first()).toHaveAttribute("data-kind", /far|pick/);
 
   // Walk along the line of view until the prompt says to pick, and stop there. Walking along the line
   // keeps it on the same point of the door, and the door's side of the room is all one node's area.
-  await holdUntil(page, { key: "w", code: "KeyW" }, '[data-testid="fp-prompt"][data-kind="pick"]', 30_000);
+  await holdUntil(page, { key: "w", code: "KeyW" }, '[data-testid="fp-action"][data-kind="pick"]', 30_000);
   await expect(view(page), "the walk stays on the door's node").toHaveAttribute("data-node", "s1-sw");
-  await expect(prompt).toContainText("Hold E to pick the lock");
+  // The server room's reader is the smart era's badge plus PIN: the label says so, and that E is held for it.
+  await expect(action).toHaveAttribute("data-phase", "aim");
+  await expect(action).toContainText("Hold E · Spoof the badge and PIN");
   await expect(page.getByTestId("fp-paused")).toBeVisible();
 
   // Only now the clock runs again. Hold E: a pick a turn, then the door is open.
   await page.keyboard.press("p");
   await expect(page.getByTestId("fp-paused")).toHaveCount(0);
   await page.keyboard.down("e");
-  await expect(prompt).toContainText("Picking");
+  await expect(action).toHaveAttribute("data-phase", "hold");
+  await expect(action).toContainText("Spoofing the badge and PIN…");
+  await expect(page.getByTestId("fp-action-count")).toContainText("/");
   await expect(view(page)).not.toHaveAttribute("data-locked", /d-server/, { timeout: 30_000 });
+  // Open: a brief confirmation under the crosshair, and the live region says it.
+  await expect(action).toHaveAttribute("data-phase", "landed");
+  await expect(action).toContainText("Reader spoofed · Door open");
+  await expect(page.getByTestId("fp-announce")).toHaveText("Reader spoofed. Door open.");
   await page.keyboard.up("e");
   await expect(view(page)).toHaveAttribute("data-node", "s1-sw");
+});
+
+test("first person: Fullscreen puts the stage, HUD and all, over the screen, and F or the button takes it back", async ({ page }) => {
+  test.setTimeout(90_000);
+  await open(page, "F1");
+  if (!(await firstPerson(page))) return;
+
+  const button = page.getByTestId("fullscreen-toggle");
+  await expect(button).toBeVisible();
+  await expect(button).toHaveAttribute("aria-pressed", "false");
+  await expect(button).toHaveAccessibleName("Fullscreen");
+  const canvasWidth = () => page.getByTestId("fp-canvas").evaluate((c: HTMLCanvasElement) => c.clientWidth);
+  const before = await canvasWidth();
+
+  await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+  // The stage goes fullscreen, not the canvas: the HUD and the view's own overlays are inside it.
+  expect(await page.evaluate(() => document.fullscreenElement?.hasAttribute("data-fullscreen-root") ?? false)).toBe(true);
+  expect(await page.evaluate(() => Boolean(document.fullscreenElement?.querySelector('[data-testid="fp-view"]')))).toBe(true);
+  expect(await page.evaluate(() => Boolean(document.fullscreenElement?.querySelector('[data-testid="play-hud"]')))).toBe(true);
+  // The canvas fills the screen's width, and its drawing buffer follows it.
+  await expect.poll(canvasWidth).toBe(await page.evaluate(() => window.innerWidth));
+  await expect
+    .poll(() => page.getByTestId("fp-canvas").evaluate((c: HTMLCanvasElement) => Math.abs(c.width / c.height - c.clientWidth / c.clientHeight) < 0.02))
+    .toBe(true);
+
+  await page.keyboard.press("f");
+  await expect(button).toHaveAttribute("aria-pressed", "false");
+  expect(await page.evaluate(() => document.fullscreenElement)).toBeNull();
+  // Out again, the canvas is the size it was.
+  await expect.poll(canvasWidth).toBe(before);
 });

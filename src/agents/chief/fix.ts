@@ -10,7 +10,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { readCachedLevel } from "@/agents/builder/cache";
+import { readLevel } from "@/agents/builder/live-levels";
 import { defaultMissionId } from "@/agents/builder/missions";
 import { structuredCall, type StructuredCallOptions } from "@/adapters/llm";
 import {
@@ -209,7 +209,8 @@ export async function loadFixRecording(buildingId: string, dir: string = CHIEF_F
 /** The Chief's one suggested change for a batch. Null when there is no cached level for the mission. */
 export async function suggestFix(request: FixRequest, options: FixOptions = {}): Promise<FixAnswer | null> {
   const missionId = options.missionId ?? defaultMissionId(request.buildingId);
-  const cached = missionId ? await readCachedLevel(request.buildingId, missionId, options.levelsDir) : null;
+  // A showcase kit building's level is in memory (#93, issue 205), as the crew's strategies read it.
+  const cached = missionId ? await readLevel(request.buildingId, missionId, options.levelsDir) : null;
   if (!cached) return null;
   const { manifest } = cached;
   const { summary } = request;

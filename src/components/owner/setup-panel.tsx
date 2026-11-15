@@ -35,6 +35,10 @@ export interface Draft {
   state: "untouched" | "preset" | "editing" | "saved" | "save-failed";
 }
 
+/** Where a saved setup is kept: in storage on this device, or only in this tab's memory (`KEPT_IN_TAB`, issue 205). */
+export const KEPT_ON_DEVICE = "on this device";
+export const KEPT_IN_TAB = "in this tab";
+
 /** What a click on a node does: select, add, or work the selected guard, cleaner or camera. */
 export type Tool = "select" | "guard" | "cleaner" | "camera" | "desk" | "move" | "round";
 
@@ -82,6 +86,7 @@ export function SetupPanel({
   onReset,
   extra,
   measure = null,
+  keptIn = KEPT_ON_DEVICE,
 }: {
   floor: FloorGraph;
   draft: Draft;
@@ -102,6 +107,8 @@ export function SetupPanel({
   extra?: ReactNode;
   /** The setup's coverage and open windows as it stands (issue 120): they follow every edit, no batch needed. */
   measure?: SetupMeasure | null;
+  /** Where a saved setup is kept: on this device, or in this tab on a live scan (issue 205). */
+  keptIn?: string;
 }) {
   const { setup } = draft;
   const [pick, setPick] = useState<string>("");
@@ -149,9 +156,11 @@ export function SetupPanel({
           {draft.state === "untouched"
             ? "This is the building's generated security in your terms. Change it to match what you really have."
             : draft.state === "preset"
-              ? "A made-up setup prepared for the demo, not any real building's. Save it to keep a copy on this device."
+              ? `A made-up setup prepared for the demo, not any real building's. Save it to keep a copy ${keptIn}.`
               : draft.state === "saved"
-                ? "Saved on this device. It never leaves this browser."
+                ? keptIn === KEPT_ON_DEVICE
+                  ? "Saved on this device. It never leaves this browser."
+                  : `Saved ${keptIn}. It never leaves this tab, and goes when the tab closes.`
                 : draft.state === "save-failed"
                   ? "This browser didn't keep it: site data is blocked or full. The setup still runs here."
                   : "Changed since it was last saved."}
@@ -171,11 +180,11 @@ export function SetupPanel({
 
       <section aria-labelledby="owner-saved-label" className="flex flex-col gap-2">
         <h2 id="owner-saved-label" className="label-caps text-text-3">
-          Saved on this device
+          Saved {keptIn}
         </h2>
         {saved.length === 0 ? (
           <p data-testid="owner-saved-empty" className="text-sm text-text-2">
-            No saved setups yet. Save one to keep it on this device.
+            No saved setups yet. Save one to keep it {keptIn}.
           </p>
         ) : (
           <div className="flex gap-2">

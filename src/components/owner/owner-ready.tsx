@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { BatchSummary, FloorGraph, LevelManifest } from "@/domain";
 import type { OwnerSetup } from "@/domain/owner-setup";
 import { deleteOwnerSetup, loadOwnerSetups, saveOwnerSetup } from "@/components/run/owner-setup-store";
@@ -12,7 +12,8 @@ import { cn } from "@/lib/utils";
 import { BatchPanel, type BatchMeasures, type Side } from "./batch-panel";
 import { measureSetup, type SetupMeasure } from "./setup-measure";
 import { compareOptions, ComparePanel, ComparePicker, defaultPick, DemoList, type PairId } from "./compare-panel";
-import { demoSetups, isDemoSetup } from "./demo-setups";
+import { demoSetups, isDemoSetup, type DemoSetup } from "./demo-setups";
+import { derivedDemoPair } from "./derived-demo";
 import { ownerZones } from "./owner-batch";
 import { OwnerBoard, type Selection } from "./owner-board";
 import {
@@ -30,8 +31,8 @@ import {
   toggleDesk,
   updateCamera,
 } from "./owner-edit";
-import { OWNER_SEED, OwnerHeading, type OwnerBuilding } from "./owner-screen";
-import { SetupPanel, type Draft, type Tool } from "./setup-panel";
+import { OWNER_SEED, OwnerHeading, SHOWCASE_MADE_UP_LINE, type OwnerBuilding } from "./owner-screen";
+import { KEPT_IN_TAB, KEPT_ON_DEVICE, SetupPanel, type Draft, type Tool } from "./setup-panel";
 import { useOwnerBatch } from "./use-owner-batch";
 import { useOwnerCompare } from "./use-owner-compare";
 
@@ -92,29 +93,46 @@ export function OwnerReady({
   manifest,
   floor,
   debriefHref,
+  showcase = false,
+  inMemory = false,
 }: {
   building: OwnerBuilding;
   manifest: LevelManifest;
   floor: FloorGraph;
   debriefHref: string;
+  /** A showcase kit building (issue 205): its setup lines say so, and its demo pair is worked out from the board. */
+  showcase?: boolean;
+  /** Setups stay in this tab's memory, never in storage: a kit building, or a board from a scan (SPEC §4.5). */
+  inMemory?: boolean;
 }) {
   const generated = useMemo(() => placeLevel(manifest, floor, OWNER_SEED), [manifest, floor]);
+  const keptIn = inMemory ? KEPT_IN_TAB : KEPT_ON_DEVICE;
+  // Held in this tab under the building and the mission, so one mission's setups never show under another's.
+  const memory = inMemory ? { missionId: manifest.mission.id } : undefined;
   // Mounted only once the floor has loaded in the browser, so storage is read here, never on the server.
-  const [saved, setSaved] = useState<OwnerSetup[]>(() => loadOwnerSetups(manifest.buildingId));
+  const [saved, setSaved] = useState<OwnerSetup[]>(() => loadOwnerSetups(manifest.buildingId, undefined, memory));
   const [draft, setDraft] = useState<Draft>(() => ({ setup: setupFromPlaced(generated), pristine: true, state: "untouched" }));
   const [selection, setSelection] = useState<Selection>(null);
   const [tool, setTool] = useState<Tool>("select");
   const [view, setView] = useState<"setup" | "results" | "compare">("setup");
   const [side, setSide] = useState<Side>("after");
-  const [fixedSaved, setFixedSaved] = useState<{ key: string; ok: boolean; setup: OwnerSetup } | null>(null);
+  const [fixedSaved, setFixedSaved] = useState<{ key: string; ok: boolean; setup: OwnerSetup; keptIn: string } | null>(null);
   const { batch, fix, run, suggest, apply } = useOwnerBatch(manifest, floor);
   const { pair, compare } = useOwnerCompare(manifest, floor);
   const [pairSide, setPairSide] = useState<PairId>("a");
 
-  // The prepared demo setups (F1's pair), offered only when they fit this floor.
+  // On a showcase building the pair is worked out from the board (issue 205), after the first paint so the
+  // board shows while the rule measures its moves. It is never written down: it lives as long as this screen.
+  const [derived, setDerived] = useState<readonly DemoSetup[]>([]);
+  useEffect(() => {
+    if (!showcase) return;
+    const timer = setTimeout(() => setDerived(derivedDemoPair(manifest, floor, generated)), 0);
+    return () => clearTimeout(timer);
+  }, [showcase, manifest, floor, generated]);
+  // The prepared demo setups (F1's pair, or the showcase's worked-out one), offered only when they fit this floor.
   const demos = useMemo(
-    () => demoSetups(manifest.buildingId).filter((d) => problemsOf(d.setup, floor).all.length === 0),
-    [manifest.buildingId, floor],
+    () => (showcase ? derived : demoSetups(manifest.buildingId)).filter((d) => problemsOf(d.setup, floor).all.length === 0),
+    [showcase, derived, manifest.buildingId, floor],
   );
   const options = useMemo(() => compareOptions(demos, saved), [demos, saved]);
   const [picked, setPicked] = useState<{ a: string; b: string } | null>(null);
@@ -182,8 +200,8 @@ export function OwnerReady({
     batch.status !== "done" ? null : shownSide === "after" && fix.status === "applied" ? fix.rerun.after : batch.summary;
 
   const save = () => {
-    const ok = saveOwnerSetup(draft.setup);
-    if (ok) setSaved(loadOwnerSetups(manifest.buildingId));
+    const ok = saveOwnerSetup(draft.setup, undefined, memory);
+    if (ok) setSaved(loadOwnerSetups(manifest.buildingId, undefined, memory));
     setDraft((d) => ({ ...d, state: ok ? "saved" : "save-failed" }));
   };
   const load = (name: string) => {
@@ -209,7 +227,7 @@ export function OwnerReady({
     setView("compare");
   };
   const remove = (name: string) => {
-    if (deleteOwnerSetup(manifest.buildingId, name)) setSaved(loadOwnerSetups(manifest.buildingId));
+    if (deleteOwnerSetup(manifest.buildingId, name, undefined, memory)) setSaved(loadOwnerSetups(manifest.buildingId, undefined, memory));
   };
   const reset = () => {
     setDraft({ setup: setupFromPlaced(generated), pristine: true, state: "untouched" });
@@ -227,9 +245,9 @@ export function OwnerReady({
   const saveFixed = () => {
     if (batch.status !== "done" || fix.status !== "applied" || fix.rerun.dropped || !fix.rerun.fixed) return;
     const fixed = fix.rerun.fixed;
-    const ok = saveOwnerSetup(fixed);
-    if (ok) setSaved(loadOwnerSetups(manifest.buildingId));
-    setFixedSaved({ key: batch.key, ok, setup: fixed });
+    const ok = saveOwnerSetup(fixed, undefined, memory);
+    if (ok) setSaved(loadOwnerSetups(manifest.buildingId, undefined, memory));
+    setFixedSaved({ key: batch.key, ok, setup: fixed, keptIn });
   };
   const openFixed = () => {
     if (!fixedSaved?.ok) return;
@@ -248,7 +266,7 @@ export function OwnerReady({
         onClick={() => {
           if (pair.status !== "done") return;
           const setup = pair.sides[pairSide === "a" ? 0 : 1].setup;
-          setDraft({ setup, pristine: false, state: isDemoSetup(setup) ? "preset" : "saved" });
+          setDraft({ setup, pristine: false, state: isDemoSetup(setup, demos) ? "preset" : "saved" });
           setSelection(null);
           setTool("select");
           setView("setup");
@@ -295,7 +313,7 @@ export function OwnerReady({
     ) : (
       <Button variant="primary" data-testid="owner-save-fixed" onClick={saveFixed} disabled={fixedSaved?.ok === true}>
         {fixedSaved?.ok
-          ? "Saved on this device"
+          ? `Saved ${keptIn}`
           : fix.status === "applied" && fix.rerun.after.escaped < fix.rerun.before.escaped
             ? "Save the fixed setup"
             : "Save this setup"}
@@ -392,7 +410,12 @@ export function OwnerReady({
               <OwnerBoard placed={editBoard} />
             )}
           </div>
-          <div className="flex h-12 shrink-0 items-center px-6">
+          <div className="flex min-h-12 shrink-0 flex-col justify-center gap-0.5 px-6 py-2">
+            {showcase ? (
+              <p data-testid="owner-board-made-up" className="text-sm text-text-1">
+                {SHOWCASE_MADE_UP_LINE}
+              </p>
+            ) : null}
             <p className="text-sm text-text-2">
               {view === "setup"
                 ? "Click a guard, cleaner, camera, door or desk to change it, or pick a tool to add one."
@@ -405,7 +428,7 @@ export function OwnerReady({
       }
       panel={
         <div className="flex flex-col gap-6">
-          <OwnerHeading name={building.name} />
+          <OwnerHeading name={building.name} showcase={showcase} />
           {view === "setup" ? (
             <SetupPanel
               floor={floor}
@@ -427,6 +450,7 @@ export function OwnerReady({
               onDelete={remove}
               onReset={reset}
               measure={editMeasure}
+              keptIn={keptIn}
               extra={
                 <>
                   <DemoList demos={demos} onLoad={loadDemo} />
@@ -436,6 +460,7 @@ export function OwnerReady({
                     planning={pair.status === "planning"}
                     onPick={setPicked}
                     onCompare={runCompare}
+                    keptIn={keptIn}
                   />
                 </>
               }
@@ -445,7 +470,7 @@ export function OwnerReady({
               pair={pair}
               floor={floor}
               boards={pairBoards}
-              madeUp={pair.status === "done" ? [isDemoSetup(pair.sides[0].setup), isDemoSetup(pair.sides[1].setup)] : [false, false]}
+              madeUp={pair.status === "done" ? [isDemoSetup(pair.sides[0].setup, demos), isDemoSetup(pair.sides[1].setup, demos)] : [false, false]}
               side={pairSide}
               measures={pairMeasures}
               onSide={setPairSide}

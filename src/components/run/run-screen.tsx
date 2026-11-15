@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { RotateCcw } from "lucide-react";
+import { Maximize2, Minimize2, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getMatterport, insideViewFor, scanMeshModelFor } from "@/adapters/matterport";
 import { buildingHref } from "@/lib/building-href";
@@ -41,7 +41,7 @@ import { useTurnClock } from "./turn-clock";
 import { FirstMoveHint } from "./fp/first-move-hint";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
-import { ChiefCalls } from "./chief-calls";
+import { ChiefCalls, askDelay, afterFailure, type AskedAbout } from "./chief-calls";
 import { loadCrewPlan, PLAN_HEADING, planSourceOf, type StoredCrewPlan } from "./crew-plan-store";
 import { clearRunLog, keepRunLogInMemory, runLogOf, saveRunLog } from "./run-log-store";
 import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postureOf, runRecordOf, type RunRecord } from "./run-history";
@@ -49,7 +49,8 @@ import { MuteToggle, useRunSound } from "./run-sound";
 import { RunStage } from "./run-stage";
 import { placeOrFixture } from "./scan-fallback";
 import { ScanWait, useWaitsOnScan } from "./scan-wait";
-import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useBark, useRunView, useScanPreload, ViewSwitch, type HeldAction } from "./fp/run-view";
+import { fullscreenStep } from "./fp/fullscreen";
+import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, FullscreenToggle, scanLookOf, useBark, useStageFullscreen, useRunView, useScanPreload, ViewSwitch, type HeldAction } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -142,6 +143,12 @@ export function RunScreen({
   const latestRun = useRef<RunState | null>(null);
   const pendingChief = useRef<AbortController | null>(null);
   const chiefCalls = useRef(new ChiefCalls());
+  /** The last event a Chief call went out about, so a Lockdown re-sighting doesn't re-ask on every sweep (issue 190). */
+  const askedAbout = useRef<AskedAbout | null>(null);
+  /** A Lockdown re-sighting in a new zone that came too soon: asked about once the radio has had its time. */
+  const deferredChief = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Whether the turns run on the clock (Live, or first person): only then does a re-plan wait for the radio. */
+  const clocked = useRef(false);
   /** Turn number → where the Chief's orders logged on that turn came from, for the Debrief. */
   const chiefSources = useRef(new Map<number, ChiefAnswer["source"]>());
   /** The Chief's answer that landed after the run ended, if one did. */
@@ -158,6 +165,9 @@ export function RunScreen({
     pendingChief.current?.abort();
     pendingChief.current = null;
     chiefCalls.current.reset();
+    askedAbout.current = null;
+    if (deferredChief.current) clearTimeout(deferredChief.current);
+    deferredChief.current = null;
     chiefSources.current = new Map();
     lateChief.current = null;
     setChief({ status: "idle" });
@@ -193,6 +203,38 @@ export function RunScreen({
     document.body.classList.add("playing");
     return () => document.body.classList.remove("playing");
   }, []);
+
+  // Full window, for the demo: the Run screen takes the whole window, with no top bar, no tabs and no
+  // folder edge, and a tighter HUD (globals.css). Off until switched on; the browser remembers the choice.
+  // The end card and the end action still lead to the Debrief; the switch brings the tabs back.
+  const [fullWindow, setFullWindow] = useState(false);
+  // Read after mount, as the run view is (view-store.ts), so the server's render and the browser's first agree.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        setFullWindow(localStorage.getItem(FULL_WINDOW_KEY) === "on");
+      } catch {
+        // No storage: the switch still works for this page.
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+  const toggleFullWindow = useCallback(() => {
+    setFullWindow((on) => {
+      try {
+        if (on) localStorage.removeItem(FULL_WINDOW_KEY);
+        else localStorage.setItem(FULL_WINDOW_KEY, "on");
+      } catch {
+        // No storage: the choice lasts for this page.
+      }
+      return !on;
+    });
+  }, []);
+  useEffect(() => {
+    if (!fullWindow) return;
+    document.body.classList.add("run-full");
+    return () => document.body.classList.remove("run-full");
+  }, [fullWindow]);
 
   useEffect(() => {
     if (!manifest) return;
@@ -249,7 +291,7 @@ export function RunScreen({
   const scan = useScanPreload(scanModel);
   const scanFailure = scan?.failed ?? null;
   useEffect(() => {
-    if (!scanFailure || runView.view !== "first-person") return;
+    if (!scanFailure || runView.view === "board") return;
     // The status line says why the board is back, once the failure is in.
     const timer = setTimeout(() => setStatus(scanFailure), 0);
     return () => clearTimeout(timer);
@@ -265,18 +307,54 @@ export function RunScreen({
   useEffect(() => {
     latestRun.current = run;
   }, [run]);
-  useEffect(() => () => pendingChief.current?.abort(), []);
+  useEffect(
+    () => () => {
+      pendingChief.current?.abort();
+      if (deferredChief.current) clearTimeout(deferredChief.current);
+    },
+    [],
+  );
 
   // A call out is let finish when the alarm moves again; the newest event that waited is asked about after it (issue 172).
   const callChiefNext = useRef<(state: RunState, seq: number, queued: boolean) => void>(() => {});
   const callChief = useCallback(
-    (state: RunState, seq: number, queued = false) => {
+    (state: RunState, seq: number, queued = false, force = false) => {
       if (!placed || !zones) {
         // No board to ask about: a queued call must not hold the queue shut.
         if (queued) chiefCalls.current.reset();
         return;
       }
+      const event = state.alarmEvents[seq];
+      // A Lockdown re-sighting in the same place asks nothing: the orders out still stand. One in a new
+      // zone too soon after the last re-plan waits, so the radio reads that re-plan in full (issue 190).
+      const now = performance.now();
+      // Retry is the player asking: it always goes, whatever was asked about last.
+      const delay = event && !force ? askDelay(event, askedAbout.current, now, clocked.current) : 0;
+      if (delay !== 0) {
+        // A queued call skipped: free the queue, so the next event can ask.
+        if (queued) chiefCalls.current.reset();
+        if (delay !== null) {
+          // Only the newest waits: when its time comes, the run's newest event is asked about, if still worth it.
+          if (deferredChief.current) clearTimeout(deferredChief.current);
+          deferredChief.current = setTimeout(() => {
+            deferredChief.current = null;
+            const current = latestRun.current;
+            if (current && current.alarmEvents.length > 0) callChiefNext.current(current, current.alarmEvents.length - 1, false);
+          }, delay);
+        }
+        return;
+      }
       if (!queued && !chiefCalls.current.ask(seq)) return;
+      // Asked about now: a re-sighting waiting for its time has nothing left to ask.
+      if (deferredChief.current) clearTimeout(deferredChief.current);
+      deferredChief.current = null;
+      const before = askedAbout.current;
+      const asked: AskedAbout | null = event ? { to: event.to, zone: event.lastKnownZone, at: now } : null;
+      if (asked) askedAbout.current = asked;
+      // A call that fails counts as not asked, so Retry, or the next re-sighting there, asks again.
+      const forget = () => {
+        if (asked) askedAbout.current = afterFailure(askedAbout.current, asked, before);
+      };
       const controller = new AbortController();
       pendingChief.current = controller;
       // This call is done: the newest event that waited behind it goes next, on the run as it stands now.
@@ -298,12 +376,15 @@ export function RunScreen({
       } catch (error) {
         // A board the request can't carry: the panel says so, and the turn (and its log) goes on.
         setChief({ status: "error", seq, message: error instanceof Error ? error.message : String(error) });
+        forget();
         next();
         return;
       }
       // A queued call leaves an answer before it on the panel until its own lands, so that answer is seen;
       // an error before it gives way to "pending", so the panel never reads as failed while a call is out.
-      setChief((shown) => (queued && shown.status === "ready" ? shown : { status: "pending", seq }));
+      // So does a re-plan at Lockdown: the radio keeps reading the answer on air until the new one lands.
+      const reask = event?.from === "lockdown" && event.to === "lockdown";
+      setChief((shown) => ((queued || reask) && shown.status === "ready" ? shown : { status: "pending", seq }));
       askChief(request, { signal: controller.signal }).then(
         (answer) => {
           // Aborted by a restart or by leaving the screen, or a call from before a restart: stale.
@@ -334,6 +415,7 @@ export function RunScreen({
         (error: unknown) => {
           if (controller.signal.aborted || !chiefCalls.current.isOut(seq)) return;
           setChief({ status: "error", seq, message: error instanceof Error ? error.message : String(error) });
+          forget();
           next();
         },
       );
@@ -393,6 +475,9 @@ export function RunScreen({
   }, []);
   const fpTurn = useCallback((current: RunState): Action => fpHeld.current?.(current) ?? { kind: "wait" }, []);
   const layoutMode = fpOn ? "live" : playMode;
+  useEffect(() => {
+    clocked.current = layoutMode === "live";
+  }, [layoutMode]);
   // On a scan, the clock waits until first person lets the player loose (the picture around them is in).
   const [fpReady, setFpReady] = useState(false);
   const clock = useTurnClock({
@@ -411,7 +496,7 @@ export function RunScreen({
 
   const retryChief = useCallback(() => {
     const current = latestRun.current;
-    if (current && current.alarmEvents.length > 0) callChief(current, current.alarmEvents.length - 1);
+    if (current && current.alarmEvents.length > 0) callChief(current, current.alarmEvents.length - 1, false, true);
   }, [callChief]);
 
   /** Forgets the earlier runs and places the level again, in its default posture. */
@@ -449,15 +534,21 @@ export function RunScreen({
   // Live's layout (issue 100): the HUD around the board, and everything else behind Details.
   const [details, toggleDetails] = useDetails(layoutMode === "live", fpOn ? "i" : "d");
   const open = panelsOpen(layoutMode, details);
+  // Fullscreen shows the stage alone, and the side panel is outside it: whichever came last wins
+  // (fp/fullscreen.ts). Going fullscreen closes Details; opening the panel leaves fullscreen.
+  const stageFull = useStageFullscreen();
+  const wasStageFull = useRef(false);
+  useEffect(() => {
+    const step = fullscreenStep(wasStageFull.current, stageFull, open, layoutMode === "live");
+    wasStageFull.current = stageFull;
+    if (step === "close-details") toggleDetails();
+    else if (step === "leave-fullscreen") void document.exitFullscreen().catch(() => {});
+  }, [stageFull, open, layoutMode, toggleDetails]);
   // The lens is put away with the bar: its key does nothing until Details opens it again.
   const [lens, toggleLens] = useLayerLens(open);
-  // First person's time left is at the controller's speed: a walk while Shift is held, else a run.
-  const [walking, setWalking] = useState(false);
+  // First person's time left is at the controller's one speed.
   const fpFloor = placed?.level.floor ?? null;
-  const pace = useMemo(
-    () => (fpOn && fpFloor ? firstPersonPace(fpFloor, walking) : null),
-    [fpOn, fpFloor, walking],
-  );
+  const pace = useMemo(() => (fpOn && fpFloor ? firstPersonPace(fpFloor) : null), [fpOn, fpFloor]);
   const hud = usePlayHud({
     live: layoutMode === "live",
     placed,
@@ -550,6 +641,7 @@ export function RunScreen({
       // On a live scan the board shares its area with the scan (issue 117), and the visual grows with them where they stack.
       staged={Boolean(openInside && run && placed)}
       record={record}
+      windowToggle={<FullWindowToggle on={fullWindow} onToggle={toggleFullWindow} />}
       bar={
           <div className="flex h-14 shrink-0 items-center gap-3 px-6">
             <span className="flex min-w-0 items-center gap-2 label-caps whitespace-nowrap text-text-2">
@@ -579,6 +671,7 @@ export function RunScreen({
                   Forget {storedRuns === 1 ? "1 earlier run" : `${storedRuns} earlier runs`}
                 </Button>
               ) : null}
+              <FullWindowToggle on={fullWindow} onToggle={toggleFullWindow} />
               <LensToggle on={lens} onToggle={toggleLens} disabled={!run} />
               <Button variant="ghost" onClick={restart} disabled={!run || run.turn === 0}>
                 <RotateCcw aria-hidden />
@@ -635,12 +728,13 @@ export function RunScreen({
               />
             ) : run && placed && manifest && fpOn ? (
               <FirstPersonView
+                look={scanLookOf(runView)}
                 placed={placed}
                 run={run}
                 objective={manifest.mission.objective}
+                lockKind={manifest.securityProfile.lockKind}
                 onAct={play}
                 onHeld={holdFp}
-                onWalking={setWalking}
                 paused={clock.state === "paused"}
                 scan={scan}
                 onReady={setFpReady}
@@ -672,7 +766,13 @@ export function RunScreen({
             ) : null}
             {/* Only over a board with a run on it: not over the loading or error state. Below md the
                 Live mode switch takes the top-right corner, so the mute button sits under it there. */}
-            {run ? <MuteToggle muted={muted} onToggle={toggleMute} className="absolute top-2 right-8 max-md:top-16 max-md:right-6" /> : null}
+            {run ? (
+              <div className="absolute top-2 right-8 flex items-center gap-2 max-md:top-16 max-md:right-6">
+                {/* Only where the stage carries the alarm and the clock itself: Live and first person. */}
+                <FullscreenToggle available={layoutMode === "live"} />
+                <MuteToggle muted={muted} onToggle={toggleMute} />
+              </div>
+            ) : null}
             {fpOn && clock.awaitingMove ? <FirstMoveHint /> : null}
             {run && !fpOn ? <LiveControls mode={playMode} onChange={setPlayMode} clock={clock} /> : null}
           </div>
@@ -727,6 +827,28 @@ export function RunScreen({
         ) : null
       }
     />
+  );
+}
+
+/** Where the tab remembers the full-window switch; `demo:reset` clears it with every `heist:` key. */
+const FULL_WINDOW_KEY = "heist:run-full-window";
+
+/** Full window on and off: the top bar, the tabs and the folder's edge go on the Run screen. */
+function FullWindowToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <Button
+      variant="ghost"
+      aria-pressed={on}
+      data-testid="full-window"
+      onClick={(event) => {
+        event.currentTarget.blur();
+        onToggle();
+      }}
+      className="max-md:hidden"
+    >
+      {on ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
+      <span data-full-label>{on ? "Exit full window" : "Full window"}</span>
+    </Button>
   );
 }
 

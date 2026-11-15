@@ -1,12 +1,14 @@
 "use client";
 
-// Which view the Run screen shows (issue 115): the board, or first person.
+// Which view the Run screen shows (issue 115): the board, or first person,
+// or, on a scanned building, its 3D model (first person in the scan rebuilt as
+// rooms, issue 118).
 // The choice is one per browser, kept in localStorage like the crew plan:
 // storage can be blocked or full, so every read and write may quietly do
 // nothing, and the choice then lasts as long as the page.
 import { useCallback, useEffect, useState } from "react";
 
-export type RunView = "board" | "first-person";
+export type RunView = "board" | "first-person" | "model";
 
 /** The view a browser that has never chosen sees: first person (issue 166). The smoke tests start on the board (playwright.config.ts). */
 export const DEFAULT_RUN_VIEW: RunView = "first-person";
@@ -36,7 +38,7 @@ export function defaultRunView(phone: boolean = isPhone()): RunView {
 export function loadRunView(storage?: Pick<Storage, "getItem">, phone?: boolean): RunView {
   try {
     const stored = (storage ?? browserStorage())?.getItem(RUN_VIEW_KEY);
-    if (stored === "board" || stored === "first-person") return stored;
+    if (stored === "board" || stored === "first-person" || stored === "model") return stored;
   } catch {
     // Fall through to the default.
   }

@@ -15,7 +15,9 @@
 // disagree (a thin thing the mesh lacks, landing in a different place in each
 // panorama) the strongest panorama gets more of the say, so it shows once,
 // not twice; and a fragment no panorama saw takes the one that came nearest
-// to seeing it, rather than a grey average of all four.
+// to seeing it, rather than a grey average of all four. Under its own tripod,
+// where its photograph is blurred, a panorama can give up its say to another
+// that saw the fragment (`uNadir`, issue 198; combine.ts says how far).
 //
 // Every panorama has a small cube that is always on the GPU, and the nearest
 // few have a full-size one as well: a slot shows the small one, and fades to
@@ -31,6 +33,20 @@ import { AGREE_HIGH, AGREE_LOW, FILL_POWER, FILL_REACH, SEEN_FLOOR, SHARPEN } fr
 
 /** Panoramas blended at once. */
 export const SLOTS = 4;
+/**
+ * The patch a panorama blurs under its own tripod, as angles from straight
+ * down: it gives up its say in full inside the inner one, and none outside
+ * the outer. Set by eye on a live scan, where the blur reached about 27°: at a
+ * tripod 1.4 m up, in full across 1.5 m of floor, and none past 1.9 m.
+ */
+export const NADIR_OUTER_DEG = 34;
+export const NADIR_INNER_DEG = 28;
+/**
+ * How deep the ray `along` (unit, from the panorama to the point) is in that
+ * patch, 0 outside to 1 inside, y up. It is GLSL and also JavaScript, so the
+ * test runs the shader's own expression.
+ */
+export const NADIR_DEPTH = "smoothstep(uNadir.x, uNadir.y, -along.y)";
 
 const VERTEX = /* glsl */ `
 varying vec3 vWorld;
@@ -66,13 +82,16 @@ uniform float uDebug;
 /** lib/scan-mesh/combine.ts: lean on the strongest where colours disagree; fill what nobody saw from one panorama. */
 uniform float uAgree;
 uniform float uFill;
+/** The patch under a panorama's own tripod: x and y the cosines of its outer and inner angle from straight down, z how much of its say it gives up inside it (0: as before). */
+uniform vec3 uNadir;
 varying vec3 vWorld;
 
-void sampleSlot(samplerCube pano, samplerCube low, float sharp, samplerCube depth, vec3 origin, mat3 toPano, float share, vec3 gain, vec3 normal, vec3 sight, out vec3 colour, out float base, out float seen, out float miss) {
+void sampleSlot(samplerCube pano, samplerCube low, float sharp, samplerCube depth, vec3 origin, mat3 toPano, float share, vec3 gain, vec3 normal, vec3 sight, out vec3 colour, out float base, out float seen, out float miss, out float nadir) {
   colour = vec3(0.0);
   base = 0.0;
   seen = 1.0;
   miss = 0.0;
+  nadir = 0.0;
   if (share <= 0.0) return;
 #ifdef BACKDROP
   vec3 ray = sight;
@@ -95,6 +114,8 @@ void sampleSlot(samplerCube pano, samplerCube low, float sharp, samplerCube dept
     float penalty = angle + ${REACH_PENALTY.toFixed(4)} * max(0.0, (reach - camReach) / max(reach, 1e-4)) + ${ANGLE_FLOOR.toFixed(4)};
     base = share * (0.1 + 0.9 * facing) / (penalty * penalty);
   }
+  // The photograph is blurred under its own tripod: there a panorama that saw that floor from the side has the better picture.
+  nadir = uNadir.z * ${NADIR_DEPTH};
 #endif
   vec3 lookup = toPano * ray;
   colour = sharp >= 1.0 ? textureCube(pano, lookup).rgb
@@ -126,10 +147,11 @@ void main() {
   float b[${SLOTS}];
   float s[${SLOTS}];
   float m[${SLOTS}];
-  sampleSlot(uPano0, uLow0, uPanoSharp[0], uDepth0, uPanoPos[0], uPanoInv[0], uPanoShare[0], uPanoGain[0], normal, sight, c[0], b[0], s[0], m[0]);
-  sampleSlot(uPano1, uLow1, uPanoSharp[1], uDepth1, uPanoPos[1], uPanoInv[1], uPanoShare[1], uPanoGain[1], normal, sight, c[1], b[1], s[1], m[1]);
-  sampleSlot(uPano2, uLow2, uPanoSharp[2], uDepth2, uPanoPos[2], uPanoInv[2], uPanoShare[2], uPanoGain[2], normal, sight, c[2], b[2], s[2], m[2]);
-  sampleSlot(uPano3, uLow3, uPanoSharp[3], uDepth3, uPanoPos[3], uPanoInv[3], uPanoShare[3], uPanoGain[3], normal, sight, c[3], b[3], s[3], m[3]);
+  float n[${SLOTS}];
+  sampleSlot(uPano0, uLow0, uPanoSharp[0], uDepth0, uPanoPos[0], uPanoInv[0], uPanoShare[0], uPanoGain[0], normal, sight, c[0], b[0], s[0], m[0], n[0]);
+  sampleSlot(uPano1, uLow1, uPanoSharp[1], uDepth1, uPanoPos[1], uPanoInv[1], uPanoShare[1], uPanoGain[1], normal, sight, c[1], b[1], s[1], m[1], n[1]);
+  sampleSlot(uPano2, uLow2, uPanoSharp[2], uDepth2, uPanoPos[2], uPanoInv[2], uPanoShare[2], uPanoGain[2], normal, sight, c[2], b[2], s[2], m[2], n[2]);
+  sampleSlot(uPano3, uLow3, uPanoSharp[3], uDepth3, uPanoPos[3], uPanoInv[3], uPanoShare[3], uPanoGain[3], normal, sight, c[3], b[3], s[3], m[3], n[3]);
 
   // lib/scan-mesh/combine.ts, the same sums.
   float baseSum = 0.0;
@@ -139,11 +161,20 @@ void main() {
     seenSum += b[i] * s[i];
   }
   float seenFraction = baseSum > 0.0 ? seenSum / baseSum : 0.0;
+  // Under its own tripod a panorama gives up its say only as far as another one saw the point.
+  float k[${SLOTS}];
+  float keptSum = 0.0;
+  for (int i = 0; i < ${SLOTS}; i++) {
+    float others = 0.0;
+    for (int j = 0; j < ${SLOTS}; j++) if (j != i && b[j] > 0.0) others = max(others, s[j]);
+    k[i] = 1.0 - n[i] * others;
+    keptSum += b[i] * s[i] * k[i];
+  }
   float w[${SLOTS}];
   float total = 0.0;
   if (uFill < 0.5) {
     float hidden = uMode > 0.5 ? 0.002 : ${HIDDEN.toExponential()};
-    for (int i = 0; i < ${SLOTS}; i++) w[i] = b[i] * (s[i] + hidden);
+    for (int i = 0; i < ${SLOTS}; i++) w[i] = b[i] * (s[i] * k[i] + hidden);
   } else {
     // A point nobody saw takes the panorama nearest to seeing it, not an average of all of them.
     float score[${SLOTS}];
@@ -160,7 +191,7 @@ void main() {
     }
     float t = smoothstep(0.0, ${SEEN_FLOOR.toFixed(4)}, seenFraction);
     for (int i = 0; i < ${SLOTS}; i++) {
-      float fromSeen = seenSum > 0.0 ? b[i] * s[i] / seenSum : 0.0;
+      float fromSeen = keptSum > 0.0 ? b[i] * s[i] * k[i] / keptSum : 0.0;
       w[i] = mix(fills > 0.0 ? f[i] / fills : 0.0, fromSeen, t);
     }
   }
@@ -227,6 +258,7 @@ export function createScanMaterial(blank: CubeTexture, backdrop = false): Shader
     uDebug: { value: 0 },
     uAgree: { value: 1 },
     uFill: { value: 1 },
+    uNadir: { value: new Vector3(Math.cos((NADIR_OUTER_DEG * Math.PI) / 180), Math.cos((NADIR_INNER_DEG * Math.PI) / 180), 0) },
   };
   for (let i = 0; i < SLOTS; i++) {
     uniforms[`uPano${i}`] = { value: blank };

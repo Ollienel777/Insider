@@ -367,9 +367,22 @@ html[data-cover-done] .case-cover { display: none; }
 body.playing [data-desk] { padding: 4px 8px 10px; gap: 4px; }
 body.playing header[data-chrome] { height: 3rem; }
 body.playing [data-folder] { padding: 4px; }
+/* Full window (Run's switch): the game fills the window. The top bar, the tabs and the folder's edge
+   go, and the HUD and the radio sit tighter, so the view keeps the height. */
+body.run-full [data-desk] { padding: 0; gap: 0; }
+body.run-full [data-desk] > [data-chrome] { display: none; }
+body.run-full [data-folder] { padding: 0; border: 0; border-radius: 0; box-shadow: none; }
+body.run-full [data-testid="play-hud"] { padding-top: 6px; padding-bottom: 6px; row-gap: 4px; }
+body.run-full [data-radio] { padding-top: 4px; padding-bottom: 6px; }
+body.run-full [data-testid="play-hud"] :is([data-testid="live-restart"], [data-testid="full-window"]) > span {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
 
-/* The street map printed on the case file's paper: the dark basemap turned to ink lines on cream (issue 166). */
-.paper-map { filter: invert(1) sepia(0.7) saturate(0.9) contrast(1.35) brightness(0.92); }
+/* The street map printed on the case file's paper (issue 166). The basemap is drawn for a dark screen:
+   near-black ground, streets only a little lighter. So its narrow range is stretched first (the ground to
+   black, the streets to white), then turned over into dark lines on white, and multiplied onto the paper
+   under it, which gives the lines the ink's colour and leaves the paper its own. */
+.paper-map { filter: grayscale(1) brightness(3.6) contrast(1.5) invert(1) sepia(0.6); mix-blend-mode: multiply; opacity: 0.6; }
 
 /* From lg the screen's action sits on the desk at the right end of the tab row (BuildingScreen):
    a line of text beside it reads in the desk's light ink, and a second action is a paper tag. */
@@ -421,4 +434,9 @@ body.playing [data-folder] { padding: 4px; }
   border: 4px solid currentColor; border-radius: 50%;
   font-family: var(--font-display); font-size: 40px; font-weight: 400; line-height: 1;
   rotate: -8deg; mix-blend-mode: multiply;
+}
+
+/* The Run screen's stage in fullscreen (fp/fullscreen-toggle.tsx): the page's own backdrop, not the browser's black. */
+[data-fullscreen-root]:fullscreen {
+  background: var(--surface-0);
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { CloudOff, X } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import type { Fallback } from "@/lib/fallback";
 
@@ -16,8 +17,18 @@ export const TOAST_MS = 8_000;
  * naming the service that went to fixtures, polite to screen readers. The
  * live region is always mounted so the first toast is announced.
  */
+const onFullscreenChange = (change: () => void) => {
+  document.addEventListener("fullscreenchange", change);
+  return () => document.removeEventListener("fullscreenchange", change);
+};
+const fullscreenElement = () => document.fullscreenElement;
+const noElement = () => null;
+
 export function ToastStack({ toasts, onDismiss }: { toasts: readonly Fallback[]; onDismiss: (id: string) => void }) {
-  return (
+  // While an element is fullscreen (the Run screen's stage), only what is inside it shows: the toasts
+  // move into it, so a service falling back to fixtures is still said on screen.
+  const covering = useSyncExternalStore(onFullscreenChange, fullscreenElement, noElement);
+  const stack = (
     <section
       aria-label="Notifications"
       aria-live="polite"
@@ -29,6 +40,7 @@ export function ToastStack({ toasts, onDismiss }: { toasts: readonly Fallback[];
       ))}
     </section>
   );
+  return covering ? createPortal(stack, covering) : stack;
 }
 
 function Toast({ toast, onDismiss }: { toast: Fallback; onDismiss: (id: string) => void }) {

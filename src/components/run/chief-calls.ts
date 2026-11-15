@@ -53,3 +53,62 @@ export class ChiefCalls {
     this.waiting = null;
   }
 }
+
+// At Lockdown the engine adds an event each time the player is seen again
+// after a gap (`detect`, the `elsewhere` branch): a sweeping camera makes one
+// every second or so. Asking the Chief about each one restarted the radio on
+// every answer, so only the first sentence was ever heard (issue 190). A
+// Lockdown re-sighting is asked about only when it is somewhere new, and not
+// before the last re-plan has had time to be read out in full.
+
+/** How long a re-plan at Lockdown keeps the air before another re-sighting may ask again: about a full read-out on the radio. */
+export const LOCKDOWN_REASK_MS = 10_000;
+
+/** The last event a Chief call went out about: its alarm level, its zone, and when (ms, any clock that only goes forward). */
+export interface AskedAbout {
+  to: string;
+  zone: string | null;
+  at: number;
+}
+
+/**
+ * When an alarm event is worth a Chief call: 0 for now, a number of ms to wait,
+ * or null for never. Every change of alarm level is asked about now. A Lockdown
+ * re-sighting (`from` and `to` both "lockdown") in the zone last asked about is
+ * never asked about; in a new zone, it waits until `LOCKDOWN_REASK_MS` after the
+ * last call at Lockdown, so the radio reads that re-plan in full. The wait is only
+ * for a run on the clock (`clocked`): on the turn-based board the panel reads an
+ * answer in a second or two, and a new zone is asked about at once. The engine
+ * still records every event.
+ */
+export function askDelay(
+  event: { from: string; to: string; lastKnownZone: string | null },
+  last: AskedAbout | null,
+  now: number,
+  clocked = true,
+): number | null {
+  if (event.from !== "lockdown" || event.to !== "lockdown") return 0;
+  if (!last || last.to !== "lockdown") return 0;
+  if (event.lastKnownZone === last.zone) return null;
+  if (!clocked) return 0;
+  return Math.max(0, last.at + LOCKDOWN_REASK_MS - now);
+}
+
+/** Whether an alarm event is worth a Chief call now (`askDelay` is 0). */
+export function worthAsking(
+  event: { from: string; to: string; lastKnownZone: string | null },
+  last: AskedAbout | null,
+  now: number,
+  clocked = true,
+): boolean {
+  return askDelay(event, last, now, clocked) === 0;
+}
+
+/**
+ * What is remembered as asked about once a call has failed: the call before it,
+ * so Retry, or the next re-sighting in that zone, asks again. Unchanged when a
+ * later call has gone out since (`asked` is no longer `current`).
+ */
+export function afterFailure(current: AskedAbout | null, asked: AskedAbout, before: AskedAbout | null): AskedAbout | null {
+  return current === asked ? before : current;
+}
