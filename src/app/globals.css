@@ -81,7 +81,8 @@
   --t-fast: 150ms;
   --t-base: 200ms;
   --t-slow: 300ms;
-  --ease: cubic-bezier(0.34, 1.4, 0.64, 1); /* a little bounce */
+  --ease: cubic-bezier(0.2, 0, 0, 1); /* ease-out, no bounce: the pieces' hops (hop.ts) and the board's animations */
+  --ease-bounce: cubic-bezier(0.34, 1.4, 0.64, 1); /* a little bounce, for buttons and tabs only */
 }
 
 /* The Tailwind theme. `initial` drops Tailwind's default palette, radii,
@@ -147,7 +148,7 @@
   --duration-base: var(--t-base);
   --duration-slow: var(--t-slow);
   --ease-*: initial;
-  --ease-out: var(--ease);
+  --ease-out: var(--ease-bounce);
   --default-transition-duration: var(--t-fast);
   --default-transition-timing-function: var(--ease);
 
@@ -356,12 +357,11 @@ html[data-cover-done] .case-cover { display: none; }
 /* Under the turning cover, the file sits in its shadow. */
 [data-desk][data-shaded] [data-folder], [data-desk][data-shaded] [data-chrome] { filter: brightness(var(--under, 0.62)); }
 
-/* Playing: the run takes the whole screen; no desk, no tabs (issue 166, set by Run). */
-body.playing { overflow: hidden; }
-body.playing [data-chrome] { display: none; }
-body.playing [data-desk] { padding: 0; gap: 0; }
-body.playing [data-folder] { border: 0; border-radius: 0; box-shadow: none; padding: 8px; }
-body.playing [data-testid="stamp-dock"] { position: fixed; top: auto; right: 16px; bottom: 16px; transform: none; z-index: 60; }
+/* Playing (set by Run): the desk and the folder keep thinner margins, so the board has the width it is
+   drawn for. The game's card, the mode chip and the tabs stay in sight. */
+body.playing [data-desk] { padding: 4px 8px 10px; gap: 4px; }
+body.playing header[data-chrome] { height: 3rem; }
+body.playing [data-folder] { padding: 4px; }
 
 /* The street map printed on the case file's paper: the dark basemap turned to ink lines on cream (issue 166). */
 .paper-map { filter: invert(1) sepia(0.7) saturate(0.9) contrast(1.35) brightness(0.92); }
