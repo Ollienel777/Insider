@@ -248,7 +248,8 @@ test("opened from the step rail mid-run, after the Chief's answer, the debrief l
   const pending = await page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1:romaine-1974") ?? "null").pendingChief);
   expect(pending).toMatchObject({ turn: 2, chief: { rationale: answered }, chiefSource: "recorded" });
 
-  await page.getByRole("navigation", { name: "Steps" }).getByRole("link", { name: "Debrief", exact: true }).click();
+  // Run takes the whole screen, with no tabs (issue 166): the Debrief opens by its address, with the run's log in storage.
+  await page.goto("/b/F1/debrief?m=romaine-1974");
   await expect(page).toHaveURL(/\/b\/F1\/debrief\?m=romaine-1974$/, { timeout: 15_000 });
   const outcome = page.getByTestId("debrief-outcome");
   await expect(outcome).toHaveAttribute("data-status", "playing");
@@ -295,7 +296,8 @@ test("opened from the step rail mid-run, after the Chief's answer, the debrief l
 
 /** The Debrief, opened from the step rail. */
 async function railToDebrief(page: Page) {
-  await page.getByRole("navigation", { name: "Steps" }).getByRole("link", { name: "Debrief", exact: true }).click();
+  // Run takes the whole screen, with no tabs (issue 166): the Debrief opens by its address, with the run's log in storage.
+  await page.goto("/b/F1/debrief?m=romaine-1974");
   await expect(page).toHaveURL(/\/b\/F1\/debrief\?m=romaine-1974$/, { timeout: 15_000 });
 }
 

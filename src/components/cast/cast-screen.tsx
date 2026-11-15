@@ -205,11 +205,11 @@ export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, 
           afterPlan={<Funnel funnel={funnel} landed={landed} source={result.source} />}
         />
       </div>
-      <div className="flex min-h-0 min-w-0 flex-col lg:col-start-1 lg:row-span-2 lg:row-start-1">
+      <div className="flex min-h-0 min-w-0 flex-col lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:overflow-y-auto">
         <section
           aria-label={`Cast map: ${caption}`}
           data-testid="cast-map"
-          className="relative h-80 shrink-0 overflow-hidden bg-surface-0 lg:h-auto lg:min-h-0 lg:flex-1"
+          className="relative h-80 shrink-0 overflow-hidden bg-surface-0 lg:h-auto lg:min-h-[240px] lg:flex-1"
         >
           <div role="tabpanel" id="city-panel" aria-labelledby={`tab-${city}`} className="absolute inset-0">
             <MapView

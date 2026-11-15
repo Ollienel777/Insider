@@ -105,7 +105,7 @@ export function StepRailView({
     return <TabLink href={to} label={label} n={n} state={i === at ? "current" : "done"} />;
   };
   return (
-    <nav aria-label="Steps" className="min-w-0 flex-1 pl-[clamp(8px,1.6vw,22px)]">
+    <nav aria-label="Steps" className="min-w-0 flex-1 pl-[clamp(8px,1.6vw,22px)] max-lg:overflow-x-auto max-lg:[scrollbar-width:none]">
       <ol className="flex min-w-0 flex-nowrap items-end gap-1">
         {RAIL_TABS.map((t, i) => (
           <li key={t.tab} className="flex min-w-0 shrink">

@@ -37,7 +37,7 @@ test("beat 4: the demo order gets numbered steps, a C2 warning with its turn, an
   const ghost = page.getByTestId("ghost-path");
   await expect(ghost).toHaveCount(1);
   await expect(ghost).toHaveAttribute("stroke-opacity", "0.5");
-  await expect(ghost).toHaveCSS("stroke", "rgb(242, 169, 59)");
+  await expect(ghost).toHaveCSS("stroke", "rgb(240, 189, 74)");
   await expect(page.getByTestId("ghost-sighting")).toHaveCount(1);
 
   await page.getByRole("link", { name: "Start the run" }).click();

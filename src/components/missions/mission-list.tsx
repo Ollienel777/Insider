@@ -149,7 +149,7 @@ export function MissionList({ missions }: { missions: readonly Mission[] }) {
                     target="_blank"
                     rel="noreferrer"
                     data-testid="source-link"
-                    className="inline-flex items-center gap-1 underline decoration-border-strong underline-offset-4"
+                    className="inline-flex h-10 items-center gap-1 underline decoration-border-strong underline-offset-4"
                   >
                     {source.hostname.replace(/^www\./, "")}
                     <ExternalLink aria-hidden className="size-3.5" />
