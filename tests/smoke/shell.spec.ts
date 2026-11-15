@@ -89,7 +89,7 @@ async function tabThrough(page: Page) {
 // reduced motion it starts at the end, so every control is there at once.
 const loaded: Record<string, (page: Page) => Promise<void>> = {
   "/": async (page) => {
-    await expect(page.getByTestId("mission-card")).toHaveCount(5);
+    await expect(page.getByTestId("mission-tab")).toHaveCount(5);
   },
   "/map": async (page) => {
     await expect(page.getByTestId("map-skeleton")).toHaveCount(0);

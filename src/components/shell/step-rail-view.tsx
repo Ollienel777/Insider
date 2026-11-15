@@ -17,7 +17,7 @@ const TAB = cn(
 const NUM = "grid h-5 min-w-5 shrink-0 place-items-center rounded-[6px] border-2 border-border-strong bg-n-950 px-1 font-display text-xs leading-none";
 
 /** Where the demo's Owner Mode opens before a building is cast: the showcase building. */
-const OWNER_DEMO_HREF = "/b/F1/owner";
+const OWNER_DEMO_HREF = buildingHref("F1", "owner", null);
 
 export type RailTab = "missions" | "cast" | Exclude<StepSegment, "drill">;
 export const RAIL_TABS: readonly { tab: RailTab; label: string }[] = [
