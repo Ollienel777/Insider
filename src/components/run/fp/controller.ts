@@ -4,7 +4,7 @@
 //
 // Keys, by position on the keyboard (`event.code`), so a layout other than
 // QWERTY keeps the same hand shape:
-//   W A S D   move, relative to the view        Shift   walk
+//   W A S D   move, relative to the view, at one speed (no walk key: issue 189)
 //   mouse     look, once the view is clicked    Esc     release the mouse
 //             (where the browser refuses the lock, hold the button and drag)
 //   ← →       turn without a mouse; ↑ ↓ move forwards and back
@@ -34,7 +34,6 @@ export class Controller {
   /** Whether the mouse is held by the view. */
   locked = false;
   private readonly down = new Set<string>();
-  private shift = false;
   private interact = false;
   /** The areas overlay is on: G switches it. */
   areas = false;
@@ -101,7 +100,6 @@ export class Controller {
   }
 
   private key(event: KeyboardEvent, isDown: boolean): void {
-    if (event.code === "ShiftLeft" || event.code === "ShiftRight") this.shift = isDown;
     if (!TAKEN.has(event.code)) return;
     if (!isDown) {
       this.down.delete(event.code);
@@ -110,7 +108,6 @@ export class Controller {
     if (event.altKey || event.ctrlKey || event.metaKey || event.defaultPrevented || typing(event.target)) return;
     // Taken: the Run screen's own W (wait) and S (sprint) do not also fire.
     event.preventDefault();
-    this.shift = event.shiftKey;
     if (event.repeat) return;
     this.down.add(event.code);
     if (event.code === "KeyE") this.interact = true;
@@ -119,7 +116,6 @@ export class Controller {
 
   private release(): void {
     this.down.clear();
-    this.shift = false;
     this.drag = null;
   }
 
@@ -146,7 +142,7 @@ export class Controller {
     }
     const usePressed = this.interact;
     this.interact = false;
-    return { forward: Math.sign(forward), strafe: Math.sign(strafe), walk: this.shift, yaw: this.yaw, use: this.down.has("KeyE"), usePressed };
+    return { forward: Math.sign(forward), strafe: Math.sign(strafe), yaw: this.yaw, use: this.down.has("KeyE"), usePressed };
   }
 
   /** Whether E is down now. */

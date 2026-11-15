@@ -24,7 +24,7 @@ const CASES = [
   { id: "F3", cached: f3 },
 ] as const;
 
-const IDLE: Controls = { forward: 0, strafe: 0, walk: false, yaw: 0, use: false, usePressed: false };
+const IDLE: Controls = { forward: 0, strafe: 0, yaw: 0, use: false, usePressed: false };
 const distance = (a: Vec, b: Vec) => Math.hypot(a.x - b.x, a.y - b.y);
 const yawTo = (from: Vec, to: Vec) => Math.atan2(to.y - from.y, to.x - from.x);
 
@@ -59,8 +59,7 @@ function step(s: Session, controls: Controls): void {
 /** Runs straight at `target` until within 6 cm of it, or `seconds` pass. */
 function walkTo(s: Session, target: Vec, seconds = 12): void {
   for (let i = 0; i < seconds / FP.stepS && distance(s.walker.pos, target) > 0.06; i++) {
-    const near = distance(s.walker.pos, target) < 0.4;
-    step(s, { ...IDLE, forward: 1, walk: near, yaw: yawTo(s.walker.pos, target) });
+    step(s, { ...IDLE, forward: 1, yaw: yawTo(s.walker.pos, target) });
   }
 }
 
@@ -317,7 +316,7 @@ describe.each(CASES)("free movement on $id", ({ id, cached }) => {
 
   it("stays put through turns that leave the player where they were (the clock's waits)", () => {
     const s = session(world, { ...empty(), locked: [] });
-    for (let i = 0; i < 20; i++) step(s, { ...IDLE, forward: 1, walk: true, yaw: 0.4 });
+    for (let i = 0; i < 20; i++) step(s, { ...IDLE, forward: 1, yaw: 0.4 });
     const pos = s.walker.pos;
     play(s, { kind: "wait" });
     expect(reconcile(s.walker, s.ground, s.run).pos).toBe(pos);

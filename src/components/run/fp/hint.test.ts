@@ -10,13 +10,13 @@ describe("the controls hint", () => {
     expect(hintDone({ ...NO_PROGRESS, walkedM: HINT_WALK_M, lookedRad: HINT_LOOK_RAD })).toBe(true);
   });
 
-  it("never waits on sneaking or E", () => {
-    expect(hintDone({ walkedM: 0.2, lookedRad: 0.1, sneaked: true, used: true })).toBe(false);
-    expect(hintDone({ walkedM: 5, lookedRad: 2, sneaked: false, used: false })).toBe(true);
+  it("never waits on E", () => {
+    expect(hintDone({ walkedM: 0.2, lookedRad: 0.1, used: true })).toBe(false);
+    expect(hintDone({ walkedM: 5, lookedRad: 2, used: false })).toBe(true);
   });
 
   it("ticks off each control as it is tried", () => {
-    expect(hintTicks({ walkedM: HINT_WALK_M, lookedRad: 0, sneaked: true, used: false })).toEqual({ move: true, look: false, sneak: true, use: false });
+    expect(hintTicks({ walkedM: HINT_WALK_M, lookedRad: 0, used: true })).toEqual({ move: true, look: false, use: true });
   });
 
   it("fades over its length, and goes at once under reduced motion", () => {
