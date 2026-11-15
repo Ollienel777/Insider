@@ -14,6 +14,7 @@ import {
   LOOK_SPEED,
   MatterportNotConfiguredError,
   PLAYING,
+  ROOMS_WAIT_MS,
   SWEEPS_QUIET_MS,
   type InsideConnect,
   type InsidePlayer,
@@ -479,21 +480,89 @@ describe("waiting for the scan's collections", () => {
     expect(disconnect).toHaveBeenCalledTimes(1);
   });
 
-  it("builds the board with no rooms when a model sends none within the grace period", async () => {
+  /** A load on collections the test sends, under fake timers; `answered()` says whether it has settled. */
+  function loading(disconnect = () => {}) {
+    const sweeps = pushed();
+    const rooms = pushed();
+    const connect: ShowcaseConnect = async () => ({ sdk: { Sweep: { data: sweeps.data }, Room: { data: rooms.data } }, disconnect });
+    const load = createLiveMatterport({ sdkKey: "k", connect }).loadFloor({ id: "x", matterportModelId: "m" });
+    let settled = false;
+    load.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    return { sweeps, rooms, load, answered: () => settled };
+  }
+
+  it("builds the board with no rooms when a model sends none, once the wait for them is over", async () => {
     vi.useFakeTimers();
     try {
-      const sweeps = pushed();
-      const rooms = pushed();
-      const connect: ShowcaseConnect = async () => ({
-        sdk: { Sweep: { data: sweeps.data }, Room: { data: rooms.data } },
-        disconnect() {},
-      });
-      const load = createLiveMatterport({ sdkKey: "k", connect, timeoutMs: 15_000 }).loadFloor({ id: "x", matterportModelId: "m" });
+      const { sweeps, load, answered } = loading();
       await vi.advanceTimersByTimeAsync(0);
       sweeps.send(SWEEPS);
-      await vi.advanceTimersByTimeAsync(2_000);
+      // The wait outlasts the sweeps' own deadline (15 s): once they are in, running out of time is not a failure.
+      await vi.advanceTimersByTimeAsync(ROOMS_WAIT_MS - 1);
+      expect(answered()).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
       const floor = await load;
       expect(floor?.rooms.map((r) => r.id)).toEqual([UNASSIGNED_ROOM]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits for rooms that come ten seconds after the sweeps, and builds the board with them (issue 141)", async () => {
+    vi.useFakeTimers();
+    try {
+      const { sweeps, rooms, load, answered } = loading();
+      await vi.advanceTimersByTimeAsync(0);
+      sweeps.send(SWEEPS);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(answered()).toBe(false);
+      rooms.send(ROOMS);
+      expect(await load).toEqual(toFloorGraph(SWEEPS, ROOMS));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("builds the board from the sweeps as they stand when the rooms arrive: the player sends them again once they name their rooms", async () => {
+    vi.useFakeTimers();
+    try {
+      const unnamed = Object.fromEntries(Object.entries(SWEEPS).map(([sid, s]) => [sid, { ...s, roomInfo: { id: null } }]));
+      // By its position s3 stands in the corridor's bounds; the scan says it is in the lobby.
+      const named = { ...SWEEPS, s3: sweep("s3", 5, 0, "r-lobby", ["s2", "s4", "s5"]) };
+      expect(toFloorGraph(unnamed, ROOMS).nodes.find((n) => n.id === "s3")?.roomId).toBe("r-corridor");
+      const { sweeps, rooms, load } = loading();
+      await vi.advanceTimersByTimeAsync(0);
+      sweeps.send(unnamed);
+      await vi.advanceTimersByTimeAsync(300);
+      sweeps.send(named);
+      await vi.advanceTimersByTimeAsync(3_000);
+      rooms.send(ROOMS);
+      expect((await load)?.nodes.find((n) => n.id === "s3")?.roomId).toBe("r-lobby");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still rejects with a TimeoutError when the sweeps never arrive, whether or not the rooms do", async () => {
+    vi.useFakeTimers();
+    try {
+      const disconnect = vi.fn();
+      const { sweeps, rooms, load, answered } = loading(disconnect);
+      const rejected = expect(load).rejects.toMatchObject({
+        name: "TimeoutError",
+        message: expect.stringContaining("Sweep.data did not arrive within 15000 ms"),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      rooms.send(ROOMS);
+      sweeps.send({});
+      await vi.advanceTimersByTimeAsync(14_999);
+      expect(answered()).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await rejected;
+      expect(disconnect).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
