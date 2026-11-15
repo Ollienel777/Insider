@@ -85,18 +85,6 @@ export function actionLabel(
   return null;
 }
 
-/**
- * How full the ring is, 0 to 1, and how full it is heading for while E is
- * held: the engine opens the lock at `of` picks, one a turn, so while held the
- * ring fills on towards the next pick over the turn.
- */
-export function ringFill(label: ActionLabel, still: boolean): { now: number; towards: number } {
-  if (label.phase === "landed") return { now: 1, towards: 1 };
-  const now = label.of > 0 ? Math.min(1, label.done / label.of) : 0;
-  if (label.phase !== "hold" || still) return { now, towards: now };
-  return { now, towards: label.of > 0 ? Math.min(1, (label.done + 1) / label.of) : 1 };
-}
-
 /** What the live region says the turn something lands; null for nothing. */
 export function announcement(landed: { kind: "door"; doorId: string } | { kind: "take" } | null, wordsFor: (doorId: string) => ActionWords, noun: string): string | null {
   if (!landed) return null;

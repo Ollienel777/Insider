@@ -654,7 +654,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
       {/* The controls hint and the meter are for a run being played: both go when the end card comes up (issue 146). */}
       {ready && !end ? <SuspicionMeter notice={notice} /> : null}
-      {ready && action ? <ActionLabelView label={action} turnMs={FP.turnMs} still={paused} /> : null}
+      {ready && action ? <ActionLabelView label={action} /> : null}
       {ready && !over && moment?.kind === "take" ? <PickupToast title={`${noun.charAt(0).toUpperCase()}${noun.slice(1)} collected`} line={moment.text.split(". ").slice(1).join(". ") || "Get to the exit."} /> : null}
       <ActionAnnouncer text={said} />
       {ready && !end ? <ControlsHint phase={hint.phase} ticks={hintTicks(hint.progress)} dragToLook={hud.refused} /> : null}

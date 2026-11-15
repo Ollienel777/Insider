@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionLabel, announcement, lockOf, lockWords, ringFill, takeWords } from "./action";
+import { actionLabel, announcement, lockOf, lockWords, takeWords } from "./action";
 
 const words = (doorId: string) => lockWords(lockOf({ locks: [] }, doorId, "key"));
 
@@ -48,20 +48,6 @@ describe("actionLabel", () => {
     expect(actionLabel({ kind: "far", doorId: "d1" }, true, words, "files", null)).toBeNull();
     expect(actionLabel({ kind: "exit", nodeId: "x" }, false, words, "files", null)).toBeNull();
     expect(actionLabel(null, true, words, "files", null)).toBeNull();
-  });
-});
-
-describe("ringFill", () => {
-  const label = (phase: "aim" | "hold", done: number) => ({ phase, kind: "pick" as const, words: lockWords("key"), done, of: 4 });
-  it("runs on to the next pick while held", () => {
-    expect(ringFill(label("hold", 1), false)).toEqual({ now: 0.25, towards: 0.5 });
-  });
-  it("holds still under reduced motion, when paused, or when let go", () => {
-    expect(ringFill(label("hold", 1), true)).toEqual({ now: 0.25, towards: 0.25 });
-    expect(ringFill(label("aim", 0), false)).toEqual({ now: 0, towards: 0 });
-  });
-  it("never runs past full", () => {
-    expect(ringFill(label("hold", 4), false)).toEqual({ now: 1, towards: 1 });
   });
 });
 

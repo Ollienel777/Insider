@@ -227,7 +227,7 @@ test("first person: holding E at a locked door picks it until the engine opens i
   await page.keyboard.down("e");
   await expect(action).toHaveAttribute("data-phase", "hold");
   await expect(action).toContainText("Spoofing the badge and PIN…");
-  await expect(page.getByTestId("fp-action-ring")).toBeVisible();
+  await expect(page.getByTestId("fp-action-count")).toContainText("/");
   await expect(view(page)).not.toHaveAttribute("data-locked", /d-server/, { timeout: 30_000 });
   // Open: a brief confirmation under the crosshair, and the live region says it.
   await expect(action).toHaveAttribute("data-phase", "landed");
