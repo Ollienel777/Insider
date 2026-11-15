@@ -21,9 +21,9 @@ by saying so ([`tests/smoke/adapt.spec.ts`](tests/smoke/adapt.spec.ts)).
 Amazon Bedrock is wired in as an alternative model provider
 ([`bedrock.ts`](src/adapters/llm/bedrock.ts)) and not used.
 
-*Screenshots from 14 November, before the case-file restyle and first person; the Run now opens in first person on desktop.*
+*All in fake mode, on Halvorsen Tower, a fixture building.*
 
-![The run screen: the player is seen by camera C2, the alarm jumps to Alert, the Security Chief's re-plan is in the side panel, and the Why card for guard G4 names the Vexcel and CoStar fields that put it there](docs/screenshots/run-why-card.png)
+![The run screen: the player is seen by camera C2, the alarm jumps to Alert, the Security Chief's re-plan is in the side panel, and the Why card for guard G4 names the Vexcel and CoStar fields that put it there](docs/screenshots/208-run-why-card.png)
 
 > **What runs live, and what is recorded.**
 >
@@ -220,12 +220,12 @@ which CoStar's ownership records already make possible.
 
 | | |
 |---|---|
-| ![The dossier: the Data to Level table and the Level Builder's recorded trace](docs/screenshots/dossier.png) | ![Scout: the fixture massing of Halvorsen Tower with five tagged entries](docs/screenshots/scout.png) |
+| ![The dossier: the Data to Level table and the Level Builder's recorded trace](docs/screenshots/208-dossier.png) | ![Scout: the fixture massing of Halvorsen Tower with five tagged entries](docs/screenshots/208-scout.png) |
 | **Dossier.** The Level Builder's run replays as a checklist of todos, subagent tasks and tool calls, and the Data → Level table fills in. | **Scout, fake mode.** The fixture massing, drawn from footprint and height, with its tagged ways in. Live mode shows Vexcel's photos instead. |
-| ![The Layer lens on the Run board: guards, cameras, locks and zones tinted CoStar, entries Vexcel, rooms Matterport, with a legend counting each](docs/screenshots/33-run-lens-on-1440.png) | ![Owner Mode's batch: 17 of 50 attempts out, one row per crew strategy, the most common way out drawn on the board](docs/screenshots/128-owner-batch.png) |
+| ![The Layer lens on the Run board: guards, cameras, locks and zones tinted CoStar, entries Vexcel, rooms Matterport, with a legend counting each](docs/screenshots/208-run-lens.png) | ![Owner Mode's batch: 17 of 50 attempts out, one row per crew strategy, the most common way out drawn on the board](docs/screenshots/208-owner-batch.png) |
 | **Layer lens.** Every element tinted and lettered C, V or M by its source, with a legend counting each layer. | **Owner Mode.** 50 attempts against the setup: the count, each strategy, and the way out the crew used most. |
-| ![Owner Mode before and after the Chief's fix: 17 of 50 out before, 0 of 50 after, with what changed](docs/screenshots/128-owner-before-after.png) | |
-| **Before and after.** The Chief's one change, rerun: 17 of 50 to 0 of 50. | |
+| ![Owner Mode before and after the Chief's fix: 17 of 50 out before, 0 of 50 after, with what changed](docs/screenshots/208-owner-before-after.png) | ![First person on the fixture floor: the loading dock, camera C2 and the way to the files labelled, the suspicion meter, and the controls](docs/screenshots/208-first-person.png) |
+| **Before and after.** The Chief's one change, rerun: 17 of 50 to 0 of 50. | **First person.** The Run's default on desktop: the same turns, at 700 ms each once you move. |
 
 ## How it works
 
