@@ -14,31 +14,30 @@ describe("the speed the keys ask for", () => {
   it("is the run speed forwards, backwards, sideways and diagonally alike", () => {
     for (const [forward, strafe] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
       for (const yaw of [0, 0.7, Math.PI, -2]) {
-        expect(speed(wishVelocity({ forward, strafe, walk: false }, yaw))).toBeCloseTo(FP.runMps, 9);
+        expect(speed(wishVelocity({ forward, strafe }, yaw))).toBeCloseTo(FP.runMps, 9);
       }
     }
   });
 
-  it("is the walk speed with Shift held, and nothing with no key held", () => {
-    expect(speed(wishVelocity({ forward: 1, strafe: 1, walk: true }, 1))).toBeCloseTo(FP.walkMps, 9);
-    expect(wishVelocity({ forward: 0, strafe: 0, walk: false }, 1)).toEqual(still);
+  it("is nothing with no key held", () => {
+    expect(wishVelocity({ forward: 0, strafe: 0 }, 1)).toEqual(still);
   });
 
   it("goes where the view faces: yaw 0 is east, a quarter turn right is south, and D is to the right", () => {
-    const east = wishVelocity({ forward: 1, strafe: 0, walk: false }, 0);
+    const east = wishVelocity({ forward: 1, strafe: 0 }, 0);
     expect(east.x).toBeCloseTo(FP.runMps);
     expect(east.y).toBeCloseTo(0);
-    const south = wishVelocity({ forward: 1, strafe: 0, walk: false }, Math.PI / 2);
+    const south = wishVelocity({ forward: 1, strafe: 0 }, Math.PI / 2);
     expect(south.x).toBeCloseTo(0);
     expect(south.y).toBeCloseTo(FP.runMps);
-    const right = wishVelocity({ forward: 0, strafe: 1, walk: false }, 0);
+    const right = wishVelocity({ forward: 0, strafe: 1 }, 0);
     expect(right.x).toBeCloseTo(0);
     expect(right.y).toBeCloseTo(FP.runMps);
   });
 });
 
 describe("starting and stopping", () => {
-  const run = wishVelocity({ forward: 1, strafe: 0, walk: false }, 0);
+  const run = wishVelocity({ forward: 1, strafe: 0 }, 0);
 
   it("reaches full run speed within a tenth of a second and then holds it exactly", () => {
     let v = still;
@@ -90,7 +89,7 @@ describe("a body against walls", () => {
 
   it("slides along a wall met at an angle, keeping the speed along it", () => {
     let p: Vec = { x: 2, y: FP.radiusM };
-    const v = wishVelocity({ forward: 1, strafe: 0, walk: false }, -Math.PI / 4); // north-east, into the wall
+    const v = wishVelocity({ forward: 1, strafe: 0 }, -Math.PI / 4); // north-east, into the wall
     const moved = slide(p, { x: v.x * FP.stepS, y: v.y * FP.stepS }, [wall]);
     expect(moved.pos.y).toBeCloseTo(FP.radiusM);
     expect(moved.pos.x - p.x).toBeCloseTo(v.x * FP.stepS);
@@ -151,11 +150,11 @@ describe.each(["F1", "F2", "F3"] as const)("a body wandering %s", (id) => {
       let pos: Vec = { x: start.x, y: start.y };
       let vel: Vec = { x: 0, y: 0 };
       let yaw = random() * Math.PI * 2;
-      let wish = { forward: 1, strafe: 0, walk: false };
+      let wish = { forward: 1, strafe: 0 };
       for (let step = 0; step < 2400; step++) {
         if (step % 40 === 0) {
           yaw += (random() - 0.5) * 3;
-          wish = { forward: random() < 0.85 ? 1 : -1, strafe: Math.round(random() * 2 - 1), walk: random() < 0.2 };
+          wish = { forward: random() < 0.85 ? 1 : -1, strafe: Math.round(random() * 2 - 1) };
         }
         const moved = ground.collide(pos, accelerate(vel, wishVelocity(wish, yaw), FP.stepS), FP.stepS, locked);
         expect(blocked(walls, pos, moved.pos)).toBe(false);

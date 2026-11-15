@@ -75,8 +75,6 @@ export interface FirstPersonViewProps {
   scan?: ScanPreload | null;
   /** The player is let loose (true), or the view is gone (false): on a scan the Run screen holds the clock until then. */
   onReady?: (ready: boolean) => void;
-  /** Shift went down or up: the HUD's time left is then at a walk or a run. */
-  onWalking?: (walking: boolean) => void;
   /** What the end of the run offers next to its outcome (the Run screen's "See the debrief"). */
   endAction?: ReactNode;
   /** The floor's lock kind (the rules table's era), for the words E's label says. */
@@ -151,7 +149,7 @@ function hasWebGL(): boolean {
   }
 }
 
-export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, scan = null, onReady, onWalking, endAction = null, lockKind = null }: FirstPersonViewProps) {
+export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, scan = null, onReady, endAction = null, lockKind = null }: FirstPersonViewProps) {
   const surface = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const labelLayer = useRef<HTMLDivElement>(null);
@@ -171,10 +169,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
   // The loop reads the latest run and the latest `play` without being rebuilt for each turn. Updated in a
   // layout effect, before the browser paints, so no animation frame reads the run before last.
-  const latest = useRef({ run, onAct, onUnavailable, onHeld, onReady, onWalking });
+  const latest = useRef({ run, onAct, onUnavailable, onHeld, onReady });
   useLayoutEffect(() => {
-    latest.current = { run, onAct, onUnavailable, onHeld, onReady, onWalking };
-  }, [run, onAct, onUnavailable, onHeld, onReady, onWalking]);
+    latest.current = { run, onAct, onUnavailable, onHeld, onReady };
+  }, [run, onAct, onUnavailable, onHeld, onReady]);
 
   useEffect(() => {
     const host = surface.current;
@@ -258,9 +256,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       let bob = 0;
       let hudKey = "";
       let areas = false;
-      // Each mount starts at a run, whatever the Run screen last heard.
-      let walking = false;
-      latest.current.onWalking?.(false);
       // The turn clock asks the view what a turn the player lets run out should be.
       latest.current.onHeld((state) => heldAction(walker, ground, state, { use: controller.using, yaw: controller.yaw }));
       // For poking at from the console in development (a scripted walk): never in a production build.
@@ -293,10 +288,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         const waiting = !drawn && now < looseAt && !on.settled(walker.pos);
         if (waiting) owed = 0;
         const controls = controller.controls();
-        if (controls.walk !== walking) {
-          walking = controls.walk;
-          latest.current.onWalking?.(walking);
-        }
         use ||= controls.usePressed;
         owed += dt;
         const stood = walker.pos;
@@ -320,7 +311,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         }
         looked = { yaw: controller.yaw, pitch: controller.pitch };
         progress.walkedM += walker.walked - walkedBefore;
-        if (controls.walk && walker.walked - walkedBefore > 0) progress.sneaked = true;
         if (controller.areas !== areas) {
           areas = controller.areas;
           actors.showAreas(areas, current.playerNode, current.locked);
@@ -383,7 +373,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         if (doneAt === null && hintDone(progress)) doneAt = now;
         const phase = hintPhase(doneAt === null ? null : now - doneAt, still);
         const ticks = hintTicks(progress);
-        const nextHint = `${phase}${ticks.move}${ticks.look}${ticks.sneak}${ticks.use}`;
+        const nextHint = `${phase}${ticks.move}${ticks.look}${ticks.use}`;
         if (nextHint !== hintKey) {
           hintKey = nextHint;
           setHint({ phase, progress: { ...progress } });
@@ -688,9 +678,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
               <Key>A</Key>
               <Key>S</Key>
               <Key>D</Key> move
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Key>Shift</Key> walk
             </span>
             {hud.locked ? null : (
               <span className="flex items-center gap-1.5">

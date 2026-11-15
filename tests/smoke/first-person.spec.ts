@@ -146,7 +146,11 @@ test("first person: the controls hint is up for a first-time player, and fades o
   // Issue 146: at the left of the view, every control named, and the suspicion meter up with it.
   const hint = page.getByTestId("fp-controls-hint");
   await expect(hint).toBeVisible();
-  for (const words of ["move", "look around", "walk", "pick the lock"]) await expect(hint).toContainText(words);
+  for (const words of ["move", "look around", "pick the lock"]) await expect(hint).toContainText(words);
+  // Issue 189: no walk key. WASD, the mouse and hold E are the whole of it.
+  await expect(hint.locator("li")).toHaveCount(3);
+  await expect(hint).not.toContainText("Shift");
+  await expect(page.getByTestId("fp-hint")).not.toContainText("Shift");
   await expect(page.getByTestId("fp-notice")).toHaveAttribute("data-tone", /calm|warning|danger/);
 
   // Looking alone does not clear it. A drag turns the view by a set angle (0.004 rad a pixel), whatever

@@ -28,7 +28,7 @@ const CASES = [
   { id: "F3", cached: f3 },
 ] as const;
 
-const IDLE: Controls = { forward: 0, strafe: 0, walk: false, yaw: 0, use: false, usePressed: false };
+const IDLE: Controls = { forward: 0, strafe: 0, yaw: 0, use: false, usePressed: false };
 
 function floor(id: keyof typeof FIXTURE_FLOORS, cached: unknown) {
   const placed = placeLevel(LevelManifest.parse(structuredClone(cached)), structuredClone(FIXTURE_FLOORS[id]), RUN_SEED);
