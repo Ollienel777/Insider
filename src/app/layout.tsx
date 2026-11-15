@@ -15,7 +15,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Heist Anywhere",
+  title: "Hobbs",
   description: "Stealth levels built from real buildings.",
 };
 

@@ -51,7 +51,7 @@ test("the city tab and the address stay in step both ways: after Houston, /map s
 
   // Address → tab, by client-side navigation: the wordmark goes to the
   // mission picker (`/`, #118), whose link back to `/map` moves the tab to LA.
-  await page.getByRole("link", { name: "Heist Anywhere" }).click();
+  await page.getByRole("link", { name: "Hobbs" }).click();
   await expect(page).toHaveURL(/\/$/);
   await page.getByRole("link", { name: "Or browse every prepared building on the map" }).click();
   await expect(page).toHaveURL(/\/map$/);

@@ -22,7 +22,7 @@ export function TopBar({ status, building }: TopBarProps) {
         href="/"
         className="inline-flex h-10 items-center justify-self-start rounded-sm whitespace-nowrap text-base font-semibold tracking-tight text-text-1"
       >
-        Heist Anywhere
+        Hobbs
       </Link>
       <div data-testid="building-slot" className="min-w-0 truncate text-sm">
         {building ? (

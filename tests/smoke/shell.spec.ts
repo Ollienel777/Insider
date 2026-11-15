@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 test("the shell shows the product name and the fixtures chip", async ({ page }) => {
   await page.goto("/");
   const bar = page.getByTestId("top-bar");
-  await expect(bar.getByRole("link", { name: "Heist Anywhere" })).toBeVisible();
+  await expect(bar.getByRole("link", { name: "Hobbs" })).toBeVisible();
   expect((await bar.boundingBox())?.height).toBe(56);
   const chip = page.getByTestId("mode-chip");
   await expect(chip).toHaveText("FIXTURES");
