@@ -95,6 +95,8 @@ export interface ViewStats {
   spread: number;
   /** Of the mesh: the part where a second picture visibly shows (ghost over 0.04, about 10 levels of 255). */
   doubled: number;
+  /** Of the whole frame: the part neither the mesh nor a stand-in surface (a closed hole, a level's plane) covers, filled from around it. Textured mesh only. */
+  filled?: number;
 }
 
 /** A pixel whose ghost is more than this, 0 to 1, shows a second picture. */

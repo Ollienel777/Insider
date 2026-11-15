@@ -76,3 +76,31 @@ describe("a walking controller on the scan view's world", () => {
     expect(state.y).toBeCloseTo(0.3, 1);
   });
 });
+
+describe("a body pushed straight into a wall", () => {
+  // The wall at z = -1 is one quad split along its diagonal, which rises 0.3 m
+  // a metre; at x = -2.92 it runs 7.5 cm under the bottom of the body's capsule.
+  it.each([-2.92, -1, 0, 1.5])("stays where it is along the wall, wherever its triangles meet (x = %s)", (x) => {
+    const world = room();
+    let state = { x, y: 0, z: 0, vx: 0, vz: 0, walked: 0, grounded: true };
+    // Two seconds of running straight at it (yaw 0 looks down -z).
+    for (let i = 0; i < 120; i++) state = stepMove(state, { forward: 1, right: 0, walk: false }, 0, 1 / 60, world);
+    expect(Math.abs(state.x - x)).toBeLessThan(0.01);
+    expect(state.z).toBeCloseTo(-1 + TUNING.radius, 2);
+  });
+
+  it("still slides round a corner it meets edge on: a doorway's jamb", () => {
+    // A wall from x = 0.5 to 5 at z = -1 only: a body at x = 0.4 brushing its end goes on past it.
+    const world = new MeshWorld(
+      quads(
+        [[-5, 0, -5], [5, 0, -5], [5, 0, 5], [-5, 0, 5]],
+        [[0.5, 0, -1], [5, 0, -1], [5, 3, -1], [0.5, 3, -1]],
+      ),
+      TUNING.stepUp,
+    );
+    let state = { x: 0.4, y: 0, z: 0, vx: 0, vz: 0, walked: 0, grounded: true };
+    for (let i = 0; i < 120; i++) state = stepMove(state, { forward: 1, right: 0, walk: false }, 0, 1 / 60, world);
+    expect(state.z).toBeLessThan(-2);
+    expect(state.x).toBeLessThan(0.5 - TUNING.radius + 0.02);
+  });
+});

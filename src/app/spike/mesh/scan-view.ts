@@ -800,19 +800,32 @@ export class ScanView {
     const backdrop = this.backdrop.visible;
     const clear = this.renderer.getClearColor(new Color());
     const alpha = this.renderer.getClearAlpha();
-    let mesh = 0;
-    try {
-      this.backdrop.visible = false;
-      for (const m of this.fillMeshes) m.visible = false;
-      this.renderer.setRenderTarget(target);
-      this.renderer.setClearColor(clear, 0);
+    const mark = new MeshBasicMaterial({ side: DoubleSide });
+    const covered = (): number => {
       this.renderer.clear();
       this.renderer.render(this.scene, this.camera);
       this.renderer.readRenderTargetPixels(target, 0, 0, MEASURE_WIDTH, MEASURE_HEIGHT, pixels);
-      let covered = 0;
-      for (let i = 3; i < pixels.length; i += 4) if (pixels[i] >= 128) covered++;
-      mesh = covered / (pixels.length / 4);
+      let count = 0;
+      for (let i = 3; i < pixels.length; i += 4) if (pixels[i] >= 128) count++;
+      return count / (pixels.length / 4);
+    };
+    let mesh = 0;
+    let filled = 0;
+    try {
+      this.backdrop.visible = false;
+      this.renderer.setRenderTarget(target);
+      this.renderer.setClearColor(clear, 0);
+      for (const m of this.fillMeshes) m.visible = false;
+      mesh = covered();
+      // The stand-ins draw alpha 0, like the clear: drawn opaque for the count.
+      for (const m of this.fillMeshes) {
+        m.visible = true;
+        m.material = mark;
+      }
+      filled = 1 - covered();
     } finally {
+      for (const m of this.fillMeshes) m.material = this.fillMaterial;
+      mark.dispose();
       for (const m of this.fillMeshes) m.visible = true;
       this.backdrop.visible = backdrop;
       this.renderer.setClearColor(clear, alpha);
@@ -820,7 +833,7 @@ export class ScanView {
       target.dispose();
     }
     // One texture a surface: nothing unseen, nothing doubled.
-    return { mesh, unseen: 0, unseenNear: 0, unseenClose: 0, unseenMixed: 0, ghost: 0, spread: 0, doubled: 0 };
+    return { mesh, unseen: 0, unseenNear: 0, unseenClose: 0, unseenMixed: 0, ghost: 0, spread: 0, doubled: 0, filled };
   }
 
   /** Once every panorama has its small cube, compare neighbours' colours and even out their exposures. */
