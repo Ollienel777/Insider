@@ -226,6 +226,14 @@ export class PanoStore {
   blocked: ((eye: Vec3, origin: Vec3) => boolean) | null = null;
   /** The photo rule's panoramas in use last frame, the lead first, as places in the list of those ready. */
   private ranked: Entry[] = [];
+
+  /** In the "photo" blend: the panorama ranked first (kept until another is clearly nearer), by index in the scan's list, or -1. */
+  /** Whether the ranked lead's full cube is loaded before any other (the photo view). */
+  leadFirst = false;
+
+  get leadIndex(): number {
+    return this.ranked[0]?.index ?? -1;
+  }
   /** While true, no full-size faces are fetched: the link is left to something smaller and more urgent. */
   holdSharp = false;
   /** Whether the exposure gains are applied (to compare with and without). */
@@ -700,7 +708,12 @@ export class PanoStore {
     const shown = this.shown;
     const here = shown[near[0]];
     const neighbours = here.pano.neighbours.flatMap((anchor) => this.byAnchor.get(anchor) ?? []);
-    const order = sharpOrder({ positions: this.positions, eye, velocity, neighbours, horizon: HORIZON });
+    let order = sharpOrder({ positions: this.positions, eye, velocity, neighbours, horizon: HORIZON });
+    if (this.leadFirst) {
+      // The photo view shows the lead alone: its full cube comes before any other, then the next in line.
+      const first = this.ranked.slice(0, 2).map((e) => shown.indexOf(e)).filter((at) => at >= 0);
+      order = [...first, ...order.filter((at) => !first.includes(at))];
+    }
     const have = new Set<number>();
     shown.forEach((e, at) => {
       if (e.sharpStage !== "none") have.add(at);

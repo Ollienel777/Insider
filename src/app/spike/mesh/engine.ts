@@ -83,7 +83,7 @@ export interface WalkOptions {
   textured?: boolean;
   repair?: "all" | "none" | "shards" | "planes";
   /** What is drawn: the panoramas as spheres (the default), or the mesh. */
-  view?: "spheres" | "mesh";
+  view?: "spheres" | "mesh" | "photo";
   fill?: boolean;
   reducedMotion: boolean;
   /** Exposes the engine on `window` for poking at from the console. */

@@ -22,6 +22,7 @@ import {
   MeshBasicMaterial,
   OrthographicCamera,
   PerspectiveCamera,
+  PlaneGeometry,
   Ray,
   Scene,
   Texture,
@@ -29,7 +30,8 @@ import {
   WebGLRenderer,
   WebGLRenderTarget,
   type CubeTexture,
-  type ShaderMaterial,
+  ShaderMaterial,
+  Vector2,
 } from "three";
 import type { BlendMode } from "@/lib/scan-mesh/blend";
 import type { Vec3 } from "@/lib/scan-mesh/coords";
@@ -56,6 +58,7 @@ import { blankCube, PanoStore, type PanoCounts, type PanoUse } from "./panos";
 import { createPhotoMaterial, createPhotoUniforms, type PhotoUniforms } from "./photo-material";
 import { createScanMaterial, SLOTS } from "./projection";
 import { createSphereMaterial } from "./sphere-material";
+import { createPhotoViewMaterial, photoShift } from "./photo-view-material";
 
 export type { ScanPose } from "@/lib/scan-mesh/pose";
 export { eyePose, yawFromHeading } from "@/lib/scan-mesh/pose";
@@ -88,9 +91,11 @@ export interface ScanViewOptions {
    * What is drawn. "spheres" (the default): the panoramas themselves, each
    * a sphere pushed out to its own depth (sphere-material.ts), over the
    * mesh, which shows only through what the spheres leave out. "mesh": the
-   * mesh alone, painted from the panoramas and its textures.
+   * mesh alone, painted from the panoramas and its textures. "photo" (the
+   * default): the nearest panorama alone, warped a little by its depth
+   * (photo-view-material.ts), dissolving into the next when it changes.
    */
-  view?: "spheres" | "mesh";
+  view?: "spheres" | "mesh" | "photo";
   /** Vertical field of view, degrees. */
   fov?: number;
   /** Called whenever `status()` has news: a phase, the detailed mesh, the exposure match. */
@@ -188,6 +193,10 @@ const SPHERE_GONE = 0.004;
 const LEAD_TAKES = 0.56;
 /** Seconds a new lead takes to come in. */
 const LEAD_IN = 0.14;
+/** In the photo view: seconds one panorama takes to dissolve into the next. */
+const PHOTO_FADE = 0.25;
+/** In the photo view a panorama whose full-size cube is not in yet is not switched to, unless the one shown is this far off, metres. */
+const PHOTO_WAIT_SHARP = 2.5;
 /** A patch's picture is this fine, metres a pixel, and at most this many pixels a side. */
 const PATCH_TEXEL = 0.012;
 const PATCH_PIXELS = 256;
@@ -270,6 +279,26 @@ export class ScanView {
   private lead = -1;
   private leadIn = 1;
   private readonly sphereView: boolean;
+  /** The photo view: the nearest panorama alone, one mesh per store slot, in a scene of their own. */
+  private readonly photoView: boolean;
+  private readonly photoScene = new Scene();
+  private photoMeshes: Mesh[] = [];
+  /** The panorama shown, the one it is dissolving from (-1: none), and how far the dissolve has come (0 to 1). */
+  private photoLead = -1;
+  private photoFrom = -1;
+  private photoFade = 1;
+  private fadeTarget: WebGLRenderTarget | null = null;
+  private readonly fadeScene = new Scene();
+  private readonly fadeCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  private readonly fadeMaterial = new ShaderMaterial({
+    uniforms: { tMap: { value: null }, uAlpha: { value: 1 } },
+    vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+    fragmentShader: "uniform sampler2D tMap; uniform float uAlpha; varying vec2 vUv; void main() { gl_FragColor = vec4(texture2D(tMap, vUv).rgb, uAlpha); }",
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+  });
   private readonly fillMaterial: ShaderMaterial;
   /** For the fans that close small holes: a step farther behind, so a plane's patch over the same hole wins. */
   private readonly fanMaterial: ShaderMaterial;
@@ -308,7 +337,24 @@ export class ScanView {
     this.backdropMaterial = createPhotoMaterial(this.photo, "backdrop");
     this.fillMaterial = createPhotoMaterial(this.photo, "stand-in");
     this.fanMaterial = createPhotoMaterial(this.photo, "stand-in", null, 2);
-    this.sphereView = options.view !== "mesh";
+    this.sphereView = options.view === "spheres";
+    this.photoView = options.view === undefined || options.view === "photo";
+    if (this.photoView) {
+      const { directions, index } = cubeSphere(SPHERE_CELLS);
+      const sphere = new BufferGeometry();
+      sphere.setAttribute("position", new BufferAttribute(directions, 3));
+      sphere.setIndex(new BufferAttribute(index, 1));
+      this.photoMeshes = Array.from({ length: SLOTS }, (_, slot) => {
+        const mesh = new Mesh(sphere, createPhotoViewMaterial(this.photo, slot));
+        mesh.frustumCulled = false;
+        mesh.visible = false;
+        this.photoScene.add(mesh);
+        return mesh;
+      });
+      const quad = new Mesh(new PlaneGeometry(2, 2), this.fadeMaterial);
+      quad.frustumCulled = false;
+      this.fadeScene.add(quad);
+    }
     if (this.sphereView) {
       const { directions, index } = cubeSphere(SPHERE_CELLS);
       const sphere = new BufferGeometry();
@@ -401,11 +447,74 @@ export class ScanView {
         uniforms.uSolid.value = front ? this.leadIn : 1;
       });
     }
+    if (this.photoView) this.choosePhoto(dt);
     this.draw(null);
+  }
+
+  /** The photo view's lead: the store's nearest (it holds one until another is clearly nearer), dissolved into when it changes. */
+  private choosePhoto(dt: number): void {
+    const lead = this.panos?.leadIndex ?? -1;
+    const inUse = (index: number) => this.used.some((u) => u.index === index);
+    const slotOf = (index: number) => this.used.findIndex((u) => u.index === index);
+    const sharp = (index: number) => ((this.photo.uPanoSharp.value as number[])[slotOf(index)] ?? 0) >= 0.99;
+    const shown = this.used[slotOf(this.photoLead)];
+    const { x, y, z } = this.pose;
+    const far = !shown || Math.hypot(shown.origin[0] - x, shown.origin[1] - y, shown.origin[2] - z) > PHOTO_WAIT_SHARP;
+    // A blurry picture of the nearest place reads worse than a sharp one of the place a step back: wait for the new one's full cube.
+    if (lead !== -1 && lead !== this.photoLead && inUse(lead) && (sharp(lead) || far || !sharp(this.photoLead))) {
+      // A first picture is simply there; a later one dissolves in from what was shown.
+      this.photoFrom = this.photoLead !== -1 && inUse(this.photoLead) ? this.photoLead : -1;
+      this.photoFade = this.photoFrom === -1 ? 1 : 0;
+      this.photoLead = lead;
+    }
+    this.photoFade = Math.min(1, this.photoFade + dt / PHOTO_FADE);
+    if (this.photoFade >= 1 || !inUse(this.photoFrom)) this.photoFrom = -1;
+  }
+
+  /** Draws the photo view's panorama in store slot `slot` alone, to `target`, from the camera, warped for its clamped offset. */
+  private drawPhotoSlot(slot: number, target: WebGLRenderTarget | null): void {
+    const origin = (this.photo.uPanoPos.value as Vector3[])[slot];
+    const eye = this.camera.position;
+    const shift = photoShift([eye.x, eye.y, eye.z], [origin.x, origin.y, origin.z]);
+    this.photoMeshes.forEach((mesh, i) => (mesh.visible = i === slot));
+    const uniforms = (this.photoMeshes[slot].material as ShaderMaterial).uniforms;
+    (uniforms.uShift.value as Vector3).set(shift[0], shift[1], shift[2]);
+    const height = target ? target.height : this.renderer.getDrawingBufferSize(new Vector2()).y;
+    uniforms.uPixel.value = (this.camera.fov * Math.PI) / 180 / Math.max(1, height);
+    this.renderer.setRenderTarget(target);
+    this.renderer.render(this.photoScene, this.camera);
+  }
+
+  /** The photo view: the lead's panorama alone, and while one dissolves into the next, the old one over it fading out. */
+  private drawPhoto(target: WebGLRenderTarget | null): boolean {
+    const slotOf = (index: number) => this.used.findIndex((u) => u.index === index);
+    const lead = slotOf(this.photoLead);
+    if (lead < 0 || lead >= this.photoMeshes.length) return false;
+    const before = this.renderer.getRenderTarget();
+    const from = this.photoFrom === -1 ? -1 : slotOf(this.photoFrom);
+    if (from >= 0 && from < this.photoMeshes.length && this.photoFade < 1) {
+      const size = this.renderer.getDrawingBufferSize(new Vector2());
+      if (!this.fadeTarget || this.fadeTarget.width !== size.x || this.fadeTarget.height !== size.y) {
+        this.fadeTarget?.dispose();
+        this.fadeTarget = new WebGLRenderTarget(size.x, size.y, { samples: 4 });
+      }
+      this.drawPhotoSlot(from, this.fadeTarget);
+      this.drawPhotoSlot(lead, target);
+      const t = this.photoFade;
+      this.fadeMaterial.uniforms.tMap.value = this.fadeTarget.texture;
+      this.fadeMaterial.uniforms.uAlpha.value = 1 - t * t * (3 - 2 * t);
+      const clear = this.renderer.autoClear;
+      this.renderer.autoClear = false;
+      this.renderer.render(this.fadeScene, this.fadeCamera);
+      this.renderer.autoClear = clear;
+    } else this.drawPhotoSlot(lead, target);
+    this.renderer.setRenderTarget(before);
+    return true;
   }
 
   /** Renders the current view to `target` (null: the screen), filled where no surface covers it. */
   draw(target: WebGLRenderTarget | null): void {
+    if (this.photoView && this.sphereShown && this.drawPhoto(target)) return;
     // In the sphere view every pixel is painted: the far view, the mesh over it, the spheres over that.
     if (this.fill && this.shows === "mesh") {
       this.fill.render(this.scene, this.camera, target);
@@ -422,6 +531,10 @@ export class ScanView {
 
   /** In the sphere view: show the mesh under the spheres instead, or the spheres again. Nothing changes in the mesh view. */
   setSpheres(on: boolean): void {
+    if (this.photoView) {
+      this.sphereShown = on;
+      return;
+    }
     if (this.spheres.length === 0) return;
     this.sphereShown = on;
     // The mesh stays drawn under the spheres: what they leave out shows it. Its stand-ins are for the mesh view alone.
@@ -431,7 +544,7 @@ export class ScanView {
 
   /** What is drawn: the panoramas as spheres, or the mesh. */
   get shows(): "spheres" | "mesh" {
-    return this.spheres.length > 0 && this.sphereShown ? "spheres" : "mesh";
+    return (this.spheres.length > 0 || this.photoView) && this.sphereShown ? "spheres" : "mesh";
   }
 
   /** The drawing size, CSS pixels. */
@@ -678,8 +791,9 @@ export class ScanView {
       this.scene.add(this.drawn);
 
       const sharp = sharpLayer(this.faces);
-      this.panos = new PanoStore(this.renderer, geometry, Math.min(sharp.capacity, this.sphereView ? SPHERE_CUBES : SHARP_CUBES), sharp.size);
+      this.panos = new PanoStore(this.renderer, geometry, Math.min(sharp.capacity, this.sphereView || this.photoView ? SPHERE_CUBES : SHARP_CUBES), sharp.size);
       this.panos.pair = this.sphereView;
+      this.panos.leadFirst = this.photoView;
       this.panos.onStale = () => void this.refreshLinks();
       const sight = new Ray();
       const world = this.meshWorld;
@@ -742,7 +856,7 @@ export class ScanView {
     if (!detail || detail.bytes === null || !isAllowedAssetUrl(detail.url)) return;
     status.state = "loading";
     // The spheres have no use for the mesh's textures: the mesh is only their depth.
-    const textured = this.options.textured !== false && !this.sphereView;
+    const textured = this.options.textured !== false && !this.sphereView && !this.photoView;
     // The 9 MB or so of mesh first: the full-size faces, hundreds of megabytes, wait for it.
     if (this.panos) this.panos.holdSharp = true;
     const release = () => {
@@ -1231,7 +1345,7 @@ export class ScanView {
     if (this.state.detail.state === "loading" || (textures && (!textures.done || this.arrived.length > 0))) return false;
     const counts = this.panos?.counts();
     if (!this.panos || !counts) return true;
-    return counts.low + counts.failed >= counts.total && this.panos.depthsCurrent && counts.sharpLoading === 0 && counts.sharp >= Math.min(this.sphereView ? 1 : SLOTS, counts.total - counts.failed);
+    return counts.low + counts.failed >= counts.total && this.panos.depthsCurrent && counts.sharpLoading === 0 && counts.sharp >= Math.min(this.sphereView || this.photoView ? 1 : SLOTS, counts.total - counts.failed);
   }
 
   /**
@@ -1317,6 +1431,10 @@ export class ScanView {
     for (const mesh of this.fillMeshes) mesh.geometry.dispose();
     if (this.spheres.length > 0) this.spheres[0].geometry.dispose();
     for (const mesh of this.spheres) (mesh.material as ShaderMaterial).dispose();
+    if (this.photoMeshes.length > 0) this.photoMeshes[0].geometry.dispose();
+    for (const mesh of this.photoMeshes) (mesh.material as ShaderMaterial).dispose();
+    this.fadeTarget?.dispose();
+    this.fadeMaterial.dispose();
     for (const page of this.pages) {
       this.renderer.properties.remove(page.texture);
       this.renderer.getContext().deleteTexture(page.raw);
