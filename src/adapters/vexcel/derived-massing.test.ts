@@ -2,10 +2,11 @@
 // at a kit building. Every building here is made up; no kit record is used.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Aerial, type Building, type LngLat } from "@/domain";
-import { deriveMassing, M_PER_STOREY, SHAPE_SLACK } from "./derived-massing";
+import { deriveMassing, M_PER_STOREY, MAX_SIDE_M, MIN_SIDE_M, SHAPE_SLACK } from "./derived-massing";
 import { FIXTURE_AERIALS } from "./fake";
 import { massingFor, selectVexcel } from "./index";
 import { createLiveVexcel } from "./live";
+import { mPerDegLng, M_PER_DEG_LAT, orthoBounds } from "./mapping";
 
 /** A made-up kit building: a point in open country, 12 stories of 10,000 sf. */
 const KIT: Building = {
@@ -66,8 +67,34 @@ describe("deriveMassing", () => {
     }
   });
 
-  it("spans the long side of a 3:1 slab of the floor, since CoStar gives no shape", () => {
+  it("frames a 3:1 slab of the floor's area in the ortho, whichever way it runs", () => {
     expect(SHAPE_SLACK).toBeCloseTo(Math.sqrt(3), 9);
+    const box = orthoBounds(deriveMassing(KIT)!.footprint);
+    const areaM2 = 10_000 * 0.09290304;
+    const [long, short] = [Math.sqrt(areaM2 * 3), Math.sqrt(areaM2 / 3)];
+    for (let deg = 0; deg < 180; deg += 15) {
+      const a = (deg * Math.PI) / 180;
+      for (const [u, v] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        // A corner of the slab, turned `deg` from east, in metres from the centre.
+        const x = (u * long * Math.cos(a)) / 2 - (v * short * Math.sin(a)) / 2;
+        const y = (u * long * Math.sin(a)) / 2 + (v * short * Math.cos(a)) / 2;
+        const lng = KIT.lng + x / mPerDegLng(KIT.lat);
+        const lat = KIT.lat + y / M_PER_DEG_LAT;
+        expect(lng, `${deg}°`).toBeGreaterThan(box.west);
+        expect(lng, `${deg}°`).toBeLessThan(box.east);
+        expect(lat, `${deg}°`).toBeGreaterThan(box.south);
+        expect(lat, `${deg}°`).toBeLessThan(box.north);
+      }
+    }
+  });
+
+  it("holds the side between its bounds, so one mis-entered area can't size the request", () => {
+    expect(sizeM(deriveMassing({ ...KIT, typicalFloorSf: 5_000_000 })!.footprint).width).toBeCloseTo(MAX_SIDE_M, 0);
+    expect(sizeM(deriveMassing({ ...KIT, typicalFloorSf: 3 })!.footprint).width).toBeCloseTo(MIN_SIDE_M, 0);
+  });
+
+  it("marks itself derived", () => {
+    expect(deriveMassing(KIT)!.derived).toBe(true);
   });
 
   it("takes its height from the stories", () => {
@@ -151,8 +178,40 @@ describe("live Vexcel on a kit building (stubbed fetch, no key)", () => {
     });
     const aerial = (await live.getAerial(KIT.id))!;
     const derived = deriveMassing(KIT)!;
-    expect(aerial).toMatchObject({ source: "vexcel", entries: [], footprint: derived.footprint, heightM: 48 });
+    expect(aerial).toMatchObject({ source: "vexcel", derived: true, entries: [], footprint: derived.footprint, heightM: 48 });
     expect(aerial.views).toEqual([{ dir: "ortho", url: `/api/buildings/${KIT.id}/aerial/ortho`, width: 1600, height: 1000 }]);
     expect((await live.getImage(KIT.id, "ortho"))?.contentType).toBe("image/jpeg");
+  });
+});
+
+describe("the breaker and a derived massing", () => {
+  it("never counts a derived-massing building's failure towards the breaker, but a fixture's still does", async () => {
+    const fetch = vi.fn(async () => new Response("{}", { status: 503 }));
+    const kit = (id: string) => ({ ...KIT, id });
+    const live = createLiveVexcel({
+      base: "https://vexcel.invalid/v2",
+      key: "test-key",
+      massing: (id) => massingFor(id, async (k) => (k.startsWith("9") ? kit(k) : null)),
+      fetch: fetch as typeof globalThis.fetch,
+      warn: () => {},
+      failureLimit: 2,
+    });
+    for (const id of ["900001", "900002", "900003", "900004"]) expect(await live.getAerial(id)).toBeNull();
+    // Fixtures fail on the same service: the second in a row trips it.
+    expect(await live.getAerial("F1")).toBeNull();
+    await expect(live.getAerial("F2")).rejects.toThrow("503");
+  });
+
+  it("still trips at once on a network failure, derived or not", async () => {
+    const live = createLiveVexcel({
+      base: "https://vexcel.invalid/v2",
+      key: "test-key",
+      massing: (id) => massingFor(id, async () => KIT),
+      fetch: (async () => {
+        throw new TypeError("fetch failed");
+      }) as typeof globalThis.fetch,
+      warn: () => {},
+    });
+    await expect(live.getAerial(KIT.id)).rejects.toThrow("fetch failed");
   });
 });

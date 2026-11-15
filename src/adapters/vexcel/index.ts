@@ -66,6 +66,15 @@ export async function massingFor(id: string, building: BuildingLookup = fromCoSt
   }
 }
 
+/**
+ * Whether the building has a hand-made massing (F1–F5). With CoStar forced to
+ * fixtures there is no kit record to derive one from, so the aerial route
+ * serves only these.
+ */
+export async function hasFixtureMassing(id: string): Promise<boolean> {
+  return (await fake.getAerial(id)) !== null;
+}
+
 export function selectVexcel(env: Env, options: { building?: BuildingLookup } = {}): VexcelSelection {
   const requested = serviceModes(env).vexcel;
   if (requested === "fake") {

@@ -20,6 +20,13 @@ export const M_PER_STOREY = 4;
  * the floor's area, whichever way it runs; the ortho then frames all of it.
  */
 export const SHAPE_SLACK = Math.sqrt(3);
+/**
+ * The footprint's side is held between these, in metres, so one mis-entered
+ * area (a typical floor holding the whole building's, or a few square feet)
+ * cannot ask Vexcel for a kilometre-wide frame or a point.
+ */
+export const MIN_SIDE_M = 15;
+export const MAX_SIDE_M = 300;
 
 /** What the derivation reads, each possibly absent. */
 export type MassingFacts = {
@@ -33,7 +40,8 @@ const positive = (n: number | null | undefined): n is number => typeof n === "nu
  * place it: no coordinates, no stories, or no floor area. The footprint's
  * side is the square root of the typical floor's area (the building's area
  * over its stories when CoStar gives no typical floor), in metres, times
- * `SHAPE_SLACK`; the height is the stories at `M_PER_STOREY` each.
+ * `SHAPE_SLACK` and held between `MIN_SIDE_M` and `MAX_SIDE_M`; the height is
+ * the stories at `M_PER_STOREY` each. It is marked `derived`.
  */
 export function deriveMassing(facts: MassingFacts): Aerial | null {
   const { lat, lng, stories, typicalFloorSf, rbaSf } = facts;
@@ -42,7 +50,8 @@ export function deriveMassing(facts: MassingFacts): Aerial | null {
   const floorSf = positive(typicalFloorSf) ? typicalFloorSf : positive(rbaSf) ? rbaSf / stories : null;
   if (!floorSf) return null;
 
-  const half = (Math.sqrt(floorSf * M2_PER_SF) * SHAPE_SLACK) / 2;
+  const side = Math.min(MAX_SIDE_M, Math.max(MIN_SIDE_M, Math.sqrt(floorSf * M2_PER_SF) * SHAPE_SLACK));
+  const half = side / 2;
   const dLng = half / mPerDegLng(lat);
   const dLat = half / M_PER_DEG_LAT;
   return Aerial.parse({
@@ -63,5 +72,6 @@ export function deriveMassing(facts: MassingFacts): Aerial | null {
     ],
     heightM: stories * M_PER_STOREY,
     source: "fixture",
+    derived: true,
   });
 }

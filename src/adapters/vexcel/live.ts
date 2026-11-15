@@ -114,6 +114,12 @@ export function createLiveVexcel(config: LiveVexcelConfig): VexcelAdapter {
   const serviceLevel = new WeakSet<object>();
   /** Buildings that failed since the last one that loaded; at `failureLimit`, the breaker trips. */
   const failedSince = new Set<string>();
+  /**
+   * Buildings aimed at from a massing derived from CoStar facts. A request on
+   * an estimated box says little about the service, so their failures never
+   * count towards `failureLimit`; a network failure or redirect still trips it.
+   */
+  const derivedIds = new Set<string>();
 
   const isServiceLevel = (error: unknown) => typeof error === "object" && error !== null && serviceLevel.has(error);
 
@@ -237,7 +243,14 @@ export function createLiveVexcel(config: LiveVexcelConfig): VexcelAdapter {
       entries = [];
     }
 
-    const aerial = Aerial.parse({ views, entries, footprint: shape.footprint, heightM: shape.heightM, source: "vexcel" });
+    const aerial = Aerial.parse({
+      views,
+      entries,
+      footprint: shape.footprint,
+      heightM: shape.heightM,
+      source: "vexcel",
+      ...(shape.derived && { derived: true }),
+    });
     const images = new Map([...got].map(([dir, v]) => [dir, { bytes: v.bytes, contentType: v.contentType }]));
     return { aerial, images, at: now() };
   }
@@ -264,6 +277,7 @@ export function createLiveVexcel(config: LiveVexcelConfig): VexcelAdapter {
     if (!pending) {
       const shape = await massing(buildingId);
       if (!shape) return null;
+      if (shape.derived) derivedIds.add(buildingId);
       // Checked again: another caller may have started while the massing loaded.
       pending = loading.get(buildingId);
       if (!pending) {
@@ -284,14 +298,17 @@ export function createLiveVexcel(config: LiveVexcelConfig): VexcelAdapter {
     // A failure is one building's (its massing stands in, Vexcel stays live)
     // unless it is the network's or a redirect, or `failureLimit` buildings
     // failed in a row: then it throws, and the breaker puts Vexcel on fixtures.
+    // A building aimed at from a derived massing is never counted in that row.
     async getAerial(buildingId) {
       let result: Held | null;
       try {
         result = await hold(buildingId);
       } catch (error) {
         if (isServiceLevel(error)) throw error;
-        failedSince.add(buildingId);
-        if (failedSince.size >= failureLimit) throw error;
+        if (!derivedIds.has(buildingId)) {
+          failedSince.add(buildingId);
+          if (failedSince.size >= failureLimit) throw error;
+        }
         warn(`Vexcel: ${buildingId} failed (${(error as Error)?.message ?? error}); it gets the massing, Vexcel stays live`);
         return null;
       }
