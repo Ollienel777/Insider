@@ -60,14 +60,14 @@ test("an unknown m is a 404 at the first hop; Drill, which reads no level, keeps
   expect((await page.goto("/b/F1?m=bogus"))?.status()).toBe(404);
   expect((await page.goto("/b/F1/drill?m=typo"))?.status()).toBe(200);
   await expect(page).toHaveURL(/\/b\/F1\/drill\?m=typo$/);
-  await railKeeps(page, "typo");
+  await railKeeps(page, "typo", 6);
 });
 
 test("another mission on F1 has no level yet, and keeps its ?m=; an unknown one is a 404", async ({ page }) => {
   await page.goto("/b/F1/dossier?m=sunset-1986");
   await expect(page).toHaveURL(at("dossier", "sunset-1986"));
   await expect(page.getByTestId("data-to-level")).toHaveCount(0);
-  await railKeeps(page, "sunset-1986");
+  await railKeeps(page, "sunset-1986", 3);
   const response = await page.goto("/b/F1/dossier?m=no-such-mission");
   expect(response?.status()).toBe(404);
 });
