@@ -48,3 +48,29 @@ export function openScan(modelId: string): ScanHandle {
     },
   };
 }
+
+/**
+ * Draws the scan, unseen, from the scan position `at` until the picture
+ * around it is in (or for 15 s at most): the Plan screen's warm-up, so the
+ * Run screen opens first person on a picture that has already arrived. The
+ * canvas stays off the page. Returns the way to stop.
+ */
+export function primeScan(handle: ScanHandle, at: string): () => void {
+  let raf = 0;
+  let stopped = false;
+  const started = performance.now();
+  const point = handle.view.scanPoints().find((p) => p.id === at);
+  if (!point) return () => {};
+  const [x, y, z] = point.position;
+  const step = () => {
+    if (stopped || handle.view.settled([x, y, z]) || performance.now() - started > 15_000) return;
+    handle.view.setPose({ x, y, z, yaw: 0, pitch: 0 });
+    handle.view.render(1 / 60);
+    raf = requestAnimationFrame(step);
+  };
+  raf = requestAnimationFrame(step);
+  return () => {
+    stopped = true;
+    cancelAnimationFrame(raf);
+  };
+}

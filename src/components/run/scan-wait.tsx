@@ -8,7 +8,7 @@
 // that follow do not wait for a scan either. On fixtures there is nothing to
 // wait for, and nothing is drawn.
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { visibleTimeout, willLoadLive } from "@/adapters/matterport";
+import { releaseScanFloor, visibleTimeout, willLoadLive } from "@/adapters/matterport";
 import { Button } from "@/components/ui/button";
 import type { Building } from "@/domain";
 import { getServerStatus, getStatus, setForced, subscribeStatus } from "@/lib/demo-status";
@@ -40,10 +40,12 @@ export function offerStandInAfter(onSlow: () => void, ms: number = STAND_IN_AFTE
 
 /**
  * Takes the stand-in floor plan: Matterport goes to fixtures for the session,
- * then `reload` loads the floor again, which now comes from the fixture floor.
+ * the scan board the tab holds is let go (its read stopped), then `reload`
+ * loads the floor again, which now comes from the fixture floor.
  */
-export function takeStandIn(reload: () => void, force: typeof setForced = setForced): void {
+export function takeStandIn(reload: () => void, force: typeof setForced = setForced, release: () => void = releaseScanFloor): void {
   force("matterport", true);
+  release();
   reload();
 }
 

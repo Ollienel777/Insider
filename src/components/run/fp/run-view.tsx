@@ -110,34 +110,49 @@ export function scanStageOf(scan: ScanPreload | null): ScanStage {
 
 /**
  * Starts loading the scan for first person as soon as there is a model id,
- * and keeps it while the Run screen stays open. Null with no model id.
+ * or takes the tab's scan of it if one is held already (scan-hold.ts): the
+ * Plan screen starts it, and the Run screen finds it in or on its way.
+ * Unmounting lets nothing go. Null with no model id. With `primeAt` (the
+ * Plan screen gives the run's start node), the scan's picture around that
+ * position is drawn, unseen, once it is in, so first person opens on it.
+ * `open` is for tests.
  */
-export function useScanPreload(modelId: string | null): ScanPreload | null {
+export function useScanPreload(
+  modelId: string | null,
+  open: () => Promise<(modelId: string) => ScanHandle> = () => import("./scan-preload").then((m) => m.openScan),
+  primeAt: string | null = null,
+): ScanPreload | null {
   const [state, setState] = useState<{ modelId: string; preload: ScanPreload } | null>(null);
   useEffect(() => {
     if (!modelId) return;
     let gone = false;
-    let handle: ScanHandle | null = null;
     const set = (preload: ScanPreload) => {
       if (!gone) setState({ modelId, preload });
     };
-    import("./scan-preload")
-      .then(({ openScan }) => {
+    Promise.all([open(), import("./scan-hold")])
+      .then(([openScan, { holdScan }]) => {
         if (gone) return;
-        const opened = openScan(modelId);
-        handle = opened;
-        set({ handle: opened, failed: null, ready: false });
-        void opened.ready.then((ok) => {
-          const message = opened.status().message;
-          set(ok ? { handle: opened, failed: null, ready: true } : { handle: null, failed: message ? `${message} You're on the board.` : SCAN_FAILED, ready: false });
+        const held = holdScan(modelId, openScan);
+        set({ handle: held, failed: null, ready: false });
+        void held.ready.then((ok) => {
+          const message = held.status().message;
+          set(ok ? { handle: held, failed: null, ready: true } : { handle: null, failed: message ? `${message} You're on the board.` : SCAN_FAILED, ready: false });
+          if (ok && primeAt && !gone) {
+            void import("./scan-preload").then(({ primeScan }) => {
+              if (!gone) stopPrime = primeScan(held, primeAt);
+            });
+          }
         });
       })
       .catch(() => set({ handle: null, failed: FP_UNAVAILABLE, ready: false }));
+    let stopPrime = () => {};
     return () => {
       gone = true;
-      handle?.dispose();
+      stopPrime();
     };
-  }, [modelId]);
+    // `open` is a test seam, not something the scan depends on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelId, primeAt]);
   if (!modelId) return null;
   return state?.modelId === modelId ? state.preload : LOADING;
 }
