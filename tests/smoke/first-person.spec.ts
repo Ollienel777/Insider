@@ -79,8 +79,9 @@ test("first person runs in real time, and walking into the next node's area play
 });
 
 test("first person: holding E at a locked door picks it until the engine opens it", async ({ page }) => {
-  // The walk up to the door goes a tap at a time, which on a slow machine takes longer than the default.
-  test.setTimeout(60_000);
+  // The turn and the walk up to the door go a tap at a time, each waiting on drawn frames, which on CI's
+  // software WebGL takes longer than the default: the demo path's 90 s.
+  test.setTimeout(90_000);
   await open(page, "F3");
   // On the board, to the suite's south-west corner beside the server room's locked door.
   for (const nodeId of ["sl-door", "s1-nw", "s1-sw"]) {
@@ -108,17 +109,18 @@ test("first person: holding E at a locked door picks it until the engine opens i
       const next = (left: number) => (left === 0 ? done() : requestAnimationFrame(() => next(left - 1)));
       next(count);
     }), n);
-  const tap = async (key: string) => {
+  const tap = async (key: string, settle: number) => {
     await page.keyboard.down(key);
     await Promise.all([frames(1), page.waitForTimeout(50)]);
     await page.keyboard.up(key);
-    // Then long enough for the body to stop (a frame or two even on a slow machine) and the HUD to catch up.
-    await Promise.all([frames(3), page.waitForTimeout(100)]);
+    await frames(settle);
   };
-  for (let i = 0; i < 200 && !(await prompt.isVisible()); i++) await tap("ArrowRight");
+  // A turn stops the moment the key is up: a frame for the HUD to catch up is enough.
+  for (let i = 0; i < 200 && !(await prompt.isVisible()); i++) await tap("ArrowRight", 1);
   await expect(prompt).toHaveAttribute("data-kind", /far|pick/);
   for (let i = 0; i < 40 && (await prompt.getAttribute("data-kind")) === "far"; i++) {
-    await tap("w");
+    // A step: long enough after for the body to stop (a frame or two even on a slow machine) and the HUD to catch up.
+    await tap("w", 3);
     await expect(view(page), "the step stays on the door's node").toHaveAttribute("data-node", "s1-sw");
   }
   await expect(prompt).toHaveAttribute("data-kind", "pick");
