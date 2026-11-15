@@ -31,8 +31,12 @@ const BOARD_REASON: Record<NonNullable<CrewAnswer["reason"]>, string> = {
   error: `The model call failed. ${NO_RECORDING}`,
 };
 
-/** The "Worked out on the board" chip's tooltip, for the reason the model gave no reply. */
-export function boardPlanTitle(reason: CrewAnswer["reason"]): string {
+/**
+ * The board plan's chip tooltip, for the reason the model gave no reply; or, when the server no longer
+ * held the level (issue 142), that no model was called because the crew had nothing to plan on.
+ */
+export function boardPlanTitle(reason: CrewAnswer["reason"], levelLost?: boolean): string {
+  if (levelLost) return "The server no longer holds this building's level, so no model was called. This plan was worked out from the board itself.";
   return reason ? BOARD_REASON[reason] : `The crew gave no reply. ${NO_RECORDING}`;
 }
 
@@ -44,11 +48,19 @@ export function boardPlanTitle(reason: CrewAnswer["reason"]): string {
 export function CrewReply({ answer, checked }: { answer: CrewAnswer; checked: CheckedPlan }) {
   const { plan } = answer;
   const warning = checked.warnings[0];
+  // Worked out from the board (issue 140): not the crew's words, nor a confidence no model gave (issue 142).
+  const board = !answer.recorded && answer.source === "board";
   return (
-    <section aria-labelledby="crew-plan-label" data-testid="crew-reply" data-outcome={checked.outcome} className="flex flex-col gap-4">
+    <section
+      aria-labelledby="crew-plan-label"
+      data-testid="crew-reply"
+      data-outcome={checked.outcome}
+      data-source={board ? "board" : "crew"}
+      className="flex flex-col gap-4"
+    >
       <div className="flex items-center gap-2">
         <h2 id="crew-plan-label" className="label-caps text-text-3">
-          The crew&apos;s plan
+          {board ? "The board's plan" : "The crew's plan"}
         </h2>
         {answer.recorded ? (
           <span
@@ -58,18 +70,20 @@ export function CrewReply({ answer, checked }: { answer: CrewAnswer; checked: Ch
           >
             Recorded
           </span>
-        ) : answer.source === "board" ? (
+        ) : board ? (
           <span
             data-testid="board-plan-chip"
-            title={boardPlanTitle(answer.reason)}
+            title={boardPlanTitle(answer.reason, answer.levelLost)}
             className="rounded-sm border border-border px-1.5 py-0.5 label-caps text-text-2"
           >
-            Worked out on the board
+            No crew reply
           </span>
         ) : null}
-        <span className="ml-auto font-mono text-xs text-text-2" title="The crew's confidence in this plan">
-          {Math.round(plan.confidence * 100)}% sure
-        </span>
+        {board ? null : (
+          <span data-testid="crew-confidence" className="ml-auto font-mono text-xs text-text-2" title="The crew's confidence in this plan">
+            {Math.round(plan.confidence * 100)}% sure
+          </span>
+        )}
       </div>
 
       <ol data-testid="crew-steps" className="flex flex-col">
@@ -147,7 +161,7 @@ export function CrewReply({ answer, checked }: { answer: CrewAnswer; checked: Ch
 
       {plan.pushback ? (
         <div className="flex flex-col gap-1">
-          <p className="label-caps text-text-3">The crew pushes back</p>
+          <p className="label-caps text-text-3">{board ? "Why this way" : "The crew pushes back"}</p>
           <p data-testid="crew-pushback" className="text-base text-text-1">
             {plan.pushback}
           </p>

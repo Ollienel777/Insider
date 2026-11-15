@@ -12,7 +12,7 @@ import { POST } from "./route";
 
 afterEach(() => clearKitLevels());
 
-/** Century Park's stand-in: F1's level stored in memory under a kit id, as the Level Builder leaves one. */
+/** A kit building's stand-in: F1's level stored in memory under a kit id, as the Level Builder leaves one. */
 async function storeKitLevel(): Promise<void> {
   const level = (await readCachedLevel("F1", "romaine-1974"))!;
   store.set(levelKey("900001", "romaine-1974"), {
@@ -48,5 +48,18 @@ describe("POST /api/crew on a kit building with no recording", () => {
     });
     await expect(brief).rejects.toBeInstanceOf(NoRecordingError);
     await expect(brief).rejects.toMatchObject({ reason: "error" });
+  });
+
+  it("marks a 404 for a level the server no longer holds, so the Plan screen can still work one out (issue 142)", async () => {
+    // Nothing stored: a restarted server, or another instance, has lost the kit level.
+    const response = await POST(
+      new Request("http://localhost/api/crew", {
+        method: "POST",
+        headers: { cookie: `${FORCE_COOKIE}=llm` },
+        body: JSON.stringify({ buildingId: "900001", order: "Go in quietly", missionId: "romaine-1974" }),
+      }),
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ code: "no-level" });
   });
 });

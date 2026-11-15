@@ -15,6 +15,7 @@ import cached from "../../../data/levels/F1.romaine-1974.json";
 import recording from "../../../fixtures/llm/crew-F1.json";
 import { fallbackPlan } from "@/level/fallback-plan";
 import { getStatus, resetStatus } from "@/lib/demo-status";
+import { loadCrewPlan, PLAN_HEADING, planSourceOf, saveCrewPlan, storedPlanOf } from "@/components/run/crew-plan-store";
 import { askCrew, askCrewOrBoard, crewRequest, EXAMPLE_ORDER, NoCrewReplyError, type CrewAnswer } from "./crew-request";
 import { boardPlanTitle, CrewReply, ghostOf } from "./crew-reply";
 import { PlanScreen } from "./plan-screen";
@@ -100,6 +101,40 @@ describe("the Plan screen's brief on a building with no recording (issue 140)", 
     await expect(askCrewOrBoard(crewRequest(SMOKE_KIT_BUILDING, "Go"), placed, { fetch: proxy })).rejects.not.toBeInstanceOf(NoCrewReplyError);
     await expect(askCrewOrBoard(crewRequest(SMOKE_KIT_BUILDING, "Go"), null, { fetch: noRecording("timeout") })).rejects.toBeInstanceOf(NoCrewReplyError);
   });
+
+  it("works one out when the server has lost the level, and reads any other 404 as an error (issue 142)", async () => {
+    const lost = (async () => Response.json({ error: "no cached level", code: "no-level" }, { status: 404 })) as unknown as typeof fetch;
+    expect(await askCrewOrBoard(crewRequest(SMOKE_KIT_BUILDING, "Go"), placed, { fetch: lost })).toEqual({
+      plan: fallbackPlan(placed),
+      recorded: false,
+      source: "board",
+      levelLost: true,
+    });
+    expect(getStatus().toasts).toEqual([]);
+    const other = (async () => new Response("Not Found", { status: 404 })) as unknown as typeof fetch;
+    await expect(askCrewOrBoard(crewRequest(SMOKE_KIT_BUILDING, "Go"), placed, { fetch: other })).rejects.not.toBeInstanceOf(NoCrewReplyError);
+  });
+
+  it("keeps the board's mark on the plan handed to the Run, in memory and in storage (issue 142)", async () => {
+    const answer = await askCrewOrBoard(crewRequest(SMOKE_KIT_BUILDING, "Go"), placed, { fetch: noRecording("fake mode") });
+    expect(storedPlanOf(answer)).toEqual({ plan: answer.plan, recorded: false, source: "board" });
+    saveCrewPlan(SMOKE_KIT_BUILDING, storedPlanOf(answer), undefined, "romaine-1974", true);
+    const held = loadCrewPlan(SMOKE_KIT_BUILDING, undefined, "romaine-1974", true);
+    expect(held?.source).toBe("board");
+    expect(planSourceOf(held, held!.plan.steps.length)).toBe("board");
+    const store = new Map<string, string>();
+    const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
+    saveCrewPlan("F1", storedPlanOf(answer), storage);
+    expect(loadCrewPlan("F1", storage)).toEqual({ plan: answer.plan, recorded: false, source: "board" });
+    // The crew's own reply stays the crew's.
+    saveCrewPlan("F1", storedPlanOf(recorded("dock-wait")), storage);
+    const crew = loadCrewPlan("F1", storage);
+    expect(crew).toEqual({ plan: plan("dock-wait"), recorded: true });
+    expect(planSourceOf(crew, 4)).toBe("crew");
+    expect(planSourceOf(crew, 0)).toBe("level");
+    expect(planSourceOf(null, 0)).toBe("level");
+    expect(PLAN_HEADING).toEqual({ board: "The board's plan", crew: "The crew's plan", level: "The plan" });
+  });
 });
 
 describe("CrewReply", () => {
@@ -107,9 +142,31 @@ describe("CrewReply", () => {
     const board = fallbackPlan(placed);
     const html = renderToStaticMarkup(<CrewReply answer={{ plan: board, recorded: false, source: "board" }} checked={validatePlan(placed, board)} />);
     expect(html).toContain('data-testid="board-plan-chip"');
-    expect(html).toContain("Worked out on the board");
+    expect(html).toContain("No crew reply");
     expect(html).not.toContain('data-testid="recorded-chip"');
     expect(html.match(/data-testid="crew-step"/g)).toHaveLength(3);
+  });
+
+  it("says a board plan is the board's, not the crew's: no crew heading, voice or confidence (issue 142)", () => {
+    const board = fallbackPlan(placed);
+    const html = renderToStaticMarkup(<CrewReply answer={{ plan: board, recorded: false, source: "board" }} checked={validatePlan(placed, board)} />);
+    expect(html).toContain('data-source="board"');
+    expect(html).toContain("The board&#x27;s plan");
+    expect(html).toContain("Why this way");
+    for (const crew of ["The crew&#x27;s plan", "The crew pushes back", "confidence", "% sure"]) expect(html).not.toContain(crew);
+    // The crew's own reply keeps all three.
+    const crew = renderToStaticMarkup(<CrewReply answer={recorded("dock-wait")} checked={validatePlan(placed, plan("dock-wait"))} />);
+    expect(crew).toContain('data-source="crew"');
+    expect(crew).toContain("The crew&#x27;s plan");
+    expect(crew).toContain('data-testid="crew-confidence"');
+  });
+
+  it("says no model was called when the server had lost the level (issue 142)", () => {
+    const board = fallbackPlan(placed);
+    const html = renderToStaticMarkup(
+      <CrewReply answer={{ plan: board, recorded: false, source: "board", levelLost: true }} checked={validatePlan(placed, board)} />,
+    );
+    expect(html).toContain("The server no longer holds this building&#x27;s level, so no model was called.");
   });
 
   it("says on the board chip why the model gave no reply: only with the model off was none called", () => {

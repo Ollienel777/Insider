@@ -12,7 +12,8 @@
 // the first one the board plays clean. Its pushback names what those waits get
 // past: the camera or guard that catches the same plan played without them.
 // With no quiet way through, the plan is the shortest one, and the pushback
-// says who catches it and where.
+// says who catches it and where. The pushback speaks as the board does, to the
+// player ("sees you"), never as the crew: the crew said nothing (issue 142).
 //
 // Pure: same placement, same plan.
 "use client";
@@ -22,7 +23,10 @@ import { objectiveNoun } from "@/lib/objective-noun";
 import type { PlacedEntry, PlacedLevel } from "./placer";
 import { adviceFor, validatePlan, zoneLabel } from "./validate-plan";
 
-/** How sure the crew sounds: a plan the board plays clean, or one it knows is caught. */
+/**
+ * The confidence the plan's shape requires: higher for a plan the board plays clean than for one it
+ * knows is caught. No model gave it, so the Plan panel does not show it for a board plan (issue 142).
+ */
 const SURE_CLEAN = 0.6;
 const SURE_CAUGHT = 0.3;
 /** The most turns the plan waits at one stop; past this the shapes are not worth trying. */
@@ -31,9 +35,6 @@ const MAX_WAIT = 4;
 const TURNS = ["", "one turn", "two turns", "three turns", "four turns"];
 
 type Step = CrewPlan["steps"][number];
-
-/** A warning's text in the crew's voice: "sees you" becomes "sees us". */
-const ours = (text: string) => text.replace(/\b(sees|hears|spots) you\b/g, "$1 us");
 
 export function fallbackPlan(placed: PlacedLevel): CrewPlan {
   const { level } = placed;
@@ -85,9 +86,9 @@ export function fallbackPlan(placed: PlacedLevel): CrewPlan {
   const clearOf = (steps: Step[]): string => {
     const path = new Set(validatePlan(placed, { steps, pushback: "", confidence: 0 }).path);
     const guard = placed.guards.find((g) => g.patrol.some((n) => path.has(n)));
-    if (guard) return `${guard.id}'s round crosses it, but never while we're on it.`;
+    if (guard) return `${guard.id}'s round crosses it, but never while you're on it.`;
     const camera = placed.cameras.find((c) => c.cover.some((n) => path.has(n)));
-    if (camera) return `${camera.id} covers it, but it's looking away when we pass.`;
+    if (camera) return `${camera.id} covers it, but it's looking away when you pass.`;
     const ids = [...placed.cameras.map((c) => c.id), ...placed.guards.map((g) => g.id)].slice(0, 3);
     if (ids.length === 0) return "There's no camera or guard on this floor.";
     const named = ids.length === 1 ? ids[0] : `${ids.slice(0, -1).join(", ")} and ${ids.at(-1)}`;
@@ -127,19 +128,19 @@ export function fallbackPlan(placed: PlacedLevel): CrewPlan {
     const straight = caughtOn(shape(0, null, 0, exit));
     const stop = best.find((s) => s.action.startsWith("Through "));
     const pushback = hurried?.by
-      ? `${ours(hurried.text)} The waits in this plan let ${hurried.by} look away: hold where it says, then move.`
+      ? `Without its waits: ${hurried.text} The waits in this plan let ${hurried.by} look away: hold where it says, then move.`
       : straight?.by && stop
-        ? `${ours(straight.text)} Going through ${zoneLabel(placed, stop.zoneId)} keeps us out of ${straight.by}'s way.`
-        : `Nothing catches us this way if we keep moving: in by the ${way(start)}, out by the ${way(exit)}. ${clearOf(best)}`;
+        ? `The straight way: ${straight.text} Going through ${zoneLabel(placed, stop.zoneId)} keeps you out of ${straight.by}'s way.`
+        : `Nothing catches you this way if you keep moving: in by the ${way(start)}, out by the ${way(exit)}. ${clearOf(best)}`;
     return { steps: best, pushback, confidence: SURE_CLEAN };
   }
 
   // No quiet way through (or none that fits a plan's stops): the shortest plan, and who catches it.
   const steps = shape(0, null, 0, exitOrder[0]);
   const warning = validatePlan(placed, { steps, pushback: "", confidence: 0 }).warnings[0];
-  const caughtLine = warning ? ` ${ours(warning.text)}` : "";
+  const caughtLine = warning ? ` ${warning.text}` : "";
   const pushback = advice
-    ? `I can't fit the quiet way into a plan here; follow the waits the board marks.${caughtLine}`
+    ? `The quiet way doesn't fit a plan's stops here; follow the waits the board marks.${caughtLine}`
     : `There's no way through this floor unseen.${caughtLine}`;
   return { steps, pushback, confidence: SURE_CAUGHT };
 }

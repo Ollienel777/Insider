@@ -31,9 +31,12 @@ export class NoCrewReplyError extends Error {
   override name = "NoCrewReplyError";
   /** Why the model gave no reply: off ("fake mode", "configuration"), "timeout" or "error". */
   readonly reason?: CrewAnswer["reason"];
-  constructor(message: string, reason?: CrewAnswer["reason"]) {
+  /** The server no longer held the level, so no model was called (issue 142). */
+  readonly levelLost: boolean;
+  constructor(message: string, reason?: CrewAnswer["reason"], levelLost = false) {
     super(message);
     if (reason) this.reason = reason;
+    this.levelLost = levelLost;
   }
 }
 
@@ -59,6 +62,11 @@ export async function askCrew(
     const reason = typeof body.reason === "string" && REASONS.has(body.reason) ? body.reason : undefined;
     throw new NoCrewReplyError(body.error ?? "the crew has no reply for this building", reason);
   }
+  // The server no longer holds the level (a restart, or another instance: a kit level lives in one
+  // server's memory) while this browser still holds the board (issue 142). Only the route's own marked 404.
+  if (response.status === 404 && body?.code === "no-level") {
+    throw new NoCrewReplyError(body.error ?? "the server has no level for this building", undefined, true);
+  }
   if (!response.ok || !body) throw new Error(body?.error ?? `the crew didn't answer (HTTP ${response.status})`);
   noteResponse(body);
   return {
@@ -83,6 +91,12 @@ export async function askCrewOrBoard(
     return await askCrew(request, options);
   } catch (error) {
     if (!(error instanceof NoCrewReplyError) || !placed) throw error;
-    return { plan: fallbackPlan(placed), recorded: false, source: "board", ...(error.reason && { reason: error.reason }) };
+    return {
+      plan: fallbackPlan(placed),
+      recorded: false,
+      source: "board",
+      ...(error.reason && { reason: error.reason }),
+      ...(error.levelLost && { levelLost: true as const }),
+    };
   }
 }
