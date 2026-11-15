@@ -13,8 +13,9 @@ The product is **Hobbs**; #183 renamed it from Heist Anywhere. The demo plays
 - **Owner Mode** gets 15 seconds after the Debrief (Q9, decided on status
   issue #1).
 
-Written against `main` at d9be7fc, at about 05:15 UTC on 15 November, with the
-rehearsal's findings added at about 05:40 UTC.
+Written against `main` at 9134816, at about 06:15 UTC on 15 November. The
+rehearsal's findings were added at about 05:40 UTC, and the Chief's re-timing
+at about 06:15 UTC.
 
 - **What was walked:** on c08ae94, in fake mode (a production build with every
   service on `fake`, at 1440×900):
@@ -116,7 +117,10 @@ measured the run beat, live:
 | Run playable | 1.2–2.3 s |
 | the first camera's label in sight | about 2 s |
 | the alarm | 3–6 s |
-| a capture, walking on towards the guards | about 14 s after the alarm |
+| the Chief's first line | 2.5–5.7 s after the alarm |
+| a capture, walking on towards the guards | 15–31 s after the alarm |
+
+The last two rows were re-timed on current `main` at about 06:00 UTC.
 
 ## What the judge should notice
 
@@ -131,8 +135,9 @@ avidity; and CoStar's own, 30% data use, 30% agentic depth, 25% usefulness and
 - **Beat 5, Plan:** agentic depth. The crew answers a plain-English order, and
   the board checks it.
 - **Beat 6, Run:** creativity, and agentic depth. The building is its own scan,
-  and the Chief re-plans live and says why.
-- **Beat 7, Debrief:** CoStar usefulness, through the Monday line.
+  and the Chief re-plans live as the guards converge.
+- **Beat 7, Debrief:** agentic depth, as the Chief's decisions are listed with
+  their reasons; and CoStar usefulness, through the Monday line.
 - **Beat 8, Owner Mode:** utility for the owner. The judge sees a before and
   after on their own security.
 - **Throughout:** avidity and polish, shown by a run that doesn't stall.
@@ -167,8 +172,8 @@ finalists, which fold into a closed list under it. The card shows:
 - one row per need, the building's value beside what the mission needs;
 - a line saying where its level stands.
 
-This card is the real building the run uses. Don't read out the record id it
-shows: that text is being reworded in code (Open items, 4).
+This card is the real building the run uses. Its pick line reads "Showcase ·
+CoStar record", then the name; since #185 it shows no record id.
 
 1. While the funnel narrows, say: **"The agent searches CoStar's inventory
    for this heist: the right era and class, a floor on the market tonight, a
@@ -223,7 +228,7 @@ showcase building it has three rows, as the rehearsal found:
 |---|---|
 | year built | the era: "Analog era: key locks, sweeping CCTV" |
 | building class | the guard force: "[N] guards, tight rounds" |
-| available space | the floor the level is staged on |
+| available space | the floor the level is staged on: "Staged on [floor]; its [N] free suites are quiet zones" (#185) |
 
 The mission briefing follows.
 
@@ -232,9 +237,6 @@ The mission briefing follows.
    and sweeping cameras. Class [X]: [N] guards. Its vacant floor is the
    stage. The security is game fiction."**
 2. Click **Brief the crew**.
-
-Don't read out the space row's raw id: that text is being reworded in code
-(Open items, 4).
 
 Fallbacks:
 
@@ -323,9 +325,10 @@ shown is game fiction."
    to clear. It runs, in order: "Asking for
    the scan", "Downloading the building", "Building the walls and floor",
    then "Loading the picture around you".
-3. Click the view once: mouse look starts only after that click. The pill
-   says "Look around. The clock starts when you move.", so nothing moves
-   until the judge does. A controls card at the left lists the keys; it fades
+3. Click the view once: mouse look starts only after that click. The radio
+   opens with "You're in at the roof hatch. W to walk, the mouse to look."
+   (#185). The pill says "Look around. The clock starts when you move.", so
+   nothing moves until the judge does. A controls card at the left lists the keys; it fades
    once the judge has walked and looked around.
 4. Hand the judge the keyboard and mouse. Say: **"You're in the real building,
    its own scan. W to move, the mouse to look, hold E at a door. That light is
@@ -339,21 +342,30 @@ shown is game fiction."
    - A camera sees the judge. The suspicion meter reads "Next to [camera]'s
      sight", then "[camera] has you in view", then "[camera] saw you".
    - The alarm comes 3–6 s in: **Alert**, then **Lockdown**.
-   - The Chief's re-plan streams onto the radio line, naming real rooms
-     (#173).
+   - The Chief's first line comes 2.5–5.7 s after the alarm.
+   - At **Lockdown**, the radio mostly repeats one line, "Intruder last seen
+     in the [room].", and rarely reads the Chief's orders (#190, left for after
+     the freeze). The orders still apply: the guards converge, and the Debrief
+     lists every decision.
 
-   Say: **"That camera has you. The AI security chief re-plans, live, and
-   you can read why. The guards follow its orders."**
+   Narrate the re-plan; don't wait for the radio to read it. Say: **"That
+   camera has you. The Chief is re-planning live: watch the guards converge on
+   the corridor."** The "read why" moment is the Debrief's list of decisions
+   (beat 7).
 
    The team knows from the rehearsal which camera this is, and which door
    tears. Those answers stay out of the repo.
 7. **Steer, because the capture isn't certain within the beat.** As soon as
    the camera fires, say: **"Keep going down the corridor."** That sends the
-   judge towards the guards. At the rehearsal:
-   - a walk that kept heading for the guards was caught about 14 s after the
-     alarm;
-   - two walks that stopped after the alarm weren't caught in 54 turns,
-     because the alarm calmed down.
+   judge towards the guards.
+   - On current `main`, walks that kept heading for the guards were caught
+     15–31 s after the alarm.
+   - At the rehearsal, two walks that stopped after the alarm weren't caught
+     in 54 turns, because the alarm calmed down.
+
+   On those timings the capture lands between about 1:18 and 1:37, so the
+   slower half runs past this beat's 1:28. **Cut at 1:30, caught or not**
+   (fallbacks below). That uses the 2 s spare, and keeps the clock at 2:00.
 8. The guards close in, and the run ends in a capture. The capture is the
    beat: the alarm and the Chief's re-plan are the wow. The view stops taking
    input and frees the mouse. A card says **Run over**, "Caught in the
@@ -370,15 +382,17 @@ Fallbacks:
   comes from a rule on its CoStar record."** If the board still shows "Loading
   the scan", switch to the F1 tab.
 - **The judge stops after the alarm,** and the alarm starts to calm. Say:
-  **"Keep moving. The guards are coming."** If there's still no capture at
-  1:25, say **"The Chief is still hunting you. Here's the replay."** and click
-  **Debrief** in the step rail. The Debrief shows a run still in progress
-  (`main` handles a playing run; not walked here).
+  **"Keep moving. The guards are coming."**
+- **No capture by 1:30**, for any reason. Say **"The Chief is still hunting
+  you. Here's the replay."** and click **Debrief** in the step rail. The
+  Debrief shows a run still in progress (`main` handles a playing run; not
+  walked here), with the Chief's decisions so far for beat 7.
 - **The judge can't pick the lock or take the files.** Say: **"Hold E right at
   it."** If it still won't go, steer them into a camera's light: the capture
   ends the run, and its card has **See the debrief**.
-- **The Chief's first line is late.** #173 lets a Chief call finish; before
-  it, the first line took 1.2–14 s at the rehearsal. If a recorded or
+- **The Chief's first line is late.** On current `main` it comes 2.5–5.7 s
+  after the alarm; before #173 it took 1.2–14 s. Keep narrating the guards
+  meanwhile. If a recorded or
   rule-based reply stands in, the toast says "The model didn't answer in time,
   so a recorded reply stands in." Say: **"The model was slow, so a stand-in
   reply takes over. The guards never wait for it."**
@@ -447,9 +461,11 @@ Screen:
 - the Chief's decisions as a timeline, each with its reason.
 
 1. Drag the **Turn** slider back to the start, then forward. It steps through
-   every turn of the run. Say: **"The debrief replays every move, and each of
-   the Chief's decisions with its reason."**
-2. The Monday line: **"And that search, era, class, a floor on the market
+   every turn of the run. Say: **"The debrief replays every move."**
+2. Point at the Chief's decisions. This is the "read why" moment: in the run,
+   the radio rarely reads the orders out (#190). Say: **"And here's why: every
+   decision the Chief made, with its reason."**
+3. The Monday line: **"And that search, era, class, a floor on the market
    tonight, is the one a location scout runs on Monday, on CoStar's own
    availability."**
 
@@ -660,7 +676,8 @@ the last-minutes list again.
 
 ## The video
 
-Q10, per status issue #1 (23:10 UTC on 14 November); the SPEC follows: **the
+Q10, per status issue #1 (23:10 UTC on 14 November), and in the SPEC since
+#180: **the
 public demo video doesn't show the scan.**
 
 - It shows the run on F1, which is beat 6's F1 fallback, in first person or
@@ -688,16 +705,16 @@ in the repo or the video's files.
    card, the real record, the aerial, the scan, the live crew and the Chief,
    because no keys were used here. The team's live rehearsal ran them, and
    Esun4's earlier walks are reported on #157.
-4. **Three screen texts are being reworded in code**, so the script doesn't
-   quote them:
-   - the Dossier's raw space id;
-   - the cast card's record id;
-   - first person's start line, the one ending "Pick a number to move."
+4. **The radio repeats one line at Lockdown (#190).** In first person, at
+   Lockdown, the Chief is asked on every re-sighting, so the radio mostly
+   repeats "Intruder last seen in the [room]." and rarely reads its orders.
+   Nelson's call is to leave the code as it is for the demo, and fix it after
+   the freeze. Beat 6 narrates the re-plan instead, and beat 7 reads the
+   reasons off the Debrief.
 5. **Not walked: forcing the Model in the demo settings, to prepare the Owner
    tab.** Fake mode locks the switch. Expect the result to stay on screen when
    you switch it back, since the page re-renders without a reload. The
    checklist checks it.
-6. **Still open on GitHub, not in this script:**
-   - the visual restyle (#167), which will change how screens look, and
-     renames the wordmark and page title to Hobbs;
-   - the SPEC change for Q2 and Q10 (#180).
+6. **Still open on GitHub, not in this script:** the visual restyle (#167). It
+   will change how screens look, and renames the wordmark and page title to
+   Hobbs.
