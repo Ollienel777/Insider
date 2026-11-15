@@ -96,7 +96,7 @@ export function MissionList({ missions }: { missions: readonly Mission[] }) {
             </button>
           ))}
         </div>
-        <article data-testid="mission-card" data-mission={mission.id} role="tabpanel" aria-labelledby={`${tabsId}-${at}`} className="flex flex-col gap-3">
+        <article data-testid="mission-card" data-mission={mission.id} role="tabpanel" aria-labelledby={`${tabsId}-${at}`} className="flex flex-1 flex-col gap-3">
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 max-sm:grid-cols-1">
             <div className="flex min-w-0 flex-col gap-2">
               <span className="font-mono text-xs text-text-3 uppercase">
@@ -165,7 +165,7 @@ export function MissionList({ missions }: { missions: readonly Mission[] }) {
               <dd className="font-mono text-[15px] text-text-1">our agent casts it</dd>
             </div>
           </dl>
-          <p className="font-mono text-xs text-text-3">{MISSION_DISCLAIMER}</p>
+          <p className="mt-auto font-mono text-xs text-text-3">{MISSION_DISCLAIMER}</p>
         </article>
       </section>
       <section aria-label={`The map of ${cityName(mission.city)}`} className={cn(PAGE, "static")}>

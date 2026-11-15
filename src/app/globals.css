@@ -363,7 +363,7 @@ body.playing [data-folder] { border: 0; border-radius: 0; box-shadow: none; padd
 body.playing [data-testid="stamp-dock"] { position: fixed; top: auto; right: 16px; bottom: 16px; transform: none; z-index: 60; }
 
 /* The street map printed on the case file's paper: the dark basemap turned to ink lines on cream (issue 166). */
-.paper-map { filter: invert(1) sepia(0.6) saturate(0.7) contrast(0.85) brightness(1.02); }
+.paper-map { filter: invert(1) sepia(0.7) saturate(0.9) contrast(1.35) brightness(0.92); }
 
 /* From lg the screen's action sits on the desk at the right end of the tab row (BuildingScreen):
    a line of text beside it reads in the desk's light ink, and a second action is a paper tag. */
