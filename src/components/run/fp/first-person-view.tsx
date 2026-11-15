@@ -28,7 +28,7 @@ import {
   type Camera,
   type Object3D,
 } from "three";
-import type { MeshWorld } from "@/app/spike/mesh/collider";
+import { MeshWorld } from "@/app/spike/mesh/collider";
 import { act, type Action, type RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
 import { objectiveLabel, objectiveNoun } from "@/lib/objective-noun";
@@ -39,6 +39,7 @@ import { Actors, type Marks } from "./actors";
 import { Controller } from "./controller";
 import { endState } from "./end-state";
 import type { Ground, Vec } from "./ground";
+import { distanceTo } from "./motion";
 import { hintDone, hintPhase, hintTicks, NO_PROGRESS, type HintPhase, type HintProgress } from "./hint";
 import { ControlsHint } from "./hint-card";
 import { noticeOf } from "./notice";
@@ -167,6 +168,22 @@ function fovFor(aspect: number): number {
   const across = (MAX_ACROSS * Math.PI) / 360;
   const capped = (2 * Math.atan(Math.tan(across) / Math.max(aspect, 1e-3)) * 180) / Math.PI;
   return Math.min(FOV_DEGREES, capped);
+}
+
+/** The longest the set waits for the scan's detailed mesh (its furniture) before standing without it, ms. */
+const DETAIL_WAIT_MS = 10_000;
+
+/** Resolves once the scan's detailed mesh is in, has failed, or `ms` have passed. */
+function detailIn(scan: ScanHandle, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const started = performance.now();
+    const check = () => {
+      const state = scan.view.status().detail.state;
+      if (state !== "loading" || performance.now() - started > ms) resolve();
+      else setTimeout(check, 100);
+    };
+    check();
+  });
 }
 
 /** Whether this browser will give a canvas a WebGL 2 context, asked of a spare canvas. */
@@ -594,31 +611,23 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       });
       // The furniture, on the set only: the blockout draws none, and none may stop the player unseen.
       if (dressed) {
+        // The detailed mesh has the desks the walkable one smooths away; without it, the walkable one.
+        const detail = handle.view.detailMesh;
+        const furnished = detail ? new MeshWorld(detail, 0.45) : tree;
         addFurniture(
           plan,
           floor.nodes.map((n) => ({ x: n.x, y: n.y })),
           paths,
-          (x, z) => tree.floorBelow(x, floorY + FURNITURE.highM, z, FURNITURE.highM - 0.2),
-          (x, z) => tree.floorBelow(x, floorY + FURNITURE.standM, z, FURNITURE.standM + 0.3),
+          (x, z) => furnished.floorBelow(x, floorY + FURNITURE.highM, z, FURNITURE.highM - 0.2),
+          (x, z) => furnished.floorBelow(x, floorY + FURNITURE.standM, z, FURNITURE.standM + 0.3),
         );
-        // Only what a scan position saw: a box no photograph confirms would be a grey guess.
-        const eyes = floor.nodes.flatMap((n) => {
-          const y = join.heights.eye.get(n.id);
-          return y === undefined ? [] : [[n.x, y, n.y] as const];
-        });
-        plan.furniture = plan.furniture.filter((box) => {
-          const c = box.corners.reduce((s, p) => ({ x: s.x + p.x / 4, y: s.y + p.y / 4 }), { x: 0, y: 0 });
-          const target = [c.x, box.top - 0.03, c.y] as const;
-          return eyes.some(([ex, ey, ez]) => {
-            const dx = target[0] - ex;
-            const dy = target[1] - ey;
-            const dz = target[2] - ez;
-            const far = Math.hypot(dx, dy, dz);
-            if (far > 7 || far < 0.3) return false;
-            const hit = mesh.hit([ex, ey, ez], [dx / far, dy / far, dz / far], far + 0.3);
-            return hit !== null && Math.abs(hit - far) < 0.3;
-          });
-        });
+        // No piece across a doorway: the way through stays clear.
+        plan.furniture = plan.furniture.filter((box) =>
+          plan.doorways.every((d) => {
+            const mid = { x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2 };
+            return box.corners.every((p, k) => distanceTo({ a: p, b: box.corners[(k + 1) % 4] }, mid) > 0.6);
+          }),
+        );
       }
       // Counts only.
       console.info(
@@ -791,8 +800,11 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       };
       stopListening = scan.subscribe(phase);
       phase();
-      void scan.ready.then((ok) => {
+      void scan.ready.then(async (ok) => {
         if (gone || !ok) return;
+        // The set's furniture is found in the scan's detailed mesh: wait for it a while.
+        if (look === "set") await detailIn(scan, DETAIL_WAIT_MS);
+        if (gone) return;
         const made = photo ? scanStage(scan) : planStage(scan, look === "set");
         if (made) begin(made);
       });

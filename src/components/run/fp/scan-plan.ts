@@ -72,6 +72,10 @@ export const PLAN = Object.freeze({
   glassMinM: 1.25,
   /** A gap no one walked through, a door's width (to `glassMinM`): a doorway, its door shut. */
   doorMinM: 0.6,
+  /** No doorway narrower than this: the walls either side give way. */
+  doorClearM: 0.95,
+  /** Two parallel lines this close are one thick wall's two faces. */
+  thickWallM: 0.5,
   glassMaxM: 8,
   /** A doorway up to this wide has a lintel over it, as a fixture floor's doors do. */
   lintelMaxM: 1.8,
@@ -551,6 +555,8 @@ export function derivePlan(input: PlanInput): ScanPlan {
     for (const [a, b] of line.head) covered += Math.max(0, Math.min(b, hi) - Math.max(a, lo));
     return covered / Math.max(1e-6, hi - lo);
   };
+  const spans: { line: Line; lo: number; hi: number }[] = [];
+  let spansFrom = 0;
   // Each gap between two walls on a line: a doorway where the scanner went through it or stood in
   // it; else, if wide, a pane of glass the scan saw through; else a hole in the scan, closed.
   for (const line of lines) {
@@ -566,21 +572,32 @@ export function derivePlan(input: PlanInput): ScanPlan {
       }) || nodesUV.some((n) => Math.abs(acrossOf(n) - line.c) < PLAN.nodeClearM && alongOf(n) > lo - 0.1 && alongOf(n) < hi + 0.1);
     const runs = [...line.runs].sort((p, q) => p[0] - q[0]);
     const kept: [number, number][] = [];
-    for (const run of runs) {
+    for (let run of runs) {
       const last = kept[kept.length - 1];
       if (!last) {
         kept.push([run[0], run[1]]);
         continue;
       }
-      const [lo, hi] = [last[1], run[0]];
-      const width = hi - lo;
+      let [lo, hi] = [last[1], run[0]];
+      let width = hi - lo;
+      // A doorway is at least a body's comfortable width: the walls either side give way.
+      const widen = () => {
+        if (width >= PLAN.doorClearM) return;
+        const more = (PLAN.doorClearM - width) / 2;
+        lo -= more;
+        hi += more;
+        last[1] = lo;
+        run = [hi, run[1]];
+        width = hi - lo;
+      };
       if (walked(lo, hi)) {
+        widen();
         if (width <= PLAN.doorwayMaxM) doorways.push({ a: toWorld(line, lo), b: toWorld(line, hi), width, lintel: width <= PLAN.lintelMaxM, shut: false });
         kept.push([run[0], run[1]]);
       } else if ((headOver(line, lo, hi) >= 0.6 && width <= PLAN.doorwayMaxM && width >= 0.5) || (width >= PLAN.doorMinM && width < PLAN.glassMinM)) {
-        // Wall over it: a doorway no one went through. Its door stands shut, a wall to walk into.
-        doorways.push({ a: toWorld(line, lo), b: toWorld(line, hi), width, lintel: width <= PLAN.lintelMaxM, shut: true });
-        walls.push({ a: toWorld(line, lo), b: toWorld(line, hi), boundary: false, door: true });
+        // A doorway no one went through: open all the same, its leaf swung back. Only the game's locked doors shut.
+        widen();
+        doorways.push({ a: toWorld(line, lo), b: toWorld(line, hi), width, lintel: width <= PLAN.lintelMaxM, shut: false });
         kept.push([run[0], run[1]]);
       } else if (width >= PLAN.glassMinM && width <= PLAN.glassMaxM) {
         glass.push({ a: toWorld(line, lo), b: toWorld(line, hi) });
@@ -591,8 +608,30 @@ export function derivePlan(input: PlanInput): ScanPlan {
         kept.push([run[0], run[1]]);
       }
     }
-    line.runs = kept;
-    for (const [lo, hi] of kept) walls.push({ a: toWorld(line, lo), b: toWorld(line, hi), boundary: false });
+    line.runs = kept.filter(([lo, hi]) => hi - lo > 0.05);
+    for (const d of doorways.slice(spansFrom)) spans.push({ line, lo: alongOf(rot(d.a, angle)), hi: alongOf(rot(d.b, angle)) });
+    spansFrom = doorways.length;
+  }
+  // A thick wall is two lines: a doorway through one goes through the other too.
+  for (const { line, lo, hi } of spans) {
+    const [a, b] = [Math.min(lo, hi), Math.max(lo, hi)];
+    for (const other of lines) {
+      if (other === line || other.along !== line.along || Math.abs(other.c - line.c) > PLAN.thickWallM) continue;
+      other.runs = subtract(other.runs, [[a, b]]).filter(([s0, e0]) => e0 - s0 >= PLAN.minRunM);
+    }
+  }
+  for (const line of lines) for (const [lo, hi] of line.runs) walls.push({ a: toWorld(line, lo), b: toWorld(line, hi), boundary: false });
+
+  // No glass right before or behind a doorway (a wall's other face, a line of its own): the way through stays open.
+  const segDistance = (g: Seg, p: Vec) => {
+    const ex = g.b.x - g.a.x;
+    const ey = g.b.y - g.a.y;
+    const len2 = ex * ex + ey * ey || 1;
+    const t = Math.max(0, Math.min(1, ((p.x - g.a.x) * ex + (p.y - g.a.y) * ey) / len2));
+    return Math.hypot(p.x - g.a.x - t * ex, p.y - g.a.y - t * ey);
+  };
+  for (let k = glass.length - 1; k >= 0; k--) {
+    if (doorways.some((d) => segDistance(glass[k], { x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2 }) < 0.6)) glass.splice(k, 1);
   }
 
   // Where the floor ends with no wall, a wall: what stops the player is drawn.
@@ -772,9 +811,9 @@ export const FURNITURE = Object.freeze({
   standM: 1.3,
   /** No furniture this close to a wall's line: that is the wall's own clutter. */
   wallClearM: 0.15,
-  /** No furniture this close to a scan position, or to a walk between two: the scanner stood and walked there. */
+  /** No furniture this close to a scan position: the scanner stood there. (A board edge is a line of sight, not a walk: desks stand under them.) */
   nodeClearM: 0.45,
-  pathClearM: 0.3,
+  pathClearM: 0,
   /** A box thinner than this is dropped (a half-height wall is a box one cell thick). */
   minSideM: 0.1,
   minAreaM2: 0.08,
@@ -830,7 +869,7 @@ export function addFurniture(
       }
       if (nodesUV.some((n) => Math.abs(n.u - p.u) < F.nodeClearM && Math.abs(n.v - p.v) < F.nodeClearM && Math.hypot(n.u - p.u, n.v - p.v) < F.nodeClearM)) continue;
       if (wallsUV.some(([a, b]) => segDist(p, a, b) < F.wallClearM)) continue;
-      if (pathsUV.some(([a, b]) => segDist(p, a, b) < F.pathClearM)) continue;
+      if (F.pathClearM > 0 && pathsUV.some(([a, b]) => segDist(p, a, b) < F.pathClearM)) continue;
       const k = j * cols + i;
       band[k] = F.bandsM.filter((b) => h >= b).length;
       height[k] = h;

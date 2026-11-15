@@ -1,25 +1,25 @@
-// A live scan's plan (scan-plan.ts) dressed in the colours of its own
-// photographs (issue 118). Walls are flat and of one colour, so each is drawn
-// flat and of one colour: the colour the panoramas that see it well agree on,
-// one per room for its walls, one per room for its floor, one for the
-// ceiling, one per piece of furniture. Nothing is drawn from a photograph
-// itself, so nothing is blurred, stretched or smeared: the photographs are
-// only asked what colour things are.
+// A live scan's plan (scan-plan.ts) dressed from its own photographs (issue
+// 118). Walls are flat and of one colour, so each room's walls are drawn in
+// one flat colour, the one its photographs agree on; floors likewise, with a
+// carpet's grain; the ceiling one colour under a drop ceiling's grid. Over the
+// flat colour go the photographs' sharp details, as decals: a door, a board, a
+// window, a cupboard, a sign, where a panorama saw it near and head-on (under
+// 45 degrees and 4 m) and it differs plainly from the wall's colour. Each texel
+// of a decal comes from one panorama only, so nothing doubles; where none saw
+// it well, the flat colour stays, so nothing is smeared.
 //
-// Asking, per texel of a coarse atlas over every surface:
+// Asking the photographs, per texel of an atlas over every surface:
 // - Each panorama's depth cube (how far it sees in every direction, against
-//   these same surfaces) says whether it sees the texel at all, and only near
-//   enough and head-on enough counts.
-// - Of those that do, the best is the nearest and most head-on. Its score is
-//   kept per texel (the "best" pass, a max over every panorama); then each
-//   panorama adds its colour weighted by how close its score comes to the best.
-// - The floor right under a panorama, where its tripod stood, is left to its
-//   neighbours.
-// Then each surface's colour is the median of its well-seen texels, which
-// leaves a door, a sign or a board on a wall out of its wall's colour.
+//   these same surfaces) says whether it sees the texel at all.
+// - Of those that do, near enough and head-on enough, the best wins outright
+//   (the "best" pass keeps the best score per texel; the paint pass takes the
+//   panorama whose score is it).
+// - The floor right under a panorama, where its tripod stood, is left out.
+// Each surface's flat colour is the median of what its texels saw, which
+// leaves a door, a sign or a board out of its wall's colour.
 //
-// The panoramas are fetched by this tab from the scan CDN at their smallest,
-// decoded, asked and let go one by one. Nothing is stored anywhere.
+// The panoramas are fetched by this tab from the scan CDN, decoded, asked and
+// let go one by one. Nothing is stored anywhere.
 import {
   BufferAttribute,
   BufferGeometry,
@@ -36,6 +36,7 @@ import {
   Mesh,
   NearestFilter,
   NoColorSpace,
+  NoBlending,
   OneFactor,
   OrthographicCamera,
   PerspectiveCamera,
@@ -54,22 +55,23 @@ import { conjugate, quatToMat3, type Quat, type Vec3 } from "@/lib/scan-mesh/coo
 import { isAllowedAssetUrl } from "@/lib/scan-mesh/manifest";
 import { alignToCube, CUBE_LOOKUP_FLIP } from "@/lib/scan-mesh/skybox";
 import type { Vec } from "./ground";
+import { nearestOn } from "./motion";
 import { fromCellFrame, onPlanFloor, PLAN, type ScanPlan } from "./scan-plan";
 
 /** Every number the painting is tuned by. */
 export const PHOTO = Object.freeze({
-  /** The sampling atlas's side, texels. */
-  atlasPx: 2048,
-  /** The finest a texel goes, metres: coarse, as only colours are asked for. */
-  texelM: 0.06,
-  /** Texels round each surface's patch, kept clear between neighbours. */
-  gutterPx: 1,
-  /** A texel counts toward its surface's colour only when seen at least this well (the best score). */
-  wellSeen: -3.2,
+  /** The atlas's side, texels. */
+  atlasPx: 4096,
+  /** The finest a wall's or a piece of furniture's texel goes, metres; coarser when the building will not fit. */
+  texelM: 0.02,
+  /** A floor's or ceiling's texel, to the walls': they are only asked their colour. */
+  flatScale: 5,
+  /** Texels round each surface's patch, painted too, so a lookup at its edge never reaches a neighbour's. */
+  gutterPx: 2,
   /** The floor and ceiling are painted in tiles this big. */
   tileM: 4,
   /** How sharply a panorama's share falls as its score falls below the best: higher, crisper, more seams. */
-  sharpness: 8,
+  sharpness: 60,
   /** A depth cube's face, pixels. */
   depthPx: 256,
   /** Panoramas fetched at once. */
@@ -139,6 +141,8 @@ void main() {
 const SCORE = /* glsl */ `
 uniform samplerCube uDepth;
 uniform vec3 uOrigin;
+uniform float uFloorY;
+uniform float uCeilY;
 varying vec3 vWorld;
 varying vec3 vNormal;
 float score() {
@@ -147,7 +151,10 @@ float score() {
   vec3 dir = ray / max(d, 1e-4);
   float facing = dot(normalize(vNormal), -dir);
   // Never at a grazing angle (past about 62°), and never from across the building: that is where a photo smears.
-  if (facing < 0.47 || d > 8.0) discard;
+  // A wall or a piece of furniture only near and head-on (under about 37 degrees, within 3.5 m): what a
+  // photograph shows sharp. The floor and ceiling are only asked their colour, from further and aslant.
+  bool level = vWorld.y < uFloorY + 0.05 || vWorld.y > uCeilY - 0.05;
+  if (level ? (facing < 0.3 || d > 8.0) : (facing < 0.8 || d > 3.5)) discard;
   float seenTo = textureCube(uDepth, ray).r;
   if (d > seenTo * 1.015 + 0.05) discard;
   float s = 0.8 * log(facing) - 2.0 * log(max(d, 0.4));
@@ -181,6 +188,8 @@ export class PhotoSet {
   private readonly surfaces: Surface[] = [];
   private readonly bakeGeometry: BufferGeometry;
   private readonly drawMaterial: ShaderMaterial;
+  private readonly atlas: WebGLRenderTarget;
+  private readonly resolveMaterial: ShaderMaterial;
   /** Where each surface's six vertices start in the drawn geometry, and the floor's runs with their rooms. */
   private readonly drawn: Mesh;
   private readonly floorRuns: { start: number; count: number; room: string }[] = [];
@@ -238,6 +247,14 @@ export class PhotoSet {
       });
     this.accum = target(HalfFloatType, RGBAFormat);
     this.best = target(HalfFloatType, RGBAFormat);
+    this.atlas = new WebGLRenderTarget(px, px, {
+      minFilter: LinearMipmapLinearFilter,
+      magFilter: LinearFilter,
+      generateMipmaps: true,
+      depthBuffer: false,
+      colorSpace: NoColorSpace,
+      anisotropy: 8,
+    });
 
     // What is drawn: flat colours, a touch of shade by which way a face looks so corners read, a
     // dark baseboard along the walls' feet, the ceiling's tile grid and the carpet's grain.
@@ -247,16 +264,21 @@ export class PhotoSet {
         uAngle: { value: this.plan.angle },
         uBase: { value: new Vector3(0.24, 0.23, 0.22) },
         uTile: { value: PHOTO.ceilingTileM },
+        uAtlas: { value: this.atlas.texture },
+        uHasAtlas: { value: 0 },
+        uGrain: { value: 0.05 },
       },
       vertexShader: /* glsl */ `
 attribute vec3 colour;
 attribute float kind;
+varying vec2 vUv;
 varying vec3 vColour;
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying float vKind;
 void main() {
   vColour = colour;
+  vUv = uv;
   vKind = kind;
   vNormal = normal;
   vec4 world = modelMatrix * vec4(position, 1.0);
@@ -268,6 +290,10 @@ uniform float uFloorY;
 uniform float uAngle;
 uniform vec3 uBase;
 uniform float uTile;
+uniform sampler2D uAtlas;
+uniform float uGrain;
+uniform float uHasAtlas;
+varying vec2 vUv;
 varying vec3 vColour;
 varying vec3 vWorld;
 varying vec3 vNormal;
@@ -276,15 +302,23 @@ float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 void main() {
   vec3 c = vColour;
   vec3 n = normalize(vNormal);
-  float shade = 0.96 + 0.05 * dot(n, normalize(vec3(-0.55, 0.6, -0.3)));
+  float shade = 1.0 + 0.035 * dot(n, normalize(vec3(-0.55, 0.6, -0.3)));
   float c0 = cos(uAngle), s0 = sin(uAngle);
   vec2 square = vec2(vWorld.x * c0 + vWorld.z * s0, -vWorld.x * s0 + vWorld.z * c0);
-  if (vKind < 0.5) {
-    // A wall: its baseboard.
-    if (vWorld.y - uFloorY < 0.1) c = uBase;
+  if (vKind < 0.5 || vKind > 2.5) {
+    // A wall or a piece of furniture: its photograph where it was seen sharp and differs from the flat colour.
+    vec4 photo = uHasAtlas > 0.5 ? texture2D(uAtlas, vUv) : vec4(0.0);
+    // At the edge of what was seen the filter mixes in the unseen (black): take the seen part's own colour.
+    photo.rgb /= max(photo.a, 1e-3);
+    // A feature differs plainly from its wall (a door, a board, a cupboard); paint a shade lighter or darker is the same wall.
+    float differs = smoothstep(0.2, 0.36, distance(photo.rgb, c));
+    float seen = smoothstep(0.85, 1.0, photo.a);
+    if (vKind > 2.5) differs = 1.0;
+    c = mix(c, photo.rgb, differs * seen);
+    if (vKind < 0.5 && vWorld.y - uFloorY < 0.1) c = uBase;
   } else if (vKind < 1.5) {
-    // The floor: a fine grain.
-    c *= 0.965 + 0.07 * hash(floor(square / 0.025));
+    // The floor: a carpet's grain, as varied as the photographs' carpet.
+    c *= 1.0 + uGrain * (2.0 * hash(floor(square / 0.02)) - 1.0) + 0.5 * uGrain * (2.0 * hash(floor(square / 0.11) + 7.0) - 1.0);
   } else if (vKind < 2.5) {
     // The ceiling: a drop ceiling's grid.
     vec2 g = abs(fract(square / uTile) - 0.5) * uTile;
@@ -314,7 +348,7 @@ void main() { gl_FragColor = vec4(distance(vWorld, uOrigin), 0.0, 0.0, 1.0); }`,
     this.bakeGeometry = this.bakeGeometryOf();
     const add = { blending: CustomBlending, blendEquation: AddEquation, blendSrc: OneFactor, blendDst: OneFactor, blendSrcAlpha: OneFactor, blendDstAlpha: OneFactor };
     this.scoreMaterial = new ShaderMaterial({
-      uniforms: { uDepth: { value: null }, uOrigin: { value: new Vector3() } },
+      uniforms: { uDepth: { value: null }, uOrigin: { value: new Vector3() }, uFloorY: { value: this.plan.floorY }, uCeilY: { value: this.plan.ceilingY } },
       vertexShader: BAKE_VERTEX,
       fragmentShader: `${SCORE}\nvoid main() { gl_FragColor = vec4(score(), 0.0, 0.0, 1.0); }`,
       depthTest: false,
@@ -329,6 +363,8 @@ void main() { gl_FragColor = vec4(distance(vWorld, uOrigin), 0.0, 0.0, 1.0); }`,
       uniforms: {
         uDepth: { value: null },
         uOrigin: { value: new Vector3() },
+        uFloorY: { value: this.plan.floorY },
+        uCeilY: { value: this.plan.ceilingY },
         uPhoto: { value: null },
         uToPano: { value: new Matrix3() },
         uBest: { value: this.best.texture },
@@ -352,6 +388,21 @@ void main() {
       depthWrite: false,
       side: DoubleSide,
       ...add,
+    });
+    this.resolveMaterial = new ShaderMaterial({
+      uniforms: { uAccum: { value: this.accum.texture } },
+      vertexShader: BAKE_VERTEX,
+      fragmentShader: /* glsl */ `
+uniform sampler2D uAccum;
+varying vec2 vAtlas;
+void main() {
+  vec4 a = texture2D(uAccum, vAtlas);
+  gl_FragColor = a.a > 1e-3 ? vec4(a.rgb / a.a, 1.0) : vec4(0.0);
+}`,
+      depthTest: false,
+      depthWrite: false,
+      side: DoubleSide,
+      blending: NoBlending,
     });
     this.bakeMesh = new Mesh(this.bakeGeometry, this.scoreMaterial);
     this.bakeMesh.frustumCulled = false;
@@ -470,29 +521,51 @@ void main() {
       this.surface(qb, d.clone().negate(), up, len, y1 - doorTop, "wall");
       this.surface(qa, d.clone(), n.clone(), len, PLAN.thickM, "wall");
     }
-    // Furniture: the top and four sides of each box.
+    // Furniture. A desk (no higher than a desk) is its top, its two ends and a modesty panel along the
+    // long side nearer a wall; anything higher is a box, its top and four sides. Each face faces out.
+    const panel = 0.025;
+    const nearWall = (p: Vector3) => Math.min(...plan.walls.map((w) => Math.hypot(nearestOn(w, { x: p.x, y: p.z }).x - p.x, nearestOn(w, { x: p.x, y: p.z }).y - p.z)));
     for (const box of plan.furniture) {
       this.piece++;
       const c = box.corners.map((p) => new Vector3(p.x, y0, p.y));
-      const e1 = c[1].clone().sub(c[0]);
-      const e3 = c[3].clone().sub(c[0]);
-      const w = e1.length();
-      const h = e3.length();
       const tall = box.top - y0;
-      const topO = c[0].clone().setY(box.top);
-      // The top faces up.
-      if (new Vector3().crossVectors(e1, e3).y > 0) this.surface(topO, e1, e3, w, h, "furniture");
-      else this.surface(topO, e3, e1, h, w, "furniture");
-      // Sides, round the box; each faces out.
-      const centre = c.reduce((s, p) => s.add(p), new Vector3()).multiplyScalar(0.25);
-      for (let k = 0; k < 4; k++) {
-        const p = c[k];
-        const q = c[(k + 1) % 4];
+      const centre = c.reduce((sum, p) => sum.add(p), new Vector3()).multiplyScalar(0.25);
+      const top = (o: Vector3, e1: Vector3, e3: Vector3, w: number, h: number, y: number) => {
+        const at = o.clone().setY(y);
+        if (new Vector3().crossVectors(e1, e3).y > 0) this.surface(at, e1, e3, w, h, "furniture");
+        else this.surface(at, e3, e1, h, w, "furniture");
+      };
+      /** An upright face from p to q, `bottom` to `height` over the floor, facing away from `inside`. */
+      const side = (p: Vector3, q: Vector3, bottom: number, height: number, inside: Vector3) => {
         const along = q.clone().sub(p);
         const out = new Vector3().crossVectors(along, up);
-        if (out.dot(p.clone().sub(centre)) > 0) this.surface(p.clone(), along, up, along.length(), tall, "furniture");
-        else this.surface(q.clone(), along.clone().negate(), up, along.length(), tall, "furniture");
+        const base = (v: Vector3) => v.clone().setY(y0 + bottom);
+        if (out.dot(p.clone().sub(inside)) > 0) this.surface(base(p), along, up, along.length(), height - bottom, "furniture");
+        else this.surface(base(q), along.clone().negate(), up, along.length(), height - bottom, "furniture");
+      };
+      top(c[0], c[1].clone().sub(c[0]), c[3].clone().sub(c[0]), c[1].distanceTo(c[0]), c[3].distanceTo(c[0]), box.top);
+      if (tall > 1.0) {
+        for (let k = 0; k < 4; k++) side(c[k], c[(k + 1) % 4], 0, tall, centre);
+        continue;
       }
+      // The top's edge, all round.
+      for (let k = 0; k < 4; k++) side(c[k], c[(k + 1) % 4], tall - 0.04, tall, centre);
+      // The long sides and the short ends.
+      const edges = [0, 1, 2, 3].map((k) => ({ p: c[k], q: c[(k + 1) % 4], len: c[k].distanceTo(c[(k + 1) % 4]) }));
+      const long = edges.filter((e) => e.len >= Math.max(...edges.map((x) => x.len)) - 1e-6);
+      const ends = edges.filter((e) => !long.includes(e)).slice(0, 2);
+      const back = [...long].sort((a, b) => nearWall(a.p.clone().add(a.q).multiplyScalar(0.5)) - nearWall(b.p.clone().add(b.q).multiplyScalar(0.5)))[0];
+      const plate = (e: { p: Vector3; q: Vector3 }, bottom: number) => {
+        // A panel set just inside the edge, both faces.
+        const inward = centre.clone().sub(e.p.clone().add(e.q).multiplyScalar(0.5)).setY(0).normalize().multiplyScalar(0.03);
+        const p = e.p.clone().add(inward);
+        const q = e.q.clone().add(inward);
+        const behind = inward.clone().normalize().multiplyScalar(panel);
+        side(p, q, bottom, tall - 0.04, p.clone().add(q).multiplyScalar(0.5).add(behind));
+        side(p.clone().add(behind), q.clone().add(behind), bottom, tall - 0.04, p.clone().add(q).multiplyScalar(0.5));
+      };
+      if (back) plate(back, 0.15);
+      for (const e of ends.length === 2 ? ends : long.filter((e) => e !== back)) plate(e, 0);
     }
   }
 
@@ -508,8 +581,9 @@ void main() {
       let shelf = 0;
       let fits = true;
       for (const s of order) {
-        s.pw = Math.max(1, Math.ceil(s.w / texel));
-        s.ph = Math.max(1, Math.ceil(s.h / texel));
+        const t = s.kind === "floor" || s.kind === "ceiling" ? texel * PHOTO.flatScale : texel;
+        s.pw = Math.max(1, Math.ceil(s.w / t));
+        s.ph = Math.max(1, Math.ceil(s.h / t));
         const bw = s.pw + 2 * g;
         const bh = s.ph + 2 * g;
         if (bw > px) {
@@ -545,12 +619,21 @@ void main() {
     const positions: number[] = [];
     const normals: number[] = [];
     const kinds: number[] = [];
+    const uvs: number[] = [];
+    const px = PHOTO.atlasPx;
     const KIND: Record<Surface["kind"], number> = { wall: 0, floor: 1, ceiling: 2, furniture: 3 };
-    const quad = (corners: Vector3[], n: Vector3, kind: number) => {
+    const quad = (corners: Vector3[], n: Vector3, kind: number, patch?: Surface) => {
+      const at: [number, number][] = [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+        [0, 1],
+      ];
       for (const k of [0, 1, 2, 0, 2, 3]) {
         positions.push(corners[k].x, corners[k].y, corners[k].z);
         normals.push(n.x, n.y, n.z);
         kinds.push(kind);
+        uvs.push(patch ? (patch.x + at[k][0] * patch.pw) / px : 0, patch ? (patch.y + at[k][1] * patch.ph) / px : 0);
       }
     };
     for (const s of this.surfaces) {
@@ -562,7 +645,7 @@ void main() {
         s.o.clone().addScaledVector(s.v, s.h),
       ];
       if (s.kind === "floor") corners.forEach((c) => (c.y -= 0.02));
-      quad(corners, s.n, KIND[s.kind]);
+      quad(corners, s.n, KIND[s.kind], s);
     }
     const { floor, floorY } = this.plan;
     const up = new Vector3(0, 1, 0);
@@ -612,6 +695,7 @@ void main() {
     geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
     geometry.setAttribute("normal", new BufferAttribute(new Float32Array(normals), 3));
     geometry.setAttribute("kind", new BufferAttribute(new Float32Array(kinds), 1));
+    geometry.setAttribute("uv", new BufferAttribute(new Float32Array(uvs), 2));
     const colours = new Float32Array(positions.length);
     for (let v = 0; v < kinds.length; v++) {
       const kind = (["wall", "floor", "ceiling", "furniture"] as const)[kinds[v]];
@@ -830,12 +914,44 @@ void main() {
 
   /** Each surface's colour: the median of what its well-seen texels saw, gathered by room. */
   private finish(renderer: WebGLRenderer): void {
-    const px = PHOTO.atlasPx;
+    const full = PHOTO.atlasPx;
+    // The atlas averaged down by `k` each way, what was seen only: enough to ask a surface its colour.
+    const k = 4;
+    const px = full / k;
+    const down = new WebGLRenderTarget(px, px, { type: HalfFloatType, format: RGBAFormat, minFilter: NearestFilter, magFilter: NearestFilter, depthBuffer: false });
+    const average = new ShaderMaterial({
+      uniforms: { uAccum: { value: this.accum.texture } },
+      vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+      fragmentShader: /* glsl */ `
+uniform sampler2D uAccum;
+varying vec2 vUv;
+void main() {
+  vec4 sum = vec4(0.0);
+  ivec2 base = ivec2(floor(vUv * ${px.toFixed(1)})) * ${k};
+  for (int y = 0; y < ${k}; y++) {
+    for (int x = 0; x < ${k}; x++) {
+      vec4 a = texelFetch(uAccum, base + ivec2(x, y), 0);
+      if (a.a > 1e-3) sum += vec4(a.rgb / a.a, 1.0);
+    }
+  }
+  gl_FragColor = sum.a > 0.0 ? vec4(sum.rgb / sum.a, sum.a) : vec4(0.0);
+}`,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const quad = new Mesh(new BufferGeometry(), average);
+    quad.geometry.setAttribute("position", new BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
+    quad.geometry.setAttribute("uv", new BufferAttribute(new Float32Array([0, 0, 2, 0, 0, 2]), 2));
+    quad.frustumCulled = false;
+    const scene = new Scene();
+    scene.add(quad);
+    renderer.setRenderTarget(down);
+    renderer.render(scene, this.orthographic);
     const accum = new Uint16Array(px * px * 4);
-    renderer.readRenderTargetPixels(this.accum, 0, 0, px, px, accum);
-    const bestRaw = new Uint16Array(px * px * (this.best.texture.format === RedFormat ? 1 : 4));
-    renderer.readRenderTargetPixels(this.best, 0, 0, px, px, bestRaw);
-    const stride = bestRaw.length / (px * px);
+    renderer.readRenderTargetPixels(down, 0, 0, px, px, accum);
+    down.dispose();
+    average.dispose();
+    quad.geometry.dispose();
     const half = DataUtils.fromHalfFloat;
     type Rgb = [number, number, number];
     const wallsBy = new Map<string, Rgb[]>();
@@ -843,6 +959,7 @@ void main() {
     const ceiling: Rgb[] = [];
     const base: Rgb[] = [];
     const pieces = new Map<number, Rgb[]>();
+    const ownWall = new Map<number, Rgb[]>();
     const allWalls: Rgb[] = [];
     const allFloors: Rgb[] = [];
     const allPieces: Rgb[] = [];
@@ -854,26 +971,27 @@ void main() {
     const wallRoom = this.surfaces.map((s) =>
       s.kind === "wall" ? this.roomOf({ x: s.o.x + s.u.x * s.w * 0.5 + s.n.x * 0.4, y: s.o.z + s.u.z * s.w * 0.5 + s.n.z * 0.4 }) : "",
     );
+    const grains: number[] = [];
     this.surfaces.forEach((s, si) => {
-      for (let y = s.y; y < s.y + s.ph; y++) {
-        for (let x = s.x; x < s.x + s.pw; x++) {
-          const k = y * px + x;
-          const w = half(accum[k * 4 + 3]);
-          if (w <= 1e-3) continue;
-          if (half(bestRaw[k * stride]) - 50 < PHOTO.wellSeen) continue;
-          const c: Rgb = [half(accum[k * 4]) / w, half(accum[k * 4 + 1]) / w, half(accum[k * 4 + 2]) / w];
-          const a = (x - s.x + 0.5) / s.pw;
-          const b = (y - s.y + 0.5) / s.ph;
+      for (let y = Math.ceil(s.y / k - 0.5); (y + 0.5) * k < s.y + s.ph; y++) {
+        for (let x = Math.ceil(s.x / k - 0.5); (x + 0.5) * k < s.x + s.pw; x++) {
+          const at4 = (y * px + x) * 4;
+          if (half(accum[at4 + 3]) <= 0) continue;
+          const c: Rgb = [half(accum[at4]), half(accum[at4 + 1]), half(accum[at4 + 2])];
+          const a = ((x + 0.5) * k - s.x) / s.pw;
+          const b = ((y + 0.5) * k - s.y) / s.ph;
           if (s.kind === "wall") {
             if (b * s.h < 0.1) base.push(c);
             else if (b * s.h > 0.3) {
               push(wallsBy, wallRoom[si], c);
+              push(ownWall, si, c);
               allWalls.push(c);
             }
           } else if (s.kind === "floor") {
             const at = { x: s.o.x + s.u.x * a * s.w + s.v.x * b * s.h, y: s.o.z + s.u.z * a * s.w + s.v.z * b * s.h };
             push(floorsBy, this.roomOf(at), c);
             allFloors.push(c);
+            grains.push(c[0] + c[1] + c[2]);
           } else if (s.kind === "ceiling") ceiling.push(c);
           else {
             push(pieces, s.piece, c);
@@ -895,7 +1013,7 @@ void main() {
       // By brightness, so the colour is one texel's own and not a mix of three.
       const sorted = [...values].sort((p, q) => p[0] + p[1] + p[2] - (q[0] + q[1] + q[2]));
       // A little over the middle: what the photographs show of a wall in shade is the same wall, lit.
-      return sorted[Math.floor(sorted.length * 0.65)];
+      return sorted[Math.floor(sorted.length * 0.75)];
     };
     const wallAll = median(allWalls, FALLBACK.wall);
     const floorAll = median(allFloors, FALLBACK.floor);
@@ -908,7 +1026,9 @@ void main() {
     this.surfaces.forEach((s, si) => {
       if (s.kind === "floor") return;
       const c =
-        s.kind === "wall" ? median(wallsBy.get(wallRoom[si]), wallAll) : s.kind === "ceiling" ? ceilingColour : median(pieces.get(s.piece), pieceAll);
+        // A wall face its photographs saw well enough takes their colour (so its decals sit on their own paint);
+        // one they barely saw takes its room's walls' colour.
+        s.kind === "wall" ? median((ownWall.get(si)?.length ?? 0) >= 24 ? ownWall.get(si) : wallsBy.get(wallRoom[si]), wallAll) : s.kind === "ceiling" ? ceilingColour : median(pieces.get(s.piece), pieceAll);
       set(si * 6, 6, c);
     });
     for (const run of this.floorRuns) set(run.start, run.count, median(floorsBy.get(run.room), floorAll));
@@ -916,6 +1036,19 @@ void main() {
     colour.needsUpdate = true;
     const b = median(base, [0.24, 0.23, 0.22]);
     (this.drawMaterial.uniforms.uBase.value as Vector3).set(b[0], b[1], b[2]);
+    // The carpet's grain: as much as its colour varies, within reason.
+    if (grains.length > 16) {
+      const mean = grains.reduce((sum, g) => sum + g, 0) / grains.length;
+      const spread = Math.sqrt(grains.reduce((sum, g) => sum + (g - mean) ** 2, 0) / grains.length) / Math.max(mean, 1e-3);
+      this.drawMaterial.uniforms.uGrain.value = Math.min(0.12, Math.max(0.03, spread));
+    }
+    // The decals: every surface's photograph, from its one best panorama.
+    this.bakeMesh.material = this.resolveMaterial;
+    renderer.setRenderTarget(this.atlas);
+    renderer.setClearColor(new Color(0, 0, 0), 0);
+    renderer.clear();
+    renderer.render(this.bakeScene, this.orthographic);
+    this.drawMaterial.uniforms.uHasAtlas.value = 1;
     this.finished = true;
     this.seconds = (performance.now() - this.started) / 1000;
     // What only the asking needed.
@@ -934,6 +1067,8 @@ void main() {
       for (const image of cube.images as ImageBitmap[]) image.close();
     }
     this.ready.clear();
+    this.atlas.dispose();
+    this.resolveMaterial.dispose();
     this.accum.dispose();
     this.best.dispose();
     for (const d of this.depths) d?.dispose();
@@ -951,7 +1086,7 @@ void main() {
  * `faces`, asked of the scan route afresh (the links are good for minutes).
  * The model id goes in the body, so no request log shows it.
  */
-export async function fetchPhotoPanos(modelId: string, floorY: number, faces: "low" | "high" | "2k" = "low"): Promise<PhotoPano[]> {
+export async function fetchPhotoPanos(modelId: string, floorY: number, faces: "low" | "high" | "2k" = "high"): Promise<PhotoPano[]> {
   const response = await fetch("/api/scan-mesh", {
     method: "POST",
     headers: { "content-type": "application/json" },

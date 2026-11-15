@@ -541,6 +541,11 @@ export class ScanView {
     });
   }
 
+  /** The Matterpak's detailed mesh, once in (`status().detail`): what a game asks for the furniture. */
+  get detailMesh(): BufferGeometry | null {
+    return this.detailGeometry;
+  }
+
   /** The bounding-volume tree over the walkable mesh, for the debug recorder's rays. */
   get meshTree(): MeshWorld | null {
     return this.meshWorld;
