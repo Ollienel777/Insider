@@ -267,6 +267,16 @@ describe("the HUD in first person (issue 115): seconds and plain words, not hops
     expect(secondsLeft(run, walked)!).toBeGreaterThan(secondsLeft(run, ran)!);
   });
 
+  it("on a live scan's floor, times node to node in a straight line in the scan's own metres", () => {
+    const floor = { ...placed.level.floor, source: "matterport" } as typeof placed.level.floor;
+    const ran = firstPersonPace(floor, false);
+    // A scan's board is in metres already (its ground's `unitM` is 1), not the fixture floors' plan units.
+    expect(ran.unitM).toBe(1);
+    expect(ran.edge).toBeUndefined();
+    expect(ran.mps).toBe(FP.runMps);
+    expect(firstPersonPace(placed.level.floor, false).unitM).toBe(FP.unitM);
+  });
+
   it("keeps the Details panel in real time: the plan says hold E, no turn count, the end in plain words", () => {
     const run = start();
     const lockStep = (realTime: boolean) => planSteps(placed, run, mission.objective, realTime).map((s) => s.label)[1];

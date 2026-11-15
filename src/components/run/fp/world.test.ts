@@ -133,24 +133,36 @@ describe.each(FLOORS)("the areas of %s", (id) => {
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) grid.push(onFloor(world, at(c, r)) ? regionAt(world, at(c, r)) : null);
 
   it("puts every point of the floor in exactly one node's area, a node it can reach without crossing a wall", () => {
+    // About 100,000 points a floor. An expect for each was nine tenths of this test's time and
+    // took it past 5 s under load (issue 164), so it notes each point that fails and expects none.
     const walls = solids(world, []);
+    const wrong: string[] = [];
+    let checked = 0;
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const p = at(c, r);
         if (!onFloor(world, p)) continue;
+        checked++;
+        const where = () => `${p.x.toFixed(2)},${p.y.toFixed(2)}`;
         const region = grid[r * cols + c];
-        expect(region, `${p.x},${p.y}`).not.toBeNull();
-        const node = world.nodes.get(region!)!;
+        const node = region === null ? undefined : world.nodes.get(region);
+        if (!node) {
+          wrong.push(`${where()} is in ${region === null ? "no area" : `the area of an unknown node ${region}`}`);
+          continue;
+        }
         const room = roomAt(world, p);
         if (room) {
-          expect(node.roomId).toBe(room.id);
-          expect(blocked(walls, p, node), `${p.x},${p.y} → ${node.id}`).toBe(false);
+          if (node.roomId !== room.id) wrong.push(`${where()} is in ${room.id} but in the area of ${node.id}, in ${node.roomId}`);
+          if (blocked(walls, p, node)) wrong.push(`${where()} → ${node.id} crosses a wall`);
         } else {
-          const opening = world.openings.find((o) => p.x >= o.passage.x - 1e-6 && p.x <= o.passage.x + o.passage.w + 1e-6 && p.y >= o.passage.y - 1e-6 && p.y <= o.passage.y + o.passage.h + 1e-6)!;
-          expect([opening.roomA, opening.roomB]).toContain(node.roomId);
+          const opening = world.openings.find((o) => p.x >= o.passage.x - 1e-6 && p.x <= o.passage.x + o.passage.w + 1e-6 && p.y >= o.passage.y - 1e-6 && p.y <= o.passage.y + o.passage.h + 1e-6);
+          if (!opening) wrong.push(`${where()} is on the floor in no room and no doorway`);
+          else if (node.roomId !== opening.roomA && node.roomId !== opening.roomB) wrong.push(`${where()} in the ${opening.roomA}–${opening.roomB} doorway is in the area of ${node.id}, in ${node.roomId}`);
         }
       }
     }
+    expect(checked).toBeGreaterThan(0);
+    expect(wrong.slice(0, 10), `${wrong.length} of ${checked} points`).toEqual([]);
   });
 
   it("gives every node an area that holds the node and is in one piece", () => {
