@@ -6,7 +6,7 @@ import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import type { FloorGraph } from "@/domain";
 import { blocked, distanceTo } from "./motion";
 import { FP } from "./tuning";
-import { buildWorld, edgePath, onFloor, openingBetween, roomAt, solids, type Vec, type World } from "./world";
+import { buildWorld, edgePath, onFloor, openingBetween, regionAt, roomAt, solids, type Vec, type World } from "./world";
 
 const FLOORS = ["F1", "F2", "F3"] as const;
 
@@ -118,6 +118,62 @@ describe.each(FLOORS)("the first-person world of %s", (id) => {
     const byGraph = roomsByGraph(floor, lockable, floor.nodes[0].id);
     expect(byGraph.size).toBeLessThan(floor.rooms.length);
     expect([...roomsReached(world, lockable, start)].sort()).toEqual([...byGraph].sort());
+  });
+});
+
+describe.each(FLOORS)("the areas of %s", (id) => {
+  const world = buildWorld(FIXTURE_FLOORS[id]);
+  const cell = 0.1;
+  const cols = Math.ceil(world.bounds.w / cell) + 1;
+  const rows = Math.ceil(world.bounds.h / cell) + 1;
+  // Points between grid lines, so none sits exactly on a wall's line.
+  const at = (c: number, r: number): Vec => ({ x: world.bounds.x + (c + 0.5) * cell, y: world.bounds.y + (r + 0.5) * cell });
+  /** Every grid point on the floor, with the area it is in. */
+  const grid: (string | null)[] = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) grid.push(onFloor(world, at(c, r)) ? regionAt(world, at(c, r)) : null);
+
+  it("puts every point of the floor in exactly one node's area, a node it can reach without crossing a wall", () => {
+    const walls = solids(world, []);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const p = at(c, r);
+        if (!onFloor(world, p)) continue;
+        const region = grid[r * cols + c];
+        expect(region, `${p.x},${p.y}`).not.toBeNull();
+        const node = world.nodes.get(region!)!;
+        const room = roomAt(world, p);
+        if (room) {
+          expect(node.roomId).toBe(room.id);
+          expect(blocked(walls, p, node), `${p.x},${p.y} → ${node.id}`).toBe(false);
+        } else {
+          const opening = world.openings.find((o) => p.x >= o.passage.x - 1e-6 && p.x <= o.passage.x + o.passage.w + 1e-6 && p.y >= o.passage.y - 1e-6 && p.y <= o.passage.y + o.passage.h + 1e-6)!;
+          expect([opening.roomA, opening.roomB]).toContain(node.roomId);
+        }
+      }
+    }
+  });
+
+  it("gives every node an area that holds the node and is in one piece", () => {
+    for (const node of world.nodes.values()) {
+      expect(regionAt(world, node)).toBe(node.id);
+      const cells = grid.flatMap((region, i) => (region === node.id ? [i] : []));
+      const seen = new Set([cells[0]]);
+      const queue = [cells[0]];
+      while (queue.length > 0) {
+        const i = queue.pop()!;
+        const c = i % cols;
+        const r = (i - c) / cols;
+        for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nc = c + dc;
+          const nr = r + dr;
+          const j = nr * cols + nc;
+          if (nc < 0 || nr < 0 || nc >= cols || nr >= rows || seen.has(j) || grid[j] !== node.id) continue;
+          seen.add(j);
+          queue.push(j);
+        }
+      }
+      expect(seen.size, node.id).toBe(cells.length);
+    }
   });
 });
 

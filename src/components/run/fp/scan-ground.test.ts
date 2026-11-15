@@ -170,7 +170,7 @@ describe("the scan's ground on a made-up building", () => {
   it("puts the door's bar across the doorway, as wide as the gap and a little over, not across the room", () => {
     expect(ground.doors.map((d) => d.doorId)).toEqual(["door:a:b"]);
     const [door] = ground.doors;
-    expect(door).toEqual({ doorId: "door:a:b", ...doorBar(node("a"), node("b"), solid, ground.floorY + SCAN.doorProbeM) });
+    expect(door).toEqual({ doorId: "door:a:b", ...doorBar(node("a"), node("b"), solid, ground.floorY + SCAN.doorProbeM), a: "a", b: "b" });
     expect(distance(door.centre, DOORWAY)).toBeLessThan(0.3);
     const length = distance(door.bar.a, door.bar.b);
     expect(length).toBeGreaterThan(1.0);
@@ -311,6 +311,20 @@ describe("the scan's ground on a made-up building", () => {
     const { pos, last } = walk(ground, { x: 6.5, y: node("d").y }, { x: 1, y: 0 }, 2);
     expect(pos.x).toBeCloseTo(8.5, 3);
     expect(last.vel).toEqual({ x: 1, y: 0 });
+  });
+
+  it("splits the floor into one area per node: the nearest node in view, never through a wall", () => {
+    expect(ground.regionOf(node("a"))).toBe("a");
+    expect(ground.regionOf(node("b"))).toBe("b");
+    // Nearer "a" than "c", in the west room.
+    expect(ground.regionOf({ x: 2.5, y: 3 })).toBe("a");
+    // Just west of the wall, south of the doorway: "b" is nearer, but the wall is between, so it is "a"'s or "c"'s.
+    expect(["a", "c"]).toContain(ground.regionOf({ x: WALL_W - 0.3, y: 2 }));
+    // In the doorway's line of sight: east of the wall it is the east room's.
+    expect(ground.regionOf({ x: WALL_E + 0.4, y: 3.5 })).toBe("b");
+    // Off the floor: no area.
+    expect(ground.regionOf({ x: -1, y: 3.5 })).toBeNull();
+    expect(ground.regionOf({ x: 15, y: 3.5 })).toBeNull();
   });
 
   it("walks an edge as the straight line between its two nodes", () => {

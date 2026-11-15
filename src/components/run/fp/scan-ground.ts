@@ -12,6 +12,10 @@
 //   storey, or too far from every scan position.
 // - `clear` is a ray against the mesh at chest height, and the shut doors.
 // - `path` is the straight line between two sweeps: they saw each other.
+// - A node's area (`regionOf`, issue 136's areas) is the part of the floor
+//   nearer it than any other node in clear view of the point: a scan has no
+//   room rectangles to cut, and the mesh says what is in view, so an area
+//   does not reach through a wall to a node in the next room.
 // - A scan has no door geometry. A door is an edge between two rooms
 //   (`door:<sweepA>:<sweepB>`), so its leaf is a bar across that edge, put
 //   where the way between the two sweeps is narrowest (the doorway) and as
@@ -48,6 +52,8 @@ export const SCAN = Object.freeze({
   leashM: 4,
   /** Within this of a scan position, a hole in the mesh's floor is still floor. */
   holeM: 1.5,
+  /** How many of the nearest nodes an area looks for in view before it takes the nearest. */
+  regionLooks: 6,
   /** The line-of-sight ray's height above the floor: over a desk and a low partition, not a wall. */
   sightM: 1.4,
   /** The height a doorway's width is measured at, over the desks. */
@@ -148,7 +154,7 @@ export function scanGround(floor: FloorGraph, solid: ScanSolid, heights: ScanHei
     const a = nodes.get(edge.a);
     const b = nodes.get(edge.b);
     if (!a || !b) continue;
-    doors.push({ doorId: edge.door.id, ...doorBar(a, b, solid, floorY + SCAN.doorProbeM) });
+    doors.push({ doorId: edge.door.id, ...doorBar(a, b, solid, floorY + SCAN.doorProbeM), a: edge.a, b: edge.b });
   }
   const barDoor = new Map<Seg, string>(doors.map((d) => [d.bar, d.doorId]));
   // Two board edges can cross one doorway, each with its own door. A doorway is shut only while
@@ -190,6 +196,15 @@ export function scanGround(floor: FloorGraph, solid: ScanSolid, heights: ScanHei
     return y;
   };
   const feetAt = (p: Vec): number => floorAt(p) ?? floorY;
+  /** Whether the mesh leaves the line from `p` to `q` clear at chest height. Doors are not walls here. */
+  const inView = (p: Vec, q: Vec): boolean => {
+    const dx = q.x - p.x;
+    const dy = q.y - p.y;
+    const far = Math.hypot(dx, dy);
+    if (far < 1e-6) return true;
+    const hit = solid.hit([p.x, floorY + SCAN.sightM, p.y], [dx / far, 0, dy / far], far);
+    return hit === null || hit >= far - 0.05;
+  };
   /** Whether a body may stand at `p`: near the scan's positions, over the floor or close enough to a position that a hole is still floor. */
   const standable = (p: Vec): boolean => {
     const near = nearestNode(p);
@@ -241,14 +256,13 @@ export function scanGround(floor: FloorGraph, solid: ScanSolid, heights: ScanHei
       const v = stopped ? { x: 0, y: 0 } : deflect(vel, normals);
       return { pos: p, vel: v, pressed };
     },
-    clear(p, q, locked) {
-      if (blocked(shut(locked), p, q)) return false;
-      const dx = q.x - p.x;
-      const dy = q.y - p.y;
-      const far = Math.hypot(dx, dy);
-      if (far < 1e-6) return true;
-      const hit = solid.hit([p.x, floorY + SCAN.sightM, p.y], [dx / far, 0, dy / far], far);
-      return hit === null || hit >= far - 0.05;
+    clear: (p, q, locked) => !blocked(shut(locked), p, q) && inView(p, q),
+    regionOf(pos) {
+      if (!standable(pos)) return null;
+      const byDistance = all.map((n) => ({ n, d: Math.hypot(n.x - pos.x, n.y - pos.y) })).sort((p, q) => p.d - q.d);
+      // The nearest node in view; with none in view (pressed into a corner of the mesh), the nearest.
+      for (const { n } of byDistance.slice(0, SCAN.regionLooks)) if (inView(pos, n)) return n.id;
+      return byDistance[0]?.n.id ?? null;
     },
     path(a, b) {
       const from = nodes.get(a);

@@ -5,11 +5,16 @@
 // the board's page does not carry the renderer. The Run screen imports from
 // here and nowhere else under fp/.
 import dynamic from "next/dynamic";
+import { useEffect, useState } from "react";
 import { Footprints, Grid3x3, type LucideIcon } from "lucide-react";
 import type { FloorGraph } from "@/domain";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import type { ScanHandle } from "./scan-preload";
+import { FP } from "./tuning";
 import type { RunView, RunViewState } from "./view-store";
+
+export type { ScanHandle } from "./scan-preload";
 
 export { useRunView } from "./view-store";
 
@@ -20,21 +25,76 @@ export const FirstPersonView = dynamic(() => import("./first-person-view"), {
 });
 
 /** The status line when first person cannot be drawn and the board comes back. */
+/** First person's turn: short enough that the guards never seem to wait on the player (issue 115). */
+export { FP_TURN_MS as FIRST_PERSON_TURN_MS } from "./tuning";
+
+/** First person's pace, for the HUD to speak in seconds rather than hops and turns (`usePlayHud`). */
+export const FIRST_PERSON_PACE = Object.freeze({ unitM: FP.unitM, runMps: FP.runMps, turnMs: FP.turnMs });
+
+/** The turn the clock plays for first person, which the view supplies: the next pick while E is held, or a wait. */
+export type HeldAction = (run: import("@/engine").RunState) => import("@/engine").Action;
+
 export const FP_UNAVAILABLE = "First person needs WebGL, which this browser isn't giving it. You're on the board.";
 
 /**
  * Whether first person can stand on `floor`: a fixture floor (our own walls,
- * world.ts), or a floor from a live scan whose mesh can be asked for
- * (`scanModelId`, issue 118). A scan with no mesh, or whose mesh doesn't load,
- * sends the view back to the board with a line saying why.
+ * world.ts), or a floor from a live scan whose mesh is loading or in (`scan`,
+ * issue 118). A scan with no mesh, or whose mesh doesn't load, sends the view
+ * back to the board with a line saying why.
  */
-export function firstPersonOffered(floor: FloorGraph, scanModelId?: string | null): boolean {
-  return floor.source === "fixture" || (floor.source === "matterport" && Boolean(scanModelId));
+export function firstPersonOffered(floor: FloorGraph, scan: ScanPreload | null = null): boolean {
+  return floor.source === "fixture" || (floor.source === "matterport" && scan !== null && scan.failed === null);
 }
 
 /** Whether the Run screen shows first person: it was chosen, it can be drawn, and it is offered on this floor. */
-export function firstPersonOn(state: RunViewState, floor: FloorGraph, scanModelId?: string | null): boolean {
-  return state.view === "first-person" && firstPersonOffered(floor, scanModelId);
+export function firstPersonOn(state: RunViewState, floor: FloorGraph, scan: ScanPreload | null = null): boolean {
+  return state.view === "first-person" && firstPersonOffered(floor, scan);
+}
+
+export const SCAN_FAILED = "First person couldn't load this scan's mesh. You're on the board.";
+
+/** A live scan's mesh loading behind the Run screen, for first person (scan-preload.ts). */
+export interface ScanPreload {
+  handle: ScanHandle | null;
+  /** A line for the status bar when the scan can't be walked; null while it loads or once it is in. */
+  failed: string | null;
+  ready: boolean;
+}
+
+const LOADING: ScanPreload = Object.freeze({ handle: null, failed: null, ready: false });
+
+/**
+ * Starts loading the scan for first person as soon as there is a model id,
+ * and keeps it while the Run screen stays open. Null with no model id.
+ */
+export function useScanPreload(modelId: string | null): ScanPreload | null {
+  const [state, setState] = useState<{ modelId: string; preload: ScanPreload } | null>(null);
+  useEffect(() => {
+    if (!modelId) return;
+    let gone = false;
+    let handle: ScanHandle | null = null;
+    const set = (preload: ScanPreload) => {
+      if (!gone) setState({ modelId, preload });
+    };
+    import("./scan-preload")
+      .then(({ openScan }) => {
+        if (gone) return;
+        const opened = openScan(modelId);
+        handle = opened;
+        set({ handle: opened, failed: null, ready: false });
+        void opened.ready.then((ok) => {
+          const message = opened.status().message;
+          set(ok ? { handle: opened, failed: null, ready: true } : { handle: null, failed: message ? `${message} You're on the board.` : SCAN_FAILED, ready: false });
+        });
+      })
+      .catch(() => set({ handle: null, failed: FP_UNAVAILABLE, ready: false }));
+    return () => {
+      gone = true;
+      handle?.dispose();
+    };
+  }, [modelId]);
+  if (!modelId) return null;
+  return state?.modelId === modelId ? state.preload : LOADING;
 }
 
 const VIEWS: readonly { view: RunView; label: string; hint: string; icon: LucideIcon }[] = [
@@ -55,15 +115,15 @@ const VIEWS: readonly { view: RunView; label: string; hint: string; icon: Lucide
 export function ViewSwitch({
   state,
   floor,
-  scanModelId,
+  scan = null,
   className,
 }: {
   state: RunViewState;
   floor: FloorGraph;
-  scanModelId?: string | null;
+  scan?: ScanPreload | null;
   className?: string;
 }) {
-  if (!firstPersonOffered(floor, scanModelId)) return null;
+  if (!firstPersonOffered(floor, scan)) return null;
   return (
     <div
       role="group"

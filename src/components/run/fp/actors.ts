@@ -20,14 +20,17 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
+  Object3D,
   OctahedronGeometry,
+  Quaternion,
+  RingGeometry,
   SphereGeometry,
   type Material,
 } from "three";
 import type { RunState } from "@/engine";
-import { choices } from "../board";
 import type { Ground, Vec } from "./ground";
 import type { Palette } from "./palette";
+import { CrossFade } from "./fade";
 import { sightOf, watchedNodes } from "./sight";
 import { FP } from "./tuning";
 
@@ -84,6 +87,11 @@ class Flat {
     this.positions.push(a.x + nx, y, a.y + ny, b.x + nx, y, b.y + ny, b.x - nx, y, b.y - ny, a.x + nx, y, a.y + ny, b.x - nx, y, b.y - ny, a.x - nx, y, a.y - ny);
   }
 
+  /** What it holds, as a string: the same shapes give the same key. */
+  key(): string {
+    return this.positions.map((p) => p.toFixed(3)).join(",");
+  }
+
   geometry(): BufferGeometry {
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", new Float32BufferAttribute(this.positions, 3));
@@ -98,7 +106,26 @@ interface Pawn {
   group: Group;
   nodeId: string;
   at: Vec;
-  glide: { path: Vec[]; length: number; from: number; ms: number } | null;
+  glide: { path: Vec[]; length: number; from: number; ms: number; leg: number } | null;
+}
+
+/** A camera's aim, turning from where it looked to where it looks this turn. */
+interface Aim {
+  holder: Group;
+  from: Quaternion;
+  to: Quaternion;
+  at: number;
+}
+
+/** The ring on a door's faces that fills as it is picked. */
+interface PickRing {
+  fill: Mesh[];
+  /** The fill drawn now and the fill it is heading for, as fractions of a whole lock. */
+  shown: number;
+  target: number;
+  /** The fill the ring's geometry was last built for. */
+  drawn: number;
+  visible: boolean;
 }
 
 interface Leaf {
@@ -118,8 +145,16 @@ export class Actors {
   private readonly pawns = new Map<string, Pawn>();
   private readonly pawnKind = new Map<string, "guard" | "cleaner">();
   private readonly leaves = new Map<string, Leaf>();
+  private readonly aims = new Map<string, Aim>();
+  private readonly rings = new Map<string, PickRing>();
+  private readonly areas = new Group();
+  private areasBuilt = false;
+  private areasNode: string | null = null;
   private readonly lenses = new Map<string, MeshBasicMaterial>();
   private readonly floor = new Group();
+  /** The watched nodes' markings, cross-faded from one turn to the next. */
+  private readonly floorFade: CrossFade;
+  private floorKey: string | null = null;
   private readonly shared: { geometries: BufferGeometry[]; materials: Material[] } = { geometries: [], materials: [] };
   private readonly objective = new Group();
   private readonly exitMarks: { nodeId: string; material: MeshBasicMaterial }[] = [];
@@ -130,7 +165,8 @@ export class Actors {
   private readonly pawnParts: { base: BufferGeometry; body: BufferGeometry; head: BufferGeometry; visor: BufferGeometry };
   private readonly pawnMaterial: Record<"guard" | "cleaner", MeshLambertMaterial>;
   private readonly visorMaterial: MeshLambertMaterial;
-  private readonly sightMaterial: Record<"calm" | "after" | "tripped" | "next" | "move" | "here", MeshBasicMaterial>;
+  private readonly sightMaterial: Record<"calm" | "after" | "tripped" | "next", MeshBasicMaterial>;
+  private readonly ringFill: MeshBasicMaterial;
 
   constructor(
     private readonly ground: Ground,
@@ -138,6 +174,10 @@ export class Actors {
     private readonly marks: Marks,
     /** Under `prefers-reduced-motion`: pieces move at once, nothing spins. */
     private readonly still: boolean,
+    /** A turn's length in milliseconds: a piece glides over the turns it takes to hop, so it never stops between hops. */
+    private readonly turnMs: number,
+    /** Turns per hop for a guard or cleaner (the engine's tempo). */
+    private readonly tempo: (id: string) => number,
   ) {
     this.group.name = "actors";
     const keep = <T extends BufferGeometry | Material>(thing: T): T => {
@@ -161,11 +201,13 @@ export class Actors {
       calm: keep(flatMaterial(palette.n300, 0.2)),
       after: keep(flatMaterial(palette.n300, 0.12)),
       tripped: keep(flatMaterial(palette.danger, 0.4)),
-      next: keep(flatMaterial(palette.n400, 0.5)),
-      move: keep(flatMaterial(palette.accent, 0.9)),
-      here: keep(flatMaterial(palette.n400, 0.55)),
+      next: keep(flatMaterial(palette.n400, 0.1)),
     };
+    this.ringFill = keep(new MeshBasicMaterial({ color: palette.accent, side: DoubleSide }));
     this.group.add(this.floor);
+    this.floorFade = new CrossFade(this.floor, turnMs, still);
+    this.areas.visible = false;
+    this.group.add(this.areas);
     this.buildDoors(keep);
     this.buildCameras(keep);
     this.buildMarks(keep);
@@ -195,6 +237,23 @@ export class Actors {
         light.position.set(width / 2 - 0.1, 1.22, side * 0.04);
         leaf.add(kick, push, light);
       }
+      // The pick's progress, on both faces at eye height: a dim track, and the fill over it.
+      const track = keep(new RingGeometry(0.11, 0.15, 40));
+      const trackMaterial = keep(new MeshBasicMaterial({ color: this.palette.n700, side: DoubleSide }));
+      const fill: Mesh[] = [];
+      for (const side of [-1, 1]) {
+        const back = new Mesh(track, trackMaterial);
+        back.position.set(0, 1.55, side * 0.036);
+        back.visible = false;
+        const front = new Mesh(new RingGeometry(0.11, 0.15, 40, 1, Math.PI / 2, 0.0001), this.ringFill);
+        front.position.set(0, 1.55, side * 0.04);
+        front.rotation.y = side < 0 ? Math.PI : 0;
+        front.visible = false;
+        back.name = "pick-track";
+        leaf.add(back, front);
+        fill.push(back, front);
+      }
+      this.rings.set(door.doorId, { fill, shown: 0, target: 0, drawn: -1, visible: false });
       leaf.rotation.y = -Math.atan2(dy, dx);
       leaf.position.set(door.centre.x, 0, door.centre.y);
       leaf.visible = false;
@@ -218,6 +277,7 @@ export class Actors {
       lens.position.z = 0.18;
       holder.add(lens);
       holder.lookAt(camera.looksAt.x, 0.6, camera.looksAt.y);
+      this.aims.set(camera.id, { holder, from: holder.quaternion.clone(), to: holder.quaternion.clone(), at: 0 });
       this.lenses.set(camera.id, lensMaterial);
       this.group.add(holder);
     }
@@ -277,16 +337,8 @@ export class Actors {
 
   /** Reads a new run state: who stands where, what is seen, which doors are shut, where the player may go. */
   sync(run: RunState, now: number): void {
-    const newTurn = run.turn !== this.turn;
     const restarted = run.turn < this.turn;
-    // A turn takes as long as the last one did when turns come steadily (the turn clock, a player
-    // on the move); a turn after a pause glides at the default pace.
-    const gap = now - this.turnAt;
-    const ms = this.still ? 0 : gap < 1500 ? clamp(gap, 250, 1100) : FP.glideMs;
-    if (newTurn) {
-      this.turn = run.turn;
-      this.turnAt = now;
-    }
+    this.turn = run.turn;
 
     const walkers = [
       ...run.guards.map((g) => ({ ...g, kind: "guard" as const })),
@@ -297,17 +349,22 @@ export class Actors {
     for (const walker of walkers) {
       const pawn = this.pawn(walker.id, walker.kind, walker.nodeId);
       const to = this.ground.nodes.get(walker.nodeId);
+      // A hop takes as long as the turns between hops, so a patrol is one unbroken walk.
+      const ms = this.still ? 0 : this.turnMs * Math.max(1, this.tempo(walker.id));
       if (to && walker.nodeId !== pawn.nodeId) {
         if (restarted || ms === 0) {
           pawn.at = { x: to.x, y: to.y };
           pawn.glide = null;
         } else {
-          // From where it is now (mid-glide or not), then along the engine's edge, through its door.
+          // From where it is now, on along what is left of its last hop, then along the engine's
+          // edge through its door: never through a wall.
           const way = this.ground.path(pawn.nodeId, walker.nodeId);
-          const path = pawn.glide ? [{ ...pawn.at }, { x: to.x, y: to.y }] : way.length > 1 ? way : [{ ...pawn.at }, { x: to.x, y: to.y }];
+          const rest = pawn.glide ? pawn.glide.path.slice(pawn.glide.leg) : [];
+          const next = way.length > 1 ? way.slice(1) : [{ x: to.x, y: to.y }];
+          const path = [{ ...pawn.at }, ...rest, ...next];
           let length = 0;
           for (let i = 1; i < path.length; i++) length += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
-          pawn.glide = { path, length, from: now, ms };
+          pawn.glide = { path, length, from: now, ms, leg: 1 };
         }
         pawn.nodeId = walker.nodeId;
       }
@@ -322,7 +379,8 @@ export class Actors {
       leaf.shut = shut;
     }
 
-    this.drawFloor(run);
+    this.drawFloor(run, now);
+    if (this.areas.visible) this.drawAreas(run.playerNode);
     this.objective.visible = !run.carrying;
     const exitColour = run.carrying ? this.palette.success : this.palette.n400;
     for (const exit of this.exitMarks) {
@@ -331,20 +389,16 @@ export class Actors {
     }
   }
 
-  /** The floor's markings for this turn: what is watched, and where the player may move. */
-  private drawFloor(run: RunState): void {
-    for (const child of [...this.floor.children]) {
-      (child as Mesh).geometry.dispose();
-      this.floor.remove(child);
-    }
+  /** The floor's markings for this turn: what is watched. The cameras turn to face what they watch. */
+  private drawFloor(run: RunState, now: number): void {
     const at = (id: string) => this.ground.nodes.get(id);
     const sight = sightOf(run, this.ground.unitM);
-    const layers = { calm: new Flat(), after: new Flat(), tripped: new Flat(), next: new Flat(), move: new Flat(), here: new Flat() };
+    const layers = { calm: new Flat(), after: new Flat(), tripped: new Flat(), next: new Flat() };
 
     // Every node the engine would see the player on this turn: a disc the size of the node's own ground.
     for (const [nodeId, seen] of watchedNodes(sight)) {
       const node = at(nodeId);
-      if (node) (seen.tripped ? layers.tripped : layers.calm).disc(node, FP.arriveM, seen.tripped ? 0.016 : 0.012);
+      if (node) (seen.tripped ? layers.tripped : layers.calm).disc(node, FP.watchedM, seen.tripped ? 0.016 : 0.012);
     }
     for (const s of sight) {
       const layer = s.tripped ? layers.tripped : layers.calm;
@@ -358,27 +412,91 @@ export class Actors {
       }
       for (const id of s.next) {
         const node = at(id);
-        if (node) layers.next.ring(node, FP.arriveM - 0.04, FP.arriveM, 0.018);
+        if (node) layers.next.disc(node, FP.watchedM, 0.008);
       }
       const lens = this.lenses.get(s.id);
       if (lens) lens.color.copy(s.nodes.length > 0 ? this.palette.danger : this.palette.n800);
+      const aim = this.aims.get(s.id);
+      const seen = s.nodes.map(at).filter((n) => n !== undefined);
+      if (aim && seen.length > 0) {
+        const x = seen.reduce((sum, n) => sum + n.x, 0) / seen.length;
+        const y = seen.reduce((sum, n) => sum + n.y, 0) / seen.length;
+        const probe = new Object3D();
+        probe.position.copy(aim.holder.position);
+        probe.lookAt(x, 0.6, y);
+        if (!probe.quaternion.equals(aim.to)) {
+          aim.from = aim.holder.quaternion.clone();
+          aim.to = probe.quaternion.clone();
+          aim.at = this.still ? -Infinity : now;
+        }
+      }
     }
 
-    // Where the engine has the player, and the nodes it would let them move to.
-    const here = at(run.playerNode);
-    if (here && run.status === "playing") layers.here.ring(here, 0.16, 0.2, 0.02);
-    for (const choice of choices(run)) {
-      const node = at(choice.nodeId);
-      if (!node || choice.kind !== "move") continue;
-      layers.move.ring(node, FP.arriveM - 0.07, FP.arriveM, 0.024);
-      layers.move.disc(node, 0.07, 0.024, 12);
-    }
-
-    for (const [name, flat] of Object.entries(layers) as [keyof typeof layers, Flat][]) {
+    // In as the last turn's go out, over the turn. A new state that marks the same nodes (the Chief's
+    // orders landing mid-turn) leaves the fade as it is.
+    const entries = Object.entries(layers) as [keyof typeof layers, Flat][];
+    const key = entries.map(([name, flat]) => `${name}:${flat.key()}`).join("|");
+    if (key === this.floorKey) return;
+    this.floorKey = key;
+    const meshes = entries.map(([name, flat]) => {
       const mesh = new Mesh(flat.geometry(), this.sightMaterial[name]);
-      mesh.renderOrder = name === "move" || name === "here" ? 2 : 1;
-      this.floor.add(mesh);
+      mesh.renderOrder = 1;
+      return { mesh, material: this.sightMaterial[name] };
+    });
+    this.floorFade.show(meshes, now);
+  }
+
+  /**
+   * The progress ring on a door being picked (or held at): `done` of `of`
+   * picks, null for none. It fills smoothly to each new pick over a turn.
+   */
+  showPick(pick: { doorId: string; done: number; of: number } | null): void {
+    for (const [doorId, ring] of this.rings) {
+      const on = pick?.doorId === doorId;
+      ring.target = on ? pick.done / Math.max(1, pick.of) : 0;
+      if (!on) ring.shown = 0;
+      if (on !== ring.visible) {
+        ring.visible = on;
+        for (const mesh of ring.fill) mesh.visible = on;
+      }
     }
+  }
+
+  /** Shows or hides the floor's areas, one per node (`Ground.regionOf`): a debug overlay. */
+  showAreas(on: boolean, playerNode: string): void {
+    this.areas.visible = on;
+    if (on) this.drawAreas(playerNode);
+  }
+
+  /** The areas as a grid of tinted cells, the area the engine has the player in picked out in the accent. */
+  private drawAreas(playerNode: string): void {
+    if (this.areasBuilt && this.areasNode === playerNode) return;
+    for (const child of [...this.areas.children]) {
+      (child as Mesh).geometry.dispose();
+      ((child as Mesh).material as Material).dispose();
+      this.areas.remove(child);
+    }
+    const tints = [this.palette.n200, this.palette.n500, this.palette.success, this.palette.warning, this.palette.n400];
+    const ids = [...this.ground.nodes.keys()];
+    const flats = tints.map(() => new Flat());
+    const mine = new Flat();
+    const xs = [...this.ground.nodes.values()].map((n) => n.x);
+    const ys = [...this.ground.nodes.values()].map((n) => n.y);
+    const cell = 0.3;
+    const [x0, x1, y0, y1] = [Math.min(...xs) - 12, Math.max(...xs) + 12, Math.min(...ys) - 12, Math.max(...ys) + 12];
+    for (let x = x0; x < x1; x += cell) {
+      for (let y = y0; y < y1; y += cell) {
+        const c = { x: x + cell / 2, y: y + cell / 2 };
+        const region = this.ground.regionOf(c);
+        if (region === null) continue;
+        const flat = region === playerNode ? mine : flats[ids.indexOf(region) % tints.length];
+        flat.beam({ x: c.x - cell * 0.45, y: c.y }, { x: c.x + cell * 0.45, y: c.y }, cell * 0.9, 0.006);
+      }
+    }
+    flats.forEach((flat, i) => this.areas.add(new Mesh(flat.geometry(), flatMaterial(tints[i], 0.16))));
+    this.areas.add(new Mesh(mine.geometry(), flatMaterial(this.palette.accent, 0.28)));
+    this.areasBuilt = true;
+    this.areasNode = playerNode;
   }
 
   /** Advances the glides and the doors to `now`. */
@@ -398,6 +516,7 @@ export class Actors {
         if (left <= leg || i === glide.path.length - 1) {
           const f = leg === 0 ? 1 : clamp(left / leg, 0, 1);
           at = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+          glide.leg = i;
           if (leg > 1e-6) pawn.group.rotation.y = -Math.atan2(b.y - a.y, b.x - a.x);
           break;
         }
@@ -412,6 +531,22 @@ export class Actors {
       if (!leaf.shut && leaf.open < 1) leaf.open = Math.min(1, leaf.open + dt / 0.45);
       leaf.mesh.visible = leaf.open < 1;
       leaf.mesh.position.set(leaf.centre.x + leaf.along.x * leaf.width * leaf.open, 0, leaf.centre.y + leaf.along.y * leaf.width * leaf.open);
+    }
+    this.floorFade.update(now);
+    for (const aim of this.aims.values()) {
+      const k = clamp((now - aim.at) / this.turnMs, 0, 1);
+      aim.holder.quaternion.slerpQuaternions(aim.from, aim.to, 1 - (1 - k) * (1 - k));
+    }
+    for (const ring of this.rings.values()) {
+      if (!ring.visible) continue;
+      ring.shown = this.still ? ring.target : ring.shown + (ring.target - ring.shown) * Math.min(1, dt * 6);
+      if (Math.abs(ring.shown - ring.drawn) < 0.002) continue;
+      ring.drawn = ring.shown;
+      for (const mesh of ring.fill) {
+        if (mesh.name === "pick-track") continue;
+        mesh.geometry.dispose();
+        mesh.geometry = new RingGeometry(0.11, 0.15, 40, 1, Math.PI / 2, Math.max(0.0001, ring.shown * Math.PI * 2));
+      }
     }
     if (!this.still) {
       const gem = this.objective.getObjectByName("gem");
@@ -444,7 +579,12 @@ export class Actors {
   }
 
   dispose(): void {
-    for (const child of this.floor.children) (child as Mesh).geometry.dispose();
+    this.floorFade.dispose();
+    for (const ring of this.rings.values()) for (const mesh of ring.fill) if (mesh.name !== "pick-track") mesh.geometry.dispose();
+    for (const child of this.areas.children) {
+      (child as Mesh).geometry.dispose();
+      ((child as Mesh).material as Material).dispose();
+    }
     for (const geometry of this.shared.geometries) geometry.dispose();
     for (const material of this.shared.materials) material.dispose();
     this.group.clear();

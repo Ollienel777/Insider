@@ -8,9 +8,8 @@
 //   mouse     look, once the view is clicked    Esc     release the mouse
 //             (where the browser refuses the lock, hold the button and drag)
 //   ← →       turn without a mouse; ↑ ↓ move forwards and back
-//   E         use: pick a locked door, take the objective
-//   F         wait a turn
-//   Q         held: sprint, two hops in one turn (the board's S)
+//   E         use, held: pick a locked door; take the objective
+//   G         show the floor's areas, one per node (a debug overlay)
 // On the board W waits and S sprints (run-screen.tsx). Those are the Run
 // screen's own listeners on `window`; this one listens in the capture phase
 // and marks each key it takes as handled, which the Run screen already
@@ -21,7 +20,7 @@ import { FP } from "./tuning";
 
 const MOVE = { KeyW: [1, 0], KeyS: [-1, 0], KeyD: [0, 1], KeyA: [0, -1], ArrowUp: [1, 0], ArrowDown: [-1, 0] } as const;
 const TURN = { ArrowLeft: -1, ArrowRight: 1 } as const;
-const TAKEN = new Set<string>([...Object.keys(MOVE), ...Object.keys(TURN), "KeyE", "KeyF", "KeyQ"]);
+const TAKEN = new Set<string>([...Object.keys(MOVE), ...Object.keys(TURN), "KeyE", "KeyG"]);
 
 const typing = (target: EventTarget | null) =>
   (target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable=true], [contenteditable='']") != null;
@@ -34,7 +33,8 @@ export class Controller {
   private readonly down = new Set<string>();
   private shift = false;
   private interact = false;
-  private wait = false;
+  /** The areas overlay is on: G switches it. */
+  areas = false;
   /** Where a drag last was, while the button is held and the mouse is not locked. */
   private drag: [number, number] | null = null;
   private readonly cleanup: (() => void)[] = [];
@@ -111,7 +111,7 @@ export class Controller {
     if (event.repeat) return;
     this.down.add(event.code);
     if (event.code === "KeyE") this.interact = true;
-    if (event.code === "KeyF") this.wait = true;
+    if (event.code === "KeyG") this.areas = !this.areas;
   }
 
   private release(): void {
@@ -141,16 +141,14 @@ export class Controller {
       forward += f;
       strafe += s;
     }
-    const interact = this.interact;
+    const usePressed = this.interact;
     this.interact = false;
-    return { forward: Math.sign(forward), strafe: Math.sign(strafe), walk: this.shift, yaw: this.yaw, interact, sprint: this.down.has("KeyQ") };
+    return { forward: Math.sign(forward), strafe: Math.sign(strafe), walk: this.shift, yaw: this.yaw, use: this.down.has("KeyE"), usePressed };
   }
 
-  /** Whether F was pressed since the last call. */
-  takeWait(): boolean {
-    const wait = this.wait;
-    this.wait = false;
-    return wait;
+  /** Whether E is down now. */
+  get using(): boolean {
+    return this.down.has("KeyE");
   }
 
   dispose(): void {

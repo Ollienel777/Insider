@@ -1,5 +1,8 @@
 // Every number the first-person view is tuned by (issue 115), in one place.
 // Lengths are metres and times seconds unless the name says otherwise.
+/** A first-person turn, in milliseconds: the turn clock's length while first person is on. */
+export const FP_TURN_MS = 700;
+
 export const FP = Object.freeze({
   /** One floor-plan unit in metres: F1's 4-unit corridors come out 2.8 m wide. */
   unitM: 0.7,
@@ -19,14 +22,15 @@ export const FP = Object.freeze({
   /** The movement update's fixed step. */
   stepS: 1 / 120,
 
-  /** Coming this close to a node the engine lets the player move to plays that move. */
-  arriveM: 1.0,
+  /** The radius of the disc drawn on a watched node's ground. */
+  watchedM: 0.9,
   /** How near a locked door or the objective E works from. */
-  reachM: 1.6,
-  /** Leaning on a locked door this long starts picking it. */
-  pushPickS: 0.5,
-  /** One pick, one turn: a held push picks again after this long. */
-  pickEveryS: 0.7,
+  reachM: 1.5,
+  /** How far off a locked door in view is pointed out ("get closer"). */
+  noticeM: 6,
+  turnMs: FP_TURN_MS,
+  /** Crossing into an area this many legal moves away plays them all; further, the player is held back. */
+  maxHops: 3,
   /** An action the engine has not answered after this long is taken as refused. */
   answerS: 0.4,
 
