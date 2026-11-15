@@ -85,7 +85,7 @@ export interface WalkOptions {
   textured?: boolean;
   repair?: "all" | "none" | "shards" | "planes";
   /** What is drawn: the panoramas as spheres (the default), or the mesh. */
-  view?: "spheres" | "mesh" | "photo" | "demo";
+  view?: "spheres" | "mesh" | "photo" | "demo" | "hybrid";
   /** In the photo view: how far the picture follows the eye from its scan position, metres. */
   reach?: number;
   fill?: boolean;

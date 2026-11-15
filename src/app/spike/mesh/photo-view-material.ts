@@ -40,7 +40,7 @@ uniform vec3 uShift;
 /** The mesh's fitted planes near the panorama (normal, offset: normal · p = offset), and how many are set. */
 uniform vec4 uPlanes[${PLANES}];
 uniform int uPlaneCount;
-/** 1: the demo view. Nothing is displaced: the sphere is a plain skybox round the camera, exactly the photograph. */
+/** How flat the sphere is drawn: 1 a plain skybox round the camera, exactly the photograph (the demo view, and the hybrid view at rest); 0 displaced by its depth. */
 uniform float uFlat;
 varying vec3 vDirection;
 /** Where the panorama looks just past this vertex's edge, on its far side: what a stretched triangle is painted with. */
@@ -77,7 +77,7 @@ vec2 ring(vec3 direction, vec3 across, vec3 up, float radius, float own) {
 void main() {
   vec3 direction = normalize(position);
   vDirection = direction;
-  if (uFlat > 0.5) {
+  if (uFlat > 0.999) {
     vBack = direction;
     vConfidence = 1.0;
     gl_Position = projectionMatrix * viewMatrix * vec4(cameraPosition + direction * 10.0, 1.0);
@@ -168,6 +168,8 @@ void main() {
     vConfidence = max(vConfidence, onPlane);
   }
   vec3 world = origin + direction * max(depth, ${PARALLAX_NEAR.toFixed(2)}) + uShift;
+  // Part way flat: toward the same direction from the camera, at the same distance.
+  world = mix(world, cameraPosition + direction * max(depth, ${PARALLAX_NEAR.toFixed(2)}), uFlat);
   gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
 }
 `;
@@ -191,7 +193,7 @@ void main() {
   // A triangle stretched across a jump in depth spans far more of the screen than of the panorama:
   // paint it from the far side of the edge (what the step uncovers), not the edge itself drawn out.
   float stretch = length(fwidth(vDirection)) / uPixel;
-  vec3 direction = uFlat > 0.5 ? vDirection : normalize(mix(vBack, vDirection, smoothstep(0.2, 0.45, stretch)));
+  vec3 direction = normalize(mix(normalize(mix(vBack, vDirection, smoothstep(0.2, 0.45, stretch))), vDirection, uFlat));
   vec3 lookup = uPanoInv[${slot}] * direction;
   float sharp = uPanoSharp[${slot}];
   vec3 colour = sharp >= 1.0 ? textureCube(uPano${slot}, lookup).rgb

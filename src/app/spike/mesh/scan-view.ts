@@ -96,12 +96,15 @@ export interface ScanViewOptions {
    * mesh alone, painted from the panoramas and its textures. "photo" (the
    * default): the nearest panorama alone, warped a little by its depth
    * (photo-view-material.ts), dissolving into the next when it changes.
-   * "demo" (the default): the nearest panorama in sight as a plain skybox,
+   * "hybrid" (the default): walking, the photo view's sheets of the
+   * panorama behind and the one ahead, blended by how far along between
+   * them the eye is; at rest, eased to the exact photograph of the nearest
+   * one in sight. "demo": the nearest panorama in sight as a plain skybox,
    * never displaced, with a zoom toward the walk for the feel of moving
    * forward, dissolving into the next (the street-view walk); the game's
    * own things drawn over it, hidden behind the mesh's walls.
    */
-  view?: "spheres" | "mesh" | "photo" | "demo";
+  view?: "spheres" | "mesh" | "photo" | "demo" | "hybrid";
   /** In the photo view: how far from its scan position the picture follows the eye, metres (photo-view-material.ts's REACH by default). */
   reach?: number;
   /** Vertical field of view, degrees. */
@@ -211,6 +214,11 @@ const DEMO_SHARP_HOLD = 3;
 /** The demo view's zoom: this much narrower a picture for each whole span walked past its panorama, and the span when no next one is found, metres. */
 const DEMO_ZOOM = 0.28;
 const DEMO_SPAN = 1.8;
+/** The hybrid view: its reach, metres; seconds the motion takes to ease in and to ease out; and seconds still before it starts to ease out. */
+const HYBRID_REACH = 0.35;
+const HYBRID_IN = 0.25;
+const HYBRID_OUT = 0.5;
+const HYBRID_LINGER = 0.3;
 /** A patch's picture is this fine, metres a pixel, and at most this many pixels a side. */
 const PATCH_TEXEL = 0.012;
 const PATCH_PIXELS = 256;
@@ -297,6 +305,13 @@ export class ScanView {
   private readonly photoView: boolean;
   /** The demo view (the photo view's machinery, drawn flat): see `ScanViewOptions.view`. */
   private readonly demoView: boolean;
+  /** The hybrid view: the panorama behind and the one ahead (by index; -1 none), the ahead one's weight, and how far the motion has eased in (0 at rest, 1 walking). */
+  private readonly hybridView: boolean;
+  private hybridA = -1;
+  private hybridB = -1;
+  private hybridW = 0;
+  private motion = 0;
+  private stillFor = 1;
   /** The demo view: the last direction walked (x, z, unit), and the mesh again for hiding the game's things behind walls. */
   private travel: [number, number] | null = null;
   private readonly occluderScene = new Scene();
@@ -365,9 +380,10 @@ export class ScanView {
     this.fillMaterial = createPhotoMaterial(this.photo, "stand-in");
     this.fanMaterial = createPhotoMaterial(this.photo, "stand-in", null, 2);
     this.sphereView = options.view === "spheres";
-    this.demoView = options.view === undefined || options.view === "demo";
-    this.photoView = options.view === "photo" || this.demoView;
-    this.reachShown = options.reach ?? REACH;
+    this.demoView = options.view === "demo";
+    this.hybridView = options.view === undefined || options.view === "hybrid";
+    this.photoView = options.view === "photo" || this.demoView || this.hybridView;
+    this.reachShown = options.reach ?? (this.hybridView ? HYBRID_REACH : REACH);
     if (this.photoView) {
       const { directions, index } = cubeSphere(SPHERE_CELLS);
       const sphere = new BufferGeometry();
@@ -447,6 +463,7 @@ export class ScanView {
     const velocity = this.velocity ?? poseVelocity(this.lastPose, this.pose, dt);
     const pace = Math.hypot(velocity[0], velocity[1]);
     if (pace > 0.2) this.travel = [velocity[0] / pace, velocity[1] / pace];
+    this.stillFor = pace > 0.2 ? 0 : this.stillFor + dt;
     this.lastPose = { ...this.pose };
     this.velocity = null;
     this.showTextures(dt);
@@ -487,7 +504,8 @@ export class ScanView {
         uniforms.uSolid.value = front ? this.leadIn : 1;
       });
     }
-    if (this.demoView) this.chooseDemo(dt);
+    if (this.hybridView) this.chooseHybrid(dt);
+    else if (this.demoView) this.chooseDemo(dt);
     else if (this.photoView) this.choosePhoto(dt);
     this.draw(null);
   }
@@ -564,6 +582,112 @@ export class ScanView {
           .map((c) => c.index)
       : [];
     panos.prefer = this.photoLead >= 0 ? [this.photoLead, ...next] : next;
+  }
+
+  /**
+   * The hybrid view's pair: the panorama the eye has come from and the one
+   * it is heading for, both in sight, and how far along between them it is
+   * (0 at the first, 1 at the second), which is the second's weight. On
+   * reaching the second it becomes the first and the next ahead the second:
+   * the weights carry straight on, nothing pops. Walking back swaps them.
+   * At rest the weight eases to whichever of the two is nearer, and the
+   * sheets flatten to the plain photograph (`motion` to 0).
+   */
+  private chooseHybrid(dt: number): void {
+    const panos = this.panos;
+    if (!panos) return;
+    const moving = this.stillFor < HYBRID_LINGER;
+    this.motion = moving ? Math.min(1, this.motion + dt / HYBRID_IN) : Math.max(0, this.motion - dt / HYBRID_OUT);
+    const { x, y, z } = this.pose;
+    const eye: Vec3 = [x, y, z];
+    const travel = this.travel;
+    const find = (index: number) => this.used.find((u) => u.index === index);
+    const reach = (o: Vec3) => Math.hypot(o[0] - x, o[1] - y, o[2] - z);
+    const along = (o: Vec3) => (travel ? (o[0] - x) * travel[0] + (o[2] - z) * travel[1] : 0);
+    const visible = (u: PanoUse) => reach(u.origin) <= 0.3 || !panos.blocked?.(eye, u.origin);
+    const sight = this.used.filter(visible);
+    const nearest = sight.reduce<PanoUse | null>((best, u) => (!best || reach(u.origin) < reach(best.origin) ? u : best), null) ?? this.used[0] ?? null;
+    if (!nearest) return;
+    let a = find(this.hybridA);
+    let b = find(this.hybridB);
+    if (!a || !visible(a)) {
+      a = nearest;
+      b = undefined;
+    }
+    if (b && !visible(b)) b = undefined;
+    if (travel && a && b && along(a.origin) > 0.1 && along(b.origin) < -0.1) [a, b] = [b, a];
+    // Past the one ahead: it becomes the one behind.
+    if (a && b && travel && along(b.origin) <= 0) {
+      a = b;
+      b = undefined;
+    }
+    if (!b && travel && moving) {
+      const ahead = sight
+        .filter((u) => u.index !== a!.index && along(u.origin) > 0.2)
+        .sort((p, q) => reach(p.origin) - reach(q.origin));
+      b = ahead[0];
+    }
+    // At rest, or with nothing ahead: the nearest in sight is the photograph, the other goes.
+    let progress = 0;
+    if (a && b) {
+      const ab = [b.origin[0] - a.origin[0], b.origin[1] - a.origin[1], b.origin[2] - a.origin[2]];
+      const length2 = Math.max(1e-6, ab[0] ** 2 + ab[1] ** 2 + ab[2] ** 2);
+      progress = Math.min(1, Math.max(0, ((x - a.origin[0]) * ab[0] + (y - a.origin[1]) * ab[1] + (z - a.origin[2]) * ab[2]) / length2));
+    }
+    const rest = b && reach(b.origin) < reach(a!.origin) ? 1 : 0;
+    this.hybridA = a?.index ?? -1;
+    this.hybridB = b?.index ?? -1;
+    this.hybridW = b ? rest + (progress - rest) * this.motion : 0;
+    if (!moving && this.motion === 0 && b) {
+      // Settled: keep only the one shown.
+      if (rest === 1) this.hybridA = b.index;
+      this.hybridB = -1;
+      this.hybridW = 0;
+    }
+    this.photoLead = this.hybridA;
+    this.photoFrom = -1;
+    // The two shown first, then the nearest ahead of the second.
+    const positions = this.scanPositions();
+    const next = travel
+      ? positions
+          .map((o, index) => ({ index, along: along(o), reach: Math.hypot(o[0] - x, o[2] - z) }))
+          .filter((c) => c.along > 0.3 && c.index !== this.hybridA && c.index !== this.hybridB)
+          .sort((p, q) => p.reach - q.reach)
+          .slice(0, 2)
+          .map((c) => c.index)
+      : [];
+    panos.prefer = [this.hybridA, this.hybridB, ...next].filter((i) => i >= 0);
+  }
+
+  /** The hybrid view: the panorama behind, and the one ahead over it by its weight; both displaced as far as the motion has eased in. */
+  private drawHybrid(target: WebGLRenderTarget | null): boolean {
+    const slotOf = (index: number) => (index < 0 ? -1 : this.used.findIndex((u) => u.index === index));
+    const a = slotOf(this.hybridA);
+    if (a < 0 || a >= this.photoMeshes.length) return false;
+    const b = slotOf(this.hybridB);
+    const flat = 1 - this.motion * this.motion * (3 - 2 * this.motion);
+    for (const mesh of this.photoMeshes) (mesh.material as ShaderMaterial).uniforms.uFlat.value = flat;
+    const before = this.renderer.getRenderTarget();
+    const w = this.hybridW;
+    if (b >= 0 && b < this.photoMeshes.length && w > 0.995) this.drawPhotoSlot(b, target);
+    else if (b >= 0 && b < this.photoMeshes.length && w > 0.005) {
+      const size = this.renderer.getDrawingBufferSize(new Vector2());
+      if (!this.fadeTarget || this.fadeTarget.width !== size.x || this.fadeTarget.height !== size.y) {
+        this.fadeTarget?.dispose();
+        this.fadeTarget = new WebGLRenderTarget(size.x, size.y, { samples: 4 });
+      }
+      this.drawPhotoSlot(b, this.fadeTarget);
+      this.drawPhotoSlot(a, target);
+      this.fadeMaterial.uniforms.tMap.value = this.fadeTarget.texture;
+      this.fadeMaterial.uniforms.uAlpha.value = w;
+      const clear = this.renderer.autoClear;
+      this.renderer.autoClear = false;
+      this.renderer.render(this.fadeScene, this.fadeCamera);
+      this.renderer.autoClear = clear;
+    } else this.drawPhotoSlot(a, target);
+    this.drawActors(target);
+    this.renderer.setRenderTarget(before);
+    return true;
   }
 
   /**
@@ -695,6 +819,7 @@ export class ScanView {
 
   /** Renders the current view to `target` (null: the screen), filled where no surface covers it. */
   draw(target: WebGLRenderTarget | null): void {
+    if (this.hybridView && this.sphereShown && this.drawHybrid(target)) return;
     if (this.photoView && this.sphereShown && this.drawPhoto(target)) return;
     // In the sphere view every pixel is painted: the far view, the mesh over it, the spheres over that.
     if (this.fill && this.shows === "mesh") {
