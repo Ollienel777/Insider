@@ -203,9 +203,9 @@ export function RunScreen({
     return () => document.body.classList.remove("playing");
   }, []);
 
-  // Full window, for the demo: while a run is being played the game takes the whole window, with no top
-  // bar, no tabs and no folder edge (globals.css). Off until switched on; the tab remembers the choice.
-  // The chrome comes back when the run ends, and the switch brings it back mid-run (the Debrief tab).
+  // Full window, for the demo: the Run screen takes the whole window, with no top bar, no tabs and no
+  // folder edge, and a tighter HUD (globals.css). Off until switched on; the browser remembers the choice.
+  // The end card and the end action still lead to the Debrief; the switch brings the tabs back.
   const [fullWindow, setFullWindow] = useState(false);
   // Read after mount, as the run view is (view-store.ts), so the server's render and the browser's first agree.
   useEffect(() => {
@@ -229,12 +229,11 @@ export function RunScreen({
       return !on;
     });
   }, []);
-  const inPlay = run !== null && run.status === "playing";
   useEffect(() => {
-    if (!inPlay || !fullWindow) return;
+    if (!fullWindow) return;
     document.body.classList.add("run-full");
     return () => document.body.classList.remove("run-full");
-  }, [inPlay, fullWindow]);
+  }, [fullWindow]);
 
   useEffect(() => {
     if (!manifest) return;
@@ -815,7 +814,7 @@ export function RunScreen({
 /** Where the tab remembers the full-window switch; `demo:reset` clears it with every `heist:` key. */
 const FULL_WINDOW_KEY = "heist:run-full-window";
 
-/** Full window on and off: the top bar, the tabs and the folder's edge go while a run is played. */
+/** Full window on and off: the top bar, the tabs and the folder's edge go on the Run screen. */
 function FullWindowToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
     <Button
@@ -829,7 +828,7 @@ function FullWindowToggle({ on, onToggle }: { on: boolean; onToggle: () => void 
       className="max-md:hidden"
     >
       {on ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
-      {on ? "Exit full window" : "Full window"}
+      <span data-full-label>{on ? "Exit full window" : "Full window"}</span>
     </Button>
   );
 }

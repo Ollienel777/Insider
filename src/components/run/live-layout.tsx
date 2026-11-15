@@ -277,7 +277,7 @@ export function RunLayout({
           {/* On a phone the keys' legend is already hidden, and the radio says what the status line would. */}
           {closable("footer", footer, "contents max-md:hidden")}
           {live ? (
-            <div key="radio" className="shrink-0 px-6 pt-2 pb-4 max-md:px-4">
+            <div key="radio" data-radio className="shrink-0 px-6 pt-2 pb-4 max-md:px-4">
               {hud ? (
                 <RadioLine line={onAir(hud, bark)} className="mx-auto max-w-3xl" />
               ) : (
