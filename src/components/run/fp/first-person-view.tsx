@@ -984,9 +984,9 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         },
         memory: () => gpuBytes(view.scene),
         dispose() {
-          handle.canvas.remove();
           pieces.removeFromParent();
           unfill();
+          handle.canvas.remove();
         },
       };
     };
