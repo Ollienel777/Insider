@@ -1,4 +1,4 @@
-# Heist Anywhere
+# Hobbs
 
 **A turn-based stealth game whose levels an AI agent builds from a building's
 data: CoStar's record sets the security era, the guard force and the quiet
@@ -271,8 +271,8 @@ mapped from the kit's field documentation and unit-tested on a fictional kit.
 You need Node 22.12 or later. No keys, no `.env.local`, no database.
 
 ```sh
-git clone https://github.com/Ollienel777/heist-anywhere.git
-cd heist-anywhere
+git clone https://github.com/Ollienel777/Insider.git
+cd Insider
 npm ci
 npm run dev
 ```
