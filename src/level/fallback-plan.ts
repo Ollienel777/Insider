@@ -77,6 +77,23 @@ export function fallbackPlan(placed: PlacedLevel): CrewPlan {
     { zoneId: exit.entryId, action: `Out by the ${way(exit)}` },
   ];
 
+  /**
+   * With nothing in the way, who the plan stays clear of: a guard whose round crosses its path, or
+   * a camera that covers it, else the board's cameras and guards by name (issue 140: the pushback
+   * names a camera or guard).
+   */
+  const clearOf = (steps: Step[]): string => {
+    const path = new Set(validatePlan(placed, { steps, pushback: "", confidence: 0 }).path);
+    const guard = placed.guards.find((g) => g.patrol.some((n) => path.has(n)));
+    if (guard) return `${guard.id}'s round crosses it, but never while we're on it.`;
+    const camera = placed.cameras.find((c) => c.cover.some((n) => path.has(n)));
+    if (camera) return `${camera.id} covers it, but it's looking away when we pass.`;
+    const ids = [...placed.cameras.map((c) => c.id), ...placed.guards.map((g) => g.id)].slice(0, 3);
+    if (ids.length === 0) return "There's no camera or guard on this floor.";
+    const named = ids.length === 1 ? ids[0] : `${ids.slice(0, -1).join(", ")} and ${ids.at(-1)}`;
+    return `${named} never get${ids.length === 1 ? "s" : ""} eyes on it.`;
+  };
+
   // The shapes, fewest waits first; the first the board plays clean is the plan.
   let best: Step[] | null = null;
   if (advice) {
@@ -113,7 +130,7 @@ export function fallbackPlan(placed: PlacedLevel): CrewPlan {
       ? `${ours(hurried.text)} The waits in this plan let ${hurried.by} look away: hold where it says, then move.`
       : straight?.by && stop
         ? `${ours(straight.text)} Going through ${zoneLabel(placed, stop.zoneId)} keeps us out of ${straight.by}'s way.`
-        : `Nothing sees this way if we keep moving: in by the ${way(start)}, out by the ${way(exit)}.`;
+        : `Nothing sees this way if we keep moving: in by the ${way(start)}, out by the ${way(exit)}. ${clearOf(best)}`;
     return { steps: best, pushback, confidence: SURE_CLEAN };
   }
 

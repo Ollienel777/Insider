@@ -4,6 +4,8 @@
 import type { CrewAnswer } from "@/agents/crew/crew";
 import { CrewPlan } from "@/domain";
 import { noteResponse } from "@/lib/demo-status";
+import { fallbackPlan } from "@/level/fallback-plan";
+import type { PlacedLevel } from "@/level/placer";
 
 export interface CrewRequest {
   buildingId: string;
@@ -27,7 +29,15 @@ export const EXAMPLE_ORDER = "Go in through the dock, wait for the 2 am round to
  */
 export class NoCrewReplyError extends Error {
   override name = "NoCrewReplyError";
+  /** Why the model gave no reply: off ("fake mode", "configuration"), "timeout" or "error". */
+  readonly reason?: CrewAnswer["reason"];
+  constructor(message: string, reason?: CrewAnswer["reason"]) {
+    super(message);
+    if (reason) this.reason = reason;
+  }
 }
+
+const REASONS = new Set<string>(["fake mode", "configuration", "timeout", "error"]);
 
 /** Asks the crew; throws with the server's message on a failure (`NoCrewReplyError` when there is no reply to give). */
 export async function askCrew(
@@ -43,7 +53,12 @@ export async function askCrew(
   });
   const body = (await response.json().catch(() => null)) as (Partial<CrewAnswer> & { error?: string; code?: string }) | null;
   // Only the crew route's own "no recording" answer: a 503 from a proxy or the host is an outage, shown as one.
-  if (response.status === 503 && body?.code === "no-recording") throw new NoCrewReplyError(body.error ?? "the crew has no reply for this building");
+  if (response.status === 503 && body?.code === "no-recording") {
+    // A live call that timed out or failed carries the model's fallback: the demo status toasts it, as on a fixture building.
+    noteResponse(body);
+    const reason = typeof body.reason === "string" && REASONS.has(body.reason) ? body.reason : undefined;
+    throw new NoCrewReplyError(body.error ?? "the crew has no reply for this building", reason);
+  }
   if (!response.ok || !body) throw new Error(body?.error ?? `the crew didn't answer (HTTP ${response.status})`);
   noteResponse(body);
   return {
@@ -52,4 +67,22 @@ export async function askCrew(
     ...(body.reason && { reason: body.reason }),
     ...(body.recording && { recording: body.recording }),
   };
+}
+
+/**
+ * Asks the crew, and when it has no reply to give (no model answer and no recording: a kit
+ * building, issue 140) works the plan out from the board instead, marked `source: "board"` with
+ * the reason the model gave none. Without a placed board, or on any other failure, it throws.
+ */
+export async function askCrewOrBoard(
+  request: CrewRequest,
+  placed: PlacedLevel | null,
+  options: { signal?: AbortSignal; fetch?: typeof fetch } = {},
+): Promise<CrewAnswer> {
+  try {
+    return await askCrew(request, options);
+  } catch (error) {
+    if (!(error instanceof NoCrewReplyError) || !placed) throw error;
+    return { plan: fallbackPlan(placed), recorded: false, source: "board", ...(error.reason && { reason: error.reason }) };
+  }
 }

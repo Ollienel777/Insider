@@ -2,7 +2,7 @@
 // places it: the request the browser sends, the crew's reply, and the ghost
 // path on the board.
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { BoardView } from "@/components/run/board-view";
 import { RUN_SEED } from "@/components/run/run-screen";
@@ -13,8 +13,9 @@ import { validatePlan } from "@/level/validate-plan";
 import cached from "../../../data/levels/F1.romaine-1974.json";
 import recording from "../../../fixtures/llm/crew-F1.json";
 import { fallbackPlan } from "@/level/fallback-plan";
-import { askCrew, crewRequest, EXAMPLE_ORDER, NoCrewReplyError, type CrewAnswer } from "./crew-request";
-import { CrewReply, ghostOf } from "./crew-reply";
+import { getStatus, resetStatus } from "@/lib/demo-status";
+import { askCrew, askCrewOrBoard, crewRequest, EXAMPLE_ORDER, NoCrewReplyError, type CrewAnswer } from "./crew-request";
+import { boardPlanTitle, CrewReply, ghostOf } from "./crew-reply";
 import { PlanScreen } from "./plan-screen";
 
 const manifest = LevelManifest.parse(structuredClone(cached));
@@ -64,15 +65,63 @@ describe("the crew request", () => {
   });
 });
 
+describe("the Plan screen's brief on a building with no recording (issue 140)", () => {
+  afterEach(() => resetStatus());
+  const noRecording = (reason?: string) =>
+    (async () =>
+      Response.json(
+        {
+          error: 'no recorded crew replies for "247386"',
+          code: "no-recording",
+          ...(reason && { reason }),
+          ...(reason === "timeout" && { fallback: { service: "llm", id: "llm-test-1", message: "The model didn't answer in time, so a recorded reply stands in." } }),
+        },
+        { status: 503 },
+      )) as unknown as typeof fetch;
+
+  it("works the plan out from the board, marked with why the model gave none, and the demo status hears of the timeout", async () => {
+    const answer = await askCrewOrBoard(crewRequest("247386", "Go in quietly"), placed, { fetch: noRecording("timeout") });
+    expect(answer).toEqual({ plan: fallbackPlan(placed), recorded: false, source: "board", reason: "timeout" });
+    expect(getStatus().toasts.map((t) => t.id)).toEqual(["llm-test-1"]);
+    expect(getStatus().fellBack.has("llm")).toBe(true);
+  });
+
+  it("with the model off, the board plan says so and nothing is toasted", async () => {
+    const answer = await askCrewOrBoard(crewRequest("247386", "Go"), placed, { fetch: noRecording("fake mode") });
+    expect(answer).toMatchObject({ source: "board", reason: "fake mode" });
+    expect(getStatus().toasts).toEqual([]);
+  });
+
+  it("passes a reply through, and throws on an outage or with no board to work on", async () => {
+    const reply = (async () => Response.json(recorded("dock-wait"))) as unknown as typeof fetch;
+    expect(await askCrewOrBoard(crewRequest("F1", "Go"), placed, { fetch: reply })).toEqual(recorded("dock-wait"));
+    const proxy = (async () => new Response("Service Unavailable", { status: 503 })) as unknown as typeof fetch;
+    await expect(askCrewOrBoard(crewRequest("247386", "Go"), placed, { fetch: proxy })).rejects.not.toBeInstanceOf(NoCrewReplyError);
+    await expect(askCrewOrBoard(crewRequest("247386", "Go"), null, { fetch: noRecording("timeout") })).rejects.toBeInstanceOf(NoCrewReplyError);
+  });
+});
+
 describe("CrewReply", () => {
   it("labels a plan worked out on the board, and not as recorded (issue 140)", () => {
     const board = fallbackPlan(placed);
-    const html = renderToStaticMarkup(<CrewReply answer={{ plan: board, recorded: false, fallback: "board" }} checked={validatePlan(placed, board)} />);
+    const html = renderToStaticMarkup(<CrewReply answer={{ plan: board, recorded: false, source: "board" }} checked={validatePlan(placed, board)} />);
     expect(html).toContain('data-testid="board-plan-chip"');
     expect(html).toContain("Worked out on the board");
-    expect(html).toContain("No model was called.");
     expect(html).not.toContain('data-testid="recorded-chip"');
     expect(html.match(/data-testid="crew-step"/g)).toHaveLength(3);
+  });
+
+  it("says on the board chip why the model gave no reply: only with the model off was none called", () => {
+    const board = fallbackPlan(placed);
+    const chip = (reason?: CrewAnswer["reason"]) =>
+      renderToStaticMarkup(<CrewReply answer={{ plan: board, recorded: false, source: "board", ...(reason && { reason }) }} checked={validatePlan(placed, board)} />);
+    expect(chip("timeout")).toContain("The model didn&#x27;t answer within the time limit.");
+    expect(chip("timeout")).not.toContain("No model was called");
+    expect(chip("error")).toContain("The model call failed.");
+    expect(chip("fake mode")).toContain("Fake mode: no model was called.");
+    for (const reason of [undefined, "timeout", "error", "fake mode", "configuration"] as const) {
+      expect(boardPlanTitle(reason)).toContain("no recorded crew reply to stand in");
+    }
   });
 
   it("shows the demo reply's numbered steps, the recorded chip, the C2 warning and both advised waits", () => {

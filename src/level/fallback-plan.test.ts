@@ -104,3 +104,31 @@ describe("the fallback plan on an open-plan scan with no quiet route", () => {
     expect(plan.confidence).toBe(0.3);
   });
 });
+
+describe("the fallback plan on a floor where nothing is in the way", () => {
+  // F1 with every camera blind and no guard or cleaner: the straight way is clean, and the pushback
+  // still names a camera (issue 140), the ones that never see it.
+  const base = placeLevel(LevelManifest.parse(structuredClone(f1)), structuredClone(FIXTURE_FLOORS.F1), 1);
+  const at = (cameras: typeof base.cameras) => ({
+    ...base,
+    guards: [],
+    cleaners: [],
+    cameras,
+    level: { ...base.level, guards: [], cleaners: [], cameras: cameras.map(({ id, kind, cover, phase }) => ({ id, kind, cover, phase })) },
+  });
+  // Each camera watches one node the plan never stands on.
+  const unwatched = at([]);
+  const route = new Set(validatePlan(unwatched, fallbackPlan(unwatched)).path);
+  const away = base.level.floor.nodes.map((n) => n.id).find((id) => !route.has(id))!;
+  const blind = base.cameras.map((c) => ({ ...c, cover: [away] }));
+  const placed = at(blind);
+  const plan = fallbackPlan(placed);
+
+  it("goes straight through, clean, and names the cameras it stays clear of", () => {
+    expect(validatePlan(placed, plan).outcome).toBe("clean");
+    expect(plan.steps).toHaveLength(3);
+    expect(plan.pushback).toMatch(/^Nothing sees this way if we keep moving/);
+    expect(plan.pushback).toContain(`${blind[0].id}`);
+    expect(plan.pushback).toMatch(/never get eyes on it\.$/);
+  });
+});

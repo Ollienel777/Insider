@@ -5,7 +5,7 @@
 // server never sees the floor.
 import { readLevel } from "@/agents/builder/live-levels";
 import { defaultMissionId } from "@/agents/builder/missions";
-import { structuredCall, type StructuredCallOptions } from "@/adapters/llm";
+import { structuredCall, type StandInReason, type StructuredCallOptions } from "@/adapters/llm";
 import { CrewPlan } from "@/domain";
 import { crewContext, crewMessages, ORDER_MAX } from "./prompt";
 import { loadCrewRecording, NoRecordingError, routeOrder } from "./recorded";
@@ -19,9 +19,10 @@ export interface CrewAnswer {
   recording?: string;
   /**
    * Set in the browser when no reply came and the plan was worked out from the board instead
-   * (issue 140, `fallbackPlan`): no model was called and nothing was recorded.
+   * (issue 140, `fallbackPlan`); `reason` then says why the model gave none. Not the wire's
+   * `fallback` field, which is the demo status's toast.
    */
-  fallback?: "board";
+  source?: "board";
 }
 
 /** An order the crew will not read. */
@@ -49,9 +50,9 @@ export async function briefCrew(buildingId: string, order: string, options: Brie
   if (!cached) return null;
 
   let recording: string | undefined;
-  const fake = async () => {
+  const fake = async (reason: StandInReason) => {
     const file = await loadCrewRecording(buildingId, options.fixturesDir);
-    if (!file) throw new NoRecordingError(`no recorded crew replies for "${buildingId}"`);
+    if (!file) throw new NoRecordingError(`no recorded crew replies for "${buildingId}"`, reason);
     const reply = routeOrder(file, text);
     recording = reply.id;
     return reply.plan;

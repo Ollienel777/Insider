@@ -22,9 +22,12 @@ export interface StructuredAnswer<T> {
   reason?: "fake mode" | "configuration" | "timeout" | "error";
 }
 
+/** Why the recorded answer was asked for. */
+export type StandInReason = NonNullable<StructuredAnswer<unknown>["reason"]>;
+
 export interface StructuredCallOptions<T> {
-  /** The recorded answer, or a function that returns it. */
-  fake: T | (() => T | Promise<T>);
+  /** The recorded answer, or a function that returns it; the function is told why it is asked. */
+  fake: T | ((reason: StandInReason) => T | Promise<T>);
   /** Defaults to `LLM_TIMEOUT_MS`, then 4000. */
   timeoutMs?: number;
   /** The tool or schema name the model sees. */
@@ -36,8 +39,8 @@ export interface StructuredCallOptions<T> {
 
 class TimeoutError extends Error {}
 
-async function recorded<T>(schema: z.ZodType<T>, fake: StructuredCallOptions<T>["fake"]): Promise<T> {
-  const value = typeof fake === "function" ? await (fake as () => T | Promise<T>)() : fake;
+async function recorded<T>(schema: z.ZodType<T>, fake: StructuredCallOptions<T>["fake"], reason: StandInReason): Promise<T> {
+  const value = typeof fake === "function" ? await (fake as (reason: StandInReason) => T | Promise<T>)(reason) : fake;
   // A recording that no longer fits the schema is a bug, not a fallback.
   return schema.parse(value);
 }
@@ -57,10 +60,10 @@ export async function structuredCall<T>(
     // A setting that refuses every live call: no model is called, and the recording answers.
     if (!(error instanceof LlmConfigurationError)) throw error;
     console.warn(`structuredCall(${name}): no model was called; the recorded answer stands in (configuration: ${error.message})`);
-    return { value: await recorded(schema, options.fake), recorded: true, reason: "configuration" };
+    return { value: await recorded(schema, options.fake, "configuration"), recorded: true, reason: "configuration" };
   }
   if (selection.mode === "fake") {
-    return { value: await recorded(schema, options.fake), recorded: true, reason: "fake mode" };
+    return { value: await recorded(schema, options.fake, "fake mode"), recorded: true, reason: "fake mode" };
   }
 
   // Anthropic's native structured output works on every current model; the
@@ -83,7 +86,7 @@ export async function structuredCall<T>(
   } catch (error) {
     const reason = error instanceof TimeoutError ? "timeout" : "error";
     console.warn(`structuredCall(${name}): the recorded answer stands in (${reason}: ${safeErrorMessage(error)})`);
-    return { value: await recorded(schema, options.fake), recorded: true, reason };
+    return { value: await recorded(schema, options.fake, reason), recorded: true, reason };
   } finally {
     clearTimeout(timer);
   }

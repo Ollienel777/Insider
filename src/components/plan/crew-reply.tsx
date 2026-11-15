@@ -22,6 +22,20 @@ const REASON: Record<NonNullable<CrewAnswer["reason"]>, string> = {
   error: "The model call failed, so a recorded crew reply stands in.",
 };
 
+/** Why the plan was worked out on the board: the model gave no reply, and this building has no recording to stand in. */
+const NO_RECORDING = "This building has no recorded crew reply to stand in, so this plan was worked out from the board itself.";
+const BOARD_REASON: Record<NonNullable<CrewAnswer["reason"]>, string> = {
+  "fake mode": `Fake mode: no model was called. ${NO_RECORDING}`,
+  configuration: `No model was called: a setting refuses live calls. ${NO_RECORDING}`,
+  timeout: `The model didn't answer within the time limit. ${NO_RECORDING}`,
+  error: `The model call failed. ${NO_RECORDING}`,
+};
+
+/** The "Worked out on the board" chip's tooltip, for the reason the model gave no reply. */
+export function boardPlanTitle(reason: CrewAnswer["reason"]): string {
+  return reason ? BOARD_REASON[reason] : `The crew gave no reply. ${NO_RECORDING}`;
+}
+
 /**
  * The crew's answer in the Plan panel (DESIGN.md, Plan): the numbered steps,
  * any step dropped because its zone is not on the board, the warning the
@@ -44,10 +58,10 @@ export function CrewReply({ answer, checked }: { answer: CrewAnswer; checked: Ch
           >
             Recorded
           </span>
-        ) : answer.fallback === "board" ? (
+        ) : answer.source === "board" ? (
           <span
             data-testid="board-plan-chip"
-            title="The crew had no reply for this building, and no recorded reply to stand in, so this plan was worked out from the board itself. No model was called."
+            title={boardPlanTitle(answer.reason)}
             className="rounded-sm border border-border px-1.5 py-0.5 label-caps text-text-2"
           >
             Worked out on the board

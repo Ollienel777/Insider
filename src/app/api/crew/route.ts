@@ -34,7 +34,11 @@ export async function POST(request: Request): Promise<Response> {
     if (error instanceof CrewRequestError) return Response.json({ error: error.message }, { status: 400 });
     // `code` tells the Plan screen this 503 means "no reply and no recording", so it may work a plan
     // out from the board (issue 140); a 503 from anywhere else stays an error.
-    if (error instanceof NoRecordingError) return Response.json({ error: error.message, code: "no-recording" }, { status: 503 });
+    // A live call that timed out or failed carries the model's fallback, so the demo status says so as on a fixture building.
+    if (error instanceof NoRecordingError) {
+      const reason = error.reason;
+      return Response.json({ ...withLlmFallback({ reason }), error: error.message, code: "no-recording" }, { status: 503 });
+    }
     return Response.json({ error: `the crew could not answer: ${safeErrorMessage(error)}` }, { status: 500 });
   }
 }

@@ -18,9 +18,8 @@ import type { Building, LevelManifest } from "@/domain";
 import { createRun } from "@/engine";
 import { placeOrFixture } from "@/components/run/scan-fallback";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
-import { fallbackPlan } from "@/level/fallback-plan";
 import { validatePlan } from "@/level/validate-plan";
-import { askCrew, crewRequest, EXAMPLE_ORDER, NoCrewReplyError, type CrewAnswer } from "./crew-request";
+import { askCrewOrBoard, crewRequest, EXAMPLE_ORDER, type CrewAnswer } from "./crew-request";
 import { CrewReply, ghostOf } from "./crew-reply";
 import { warmModel } from "./warm-request";
 
@@ -123,11 +122,8 @@ export function PlanScreen({
     pending.current = controller;
     setAsk({ status: "planning" });
     try {
-      const reply = await askCrew(crewRequest(building.id, text, missionId), { signal: controller.signal }).catch((error: unknown) => {
-        // No reply and no recording (a kit building, issue 140): the plan is worked out from the board.
-        if (error instanceof NoCrewReplyError && placed) return { plan: fallbackPlan(placed), recorded: false, fallback: "board" } satisfies CrewAnswer;
-        throw error;
-      });
+      // No reply and no recording (a kit building, issue 140): the plan is worked out from the board.
+      const reply = await askCrewOrBoard(crewRequest(building.id, text, missionId), placed, { signal: controller.signal });
       if (!controller.signal.aborted) {
         setAsk({ status: "answered", answer: reply });
         // The run follows the briefed plan (beat 4 into beat 5). A kit building's is derived from its
