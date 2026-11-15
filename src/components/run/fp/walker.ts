@@ -172,6 +172,8 @@ export type Prompt =
   /** A locked door in view that cannot be picked from here (too far off, or the body is not in its node's area): the player should step up to it. */
   | { kind: "far"; doorId: string }
   | { kind: "take" }
+  /** Carrying the objective, with an exit near and in sight: walking on to it ends the run (issue 188). */
+  | { kind: "exit"; nodeId: string }
   | null;
 
 /** Where the view's line meets the door's face, in metres along the line; null when it misses. */
@@ -230,6 +232,14 @@ export function promptFor(walker: Walker, ground: Ground, run: RunState, yaw: nu
   }
   const objective = ground.nodes.get(run.board.level.objective);
   if (canTake(run) && objective && distance(objective, walker.pos) <= FP.reachM) return { kind: "take" };
+  // The engine wins the run on the move onto an exit while carrying, with no key: near one, the prompt says so.
+  if (run.carrying) {
+    const near = run.board.level.exits
+      .map((nodeId) => ({ nodeId, at: ground.nodes.get(nodeId) }))
+      .filter((e) => e.at && distance(e.at, walker.pos) <= FP.noticeM && ground.clear(walker.pos, e.at, run.locked))
+      .sort((p, q) => distance(p.at!, walker.pos) - distance(q.at!, walker.pos))[0];
+    if (near) return { kind: "exit", nodeId: near.nodeId };
+  }
   // Nothing walls the line off: a door seen through a wall is not pointed out.
   const far = doorInView(ground, run, walker.pos, yaw, FP.noticeM);
   if (far && ground.clear(walker.pos, nearestOnBar(far, walker.pos), run.locked.filter((id) => id !== far.doorId))) return { kind: "far", doorId: far.doorId };

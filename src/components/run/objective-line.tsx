@@ -1,4 +1,4 @@
-import { LockKeyhole } from "lucide-react";
+import { BriefcaseBusiness, LockKeyhole } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -23,7 +23,7 @@ export interface ObjectiveLineProps {
   seconds?: number | null;
   /** Locked doors on the way, said beside the count. */
   locks?: number;
-  /** A word beside the label once the objective is in hand: "Files taken". */
+  /** A chip beside the label once the objective is in hand, kept till the run ends: "Carrying the files". */
   taken?: string | null;
   /** The label's colour: `success` and `danger` for how a run ended, the quiet label otherwise. */
   tone?: "plain" | "success" | "danger";
@@ -62,7 +62,12 @@ export function ObjectiveLine({
             {label}
           </span>
           {taken ? (
-            <span data-testid="objective-taken" className="text-success">
+            <span
+              data-testid="objective-taken"
+              data-carrying="true"
+              className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-success px-1.5 py-0.5 whitespace-nowrap text-success"
+            >
+              <BriefcaseBusiness aria-hidden className="size-3.5 stroke-[1.5]" />
               {taken}
             </span>
           ) : null}

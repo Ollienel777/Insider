@@ -10,7 +10,7 @@ timezone, for example `America/Toronto`.
 - name: HackPrinceton Fall 2026 (Princeton University, Julis Romo Rabinowitz Building)
 - url: https://www.hackprinceton.com/
 - hacking starts: 2026-11-13 02:55 America/New_York
-- feature freeze: 2026-11-15 01:48 America/New_York
+- feature freeze: 2026-11-15 02:48 America/New_York
 - submission deadline: 2026-11-15 09:00 America/New_York
 - submit window: 1h
 - team: 4 people
@@ -26,7 +26,9 @@ timezone, for example `America/Toronto`.
      build loop starts; the build clock and the feature freeze depend on them.
      Ideation only needs the deadline to be roughly right.
      feature freeze: `default` means the deadline minus 20% of the hacking
-     window, and at least 3h before the deadline. -->
+     window, and at least 3h before the deadline.
+     Nelson, in chat, 2026-11-15 ~06:20 UTC: "push back feature freeze by an
+     hour". The freeze moved from 01:48 to 02:48 America/New_York (07:48 UTC). -->
 
 ## Judging
 
