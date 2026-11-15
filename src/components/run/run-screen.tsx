@@ -48,7 +48,7 @@ import { MuteToggle, useRunSound } from "./run-sound";
 import { RunStage } from "./run-stage";
 import { placeOrFixture } from "./scan-fallback";
 import { ScanWait, useWaitsOnScan } from "./scan-wait";
-import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, useScanPreload, ViewSwitch, type HeldAction } from "./fp/run-view";
+import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useBark, useRunView, useScanPreload, ViewSwitch, type HeldAction } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -428,6 +428,8 @@ export function RunScreen({
     // First person is played in real time: the HUD says seconds and plain words, not hops and turns.
     pace,
   });
+  // In first person a guard that hears the player says so on the radio, where the radio's own line lets it (issue 146).
+  const bark = useBark(run, fpOn, hud?.radio ?? null);
 
   useEffect(() => {
     if (!run) return;
@@ -473,13 +475,13 @@ export function RunScreen({
 
   const options = useMemo(() => (run ? choicesOf(run, mode) : []), [run, mode]);
   const over = run !== null && run.status !== "playing";
-  // In first person the panel with "See the debrief" is closed: a run that ends carries the player on to the
-  // Debrief after a beat, so the end is never a dead stop (issue 166). On the board the stamp is in view.
+  // In first person a run that ends shows its end card (with "See the debrief"), then carries the player on to
+  // the Debrief by itself, so the end is never a dead stop (issue 166). On the board the stamp is in view.
   const debriefHref = buildingHref(building.id, "debrief", missionId);
   useEffect(() => {
     if (!over || !fpOn) return;
     // A full load: the Debrief reads the run's log from storage, as it does when opened from its address.
-    const timer = setTimeout(() => window.location.assign(debriefHref), 2000);
+    const timer = setTimeout(() => window.location.assign(debriefHref), 3500);
     return () => clearTimeout(timer);
   }, [over, fpOn, debriefHref]);
   // A kit building's label, once the board is placed: it names the scan only when the board stands on it.
@@ -507,6 +509,7 @@ export function RunScreen({
       detailsKey={fpOn ? "I" : "D"}
       onDetails={toggleDetails}
       hud={hud}
+      bark={bark}
       loading={settingUp}
       onTake={() => play({ kind: "take" })}
       onRestart={restart}
@@ -607,6 +610,13 @@ export function RunScreen({
                 paused={clock.state === "paused"}
                 scan={scan}
                 onReady={setFpReady}
+                endAction={
+                  over ? (
+                    <Link data-testid="fp-debrief" href={buildingHref(building.id, "debrief", missionId)} className={buttonVariants({ variant: "primary" })}>
+                      See the debrief
+                    </Link>
+                  ) : null
+                }
                 onUnavailable={(why) => {
                   runView.fail(why);
                   setStatus(why ?? FP_UNAVAILABLE);

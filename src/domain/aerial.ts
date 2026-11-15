@@ -66,6 +66,12 @@ export const Aerial = z
     footprint: z.array(LngLat).min(3),
     heightM: z.number().positive(),
     source: z.enum(["vexcel", "fixture"]),
+    /**
+     * True when the footprint and height are estimated from the building's
+     * CoStar facts (a kit building), not hand-made: the height is the stories
+     * at a typical storey, and no entries are tagged. Live imagery keeps it.
+     */
+    derived: z.literal(true).optional(),
   })
   .superRefine((aerial, ctx) => {
     checkUnique(aerial.views.map((v) => v.dir), "view", ["views"], ctx);

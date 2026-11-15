@@ -311,6 +311,43 @@ function chainOf(adj: Adjacency, nodes: readonly string[], fromStart: ReadonlyMa
   return best ? pathWithin(adj, best.a, best.b, allowed) : [];
 }
 
+/**
+ * Every node on some shortest way from `a` to `b` (`fromA` and `fromB` are the
+ * moves from each); empty when `b` cannot be reached from `a`.
+ */
+function onShortestWays(fromA: ReadonlyMap<string, number>, fromB: ReadonlyMap<string, number>, b: string): Set<string> {
+  const d = fromA.get(b);
+  const on = new Set<string>();
+  if (d === undefined) return on;
+  for (const [id, x] of fromA) if (x + (fromB.get(id) ?? Infinity) === d) on.add(id);
+  return on;
+}
+
+/**
+ * The way through on a scan (issue 176): every node on a shortest way from
+ * `start` to `objective`. That holds the cut nodes too, the ones every way
+ * there must cross, since a node on every way is on every shortest one. A
+ * scan's corridor is often the only way to the objective, so a camera or a
+ * round on these nodes leaves no careful plan a way past.
+ */
+function wayThrough(adj: Adjacency, start: string, objective: string): Set<string> {
+  return onShortestWays(hops(adj, [start]), hops(adj, [objective]), objective);
+}
+
+/** `nodes` split into the pieces that hang together (by their own edges), each from its lowest id. */
+function componentsOf(adj: Adjacency, nodes: readonly string[]): string[][] {
+  const allowed = new Set(nodes);
+  const seen = new Set<string>();
+  const out: string[][] = [];
+  for (const id of [...nodes].sort()) {
+    if (seen.has(id)) continue;
+    const piece = [...hops(adj, [id], allowed).keys()];
+    piece.forEach((n) => seen.add(n));
+    out.push(piece);
+  }
+  return out;
+}
+
 /** FNV-1a over the seed and a key, then an avalanche: a stable 32-bit number. */
 function hash(seed: number, key: string): number {
   let h = 0x811c9dc5 ^ (seed | 0);
@@ -596,19 +633,33 @@ export function placeLevel(
     if (cameraIds.includes(id) && onFloor(cover) && kept.length > 0) covers.set(id, kept);
   }
   const anchoredNodes = new Set([...covers.values()].flat());
-  let runs: string[][] = floor.rooms
-    .filter((r) => !claimed.has(r.id) && CORRIDOR.test(r.label))
-    .map((r) => chainOf(adj, (roomNodes.get(r.id) ?? []).filter((id) => !anchoredNodes.has(id) && !isEntry(id) && !pickNodes.has(id)), fromStart))
-    .filter((run) => run.length > 0);
+  // On a scan, cameras and rounds keep off the way through (issue 176): they
+  // go to the side pockets and stubs off it, each pocket a run of its own.
+  // A floor with too few pockets for the count places as if there were none.
+  const keepClear = floor.source === "matterport" ? wayThrough(adj, start, objective.nodeId) : new Set<string>();
+  const piecesOf = (ids: readonly string[], clear: ReadonlySet<string>): string[][] =>
+    clear.size > 0 ? componentsOf(adj, ids.filter((id) => !clear.has(id))) : [[...ids]];
   const wanted = cameraIds.length - covers.size;
-  // Too few corridors: cut the longest run in two until there are enough.
-  while (runs.length < wanted) {
-    const longest = runs.reduce((best, run, i) => (run.length > runs[best].length ? i : best), 0);
-    const run = runs[longest];
-    if (!run || run.length < 2) break;
-    const half = Math.ceil(run.length / 2);
-    runs = [...runs.slice(0, longest), run.slice(0, half), run.slice(half), ...runs.slice(longest + 1)];
-  }
+  const cameraRuns = (clear: ReadonlySet<string>): string[][] => {
+    let runs: string[][] = floor.rooms
+      .filter((r) => !claimed.has(r.id) && CORRIDOR.test(r.label))
+      .flatMap((r) =>
+        piecesOf((roomNodes.get(r.id) ?? []).filter((id) => !anchoredNodes.has(id) && !isEntry(id) && !pickNodes.has(id)), clear),
+      )
+      .map((ids) => chainOf(adj, ids, fromStart))
+      .filter((run) => run.length > 0);
+    // Too few corridors: cut the longest run in two until there are enough.
+    while (runs.length < wanted) {
+      const longest = runs.reduce((best, run, i) => (run.length > runs[best].length ? i : best), 0);
+      const run = runs[longest];
+      if (!run || run.length < 2) break;
+      const half = Math.ceil(run.length / 2);
+      runs = [...runs.slice(0, longest), run.slice(0, half), run.slice(half), ...runs.slice(longest + 1)];
+    }
+    return runs;
+  };
+  let runs = cameraRuns(keepClear);
+  if (keepClear.size > 0 && runs.length < wanted) runs = cameraRuns(new Set());
   const near = (run: readonly string[]) => fromStart.get(run[0]) ?? Infinity;
   runs.sort((a, b) => near(a) - near(b) || a[0].localeCompare(b[0]));
   const freeIds = cameraIds.filter((id) => !covers.has(id));
@@ -719,46 +770,78 @@ export function placeLevel(
   // A floor that tags its entries leaves out a whole room that comes near the start or the
   // locks. A scanned floor has a few large rooms, so there only those nodes are left out.
   const tooClose = (id: string) => nearStart.has(id) || earshot.has(id);
-  let chains = floor.rooms
-    .filter((r) => !lockedRooms.has(r.id))
-    .filter((r) => !tagsEntries || !(roomNodes.get(r.id) ?? []).some(tooClose))
-    .map((r) => ({
-      roomId: r.id,
-      chain: chainOf(
-        adj,
-        (roomNodes.get(r.id) ?? []).filter(
-          (id) =>
-            !quietNodes.has(id) &&
-            !crowdedNodes.has(id) &&
-            !isEntry(id) &&
-            id !== post?.node &&
-            id !== watch?.node &&
-            (tagsEntries || (!tooClose(id) && !seesStart(id))),
-        ),
-        fromStart,
-      ),
-    }))
-    .filter((route) => route.chain.length > 0);
-  // Too few rooms for the guard force: cut the longest round in two while both halves stay rounds.
-  while (chains.length > 0 && chains.length < roundCount) {
-    const longest = chains.reduce((best, c, i) => (c.chain.length > chains[best].chain.length ? i : best), 0);
-    const { roomId, chain } = chains[longest];
-    if (chain.length < 4) break;
-    const half = Math.ceil(chain.length / 2);
-    chains = [
-      ...chains.slice(0, longest),
-      { roomId, chain: chain.slice(0, half) },
-      { roomId, chain: chain.slice(half) },
-      ...chains.slice(longest + 1),
-    ];
+  const roundsOf = (clear: ReadonlySet<string>) => {
+    let chains = floor.rooms
+      .filter((r) => !lockedRooms.has(r.id))
+      .filter((r) => !tagsEntries || !(roomNodes.get(r.id) ?? []).some(tooClose))
+      .flatMap((r) =>
+        piecesOf(
+          (roomNodes.get(r.id) ?? []).filter(
+            (id) =>
+              !quietNodes.has(id) &&
+              !crowdedNodes.has(id) &&
+              !isEntry(id) &&
+              id !== post?.node &&
+              id !== watch?.node &&
+              (tagsEntries || (!tooClose(id) && !seesStart(id))),
+          ),
+          clear,
+        ).map((ids) => ({ roomId: r.id, chain: chainOf(adj, ids, fromStart) })),
+      )
+      .filter((route) => route.chain.length > 0);
+    // Too few rooms for the guard force: cut the longest round in two while both halves stay rounds.
+    while (chains.length > 0 && chains.length < roundCount) {
+      const longest = chains.reduce((best, c, i) => (c.chain.length > chains[best].chain.length ? i : best), 0);
+      const { roomId, chain } = chains[longest];
+      if (chain.length < 4) break;
+      const half = Math.ceil(chain.length / 2);
+      chains = [
+        ...chains.slice(0, longest),
+        { roomId, chain: chain.slice(0, half) },
+        { roomId, chain: chain.slice(half) },
+        ...chains.slice(longest + 1),
+      ];
+    }
+    return chains
+      .map((route) => ({
+        ...route,
+        starts: route.chain.flatMap((id, i) => ((fromEntries.get(id) ?? Infinity) > entryClearance ? [i] : [])),
+      }))
+      .filter((route) => route.starts.length > 0)
+      .sort((a, b) => b.chain.length - a.chain.length || a.chain[0].localeCompare(b.chain[0]));
+  };
+  // On a scan, each guard walks a round of its own off the way through: out
+  // of sight of it first (the longest first), then the rounds off it that
+  // see the fewest of its nodes. A floor without a round for every guard
+  // places them as if there were no way through.
+  let routes = roundsOf(new Set());
+  if (keepClear.size > 0) {
+    const seen = (chain: readonly string[]) =>
+      new Set(chain.flatMap((id) => (floor.sightlines[id] ?? []).filter((s) => keepClear.has(s)))).size;
+    const outOfSight = new Set(floor.nodes.filter((n) => keepClear.has(n.id) || seen([n.id]) > 0).map((n) => n.id));
+    // The engine walks each leg of a round by a shortest way over the whole floor (any one:
+    // its ties go by the seed), not along the chain. A pocket whose ends are nearer by the
+    // way through would walk its guard across it, so a round is kept only when no shortest
+    // way of any leg its guard can walk, from any start it can take, steps on `barred`.
+    const fromNode = new Map<string, Map<string, number>>();
+    const movesFrom = (id: string) => fromNode.get(id) ?? fromNode.set(id, hops(adj, [id])).get(id)!;
+    const walksOff = ({ chain, starts }: { chain: readonly string[]; starts: readonly number[] }, barred: ReadonlySet<string>) => {
+      const first = chain[0];
+      const last = chain[chain.length - 1];
+      const legs = [[first, last], ...starts.flatMap((i) => [[chain[i], last], [first, chain[i]]])];
+      return legs.every(([a, b]) => ![...onShortestWays(movesFrom(a), movesFrom(b), b)].some((id) => barred.has(id)));
+    };
+    const hidden = roundsOf(outOfSight).filter((r) => walksOff(r, outOfSight));
+    const used = new Set(hidden.flatMap((r) => r.chain));
+    const off = roundsOf(keepClear)
+      .filter((r) => !r.chain.some((id) => used.has(id)))
+      .filter((r) => walksOff(r, keepClear))
+      .map((r) => ({ r, n: seen(r.chain) }))
+      .sort((a, b) => a.n - b.n || b.r.chain.length - a.r.chain.length || a.r.chain[0].localeCompare(b.r.chain[0]))
+      .map(({ r }) => r);
+    const clear = [...hidden, ...off];
+    if (clear.length >= roundCount) routes = clear;
   }
-  const routes = chains
-    .map((route) => ({
-      ...route,
-      starts: route.chain.flatMap((id, i) => ((fromEntries.get(id) ?? Infinity) > entryClearance ? [i] : [])),
-    }))
-    .filter((route) => route.starts.length > 0)
-    .sort((a, b) => b.chain.length - a.chain.length || a.chain[0].localeCompare(b.chain[0]));
   // The watch post stands only beside a guard on a round: with no round to walk, its guard goes unplaced as the rest.
   if (watch && routes.length === 0) {
     watch = null;

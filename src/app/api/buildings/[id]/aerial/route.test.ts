@@ -27,6 +27,15 @@ describe("GET /api/buildings/[id]/aerial", () => {
     for (const entry of aerial.entries) expect(entry.note.trim(), entry.id).not.toBe("");
   });
 
+  it("serves no aerial for a kit building while CoStar is forced to fixtures, and still serves F1", async () => {
+    const forcedGet = (id: string) =>
+      GET(new Request(`http://localhost/api/buildings/${id}/aerial`, { headers: { cookie: "heist-fixtures=costar" } }), {
+        params: Promise.resolve({ id }),
+      });
+    expect((await forcedGet("900001")).status).toBe(404);
+    expect((await forcedGet("F1")).status).toBe(200);
+  });
+
   it("answers 404 for a building it does not know", async () => {
     const response = await get("F9");
     expect(response.status).toBe(404);

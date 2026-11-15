@@ -318,19 +318,22 @@ export function deriveSecurityProfile(building: Building, aerial: Aerial | null)
       });
       return { id: tag.id, kind: tag.kind, label: tag.label };
     });
-  // No aerial (Vexcel holds a massing only for the prepared buildings, so a
-  // CoStar kit building has none, #93): a level needs a way in, so the rules
-  // offer the two every office building has, the roof and the street lobby.
-  // Only for a kit building with no aerial at all: a fixture always has its
-  // massing, and a degraded live aerial for one must still fail the build.
-  if (entries.length === 0 && aerial === null && building.source === "costar") {
+  // No tagged entries on a CoStar kit building (#93): it has no aerial when
+  // Vexcel has no coverage, and live imagery aimed from a massing derived
+  // from its CoStar facts (`derived`) tags none, since nothing in them marks
+  // a dock. A level needs a way in, so the rules offer the two every office
+  // building has, the roof and the street lobby. Only then: a fixture always
+  // has its hand-made massing, and a degraded live aerial for one must still
+  // fail the build.
+  const untagged = aerial ? aerial.derived === true : building.source === "costar";
+  if (entries.length === 0 && untagged) {
     for (const entry of NO_AERIAL_ENTRIES) {
       provenance.push({
         elementRole: `entry:${entry.id}`,
         layer: "fiction",
         field: "entries.kind",
         value: entry.kind,
-        rule: `No Vexcel aerial answered with this building's ways in, so the rules offer its ${entry.label.toLowerCase()}: ${ENTRY_RULES[entry.kind]}`,
+        rule: `${aerial ? "The aerial tags no ways in on this building" : "No Vexcel aerial answered with this building's ways in"}, so the rules offer its ${entry.label.toLowerCase()}: ${ENTRY_RULES[entry.kind]}`,
       });
       entries.push({ ...entry });
     }

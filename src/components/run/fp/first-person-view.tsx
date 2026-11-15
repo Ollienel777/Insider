@@ -13,7 +13,7 @@
 //   controller.ts  keys and mouse → what the player asks for
 //   walker.ts      free position → engine actions, over a `Ground`
 //   actors.ts      guards, cameras, sight, doors and markers, over a `Ground`
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AmbientLight,
   DirectionalLight,
@@ -35,12 +35,17 @@ import { cameraMount, choices, roomName } from "../board";
 import { scanStageOf, type HeldAction, type ScanHandle, type ScanPreload } from "./run-view";
 import { Actors, type Marks } from "./actors";
 import { Controller } from "./controller";
+import { endState } from "./end-state";
 import type { Ground, Vec } from "./ground";
+import { hintDone, hintPhase, hintTicks, NO_PROGRESS, type HintPhase, type HintProgress } from "./hint";
+import { ControlsHint } from "./hint-card";
+import { noticeOf } from "./notice";
 import { readPalette } from "./palette";
 import { joinRefusal, joinScan } from "./scan-join";
 import { scanGround } from "./scan-ground";
 import { meshSolid } from "./scan-solid";
 import { buildFloorGroup, disposeGroup, type RoomTone } from "./scene";
+import { SuspicionMeter } from "./suspicion-meter";
 import { FP } from "./tuning";
 import { createWalker, heldAction, promptFor, stepWalker, type Prompt } from "./walker";
 import { buildWorld, groundOf, type World } from "./world";
@@ -68,6 +73,8 @@ export interface FirstPersonViewProps {
   onReady?: (ready: boolean) => void;
   /** Shift went down or up: the HUD's time left is then at a walk or a run. */
   onWalking?: (walking: boolean) => void;
+  /** What the end of the run offers next to its outcome (the Run screen's "See the debrief"). */
+  endAction?: ReactNode;
 }
 
 /** What a scan's stage says while it loads: null once the player is let loose. */
@@ -88,6 +95,13 @@ interface Stage {
   ground: Ground & { feetAt?: (p: Vec) => number };
   /** The height the run's pieces stand at, in the drawing's frame. */
   liftY: number;
+  /**
+   * Where a camera covering `cover` hangs, in metres, when the floor plan's
+   * own mount (a room rectangle's wall) is no place for it. A scan's rooms
+   * are boxes round its sweeps, so there a camera hangs at the start of its
+   * run, looking along it.
+   */
+  cameraMount?: (cover: readonly string[]) => Vec;
   /** Puts the run's pieces (actors.ts) in the drawing. */
   add(object: Object3D): void;
   /** Whether the picture around `pos` has arrived: until it has, the view draws but the player waits. */
@@ -131,13 +145,16 @@ function hasWebGL(): boolean {
   }
 }
 
-export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, scan = null, onReady, onWalking }: FirstPersonViewProps) {
+export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, scan = null, onReady, onWalking, endAction = null }: FirstPersonViewProps) {
   const surface = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const labelLayer = useRef<HTMLDivElement>(null);
   const [hud, setHud] = useState<Hud>({ locked: false, refused: false, prompt: null, using: false });
   const [ready, setReady] = useState(false);
   const [scanLoad, setScanLoad] = useState<ScanLoad>(null);
+  // The first-time controls hint, and being noticed: read from the run as it renders, so never a frame behind it (issue 146).
+  const [hint, setHint] = useState<{ phase: HintPhase; progress: HintProgress }>({ phase: "shown", progress: NO_PROGRESS });
+  const notice = useMemo(() => noticeOf(run), [run]);
 
   const onScan = placed.level.floor.source !== "fixture";
   const world = useMemo(() => (onScan ? null : buildWorld(placed.level.floor)), [placed, onScan]);
@@ -196,7 +213,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           const cover = c.parts.flat();
           const seen = cover.map((id) => first.board.nodes.get(id)!);
           const middle = { x: seen.reduce((s, n) => s + n.x, 0) / seen.length, y: seen.reduce((s, n) => s + n.y, 0) / seen.length };
-          return { id: c.id, mount: metres(cameraMount(level.floor, cover)), looksAt: metres(middle) };
+          return { id: c.id, mount: on.cameraMount?.(cover) ?? metres(cameraMount(level.floor, cover)), looksAt: metres(middle) };
         }),
       };
       const tempo = (id: string) => level.guardTempo?.[id] ?? level.patrolTempo;
@@ -224,6 +241,11 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       const labelEls = new Map<string, HTMLSpanElement>();
       const point = new Vector3();
       let seen: RunState | null = null;
+      // What the player has tried, for the hint; when it was done, for its fade.
+      const progress: HintProgress = { ...NO_PROGRESS };
+      let doneAt: number | null = null;
+      let hintKey = "";
+      let looked = { yaw: controller.yaw, pitch: controller.pitch };
       let last = performance.now();
       let owed = 0;
       let use = false;
@@ -240,6 +262,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       if (debug) debug.__fp = { walker: () => walker, controller, ground, run: () => latest.current.run, act, choices };
       let raf = 0;
       let drawn = false;
+      let ended = false;
       // A scan's picture arrives after its mesh: the player is let loose once it has around them, or after a while.
       const looseAt = performance.now() + SCAN_WAIT_MS;
 
@@ -251,6 +274,12 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         if (current !== seen) {
           actors.sync(current, now);
           seen = current;
+        }
+
+        // The run is over: the view takes no more input, and frees the mouse for the end's buttons.
+        if (current.status !== "playing" && !ended) {
+          ended = true;
+          controller.dispose();
         }
 
         // The movement runs at a fixed step, however fast the screen draws.
@@ -265,6 +294,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         use ||= controls.usePressed;
         owed += dt;
         const stood = walker.pos;
+        const walkedBefore = walker.walked;
+        if (controls.usePressed) progress.used = true;
         while (!waiting && owed >= FP.stepS) {
           owed -= FP.stepS;
           const out = stepWalker(walker, ground, current, { ...controls, usePressed: use });
@@ -272,6 +303,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           walker = out.walker;
           if (out.action) play(out.action);
         }
+        // Turned by the player since the last frame (the mouse, a drag, the arrow keys): before the view is put back on a hop below.
+        progress.lookedRad += Math.abs(controller.yaw - looked.yaw) + Math.abs(controller.pitch - looked.pitch);
         // Put back on the engine's node (a restart, a number key): look the way that hop went, or,
         // at the start, the first way on. A frame of walking never covers this much ground.
         if (Math.hypot(walker.pos.x - stood.x, walker.pos.y - stood.y) > 0.5) {
@@ -279,6 +312,9 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           controller.yaw = current.turn === 0 ? (wayOn(current, walker.pos) ?? hop) : hop;
           controller.pitch = 0;
         }
+        looked = { yaw: controller.yaw, pitch: controller.pitch };
+        progress.walkedM += walker.walked - walkedBefore;
+        if (controls.walk && walker.walked - walkedBefore > 0) progress.sneaked = true;
         if (controller.areas !== areas) {
           areas = controller.areas;
           actors.showAreas(areas, current.playerNode, current.locked);
@@ -337,6 +373,14 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         if (key !== hudKey) {
           hudKey = key;
           setHud((was) => ({ ...was, prompt, using }));
+        }
+        if (doneAt === null && hintDone(progress)) doneAt = now;
+        const phase = hintPhase(doneAt === null ? null : now - doneAt, still);
+        const ticks = hintTicks(progress);
+        const nextHint = `${phase}${ticks.move}${ticks.look}${ticks.sneak}${ticks.use}`;
+        if (nextHint !== hintKey) {
+          hintKey = nextHint;
+          setHint({ phase, progress: { ...progress } });
         }
         if (waiting) {
           const counts = on.counts();
@@ -457,6 +501,15 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       return {
         ground,
         liftY: pieces.position.y,
+        cameraMount(cover) {
+          const points = cover.map((id) => ground.nodes.get(id)).filter((n) => n !== undefined);
+          const first = points[0] ?? { x: 0, y: 0 };
+          const mid = { x: points.reduce((s, n) => s + n.x, 0) / Math.max(1, points.length), y: points.reduce((s, n) => s + n.y, 0) / Math.max(1, points.length) };
+          const away = { x: first.x - mid.x, y: first.y - mid.y };
+          const length = Math.hypot(away.x, away.y);
+          // Just behind the run's first node, so it faces a player coming along the run.
+          return length < 1e-6 ? { x: first.x + 0.4, y: first.y } : { x: first.x + (away.x / length) * 0.4, y: first.y + (away.y / length) * 0.4 };
+        },
         add: (object) => pieces.add(object),
         settled: (pos) => view.settled(eye(pos)),
         counts: () => view.counts(),
@@ -528,6 +581,11 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
   const noun = objectiveNoun(placed.level.missionId);
   const over = run.status !== "playing";
+  const end = useMemo(() => endState(placed, run), [placed, run]);
+  // The run's end frees the mouse, so the Debrief is a click away.
+  useEffect(() => {
+    if (over && surface.current && document.pointerLockElement === surface.current) document.exitPointerLock();
+  }, [over]);
   const tint = run.alarm === "calm" ? null : run.alarm === "suspicious" ? "var(--warning)" : "var(--danger)";
 
   return (
@@ -582,13 +640,12 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         </div>
       ) : null}
 
+      {/* The controls hint and the meter are for a run being played: both go when the end card comes up (issue 146). */}
+      {ready && !end ? <SuspicionMeter notice={notice} /> : null}
+      {ready && !end ? <ControlsHint phase={hint.phase} ticks={hintTicks(hint.progress)} dragToLook={hud.refused} /> : null}
+
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-end px-6 py-3">
         <div className="flex flex-col items-center gap-2">
-          {over ? (
-            <p data-testid="fp-over" className={cn("rounded-sm bg-surface-1 px-3 py-2 text-base shadow-e-1", run.status === "won" ? "text-success" : "text-danger")}>
-              {run.status === "won" ? `Out with the ${noun}.` : `Caught in the ${roomName(placed.level.floor, run.playerNode)}.`}
-            </p>
-          ) : null}
           {!over && paused ? (
             <p data-testid="fp-paused" className="flex items-center gap-2 rounded-sm bg-surface-1 px-3 py-2 text-sm text-text-1 shadow-e-1">
               Paused. <Key>P</Key> to go on
@@ -625,6 +682,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
               )}
             </p>
           ) : null}
+          {over ? null : (
           <p data-testid="fp-hint" className="flex max-w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-sm bg-surface-1 px-3 py-1.5 text-sm text-text-2 shadow-e-1">
             {hud.locked ? null : (
               <span data-testid="fp-look-hint" className="text-text-1">
@@ -658,11 +716,32 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
               </span>
             ) : null}
           </p>
+          )}
         </div>
       </div>
 
-      {/* The middle of the view: what E acts on. */}
-      <div aria-hidden className="pointer-events-none absolute top-1/2 left-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-text-2" />
+      {/* The middle of the view: what E acts on. Gone with the run. */}
+      {over ? null : (
+        <div aria-hidden className="pointer-events-none absolute top-1/2 left-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-text-2" />
+      )}
+
+      {/* The end of the run: what happened and why, and the way on. The view takes no more input. */}
+      {end ? (
+        <div data-testid="fp-end" data-status={run.status} className="absolute inset-0 grid place-items-center bg-surface-0/55 p-6">
+          <div role="status" className="flex max-w-lg flex-col items-center gap-3 rounded-md border border-border bg-surface-1 px-8 py-6 text-center shadow-e-2">
+            <p className="label-caps text-text-3">{end.outcome === "won" ? "Run complete" : "Run over"}</p>
+            <p data-testid="fp-over" className={cn("text-2xl font-semibold", end.outcome === "won" ? "text-success" : "text-danger")}>
+              {end.headline}
+            </p>
+            {end.detail ? (
+              <p data-testid="fp-end-why" className="text-sm text-text-2">
+                {end.detail}
+              </p>
+            ) : null}
+            {endAction ? <div className="mt-2 flex items-center gap-3">{endAction}</div> : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

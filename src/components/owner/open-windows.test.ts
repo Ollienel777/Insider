@@ -193,7 +193,7 @@ describe("open windows on F1, over the nights the batch plays", () => {
     expect(of(night).windows).toMatchObject({ open: 40, moments: 80, share: 50 });
     expect(of(moved).windows).toMatchObject({ open: 20, moments: 80, share: 25 });
     expect(of(moved)).toMatchObject({ openNights: 10, nights: 10, firstNight: 1 });
-    expect(windowsLine(of(night))).toBe("Open windows: 40 of 80 moments in the 10 nights the crew plays let a crew in and out unseen. A moment is a way in at any turn of a night; the attempts all start at turn 0.");
+    expect(windowsLine(of(night))).toBe("Open windows: 40 of 80 moments in the 10 nights the crew plays let a crew in and out unseen by guards and cameras. A moment is a way in at any turn of a night; the attempts all start at turn 0.");
     expect(measureChange(of(night), of(moved))).toBe("Coverage 43% → 50%, open windows 40 of 80 → 20 of 80");
     expect(firstWindowLine(of(moved))).toBe(
       "The first opens on night 1, turn 1, a turn no attempt starts on: Freight Lift Lobby → Dock Corridor → Records Room → Dock Corridor → Freight Lift Lobby.",

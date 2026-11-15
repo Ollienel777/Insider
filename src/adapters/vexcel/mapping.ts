@@ -154,8 +154,9 @@ export function toObliques(body: unknown): Oblique[] {
 
 // ---- framing and placing ------------------------------------------------------
 
-const M_PER_DEG_LAT = 111_132;
-const mPerDegLng = (lat: number) => 111_320 * Math.cos((lat * Math.PI) / 180);
+/** Metres per degree of latitude, and of longitude at `lat`. */
+export const M_PER_DEG_LAT = 111_132;
+export const mPerDegLng = (lat: number) => 111_320 * Math.cos((lat * Math.PI) / 180);
 
 /** The middle of the footprint's corners. */
 export function centreOf(footprint: LngLat[]): LatLng {

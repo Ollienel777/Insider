@@ -103,13 +103,14 @@ describe("when the stand-in floor plan is offered", () => {
 });
 
 describe("taking the stand-in floor plan", () => {
-  it("forces Matterport to fixtures for the session, then loads the floor again", () => {
+  it("forces Matterport to fixtures for the session, lets the held scan board go, then loads the floor again", () => {
     const calls: string[] = [];
     takeStandIn(
       () => calls.push("reload"),
       (service, on) => calls.push(`force ${service} ${on}`),
+      () => calls.push("release the held board"),
     );
-    expect(calls).toEqual(["force matterport true", "reload"]);
+    expect(calls).toEqual(["force matterport true", "release the held board", "reload"]);
   });
 });
 
