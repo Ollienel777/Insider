@@ -103,8 +103,22 @@ describe("deriveMassing", () => {
     expect(deriveMassing({ ...KIT, stories: 3 })!.heightM).toBe(12);
   });
 
-  it("tags no entries: nothing in CoStar's facts marks a dock or a door", () => {
-    expect(deriveMassing(KIT)!.entries).toEqual([]);
+  // Issue 230: nothing in CoStar's facts marks a dock or a door, so it pins only the level's own two, by rule.
+  it("pins the roof hatch on the roof and the street lobby on the south face, each saying it is placed by rule", () => {
+    const m = deriveMassing(KIT)!;
+    expect(m.entries.map((e) => [e.id, e.kind, e.label, e.view])).toEqual([
+      ["roof", "roof", "Roof hatch", "ortho"],
+      ["lobby", "lobby", "Street lobby", "ortho"],
+    ]);
+    const [roof, lobby] = m.entries;
+    expect(roof.at).toEqual({ lngLat: [KIT.lng, KIT.lat], elevM: m.heightM });
+    expect(lobby.at!.elevM).toBe(0);
+    expect(lobby.at!.lngLat[0]).toBe(KIT.lng);
+    // South of the point, inside the footprint.
+    const south = Math.min(...m.footprint.map(([, lat]) => lat));
+    expect(lobby.at!.lngLat[1]).toBeLessThan(KIT.lat);
+    expect(lobby.at!.lngLat[1]).toBeGreaterThan(south);
+    for (const e of m.entries) expect(e.note).toMatch(/^Placed by rule, not seen on the aerial/);
   });
 
   it("derives nothing without coordinates, stories or any floor area", () => {
@@ -161,7 +175,7 @@ describe("live Vexcel on a kit building (stubbed fetch, no key)", () => {
     expect(lng).toBeCloseTo(KIT.lng, 9);
   });
 
-  it("serves the imagery through the proxy, with the derived footprint and height and no entries", async () => {
+  it("serves the imagery through the proxy, with the derived footprint and height and the two rule entries on the ortho", async () => {
     // No obliques there, and a 16:10 ortho: a JPEG header is all the size reader needs.
     const ortho = new Uint8Array([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 1000 >> 8, 1000 & 0xff, 1600 >> 8, 1600 & 0xff, 0x03]);
     const fetch = vi.fn(async (input: string | URL | Request) => {
@@ -178,7 +192,19 @@ describe("live Vexcel on a kit building (stubbed fetch, no key)", () => {
     });
     const aerial = (await live.getAerial(KIT.id))!;
     const derived = deriveMassing(KIT)!;
-    expect(aerial).toMatchObject({ source: "vexcel", derived: true, entries: [], footprint: derived.footprint, heightM: 48 });
+    expect(aerial).toMatchObject({ source: "vexcel", derived: true, footprint: derived.footprint, heightM: 48 });
+    expect(aerial.entries.map((e) => [e.id, e.view])).toEqual([
+      ["roof", "ortho"],
+      ["lobby", "ortho"],
+    ]);
+    for (const e of aerial.entries) {
+      expect(e.x).toBeGreaterThan(0);
+      expect(e.x).toBeLessThan(1600);
+      expect(e.y).toBeGreaterThan(0);
+      expect(e.y).toBeLessThan(1000);
+    }
+    // The lobby is south of the roof hatch: lower on a north-up ortho.
+    expect(aerial.entries[1].y!).toBeGreaterThan(aerial.entries[0].y!);
     expect(aerial.views).toEqual([{ dir: "ortho", url: `/api/buildings/${KIT.id}/aerial/ortho`, width: 1600, height: 1000 }]);
     expect((await live.getImage(KIT.id, "ortho"))?.contentType).toBe("image/jpeg");
   });

@@ -181,7 +181,7 @@ export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, 
         slot.kind === "showcase" && showcase ? (
           <li key={`showcase-${showcase.id}`} data-testid="showcase" className="min-w-0">
             <Reveal shown={cardsShown} className="h-full">
-              <ShowcaseCard showcase={showcase} missionId={mission.id} selected={showcasePicked} onSelect={setSelectedId} />
+              <ShowcaseCard showcase={showcase} rank={i + 1} selected={showcasePicked} onSelect={setSelectedId} />
             </Reveal>
           </li>
         ) : slot.kind === "finalist" ? (

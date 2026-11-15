@@ -3,7 +3,11 @@
 // Vexcel would have nowhere to aim. The CoStar point is the centre, a
 // north-up square wide enough for a slab of the typical floor's area is the
 // footprint, and the stories give the height. Nothing in CoStar's data marks
-// a dock or a door, so the massing tags no entries. It is only ever an aim
+// a dock or a door, so the massing pins only the two ways in every office
+// building has, the level's own (issue 230): the roof hatch on the roof at
+// the CoStar point, and the street lobby at ground level on the south face of
+// the floor's own square. Each note says it is placed by rule, not seen on
+// the aerial, and the level rules read them as theirs. It is only ever an aim
 // for live Vexcel, inside `massingFor`: live answers carry `source: "vexcel"`,
 // and a kit building with no imagery gets no aerial, so this massing (and its
 // `source: "fixture"`) never reaches a screen, and fake mode is unchanged.
@@ -63,7 +67,24 @@ export function deriveMassing(facts: MassingFacts): Aerial | null {
       { dir: "W", width: 1600, height: 1000 },
       { dir: "ortho", width: 1200, height: 1200 },
     ],
-    entries: [],
+    entries: [
+      {
+        id: "roof",
+        kind: "roof",
+        label: "Roof hatch",
+        view: "ortho",
+        at: { lngLat: [lng, lat], elevM: stories * M_PER_STOREY },
+        note: "Placed by rule, not seen on the aerial: every office building has a roof hatch, and the level offers it as a way in and out. Pinned at the building's CoStar point.",
+      },
+      {
+        id: "lobby",
+        kind: "lobby",
+        label: "Street lobby",
+        view: "ortho",
+        at: { lngLat: [lng, lat - half / SHAPE_SLACK / M_PER_DEG_LAT], elevM: 0 },
+        note: "Placed by rule, not seen on the aerial: every office building has a street lobby, with a desk guard. CoStar does not say which side faces the street, so it is pinned on the south face.",
+      },
+    ],
     footprint: [
       [lng - dLng, lat + dLat],
       [lng + dLng, lat + dLat],
