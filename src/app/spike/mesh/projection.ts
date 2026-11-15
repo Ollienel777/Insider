@@ -25,7 +25,7 @@
 //
 // Colours are passed through untouched: the panorama texels are display
 // values, the output is display values, and nothing is lit.
-import { BackSide, DoubleSide, Matrix3, ShaderMaterial, Vector3, type CubeTexture } from "three";
+import { BackSide, DoubleSide, Matrix3, ShaderMaterial, Vector3, type CubeTexture, type Texture } from "three";
 import { ANGLE_FLOOR, HIDDEN, REACH_PENALTY } from "@/lib/scan-mesh/blend";
 import { AGREE_HIGH, AGREE_LOW, FILL_POWER, FILL_REACH, SEEN_FLOOR, SHARPEN } from "@/lib/scan-mesh/combine";
 
@@ -259,5 +259,57 @@ void main() {
 `,
     side: DoubleSide,
     toneMapped: false,
+  });
+}
+
+const TEXTURED_VERTEX = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+/**
+ * The material for one texture of the Matterpak's textured mesh: the texel,
+ * passed through untouched like the panoramas' (display values, unlit). The
+ * same picture from wherever it is seen, so nothing in it moves as the eye
+ * does.
+ */
+export function createTexturedMaterial(map: Texture): ShaderMaterial {
+  return new ShaderMaterial({
+    uniforms: { uMap: { value: map } },
+    vertexShader: TEXTURED_VERTEX,
+    fragmentShader: /* glsl */ `
+uniform sampler2D uMap;
+varying vec2 vUv;
+void main() {
+  gl_FragColor = vec4(texture2D(uMap, vUv).rgb, 1.0);
+}
+`,
+    side: DoubleSide,
+    toneMapped: false,
+  });
+}
+
+/**
+ * The material for the stand-in surfaces (a closed hole, a level's floor or
+ * ceiling plane): depth, and no colour of its own. Alpha 0 marks the pixel
+ * for hole-fill.ts, which paints it from the scanned pixels around it.
+ */
+export function createFillMaterial(): ShaderMaterial {
+  return new ShaderMaterial({
+    vertexShader: VERTEX,
+    fragmentShader: /* glsl */ `
+void main() {
+  gl_FragColor = vec4(0.0);
+}
+`,
+    side: DoubleSide,
+    toneMapped: false,
+    // Behind the scanned surfaces wherever the two meet.
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 4,
   });
 }

@@ -15,10 +15,16 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  DoubleSide,
+  LinearFilter,
+  LinearMipmapLinearFilter,
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
+  Ray,
   Scene,
+  Texture,
+  Vector3,
   WebGLRenderer,
   WebGLRenderTarget,
   type CubeTexture,
@@ -33,14 +39,17 @@ import {
   type ScanDetail,
   type ScanManifest,
 } from "@/lib/scan-mesh/manifest";
+import { fitLevels, type LevelSample } from "@/lib/scan-mesh/levels";
 import { TUNING, type MoveWorld } from "@/lib/scan-mesh/movement";
 import { parseObj } from "@/lib/scan-mesh/obj";
 import { feetUnder, linksFresh, poseVelocity, sharpLayer, viewStats, type ScanPose, type ViewStats } from "@/lib/scan-mesh/pose";
+import { distanceToGroup, type TexturedGroup } from "@/lib/scan-mesh/textured";
 import { MeshWorld } from "./collider";
 import type { DetailReply, DetailRequest } from "./detail-worker";
 import { matchExposure } from "./exposure-match";
+import { HoleFill } from "./hole-fill";
 import { blankCube, PanoStore, type PanoCounts, type PanoUse } from "./panos";
-import { createScanMaterial } from "./projection";
+import { createFillMaterial, createScanMaterial, createTexturedMaterial } from "./projection";
 
 export type { ScanPose } from "@/lib/scan-mesh/pose";
 export { eyePose, yawFromHeading } from "@/lib/scan-mesh/pose";
@@ -55,6 +64,13 @@ export interface ScanViewOptions {
   mesh?: MeshResolution;
   /** Whether to load the Matterpak's detailed mesh for the picture, where the scan has one. Default true. */
   detail?: boolean;
+  /**
+   * Whether to paint the detailed mesh with the Matterpak's own textures
+   * (the same picture from anywhere) rather than the panoramas. Default true.
+   */
+  textured?: boolean;
+  /** Whether to fill what no scanned surface covers from the pixels around it, and close the mesh's small holes. Default true. */
+  fill?: boolean;
   /** Vertical field of view, degrees. */
   fov?: number;
   /** Called whenever `status()` has news: a phase, the detailed mesh, the exposure match. */
@@ -67,6 +83,22 @@ export interface ScanDetailStatus {
   megabytes: number;
   seconds: number;
   reason?: string;
+  /** The Matterpak's textures: how many, how many are in (small, and full size near the eye), and whether all have been fetched. */
+  textures?: ScanTextureStatus;
+  /** Small holes in the detailed mesh that were closed. */
+  holes?: number;
+}
+
+export interface ScanTextureStatus {
+  total: number;
+  small: number;
+  sharp: number;
+  megabytes: number;
+  /** Seconds from the mesh's arrival to every texture fetched. */
+  seconds: number;
+  done: boolean;
+  /** What the textures take on the GPU, roughly, megabytes. */
+  gpuMegabytes: number;
 }
 
 export interface ScanExposureStatus {
@@ -102,6 +134,17 @@ export const DEFAULT_FOV = 71;
 const LINK_MARGIN = 20_000;
 const MEASURE_WIDTH = 160;
 const MEASURE_HEIGHT = 90;
+/** The textures are first decoded this many pixels square: all of them fit in GPU memory at once. */
+const SMALL_TEXTURE = 512;
+/** Textures of surfaces this close to the eye, metres, are shown at full size... */
+const SHARP_REACH = 4;
+/** ...this many at most (each about 22 MB of GPU memory at 2048 square)... */
+const SHARP_MAX = 14;
+/** ...chosen again this often, seconds. */
+const SHARP_EVERY = 0.3;
+/** Textures put on the GPU in one frame at most: small ones, and full-size ones. */
+const UPLOADS_SMALL = 4;
+const UPLOADS_SHARP = 1;
 
 class LoadError extends Error {}
 
@@ -136,6 +179,19 @@ export class ScanView {
   private velocity: [number, number] | null = null;
   private used: PanoUse[] = [];
   private readonly state: ScanViewStatus;
+  /** The textured mesh: its groups, each one's material and textures, and what has arrived but isn't on the GPU yet. */
+  private groups: TexturedGroup[] = [];
+  private groupMaterials: ShaderMaterial[] = [];
+  private small: (Texture | null)[] = [];
+  private sharp: (Texture | null)[] = [];
+  private sharpWanted = new Set<number>();
+  private sharpClock = 0;
+  private arrived: { group: number; sharp: boolean; image: ImageBitmap }[] = [];
+  private readonly fill: HoleFill | null;
+  private readonly fillMaterial = createFillMaterial();
+  private fillMeshes: Mesh[] = [];
+  /** The panoramas, once every texture is in, being let go of a piece a frame. */
+  private retiring: PanoStore | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -147,7 +203,9 @@ export class ScanView {
     this.camera.rotation.order = "YXZ";
     this.renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.setClearColor(new Color().setRGB(0.027, 0.035, 0.047), 1);
+    this.fill = options.fill === false ? null : new HoleFill(this.renderer);
+    // Alpha 0 marks a pixel no surface covered, for the fill.
+    this.renderer.setClearColor(new Color().setRGB(0.027, 0.035, 0.047), this.fill ? 0 : 1);
     this.blank = blankCube();
     this.material = createScanMaterial(this.blank);
     this.backdropMaterial = createScanMaterial(this.blank, true);
@@ -186,6 +244,7 @@ export class ScanView {
     const velocity = this.velocity ?? poseVelocity(this.lastPose, this.pose, dt);
     this.lastPose = { ...this.pose };
     this.velocity = null;
+    this.showTextures(dt);
     if (this.panos) {
       this.used = this.panos.update(
         [x, y, z],
@@ -198,7 +257,19 @@ export class ScanView {
       if (this.panos.needsLinks) void this.refreshLinks();
       this.startExposure();
     }
+    this.draw(null);
+  }
+
+  /** Renders the current view to `target` (null: the screen), filled where no surface covers it. */
+  draw(target: WebGLRenderTarget | null): void {
+    if (this.fill) {
+      this.fill.render(this.scene, this.camera, target);
+      return;
+    }
+    const before = this.renderer.getRenderTarget();
+    this.renderer.setRenderTarget(target);
     this.renderer.render(this.scene, this.camera);
+    this.renderer.setRenderTarget(before);
   }
 
   /** The drawing size, CSS pixels. */
@@ -233,18 +304,32 @@ export class ScanView {
 
   /** The scan position nearest `eye`, by index, or -1. */
   nearestScan(eye: Vec3): number {
-    return this.panos?.nearest(eye) ?? -1;
+    if (this.panos) return this.panos.nearest(eye);
+    let best = -1;
+    let near = Infinity;
+    (this.manifest?.panos ?? []).forEach((p, i) => {
+      const d = Math.hypot(p.position[0] - eye[0], p.position[1] - eye[1], p.position[2] - eye[2]);
+      if (d < near) {
+        near = d;
+        best = i;
+      }
+    });
+    return best;
   }
 
   /** Whether the picture around `eye` has arrived, so a player can be let loose there. */
   settled(eye: Vec3): boolean {
+    if (this.groups.length > 0) {
+      // The textured mesh: settled once the textures near the eye are in.
+      return this.groups.every((g, i) => this.small[i] !== null || !g.image || distanceToGroup(g, eye) > SHARP_REACH || this.state.detail.textures?.done);
+    }
     return !this.panos || this.panos.settled(eye);
   }
 
   status(): ScanViewStatus {
     return {
       ...this.state,
-      detail: { ...this.state.detail },
+      detail: { ...this.state.detail, textures: this.state.detail.textures ? { ...this.state.detail.textures } : undefined },
       exposure: this.state.exposure ? { ...this.state.exposure } : null,
       timings: { ...this.state.timings },
     };
@@ -318,6 +403,7 @@ export class ScanView {
 
   /** The current view's coverage and doubles, from a small copy rendered in the debug looks (lib/scan-mesh/pose.ts's `viewStats`). */
   measure(): ViewStats {
+    if (this.groups.length > 0 && !this.panos) return this.measureTextured();
     const target = new WebGLRenderTarget(MEASURE_WIDTH, MEASURE_HEIGHT);
     const pixels = new Uint8Array(MEASURE_WIDTH * MEASURE_HEIGHT * 4);
     const coverage = new Uint8Array(pixels.length);
@@ -415,6 +501,7 @@ export class ScanView {
       geometry.computeBoundingSphere();
       this.geometry = geometry;
       this.meshWorld = new MeshWorld(geometry, TUNING.stepUp);
+      this.addLevels(this.meshWorld);
       state.timings.build = (performance.now() - at) / 1000;
       state.triangles = parsed.index.length / 3;
       this.drawn = new Mesh(geometry, this.material);
@@ -462,7 +549,10 @@ export class ScanView {
   /**
    * Fetch the Matterpak's detailed mesh in a worker and, once in, draw it and
    * see the panoramas' occlusion against it. Walking stays on the 50k mesh,
-   * whose floors are clean. Only the mesh file is pulled from the archive.
+   * whose floors are clean. Then, where the Matterpak has them, its textures
+   * stream in, nearest the eye first: each part of the mesh shows its own
+   * texture once it arrives, and the panoramas until then. Once every texture
+   * is in, the panoramas are let go.
    */
   private loadDetail(detail: ScanDetail | null): void {
     const status = this.state.detail;
@@ -472,51 +562,265 @@ export class ScanView {
     }
     if (!detail || detail.bytes === null || !isAllowedAssetUrl(detail.url)) return;
     status.state = "loading";
-    // The 9 MB or so of mesh first: the full-size faces, hundreds of megabytes, wait for it.
+    const textured = this.options.textured !== false;
+    // The 9 MB or so of mesh first, then its textures: the full-size faces, hundreds of megabytes, wait for them.
     if (this.panos) this.panos.holdSharp = true;
     const release = () => {
       if (this.panos) this.panos.holdSharp = false;
+    };
+    const fail = (reason: string) => {
+      this.detailWorker?.terminate();
+      this.detailWorker = null;
+      release();
+      if (status.state === "loading") {
+        status.state = "failed";
+        status.reason = reason;
+      }
+      this.push();
     };
     try {
       const worker = new Worker(new URL("./detail-worker.ts", import.meta.url), { type: "module" });
       this.detailWorker = worker;
       worker.onmessage = (event: MessageEvent<DetailReply>) => {
-        worker.terminate();
-        this.detailWorker = null;
-        release();
         const reply = event.data;
         if (this.disposed) return;
-        if ("failed" in reply) {
-          status.state = "failed";
-          status.reason = reply.failed;
-          this.push();
+        if (reply.kind === "failed") return fail(reply.failed);
+        if (reply.kind === "mesh") {
+          this.useDetail(reply);
+          if (reply.textured === 0) {
+            worker.terminate();
+            this.detailWorker = null;
+            release();
+          }
           return;
         }
-        const geometry = new BufferGeometry();
-        geometry.setAttribute("position", new BufferAttribute(reply.positions, 3));
-        geometry.setIndex(new BufferAttribute(reply.index, 1));
-        geometry.computeBoundingSphere();
-        this.detailGeometry = geometry;
-        if (this.drawn) this.drawn.geometry = geometry;
-        if (this.wire) this.wire.geometry = geometry;
-        this.panos?.setGeometry(geometry);
-        Object.assign(status, { state: "ready", triangles: reply.index.length / 3, megabytes: reply.megabytes, seconds: reply.seconds });
+        if (reply.kind === "texture") {
+          this.arrived.push(reply);
+          return;
+        }
+        const textures = this.state.detail.textures;
+        if (textures) Object.assign(textures, { done: true, megabytes: reply.megabytes, seconds: reply.seconds });
         this.push();
       };
-      worker.onerror = (event) => {
-        worker.terminate();
-        this.detailWorker = null;
-        release();
-        status.state = "failed";
-        status.reason = `worker: ${event.message}`;
-        this.push();
-      };
-      const request: DetailRequest = { url: detail.url, bytes: detail.bytes };
+      worker.onerror = (event) => fail(`worker: ${event.message}`);
+      const request: DetailRequest = { kind: "load", url: detail.url, bytes: detail.bytes, textures: textured, small: SMALL_TEXTURE };
       worker.postMessage(request);
     } catch {
       release();
       status.state = "failed";
     }
+  }
+
+  private useDetail(reply: Extract<DetailReply, { kind: "mesh" }>): void {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(reply.positions, 3));
+    geometry.setAttribute("uv", new BufferAttribute(reply.uvs, 2));
+    geometry.setIndex(new BufferAttribute(reply.index, 1));
+    geometry.computeBoundingSphere();
+    this.detailGeometry = geometry;
+    if (reply.textured > 0) {
+      this.groups = reply.groups;
+      reply.groups.forEach((g, i) => geometry.addGroup(g.start, g.count, i));
+      this.groupMaterials = reply.groups.map(() => this.material);
+      this.small = reply.groups.map(() => null);
+      this.sharp = reply.groups.map(() => null);
+    }
+    if (this.drawn) {
+      this.drawn.geometry = geometry;
+      this.drawn.material = reply.textured > 0 ? this.groupMaterials : this.material;
+    }
+    if (this.wire) this.wire.geometry = geometry;
+    this.panos?.setGeometry(geometry);
+    if (this.fill && reply.fill.length > 0) {
+      const holes = new BufferGeometry();
+      holes.setAttribute("position", new BufferAttribute(reply.fill, 3));
+      holes.computeBoundingSphere();
+      this.addFill(new Mesh(holes, this.fillMaterial));
+    }
+    Object.assign(this.state.detail, {
+      state: "ready",
+      triangles: reply.index.length / 3,
+      megabytes: reply.megabytes,
+      seconds: reply.seconds,
+      holes: reply.holes,
+      textures: reply.textured > 0 ? { total: reply.textured, small: 0, sharp: 0, megabytes: 0, seconds: 0, done: false, gpuMegabytes: 0 } : undefined,
+    });
+    this.push();
+  }
+
+  private addFill(mesh: Mesh): void {
+    this.fillMeshes.push(mesh);
+    this.scene.add(mesh);
+  }
+
+  /**
+   * A floor plane and a ceiling plane for each level, just behind the mesh's
+   * own (lib/scan-mesh/levels.ts), from the floor under each scan position
+   * and the ceiling over it, so a hole in either shows a surface at the right
+   * height rather than the level below or nothing.
+   */
+  private addLevels(world: MeshWorld): void {
+    const manifest = this.manifest;
+    if (!this.fill || !manifest) return;
+    const ray = new Ray(new Vector3(), new Vector3(0, 1, 0));
+    const samples: LevelSample[] = [];
+    manifest.panos.forEach((pano, i) => {
+      const feet = this.feetAt(i);
+      if (!feet) return;
+      ray.origin.set(pano.position[0], pano.position[1], pano.position[2]);
+      const up = world.bvh.raycastFirst(ray, DoubleSide, 0, 8);
+      samples.push({ x: feet[0], z: feet[2], floor: feet[1], ceiling: up ? up.point.y : null });
+    });
+    for (const level of fitLevels(samples)) {
+      const [x0, z0] = level.min;
+      const [x1, z1] = level.max;
+      const positions: number[] = [];
+      for (const y of [level.floor, level.ceiling]) {
+        positions.push(x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z0, x1, y, z1, x0, y, z1);
+      }
+      const plane = new BufferGeometry();
+      plane.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
+      plane.computeBoundingSphere();
+      this.addFill(new Mesh(plane, this.fillMaterial));
+    }
+  }
+
+  /**
+   * One frame of the textures: put on the GPU a few of those that have
+   * arrived, choose which are shown full size, and let the panoramas go once
+   * every texture is in.
+   */
+  private showTextures(dt: number): void {
+    if (this.groups.length === 0) return;
+    let small = 0;
+    let sharp = 0;
+    const later: { group: number; sharp: boolean; image: ImageBitmap }[] = [];
+    for (const item of this.arrived) {
+      if (item.sharp ? sharp >= UPLOADS_SHARP : small >= UPLOADS_SMALL) {
+        later.push(item);
+        continue;
+      }
+      if (item.sharp) sharp++;
+      else small++;
+      this.applyTexture(item.group, item.sharp, item.image);
+    }
+    this.arrived = later;
+
+    this.sharpClock -= dt;
+    const textures = this.state.detail.textures;
+    if (this.sharpClock <= 0) {
+      this.sharpClock = SHARP_EVERY;
+      this.chooseSharp();
+      this.detailWorker?.postMessage({ kind: "eye", eye: [this.pose.x, this.pose.y, this.pose.z] } satisfies DetailRequest);
+      if (textures) {
+        textures.small = this.small.filter(Boolean).length;
+        textures.sharp = this.sharp.filter(Boolean).length;
+        const bytes = [...this.small, ...this.sharp].reduce((sum, t) => sum + ((t?.userData.bytes as number | undefined) ?? 0), 0);
+        textures.gpuMegabytes = bytes / 1e6;
+      }
+    }
+    if (this.panos && textures?.done && this.arrived.length === 0 && !this.groupMaterials.includes(this.material)) this.retirePanos();
+    // A panorama's cubes a frame (panos.ts's `release`).
+    if (this.retiring?.release()) this.retiring = null;
+  }
+
+  private applyTexture(group: number, sharp: boolean, image: ImageBitmap): void {
+    if (sharp && !this.sharpWanted.has(group)) {
+      image.close();
+      return;
+    }
+    const texture = new Texture(image);
+    texture.flipY = false;
+    texture.generateMipmaps = true;
+    texture.minFilter = LinearMipmapLinearFilter;
+    texture.magFilter = LinearFilter;
+    texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+    texture.needsUpdate = true;
+    // RGBA, and a third again for the smaller copies; the image is let go once uploaded.
+    texture.userData.bytes = image.width * image.height * 4 * (4 / 3);
+    this.renderer.initTexture(texture);
+    image.close();
+    const slot = sharp ? this.sharp : this.small;
+    slot[group]?.dispose();
+    slot[group] = texture;
+    this.showGroup(group);
+  }
+
+  private showGroup(group: number): void {
+    const map = this.sharp[group] ?? this.small[group];
+    if (!map) return;
+    const material = this.groupMaterials[group];
+    if (material === this.material) this.groupMaterials[group] = createTexturedMaterial(map);
+    else material.uniforms.uMap.value = map;
+  }
+
+  /** The textures within reach of the eye, nearest first, at full size; the rest small. */
+  private chooseSharp(): void {
+    const eye: [number, number, number] = [this.pose.x, this.pose.y, this.pose.z];
+    const near = this.groups
+      .map((g, i) => ({ i, d: distanceToGroup(g, eye) }))
+      .filter(({ i, d }) => d <= SHARP_REACH && this.small[i] !== null)
+      .sort((a, b) => a.d - b.d)
+      .slice(0, SHARP_MAX)
+      .map(({ i }) => i);
+    const wanted = new Set(near);
+    for (const i of this.sharpWanted) {
+      if (wanted.has(i)) continue;
+      this.sharp[i]?.dispose();
+      this.sharp[i] = null;
+      this.showGroup(i);
+    }
+    const asked = near.filter((i) => !this.sharpWanted.has(i));
+    this.sharpWanted = wanted;
+    if (asked.length > 0) this.detailWorker?.postMessage({ kind: "sharp", groups: asked } satisfies DetailRequest);
+  }
+
+  /** Every texture is in: the panoramas' cubes, a gigabyte or so of GPU memory, are let go. */
+  private retirePanos(): void {
+    if (this.panos) this.retiring = this.panos;
+    this.panos = null;
+    this.used = [];
+    if (this.fill) this.backdrop.visible = false;
+    for (const material of [this.material, this.backdropMaterial]) {
+      for (let i = 0; i < 4; i++) {
+        material.uniforms[`uPano${i}`].value = this.blank;
+        material.uniforms[`uLow${i}`].value = this.blank;
+        material.uniforms[`uDepth${i}`].value = this.blank;
+      }
+      (material.uniforms.uPanoShare.value as number[]).fill(0);
+    }
+    this.push();
+  }
+
+  /** `measure` for the textured mesh: the part of the view that is scanned surface (not a closed hole, a plane or nothing). */
+  private measureTextured(): ViewStats {
+    const target = new WebGLRenderTarget(MEASURE_WIDTH, MEASURE_HEIGHT);
+    const pixels = new Uint8Array(MEASURE_WIDTH * MEASURE_HEIGHT * 4);
+    const before = this.renderer.getRenderTarget();
+    const backdrop = this.backdrop.visible;
+    const clear = this.renderer.getClearColor(new Color());
+    const alpha = this.renderer.getClearAlpha();
+    let mesh = 0;
+    try {
+      this.backdrop.visible = false;
+      for (const m of this.fillMeshes) m.visible = false;
+      this.renderer.setRenderTarget(target);
+      this.renderer.setClearColor(clear, 0);
+      this.renderer.clear();
+      this.renderer.render(this.scene, this.camera);
+      this.renderer.readRenderTargetPixels(target, 0, 0, MEASURE_WIDTH, MEASURE_HEIGHT, pixels);
+      let covered = 0;
+      for (let i = 3; i < pixels.length; i += 4) if (pixels[i] >= 128) covered++;
+      mesh = covered / (pixels.length / 4);
+    } finally {
+      for (const m of this.fillMeshes) m.visible = true;
+      this.backdrop.visible = backdrop;
+      this.renderer.setClearColor(clear, alpha);
+      this.renderer.setRenderTarget(before);
+      target.dispose();
+    }
+    // One texture a surface: nothing unseen, nothing doubled.
+    return { mesh, unseen: 0, unseenNear: 0, unseenClose: 0, unseenMixed: 0, ghost: 0, spread: 0, doubled: 0 };
   }
 
   /** Once every panorama has its small cube, compare neighbours' colours and even out their exposures. */
@@ -546,10 +850,17 @@ export class ScanView {
     this.disposed = true;
     this.abort.abort();
     this.panos?.dispose();
+    this.retiring?.dispose();
     if (this.wire) (this.wire.material as MeshBasicMaterial).dispose();
     this.geometry?.dispose();
     this.detailGeometry?.dispose();
     this.detailWorker?.terminate();
+    for (const item of this.arrived) item.image.close();
+    for (const texture of [...this.small, ...this.sharp]) texture?.dispose();
+    for (const material of this.groupMaterials) if (material !== this.material) material.dispose();
+    for (const mesh of this.fillMeshes) mesh.geometry.dispose();
+    this.fillMaterial.dispose();
+    this.fill?.dispose();
     this.material.dispose();
     this.backdropMaterial.dispose();
     this.backdrop.geometry.dispose();

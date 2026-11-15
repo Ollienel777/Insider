@@ -15,6 +15,9 @@ interface Props {
   mesh: MeshResolution;
   /** Whether to load the scan's detailed mesh. */
   detail: boolean;
+  /** Whether to paint the detailed mesh with its own textures, and fill what nothing covers. */
+  textured: boolean;
+  fill: boolean;
   debug: boolean;
 }
 
@@ -42,9 +45,19 @@ const HINTS: [string, string][] = [
   ["Esc", "release"],
 ];
 
-const seconds = (value: number | null) => (value === null ? "…" : `${value.toFixed(2)} s`);
+const seconds = (value: number | null) =>
+  value === null ? "…" : `${value.toFixed(2)} s`;
 
-export function ScanWalkScreen({ modelId, given, faces, mesh, detail, debug }: Props) {
+export function ScanWalkScreen({
+  modelId,
+  given,
+  faces,
+  mesh,
+  detail,
+  textured,
+  fill,
+  debug,
+}: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [hud, setHud] = useState<WalkHud | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -54,19 +67,35 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, detail, debug }: P
     if (!element || !modelId) return;
     let engine: ScanWalk | null = null;
     let gone = false;
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
     // three.js is loaded only here, so no other page pays for it.
     import("./engine")
       .then(({ ScanWalk }) => {
         if (gone) return;
-        engine = new ScanWalk(element, { modelId, faces, mesh, detail, reducedMotion, debug, onHud: setHud });
+        engine = new ScanWalk(element, {
+          modelId,
+          faces,
+          mesh,
+          detail,
+          textured,
+          fill,
+          reducedMotion,
+          debug,
+          onHud: setHud,
+        });
       })
-      .catch(() => setFailed("This browser couldn't start the 3D view (WebGL 2 is needed)."));
+      .catch(() =>
+        setFailed(
+          "This browser couldn't start the 3D view (WebGL 2 is needed).",
+        ),
+      );
     return () => {
       gone = true;
       engine?.dispose();
     };
-  }, [modelId, faces, mesh, detail, debug]);
+  }, [modelId, faces, mesh, detail, textured, fill, debug]);
 
   if (!modelId) {
     return (
@@ -84,8 +113,11 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, detail, debug }: P
   }
 
   const phase = hud?.phase ?? "manifest";
-  const stopped = failed ?? (phase === "error" || phase === "no-mesh" ? hud?.message : null);
-  const loading = !failed && (phase === "manifest" || phase === "mesh" || phase === "building");
+  const stopped =
+    failed ?? (phase === "error" || phase === "no-mesh" ? hud?.message : null);
+  const loading =
+    !failed &&
+    (phase === "manifest" || phase === "mesh" || phase === "building");
   const ready = phase === "ready";
 
   return (
@@ -98,15 +130,23 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, detail, debug }: P
       />
 
       {ready && hud?.locked && (
-        <div aria-hidden className="pointer-events-none absolute top-1/2 left-1/2 size-1 -translate-1/2 rounded-full bg-n-50 ring-1 ring-n-950" />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 left-1/2 size-1 -translate-1/2 rounded-full bg-n-50 ring-1 ring-n-950"
+        />
       )}
 
       <aside
         data-testid="scan-walk-hud"
         className="pointer-events-none absolute top-4 left-4 w-72 rounded-md border border-border bg-surface-1/85 p-4 shadow-e-2 backdrop-blur-sm"
       >
-        <p className="font-mono text-xs tracking-wide text-text-3 uppercase">Scan free walk · sandbox</p>
-        <p className="mt-1 flex items-center gap-2 text-sm text-text-1" role="status">
+        <p className="font-mono text-xs tracking-wide text-text-3 uppercase">
+          Scan free walk · sandbox
+        </p>
+        <p
+          className="mt-1 flex items-center gap-2 text-sm text-text-1"
+          role="status"
+        >
           <span
             aria-hidden
             className={`size-2 rounded-full ${ready ? "bg-success" : stopped ? "bg-danger" : "animate-pulse bg-accent"}`}
@@ -115,34 +155,54 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, detail, debug }: P
         </p>
         <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-xs tabular-nums">
           <Row label="Mesh">
-            {hud && hud.triangles > 0 ? `${hud.triangles.toLocaleString("en-US")} triangles` : "…"}
+            {hud && hud.triangles > 0
+              ? `${hud.triangles.toLocaleString("en-US")} triangles`
+              : "…"}
             {hud?.detail.state === "loading" && " · detail loading"}
-            {hud?.detail.state === "ready" && ` · detail ${hud.detail.triangles.toLocaleString("en-US")}`}
+            {hud?.detail.state === "ready" &&
+              ` · detail ${hud.detail.triangles.toLocaleString("en-US")}`}
           </Row>
           <Row label="Load">
             {hud
               ? `${seconds(hud.timings.manifest)} · ${seconds(hud.timings.download)}${
-                  hud.timings.megabytes === null ? "" : ` (${hud.timings.megabytes.toFixed(1)} MB)`
+                  hud.timings.megabytes === null
+                    ? ""
+                    : ` (${hud.timings.megabytes.toFixed(1)} MB)`
                 } · ${seconds(hud.timings.build)}`
               : "…"}
           </Row>
           <Row label="Position">
-            {hud?.position ? hud.position.map((v) => v.toFixed(1)).join(", ") + (hud.grounded ? "" : " · no floor") : "…"}
+            {hud?.position
+              ? hud.position.map((v) => v.toFixed(1)).join(", ") +
+                (hud.grounded ? "" : " · no floor")
+              : "…"}
           </Row>
-          <Row label="Speed">{hud ? `${hud.speed.toFixed(1)} m/s · ${Math.round(hud.fps)} fps` : "…"}</Row>
-          <Row label="Mouse">{hud ? `${hud.sensitivity.toFixed(2)}× sensitivity` : "…"}</Row>
+          <Row label="Speed">
+            {hud
+              ? `${hud.speed.toFixed(1)} m/s · ${Math.round(hud.fps)} fps`
+              : "…"}
+          </Row>
+          <Row label="Mouse">
+            {hud ? `${hud.sensitivity.toFixed(2)}× sensitivity` : "…"}
+          </Row>
           <Row label="View">
-            {hud?.projection === false
-              ? "Mesh only"
-              : `Panoramas (${hud?.faces ?? faces}) · ${hud?.blend === "nearest" ? "nearest" : "by view"}${hud && !hud.fixes ? " · fixes off" : ""}`}
+            {hud?.detail.textures
+              ? `Textured mesh · ${hud.detail.textures.small} of ${hud.detail.textures.total} textures, ${hud.detail.textures.sharp} full size`
+              : hud?.projection === false
+                ? "Mesh only"
+                : `Panoramas (${hud?.faces ?? faces}) · ${hud?.blend === "nearest" ? "nearest" : "by view"}${hud && !hud.fixes ? " · fixes off" : ""}`}
           </Row>
           <Row label="In use">
             {hud && hud.panos.length > 0
-              ? hud.panos.map((p) => `${p.index + 1}: ${Math.round(p.share * 100)}%`).join(" · ")
+              ? hud.panos
+                  .map((p) => `${p.index + 1}: ${Math.round(p.share * 100)}%`)
+                  .join(" · ")
               : "none yet"}
           </Row>
           <Row label="Held">
-            {hud ? `${hud.building.held} of ${hud.building.total} · ${hud.panosReady} sharp` : "…"}
+            {hud
+              ? `${hud.building.held} of ${hud.building.total} · ${hud.panosReady} sharp`
+              : "…"}
           </Row>
           {debug && hud && (
             <>
@@ -170,39 +230,66 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, detail, debug }: P
 
       {stopped && (
         <div className="absolute inset-0 grid place-items-center">
-          <Notice title={phase === "no-mesh" ? "No mesh for this scan" : "The scan didn't load"} body={stopped} />
+          <Notice
+            title={
+              phase === "no-mesh"
+                ? "No mesh for this scan"
+                : "The scan didn't load"
+            }
+            body={stopped}
+          />
         </div>
       )}
 
       {ready && !hud?.locked && (
-        <div className={`pointer-events-none absolute inset-0 grid justify-items-center ${hud?.lockRefused ? "items-start pt-4" : "items-center"}`}>
-          <p data-testid="scan-walk-look-hint" className="rounded-md border border-border-strong bg-surface-1/90 px-5 py-3 text-sm text-text-1 shadow-e-2 backdrop-blur-sm">
-            {hud?.lockRefused ? "Hold the mouse button and drag to look around" : "Click to look around, or hold and drag"}
+        <div
+          className={`pointer-events-none absolute inset-0 grid justify-items-center ${hud?.lockRefused ? "items-start pt-4" : "items-center"}`}
+        >
+          <p
+            data-testid="scan-walk-look-hint"
+            className="rounded-md border border-border-strong bg-surface-1/90 px-5 py-3 text-sm text-text-1 shadow-e-2 backdrop-blur-sm"
+          >
+            {hud?.lockRefused
+              ? "Hold the mouse button and drag to look around"
+              : "Click to look around, or hold and drag"}
           </p>
         </div>
       )}
 
-      {ready && hud && hud.building.total > 0 && hud.building.held < hud.building.total && (
-        <div
-          role="status"
-          data-testid="scan-walk-progress"
-          className="pointer-events-none absolute top-4 right-4 w-64 rounded-md border border-border bg-surface-1/85 p-3 backdrop-blur-sm"
-        >
-          <p className="text-sm text-text-1">
-            Loading the building: <span className="font-mono tabular-nums">{hud.building.held}</span> of{" "}
-            <span className="font-mono tabular-nums">{hud.building.total}</span>
-          </p>
-          <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-3">
-            <div
-              className="h-full bg-accent transition-[width] duration-base ease-out"
-              style={{ width: `${(100 * hud.building.held) / hud.building.total}%` }}
-            />
+      {ready &&
+        hud &&
+        hud.building.total > 0 &&
+        hud.building.held < hud.building.total && (
+          <div
+            role="status"
+            data-testid="scan-walk-progress"
+            className="pointer-events-none absolute top-4 right-4 w-64 rounded-md border border-border bg-surface-1/85 p-3 backdrop-blur-sm"
+          >
+            <p className="text-sm text-text-1">
+              Loading the building:{" "}
+              <span className="font-mono tabular-nums">
+                {hud.building.held}
+              </span>{" "}
+              of{" "}
+              <span className="font-mono tabular-nums">
+                {hud.building.total}
+              </span>
+            </p>
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-3">
+              <div
+                className="h-full bg-accent transition-[width] duration-base ease-out"
+                style={{
+                  width: `${(100 * hud.building.held) / hud.building.total}%`,
+                }}
+              />
+            </div>
+            <p className="mt-2 text-xs text-text-2">
+              {hud.canMove
+                ? "You can walk already; it sharpens as it arrives."
+                : "Look around; walking starts in a moment."}
+            </p>
           </div>
-          <p className="mt-2 text-xs text-text-2">
-            {hud.canMove ? "You can walk already; it sharpens as it arrives." : "Look around; walking starts in a moment."}
-          </p>
-        </div>
-      )}
+        )}
 
       {ready && (
         <ul
@@ -210,7 +297,10 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, detail, debug }: P
           className="pointer-events-none absolute bottom-4 left-1/2 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-wrap justify-center gap-x-4 gap-y-2 rounded-md border border-border bg-surface-1/85 px-4 py-2 backdrop-blur-sm"
         >
           {HINTS.map(([key, does]) => (
-            <li key={key} className="flex items-center gap-2 text-xs text-text-2">
+            <li
+              key={key}
+              className="flex items-center gap-2 text-xs text-text-2"
+            >
               <kbd className="rounded-sm border border-border-strong bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-text-1">
                 {key}
               </kbd>
@@ -224,10 +314,20 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, detail, debug }: P
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
-  return <main className="relative h-dvh w-full overflow-hidden bg-surface-0 text-text-1">{children}</main>;
+  return (
+    <main className="relative h-dvh w-full overflow-hidden bg-surface-0 text-text-1">
+      {children}
+    </main>
+  );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <>
       <dt className="text-text-3 uppercase">{label}</dt>
@@ -239,7 +339,10 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 function Notice({ title, body }: { title: string; body: string }) {
   return (
     <div className="grid h-full place-items-center p-6">
-      <div className="max-w-md rounded-md border border-border bg-surface-1 p-6 shadow-e-2" role="alert">
+      <div
+        className="max-w-md rounded-md border border-border bg-surface-1 p-6 shadow-e-2"
+        role="alert"
+      >
         <h1 className="text-base font-medium text-text-1">{title}</h1>
         <p className="mt-2 text-sm text-text-2">{body}</p>
       </div>

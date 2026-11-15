@@ -854,26 +854,38 @@ export class PanoStore {
     return target;
   }
 
-  dispose(): void {
-    this.disposed = true;
-    this.abort.abort();
-    this.dropWorker();
+  /**
+   * Lets go of the store a piece at a time: the first call stops all
+   * fetching and decoding, and each call frees one panorama's cubes, or one
+   * spare sharp cube. Freeing a gigabyte of textures at once holds the GPU,
+   * and the frame, for a second or two; a piece a frame doesn't. True once
+   * everything is gone.
+   */
+  release(): boolean {
     const gl = this.renderer.getContext();
-    for (const job of this.lowJobs) {
-      if (job.raw) gl.deleteTexture(job.raw);
-      for (const image of job.images.slice(job.next)) image.close();
+    if (!this.disposed) {
+      this.disposed = true;
+      this.abort.abort();
+      this.dropWorker();
+      for (const job of this.lowJobs) {
+        if (job.raw) gl.deleteTexture(job.raw);
+        for (const image of job.images.slice(job.next)) image.close();
+      }
+      this.lowJobs = [];
+      if (this.sharpJob) {
+        if (this.sharpJob.raw) this.discard(this.sharpJob.raw);
+        this.sharpJob.strips.forEach((cut, slot) =>
+          cut.forEach((strip, k) => {
+            if (slot > this.sharpJob!.slot || (slot === this.sharpJob!.slot && k >= this.sharpJob!.strip)) strip.close();
+          }),
+        );
+        this.sharpJob = null;
+      }
+      this.shown = [];
+      return false;
     }
-    this.lowJobs = [];
-    if (this.sharpJob) {
-      if (this.sharpJob.raw) this.discard(this.sharpJob.raw);
-      this.sharpJob.strips.forEach((cut, slot) =>
-        cut.forEach((strip, k) => {
-          if (slot > this.sharpJob!.slot || (slot === this.sharpJob!.slot && k >= this.sharpJob!.strip)) strip.close();
-        }),
-      );
-      this.sharpJob = null;
-    }
-    for (const e of this.entries) {
+    const e = this.entries.pop();
+    if (e) {
       if (e.sharpCube) this.renderer.properties.remove(e.sharpCube);
       if (e.sharp) this.discard(e.sharp);
       if (e.lowCube) this.renderer.properties.remove(e.lowCube);
@@ -881,13 +893,22 @@ export class PanoStore {
       e.depth?.dispose();
       e.lowBytes = null;
       e.sharpBytes = null;
+      return false;
     }
-    this.entries = [];
-    this.shown = [];
-    for (const raw of this.pool) this.discard(raw);
-    this.pool = [];
-    this.depthMaterial.dispose();
-    (this.far.material as ShaderMaterial).dispose();
-    this.far.geometry.dispose();
+    const raw = this.pool.pop();
+    if (raw) {
+      this.discard(raw);
+      return false;
+    }
+    if (this.depthMaterial) {
+      this.depthMaterial.dispose();
+      (this.far.material as ShaderMaterial).dispose();
+      this.far.geometry.dispose();
+    }
+    return true;
+  }
+
+  dispose(): void {
+    while (!this.release());
   }
 }
