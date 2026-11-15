@@ -34,6 +34,7 @@ import {
   Vector3,
   WebGLCubeRenderTarget,
   type BufferGeometry,
+  type IUniform,
   type ShaderMaterial,
   type WebGLRenderer,
 } from "three";
@@ -41,6 +42,7 @@ import { conjugate, quatToMat3, type Vec3 } from "@/lib/scan-mesh/coords";
 import { isAllowedAssetUrl, type ScanPano } from "@/lib/scan-mesh/manifest";
 import { nearestFirst, planSharp, sharpOrder } from "@/lib/scan-mesh/pano-plan";
 import { slotFades, type BlendMode } from "@/lib/scan-mesh/blend";
+import { panoCosts, priorities, rankPanos, standingOn } from "@/lib/scan-mesh/photo";
 import type { Rgb } from "@/lib/scan-mesh/exposure";
 import type { ExposureSource } from "./exposure-match";
 import { alignToCube, CUBE_LOOKUP_FLIP, panoDistance, panoWeights } from "@/lib/scan-mesh/skybox";
@@ -54,6 +56,8 @@ const LOW_FETCHES = 6;
 const SHARP_FETCHES = 2;
 /** How quickly a panorama's share follows its target, per second. */
 const SHARE_RATE = 7;
+/** Under the photo rule, the panoramas nearest the eye that are checked for a wall between them and it. */
+const SIGHT_CHECKS = 8;
 /** How quickly a slot fades between its small cube and its sharp one, per second: slow enough not to read as a swap. */
 const SHARP_RATE = 0.9;
 /** How quickly the exposure gains ease in once solved, per second. */
@@ -207,8 +211,12 @@ export class PanoStore {
   onStale: (() => void) | null = null;
   /** Set by `update` when bytes are still wanted and the links have run out. */
   needsLinks = false;
-  /** How the slots are weighted (lib/scan-mesh/blend.ts). */
-  mode: BlendMode = "view";
+  /** How the slots are weighted (lib/scan-mesh/blend.ts, and photo.ts for "photo"). */
+  mode: BlendMode = "photo";
+  /** Whether something stands between `eye` and a panorama at `origin`: the photo rule ranks such a panorama lower. */
+  blocked: ((eye: Vec3, origin: Vec3) => boolean) | null = null;
+  /** The photo rule's panoramas in use last frame, the lead first, as places in the list of those ready. */
+  private ranked: Entry[] = [];
   /** While true, no full-size faces are fetched: the link is left to something smaller and more urgent. */
   holdSharp = false;
   /** Whether the exposure gains are applied (to compare with and without). */
@@ -370,8 +378,23 @@ export class PanoStore {
    */
   setGeometry(geometry: BufferGeometry): void {
     this.depthMesh.geometry = geometry;
+    this.renderDepthsAgain();
+  }
+
+  /** More surface for the panoramas' occlusion to be seen against (a closed hole hides what is behind it, like the wall it stands for). */
+  addOccluder(geometry: BufferGeometry): void {
+    this.depthScene.add(new Mesh(geometry, this.depthMaterial));
+    this.renderDepthsAgain();
+  }
+
+  private renderDepthsAgain(): void {
     const queued = new Set(this.depthQueue);
     for (const e of this.shown) if (e.depth && !queued.has(e)) this.depthQueue.push(e);
+  }
+
+  /** Whether every depth cube has been rendered from the latest geometry. */
+  get depthsCurrent(): boolean {
+    return this.depthQueue.length === 0 && this.lowJobs.length === 0;
   }
 
   /** The panorama nearest `eye`, by index, or -1. */
@@ -415,7 +438,7 @@ export class PanoStore {
     eye: Vec3,
     velocity: readonly [number, number],
     dt: number,
-    materials: readonly ShaderMaterial[],
+    materials: readonly { uniforms: Record<string, IUniform> }[],
     blank: CubeTexture,
     linksUsable: boolean,
   ): PanoUse[] {
@@ -428,7 +451,21 @@ export class PanoStore {
 
     const ready = near.map((at) => shown[at]).filter((e) => e.lowCube !== null && e.depth !== null);
     const distances = ready.map((e) => panoDistance(eye, e.pano.position));
-    const targets = this.mode === "view" ? slotFades(distances, SLOTS) : panoWeights(distances, KEEP);
+    let targets: number[];
+    if (this.mode === "photo") {
+      // One panorama leads, kept until another is clearly nearer; one behind a wall counts as farther.
+      const blocked = this.blocked;
+      const costs = panoCosts(
+        eye,
+        ready.map((e) => e.pano.position),
+        (i) => i >= SIGHT_CHECKS || (blocked !== null && distances[i] > 0.3 && blocked(eye, ready[i].pano.position)),
+      );
+      const at = new Map(ready.map((e, i) => [e, i]));
+      const before = this.ranked.flatMap((e) => (at.has(e) ? [at.get(e) as number] : []));
+      const now = rankPanos(costs, before, SLOTS);
+      this.ranked = now.map((i) => ready[i]);
+      targets = priorities(ready.length, now);
+    } else targets = this.mode === "view" ? slotFades(distances, SLOTS) : panoWeights(distances, KEEP);
     const target = new Map<Entry, number>();
     ready.forEach((e, i) => target.set(e, targets[i]));
     const blend = 1 - Math.exp(-SHARE_RATE * dt);
@@ -463,9 +500,10 @@ export class PanoStore {
         u[`uDepth${slot}`].value = e?.depth?.texture ?? blank;
         (u.uPanoShare.value as number[])[slot] = e ? e.share : 0;
         (u.uPanoSharp.value as number[])[slot] = e?.sharpCube ? e.sharpMix : 0;
+        if (u.uPanoOn) (u.uPanoOn.value as number[])[slot] = e ? standingOn(panoDistance(eye, e.pano.position)) : 0;
         const gain = e ? this.gains.get(e.index) : undefined;
         (u.uPanoGain.value as Vector3[])[slot].set(gain?.[0] ?? 1, gain?.[1] ?? 1, gain?.[2] ?? 1);
-        u.uMode.value = this.mode === "view" ? 0 : 1;
+        u.uMode.value = this.mode === "nearest" ? 1 : 0;
         if (e) {
           (u.uPanoPos.value as Vector3[])[slot].copy(e.origin);
           (u.uPanoInv.value as Matrix3[])[slot].copy(e.toPano);
@@ -693,6 +731,9 @@ export class PanoStore {
     gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     if (mipmaps) {
+      // A floor seen at a slant stays sharp.
+      const anisotropic = this.renderer.extensions.get("EXT_texture_filter_anisotropic") as { TEXTURE_MAX_ANISOTROPY_EXT: number } | null;
+      if (anisotropic) gl.texParameterf(gl.TEXTURE_CUBE_MAP, anisotropic.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, this.renderer.capabilities.getMaxAnisotropy()));
       // One texel a face: the driver puts off making the texture until it is
       // written to, and this is the moment to pay for that.
       const texel = new Uint8Array(4);

@@ -49,7 +49,8 @@ import type { DetailReply, DetailRequest } from "./detail-worker";
 import { matchExposure } from "./exposure-match";
 import { HoleFill } from "./hole-fill";
 import { blankCube, PanoStore, type PanoCounts, type PanoUse } from "./panos";
-import { createFillMaterial, createScanMaterial, createTexturedMaterial } from "./projection";
+import { createPhotoMaterial, createPhotoUniforms, type PhotoUniforms } from "./photo-material";
+import { createScanMaterial, SLOTS } from "./projection";
 
 export type { ScanPose } from "@/lib/scan-mesh/pose";
 export { eyePose, yawFromHeading } from "@/lib/scan-mesh/pose";
@@ -65,8 +66,9 @@ export interface ScanViewOptions {
   /** Whether to load the Matterpak's detailed mesh for the picture, where the scan has one. Default true. */
   detail?: boolean;
   /**
-   * Whether to paint the detailed mesh with the Matterpak's own textures
-   * (the same picture from anywhere) rather than the panoramas. Default true.
+   * Whether the detailed mesh has the Matterpak's own textures under the
+   * panoramas: a surface no panorama near the eye saw shows its texture.
+   * Default true; off, the panoramas alone paint it, as they do the 50k mesh.
    */
   textured?: boolean;
   /** Whether to fill what no scanned surface covers from the pixels around it, and close the mesh's small holes. Default true. */
@@ -137,15 +139,35 @@ const MEASURE_HEIGHT = 90;
 /** The textures are first decoded this many pixels square: all of them fit in GPU memory at once. */
 const SMALL_TEXTURE = 512;
 /** Textures of surfaces this close to the eye, metres, are shown sharper, this many pixels square... */
-const SHARP_REACH = 6;
+const SHARP_REACH = 4;
 const SHARP_TEXTURE = 1024;
 /** ...this many at most (each about 5.6 MB of GPU memory)... */
-const SHARP_MAX = 36;
+const SHARP_MAX = 12;
 /** ...chosen again this often, seconds. */
 const SHARP_EVERY = 0.3;
 /** Textures put on the GPU in one frame at most: small ones, and full-size ones. */
 const UPLOADS_SMALL = 4;
 const UPLOADS_SHARP = 1;
+/** Full-size panorama cubes kept on the GPU beside the textures, at most (each 2k one is about 134 MB). */
+const SHARP_CUBES = 5;
+const SOURCE_WIDTH = 160;
+const SOURCE_HEIGHT = 90;
+
+/** What paints the view, as parts of the frame (they sum to 1). */
+export interface ViewSources {
+  /** No surface at all: the panoramas' far view shows (a window, or a gap nothing closes). */
+  void: number;
+  /** A surface painted from the panoramas. */
+  pano: number;
+  /** The mesh's own texture, where no panorama near the eye saw the surface. */
+  texture: number;
+  /** A stand-in's own texture, made from the surface round it. */
+  synth: number;
+  /** A stand-in nothing painted: filled from the pixels around it. */
+  smear: number;
+  /** Stand-ins altogether (closed holes, planes carried across gaps), however painted. */
+  standin: number;
+}
 
 class LoadError extends Error {}
 
@@ -156,7 +178,10 @@ export class ScanView {
   /** Resolves true once the scan can be walked and drawn, false if it can't. */
   readonly ready: Promise<boolean>;
   private readonly blank: CubeTexture;
+  /** The panoramas alone, for a mesh with no texture of its own: the 50k mesh, shown until the detailed one is in. */
   private readonly material: ShaderMaterial;
+  /** The panoramas' uniforms, shared by every material that paints by the photo rule (photo-material.ts). */
+  private readonly photo: PhotoUniforms;
   private readonly backdropMaterial: ShaderMaterial;
   private readonly backdrop: Mesh;
   private readonly abort = new AbortController();
@@ -189,10 +214,8 @@ export class ScanView {
   private sharpClock = 0;
   private arrived: { group: number; sharp: boolean; image: ImageBitmap }[] = [];
   private readonly fill: HoleFill | null;
-  private readonly fillMaterial = createFillMaterial();
+  private readonly fillMaterial: ShaderMaterial;
   private fillMeshes: Mesh[] = [];
-  /** The panoramas, once every texture is in, being let go of a piece a frame. */
-  private retiring: PanoStore | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -209,7 +232,9 @@ export class ScanView {
     this.renderer.setClearColor(new Color().setRGB(0.027, 0.035, 0.047), this.fill ? 0 : 1);
     this.blank = blankCube();
     this.material = createScanMaterial(this.blank);
-    this.backdropMaterial = createScanMaterial(this.blank, true);
+    this.photo = createPhotoUniforms(this.blank);
+    this.backdropMaterial = createPhotoMaterial(this.photo, "backdrop");
+    this.fillMaterial = createPhotoMaterial(this.photo, "stand-in");
     this.backdrop = new Mesh(new BoxGeometry(1000, 1000, 1000), this.backdropMaterial);
     this.backdrop.renderOrder = -1;
     this.backdrop.frustumCulled = false;
@@ -251,7 +276,7 @@ export class ScanView {
         [x, y, z],
         velocity,
         dt,
-        [this.material, this.backdropMaterial],
+        [this.material, { uniforms: this.photo }],
         this.blank,
         this.linksUsable(),
       );
@@ -350,7 +375,7 @@ export class ScanView {
   /** 1 shows the panoramas, 0 the bare mesh, and in between a mix. */
   setProjection(amount: number): void {
     this.material.uniforms.uProjection.value = amount;
-    this.backdropMaterial.uniforms.uProjection.value = amount;
+    this.photo.uProjection.value = amount;
   }
 
   setBlend(mode: BlendMode): void {
@@ -358,7 +383,7 @@ export class ScanView {
   }
 
   get blend(): BlendMode {
-    return this.panos?.mode ?? "view";
+    return this.panos?.mode ?? "photo";
   }
 
   /** Apply the exposure gains or not: to see what they do. */
@@ -368,10 +393,8 @@ export class ScanView {
   }
 
   setFixes(fixes: Partial<ScanFixes>): void {
-    for (const material of [this.material, this.backdropMaterial]) {
-      if (fixes.agree !== undefined) material.uniforms.uAgree.value = fixes.agree ? 1 : 0;
-      if (fixes.fill !== undefined) material.uniforms.uFill.value = fixes.fill ? 1 : 0;
-    }
+    if (fixes.agree !== undefined) this.material.uniforms.uAgree.value = fixes.agree ? 1 : 0;
+    if (fixes.fill !== undefined) this.material.uniforms.uFill.value = fixes.fill ? 1 : 0;
   }
 
   /** 0 the picture, 1 the coverage, 2 the doubles (projection.ts says what the colours mean). */
@@ -404,7 +427,11 @@ export class ScanView {
 
   /** The current view's coverage and doubles, from a small copy rendered in the debug looks (lib/scan-mesh/pose.ts's `viewStats`). */
   measure(): ViewStats {
-    if (this.groups.length > 0 && !this.panos) return this.measureTextured();
+    if (this.groups.length > 0) {
+      // The photo rule: one panorama a point, so nothing doubles; what no panorama saw has its texture.
+      const sources = this.measureSources();
+      return { mesh: 1 - sources.void - sources.standin, unseen: 0, unseenNear: 0, unseenClose: 0, unseenMixed: 0, ghost: 0, spread: 0, doubled: 0, filled: sources.void };
+    }
     const target = new WebGLRenderTarget(MEASURE_WIDTH, MEASURE_HEIGHT);
     const pixels = new Uint8Array(MEASURE_WIDTH * MEASURE_HEIGHT * 4);
     const coverage = new Uint8Array(pixels.length);
@@ -509,8 +536,17 @@ export class ScanView {
       this.scene.add(this.drawn);
 
       const sharp = sharpLayer(this.faces);
-      this.panos = new PanoStore(this.renderer, geometry, sharp.capacity, sharp.size);
+      this.panos = new PanoStore(this.renderer, geometry, Math.min(sharp.capacity, SHARP_CUBES), sharp.size);
       this.panos.onStale = () => void this.refreshLinks();
+      const sight = new Ray();
+      const world = this.meshWorld;
+      this.panos.blocked = (eye, origin) => {
+        sight.origin.set(eye[0], eye[1], eye[2]);
+        sight.direction.set(origin[0] - eye[0], origin[1] - eye[1], origin[2] - eye[2]);
+        const reach = sight.direction.length();
+        sight.direction.divideScalar(Math.max(reach, 1e-6));
+        return world.bvh.raycastFirst(sight, DoubleSide, 0, Math.max(0, reach - 0.3)) !== null;
+      };
       this.panos.setPanos(manifest.panos);
 
       this.loadDetail(manifest.detail);
@@ -551,9 +587,8 @@ export class ScanView {
    * Fetch the Matterpak's detailed mesh in a worker and, once in, draw it and
    * see the panoramas' occlusion against it. Walking stays on the 50k mesh,
    * whose floors are clean. Then, where the Matterpak has them, its textures
-   * stream in, nearest the eye first: each part of the mesh shows its own
-   * texture once it arrives, and the panoramas until then. Once every texture
-   * is in, the panoramas are let go.
+   * stream in, nearest the eye first: each part of the mesh then has its own
+   * texture under the panoramas, for what none of them near the eye saw.
    */
   private loadDetail(detail: ScanDetail | null): void {
     const status = this.state.detail;
@@ -564,7 +599,7 @@ export class ScanView {
     if (!detail || detail.bytes === null || !isAllowedAssetUrl(detail.url)) return;
     status.state = "loading";
     const textured = this.options.textured !== false;
-    // The 9 MB or so of mesh first, then its textures: the full-size faces, hundreds of megabytes, wait for them.
+    // The 9 MB or so of mesh first: the full-size faces, hundreds of megabytes, wait for it.
     if (this.panos) this.panos.holdSharp = true;
     const release = () => {
       if (this.panos) this.panos.holdSharp = false;
@@ -588,10 +623,10 @@ export class ScanView {
         if (reply.kind === "failed") return fail(reply.failed);
         if (reply.kind === "mesh") {
           this.useDetail(reply);
+          release();
           if (reply.textured === 0) {
             worker.terminate();
             this.detailWorker = null;
-            release();
           }
           return;
         }
@@ -653,6 +688,8 @@ export class ScanView {
     geometry.setAttribute("position", new BufferAttribute(triangles, 3));
     geometry.computeBoundingSphere();
     this.addFill(new Mesh(geometry, this.fillMaterial));
+    // A closed hole hides what is behind it from a panorama, like the surface it stands for.
+    this.panos?.addOccluder(geometry);
   }
 
   private addFill(mesh: Mesh): void {
@@ -694,8 +731,7 @@ export class ScanView {
 
   /**
    * One frame of the textures: put on the GPU a few of those that have
-   * arrived, choose which are shown full size, and let the panoramas go once
-   * every texture is in.
+   * arrived, and choose which are shown full size.
    */
   private showTextures(dt: number): void {
     if (this.groups.length === 0) return;
@@ -726,9 +762,6 @@ export class ScanView {
         textures.gpuMegabytes = bytes / 1e6;
       }
     }
-    if (this.panos && textures?.done && this.arrived.length === 0 && !this.groupMaterials.includes(this.material)) this.retirePanos();
-    // A panorama's cubes a frame (panos.ts's `release`).
-    if (this.retiring?.release()) this.retiring = null;
   }
 
   private applyTexture(group: number, sharp: boolean, image: ImageBitmap): void {
@@ -757,7 +790,7 @@ export class ScanView {
     const map = this.sharp[group] ?? this.small[group];
     if (!map) return;
     const material = this.groupMaterials[group];
-    if (material === this.material) this.groupMaterials[group] = createTexturedMaterial(map);
+    if (material === this.material) this.groupMaterials[group] = createPhotoMaterial(this.photo, "mesh", map);
     else material.uniforms.uMap.value = map;
   }
 
@@ -783,65 +816,63 @@ export class ScanView {
     if (asked.length > 0) this.detailWorker?.postMessage({ kind: "sharp", groups: asked } satisfies DetailRequest);
   }
 
-  /** Every texture is in: the panoramas' cubes, a gigabyte or so of GPU memory, are let go. */
-  private retirePanos(): void {
-    if (this.panos) this.retiring = this.panos;
-    this.panos = null;
-    this.used = [];
-    if (this.fill) this.backdrop.visible = false;
-    for (const material of [this.material, this.backdropMaterial]) {
-      for (let i = 0; i < 4; i++) {
-        material.uniforms[`uPano${i}`].value = this.blank;
-        material.uniforms[`uLow${i}`].value = this.blank;
-        material.uniforms[`uDepth${i}`].value = this.blank;
-      }
-      (material.uniforms.uPanoShare.value as number[]).fill(0);
-    }
-    this.push();
+  /**
+   * Whether the picture is whole: every texture in and on the GPU, every
+   * panorama's small cube and depth made from the latest mesh, and full-size
+   * cubes for the panoramas in use.
+   */
+  imagingReady(): boolean {
+    const textures = this.state.detail.textures;
+    if (this.state.detail.state === "loading" || (textures && (!textures.done || this.arrived.length > 0))) return false;
+    const counts = this.panos?.counts();
+    if (!this.panos || !counts) return true;
+    return counts.low + counts.failed >= counts.total && this.panos.depthsCurrent && counts.sharpLoading === 0 && counts.sharp >= Math.min(SLOTS, counts.total - counts.failed);
   }
 
-  /** `measure` for the textured mesh: the part of the view that is scanned surface (not a closed hole, a plane or nothing). */
-  private measureTextured(): ViewStats {
-    const target = new WebGLRenderTarget(MEASURE_WIDTH, MEASURE_HEIGHT);
-    const pixels = new Uint8Array(MEASURE_WIDTH * MEASURE_HEIGHT * 4);
+  /**
+   * What paints the current view (`ViewSources`), from a small copy rendered
+   * in the photo materials' source colours (photo-material.ts): red the
+   * panoramas' part, green a texture's, blue a stand-in, alpha 0 nothing.
+   */
+  measureSources(): ViewSources {
+    const target = new WebGLRenderTarget(SOURCE_WIDTH, SOURCE_HEIGHT);
+    const pixels = new Uint8Array(SOURCE_WIDTH * SOURCE_HEIGHT * 4);
     const before = this.renderer.getRenderTarget();
-    const backdrop = this.backdrop.visible;
     const clear = this.renderer.getClearColor(new Color());
     const alpha = this.renderer.getClearAlpha();
-    const mark = new MeshBasicMaterial({ side: DoubleSide });
-    const covered = (): number => {
-      this.renderer.clear();
-      this.renderer.render(this.scene, this.camera);
-      this.renderer.readRenderTargetPixels(target, 0, 0, MEASURE_WIDTH, MEASURE_HEIGHT, pixels);
-      let count = 0;
-      for (let i = 3; i < pixels.length; i += 4) if (pixels[i] >= 128) count++;
-      return count / (pixels.length / 4);
-    };
-    let mesh = 0;
-    let filled = 0;
+    const backdrop = this.backdrop.visible;
     try {
       this.backdrop.visible = false;
+      this.photo.uDebug.value = 3;
       this.renderer.setRenderTarget(target);
       this.renderer.setClearColor(clear, 0);
-      for (const m of this.fillMeshes) m.visible = false;
-      mesh = covered();
-      // The stand-ins draw alpha 0, like the clear: drawn opaque for the count.
-      for (const m of this.fillMeshes) {
-        m.visible = true;
-        m.material = mark;
-      }
-      filled = 1 - covered();
+      this.renderer.clear();
+      this.renderer.render(this.scene, this.camera);
+      this.renderer.readRenderTargetPixels(target, 0, 0, SOURCE_WIDTH, SOURCE_HEIGHT, pixels);
     } finally {
-      for (const m of this.fillMeshes) m.material = this.fillMaterial;
-      mark.dispose();
-      for (const m of this.fillMeshes) m.visible = true;
+      this.photo.uDebug.value = 0;
       this.backdrop.visible = backdrop;
       this.renderer.setClearColor(clear, alpha);
       this.renderer.setRenderTarget(before);
       target.dispose();
     }
-    // One texture a surface: nothing unseen, nothing doubled.
-    return { mesh, unseen: 0, unseenNear: 0, unseenClose: 0, unseenMixed: 0, ghost: 0, spread: 0, doubled: 0, filled };
+    const out: ViewSources = { void: 0, pano: 0, texture: 0, synth: 0, smear: 0, standin: 0 };
+    const count = pixels.length / 4;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i + 3] < 128) {
+        out.void += 1 / count;
+        continue;
+      }
+      const pano = pixels[i] / 255;
+      const own = pixels[i + 1] / 255;
+      out.pano += pano / count;
+      if (pixels[i + 2] >= 128) {
+        out.standin += 1 / count;
+        out.synth += own / count;
+        out.smear += Math.max(0, 1 - pano - own) / count;
+      } else out.texture += (1 - pano) / count;
+    }
+    return out;
   }
 
   /** Once every panorama has its small cube, compare neighbours' colours and even out their exposures. */
@@ -871,7 +902,6 @@ export class ScanView {
     this.disposed = true;
     this.abort.abort();
     this.panos?.dispose();
-    this.retiring?.dispose();
     if (this.wire) (this.wire.material as MeshBasicMaterial).dispose();
     this.geometry?.dispose();
     this.detailGeometry?.dispose();

@@ -9,10 +9,14 @@
 // the angle to that panorama is zero everywhere and its picture is exact.
 // "nearest" is the rule this replaced: each panorama's share from the
 // player's distance alone, sharpened, which reads as one picture at a time.
-import type { Vec3 } from "./coords";
 
-export type BlendMode = "view" | "nearest";
-export const BLEND_MODES: readonly BlendMode[] = ["view", "nearest"];
+// "photo" is lib/scan-mesh/photo.ts's rule, for a mesh that has its own
+// texture to fall back on: one panorama leads and paints all it saw.
+import type { Vec3 } from "./coords";
+import { GRAZE_FULL, GRAZE_NONE } from "./photo";
+
+export type BlendMode = "photo" | "view" | "nearest";
+export const BLEND_MODES: readonly BlendMode[] = ["photo", "view", "nearest"];
 
 export interface BlendSource {
   /** Where the panorama was taken. */
@@ -61,6 +65,8 @@ export function blendWeights(
     const ray = sub(point, s.origin);
     const reach = Math.max(length(ray), 1e-4);
     const along: Vec3 = [ray[0] / reach, ray[1] / reach, ray[2] / reach];
+    // The photo rule: the share is the panorama's rank, and it paints what it saw squarely enough.
+    if (mode === "photo") return s.share * s.seen * smoothstep(GRAZE_NONE, GRAZE_FULL, -dot(n, along));
     const facing = smoothstep(0.02, 0.3, -dot(n, along));
     if (mode === "nearest") {
       const aligned = Math.max(dot(sight, along), 0);

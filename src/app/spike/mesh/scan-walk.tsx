@@ -35,7 +35,7 @@ const HINTS: [string, string][] = [
   ["Shift", "walk"],
   ["Mouse", "look"],
   ["- =", "sensitivity"],
-  ["T", "mesh / panoramas"],
+  ["T", "photo / textures"],
   ["P", "nearest scan position"],
   ["N", "next scan position"],
   ["G", "mesh edges"],
@@ -136,10 +136,10 @@ export function ScanWalkScreen({ modelId, given, faces, mesh, detail, textured, 
           <Row label="Mouse">{hud ? `${hud.sensitivity.toFixed(2)}× sensitivity` : "…"}</Row>
           <Row label="View">
             {hud?.detail.textures
-              ? `Textured mesh · ${hud.detail.textures.small} of ${hud.detail.textures.total} textures, ${hud.detail.textures.sharp} full size`
+              ? `${hud.projection === false ? "Textures only" : hud.blend === "photo" ? "Photo" : hud.blend === "nearest" ? "Panoramas, nearest" : "Panoramas, by view"} · ${hud.detail.textures.small} of ${hud.detail.textures.total} textures under it`
               : hud?.projection === false
               ? "Mesh only"
-              : `Panoramas (${hud?.faces ?? faces}) · ${hud?.blend === "nearest" ? "nearest" : "by view"}${hud && !hud.fixes ? " · fixes off" : ""}`}
+              : `Panoramas (${hud?.faces ?? faces}) · ${hud?.blend === "nearest" ? "nearest" : hud?.blend === "photo" ? "photo" : "by view"}${hud && !hud.fixes ? " · fixes off" : ""}`}
           </Row>
           <Row label="In use">
             {hud && hud.panos.length > 0

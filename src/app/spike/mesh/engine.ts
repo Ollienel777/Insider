@@ -2,7 +2,7 @@
 // scan like a shooter. The scan itself is drawn by scan-view.ts, which this
 // drives the way a game's first-person view would: input and movement here,
 // then a pose and a render each frame.
-import type { BlendMode } from "@/lib/scan-mesh/blend";
+import { BLEND_MODES, type BlendMode } from "@/lib/scan-mesh/blend";
 import type { Vec3 } from "@/lib/scan-mesh/coords";
 import type { MeshResolution, PanoResolution } from "@/lib/scan-mesh/manifest";
 import { applyLook, stepMove, TUNING, viewBob, type MoveState } from "@/lib/scan-mesh/movement";
@@ -166,7 +166,7 @@ export class ScanWalk {
       grounded: false,
       speed: 0,
       projection: true,
-      blend: "view",
+      blend: "photo",
       fixes: true,
       exposure: null,
       detail: { state: "none", triangles: 0, megabytes: 0, seconds: 0 },
@@ -339,7 +339,7 @@ export class ScanWalk {
     if (event.code === "KeyT") this.setProjection(!this.projection);
     if (event.code === "KeyG") this.view.toggleWire();
     if (event.code === "KeyE") this.setExposure(!(this.hud.exposure?.on ?? true));
-    if (event.code === "KeyB") this.setBlend(this.hud.blend === "view" ? "nearest" : "view");
+    if (event.code === "KeyB") this.setBlend(BLEND_MODES[(BLEND_MODES.indexOf(this.hud.blend) + 1) % BLEND_MODES.length]);
     if (event.code === "KeyF") this.setFixes({ agree: !this.fixes, fill: !this.fixes });
     const count = this.view.scanPositions().length;
     if ((event.code === "KeyP" || event.code === "KeyN") && this.state && count > 0) {
@@ -555,7 +555,7 @@ export class ScanWalk {
     }
     const textures = status.detail.textures;
     if (textures) {
-      // The textured mesh: the building is its textures, and the panoramas are let go once they are in.
+      // The textured mesh: the building is its textures, under the panoramas.
       const b = this.hud.building;
       b.held = textures.small;
       b.total = textures.total;
