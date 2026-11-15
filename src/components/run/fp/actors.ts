@@ -617,7 +617,7 @@ export class Actors {
       out.push({ key: `p:${id}`, text: id, tone: this.pawnKind.get(id) ?? "guard", x: pawn.at.x, y: 1.82, z: pawn.at.y, at: pawn.at, beacon: false });
     }
     for (const camera of this.marks.cameras) {
-      out.push({ key: `c:${camera.id}`, text: `Camera ${camera.id}`, tone: "camera", x: camera.mount.x, y: FP.wallHeightM - 0.05, z: camera.mount.y, at: camera.mount, beacon: false });
+      out.push({ key: `c:${camera.id}`, text: `Camera ${camera.id}`, tone: "camera", x: camera.mount.x, y: FP.wallHeightM - 0.05, z: camera.mount.y, at: camera.looksAt, beacon: false });
     }
     const objective = this.ground.nodes.get(this.marks.objective.nodeId);
     if (objective && !run.carrying) {
