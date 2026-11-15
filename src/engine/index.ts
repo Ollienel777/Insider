@@ -26,6 +26,7 @@ export { neighbours, shortestPath } from "./path";
 export {
   compileBoard,
   createRun,
+  withPursuit,
   DEFAULT_HEARING,
   LevelError,
   picksToOpen,
@@ -40,6 +41,7 @@ export {
   type GuardState,
   type GuardTarget,
   type Level,
+  type Pursuit,
   type RunState,
   type RunStatus,
   type Sighted,
