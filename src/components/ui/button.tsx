@@ -26,7 +26,8 @@ export const buttonVariants = cva(
           "before:bg-[image:var(--stamp-handle)] before:content-['']",
         ),
         secondary: "bg-n-950 text-text-1 hover:bg-surface-2 active:bg-surface-3",
-        ghost: "border-transparent bg-transparent text-text-2 shadow-none hover:bg-surface-3 hover:text-text-1 active:shadow-none",
+        // Paper with an outline but no drop: a quieter action that still reads as a button (issue 166).
+        ghost: "border-border bg-transparent text-text-2 shadow-none hover:border-border-strong hover:bg-surface-2 hover:text-text-1 active:shadow-none",
       },
       size: {
         default: "h-10 px-5",

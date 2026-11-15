@@ -21,7 +21,7 @@ export function TopBar({ status, building }: TopBarProps) {
     >
       <Link
         href="/"
-        className="inline-flex h-10 -rotate-3 items-center gap-[0.3em] justify-self-start rounded-[6px] border-[3px] border-border-strong bg-n-950 px-3 font-display text-2xl font-normal whitespace-nowrap tracking-wide text-text-1 max-md:h-9 max-md:px-2 max-md:text-base shadow-[4px_5px_0_rgb(0_0_0/0.3)] transition-transform duration-fast hover:-rotate-1"
+        className="inline-flex h-10 -rotate-3 items-center justify-self-start rounded-[6px] border-[3px] border-border-strong bg-n-950 px-3 font-display text-2xl font-normal whitespace-nowrap tracking-wide text-text-1 max-md:h-9 max-md:px-2 max-md:text-base shadow-[4px_5px_0_rgb(0_0_0/0.3)] transition-transform duration-fast hover:-rotate-1"
       >
         Hobbs<span className="text-danger">.</span>
       </Link>
