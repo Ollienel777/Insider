@@ -35,7 +35,7 @@ import { BoardView } from "./board-view";
 import { LensLegend, LensToggle, useLayerLens } from "./layer-lens";
 import { LiveControls } from "./live-controls";
 import { panelsOpen, RunLayout, useDetails } from "./live-layout";
-import { usePlayHud } from "./play-hud";
+import { endNote, usePlayHud } from "./play-hud";
 import { usePlayMode } from "./play-mode";
 import { useTurnClock } from "./turn-clock";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
@@ -46,7 +46,7 @@ import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postur
 import { MuteToggle, useRunSound } from "./run-sound";
 import { RunStage } from "./run-stage";
 import { placeOrFixture } from "./scan-fallback";
-import { FIRST_PERSON_PACE, FIRST_PERSON_TURN_MS, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, ViewSwitch, type HeldAction } from "./fp/run-view";
+import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, ViewSwitch, type HeldAction } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -379,6 +379,13 @@ export function RunScreen({
   const open = panelsOpen(layoutMode, details);
   // The lens is put away with the bar: its key does nothing until Details opens it again.
   const [lens, toggleLens] = useLayerLens(open);
+  // First person's time left is at the controller's speed: a walk while Shift is held, else a run.
+  const [walking, setWalking] = useState(false);
+  const fpFloor = placed?.level.floor ?? null;
+  const pace = useMemo(
+    () => (fpOn && fpFloor ? firstPersonPace(fpFloor, walking) : null),
+    [fpOn, fpFloor, walking],
+  );
   const hud = usePlayHud({
     live: layoutMode === "live",
     placed,
@@ -389,7 +396,7 @@ export function RunScreen({
     revealed,
     status,
     // First person is played in real time: the HUD says seconds and plain words, not hops and turns.
-    pace: fpOn ? FIRST_PERSON_PACE : null,
+    pace,
   });
 
   useEffect(() => {
@@ -545,6 +552,7 @@ export function RunScreen({
                 objective={manifest.mission.objective}
                 onAct={play}
                 onHeld={holdFp}
+                onWalking={setWalking}
                 paused={clock.state === "paused"}
                 onUnavailable={() => {
                   runView.fail();
@@ -603,6 +611,7 @@ export function RunScreen({
           placed={placed}
           run={run}
           crewPlan={crewPlan}
+          realTime={fpOn}
           loading={settingUp}
           awaiting={hidden}
           chief={<ChiefPanel state={chief} revealed={revealed} zoneName={(id) => (placed ? zoneName(placed, id) : id)} onRetry={retryChief} />}
@@ -627,6 +636,7 @@ function RunPanel({
   placed,
   run,
   crewPlan,
+  realTime,
   loading,
   awaiting,
   chief,
@@ -636,6 +646,8 @@ function RunPanel({
   run: RunState | null;
   /** The plan briefed on the Plan screen; the level's own steps stand in without one. */
   crewPlan: StoredCrewPlan | null;
+  /** First person, played in real time: the panel says how, not how many turns (issue 115). */
+  realTime: boolean;
   /** The board is still being set up. A board that will not come (no floor, an error) is not loading. */
   loading: boolean;
   /** Guards whose Chief order is still streaming in: their row waits for it. */
@@ -669,15 +681,15 @@ function RunPanel({
   const fromCrew = briefed.length > 0;
   // A plan worked out from the board when the crew had no reply (issue 140) is said as such (issue 142).
   const source = planSourceOf(crewPlan, briefed.length);
-  const steps = fromCrew ? briefed : planSteps(placed, run, manifest.mission.objective);
+  const steps = fromCrew ? briefed : planSteps(placed, run, manifest.mission.objective, realTime);
   const orders = guardOrders(placed, run);
   const floor = placed.level.floor;
 
   return (
     <div className="flex flex-col gap-6">
-      <AlarmBanner alarm={run.alarm} turn={run.turn} />
+      <AlarmBanner alarm={run.alarm} turn={realTime ? null : run.turn} />
 
-      {run.status !== "playing" ? <Outcome placed={placed} run={run} /> : null}
+      {run.status !== "playing" ? <Outcome placed={placed} run={run} realTime={realTime} /> : null}
 
       {chief}
 
@@ -758,7 +770,7 @@ function RunPanel({
 }
 
 /** The run's outcome line: the win names the mission's objective (#70). Exported for its test. */
-export function Outcome({ placed, run }: { placed: PlacedLevel; run: RunState }) {
+export function Outcome({ placed, run, realTime = false }: { placed: PlacedLevel; run: RunState; realTime?: boolean }) {
   const won = run.status === "won";
   return (
     <section
@@ -771,8 +783,14 @@ export function Outcome({ placed, run }: { placed: PlacedLevel; run: RunState })
         {won ? `Out with the ${objectiveNoun(placed.level.missionId)}.` : `Caught in the ${roomName(placed.level.floor, run.playerNode)}.`}
       </p>
       <p className="mt-1 text-sm text-text-2">
-        {run.turn} turns, {run.alarmEvents.filter((e) => e.cause.kind !== "decay").length} alarm raises. The debrief has
-        the replay.
+        {realTime ? (
+          endNote(run, true)
+        ) : (
+          <>
+            {run.turn} turns, {run.alarmEvents.filter((e) => e.cause.kind !== "decay").length} alarm raises. The debrief
+            has the replay.
+          </>
+        )}
       </p>
     </section>
   );

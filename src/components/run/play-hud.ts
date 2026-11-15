@@ -74,26 +74,42 @@ function routePath(run: RunState): { path: readonly string[]; lockedDoors: reado
 
 /**
  * First person's pace (issue 115), for the HUD to speak in seconds rather than
- * hops and turns: metres to a floor-plan unit, the running speed, and a turn.
+ * hops and turns: metres to a floor-plan unit, the speed the player moves at
+ * now, and a turn.
  */
 export interface Pace {
   unitM: number;
-  runMps: number;
+  /** The controller's speed as the player moves now: a run, or a walk with Shift held. */
+  mps: number;
   turnMs: number;
+  /**
+   * The way the body walks the engine's edge from node `a` to node `b`, in
+   * metres: through its doorway, not the wall. Without it, node to node in a
+   * straight line.
+   */
+  edge?: (a: string, b: string) => readonly { x: number; y: number }[];
 }
 
 /**
- * About how many seconds the route left takes in first person: running node
- * to node along it, plus a turn for each pick its locked doors still need.
- * Rounded up, so it never says 0 until the player is there. Null with no route.
+ * About how many seconds the route left takes in first person: walking it
+ * node to node, through each edge's doorway, at the player's speed now, plus a
+ * turn for each pick its locked doors still need. An estimate: it does not
+ * count speeding up, stopping or cut corners. Rounded up, so it never says 0
+ * until the player is there. Null with no route.
  */
 export function secondsLeft(run: RunState, pace: Pace): number | null {
   const route = routePath(run);
   if (!route) return null;
   let metres = 0;
   for (let i = 1; i < route.path.length; i++) {
-    const a = run.board.nodes.get(route.path[i - 1]);
-    const b = run.board.nodes.get(route.path[i]);
+    const [from, to] = [route.path[i - 1], route.path[i]];
+    const way = pace.edge?.(from, to) ?? [];
+    if (way.length >= 2) {
+      for (let k = 1; k < way.length; k++) metres += Math.hypot(way[k].x - way[k - 1].x, way[k].y - way[k - 1].y);
+      continue;
+    }
+    const a = run.board.nodes.get(from);
+    const b = run.board.nodes.get(to);
     if (a && b) metres += Math.hypot(b.x - a.x, b.y - a.y) * pace.unitM;
   }
   let picks = 0;
@@ -101,7 +117,7 @@ export function secondsLeft(run: RunState, pace: Pace): number | null {
     const done = run.picking?.doorId === doorId ? run.picking.progress : 0;
     picks += Math.max(0, picksToOpen(run.board.level, doorId) - done);
   }
-  return Math.ceil(metres / pace.runMps + (picks * pace.turnMs) / 1000);
+  return Math.ceil(metres / pace.mps + (picks * pace.turnMs) / 1000);
 }
 
 // ---- who noticed the player ------------------------------------------------------
