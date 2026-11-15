@@ -74,6 +74,9 @@ export function ScanWalkScreen({ faces, mesh, detail, debug }: Props) {
     return () => {
       gone = true;
       engine?.dispose();
+      // A new scan starts from a clean HUD, not the last one's "Stopped".
+      setHud(null);
+      setFailed(null);
     };
   }, [modelId, faces, mesh, detail, debug]);
 
