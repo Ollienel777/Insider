@@ -46,7 +46,7 @@ import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postur
 import { MuteToggle, useRunSound } from "./run-sound";
 import { RunStage } from "./run-stage";
 import { placeOrFixture } from "./scan-fallback";
-import { FIRST_PERSON_PACE, FIRST_PERSON_TURN_MS, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, ViewSwitch, type HeldAction } from "./fp/run-view";
+import { FIRST_PERSON_PACE, FIRST_PERSON_TURN_MS, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useBark, useRunView, ViewSwitch, type HeldAction } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -320,6 +320,7 @@ export function RunScreen({
   // First person (issue 115) always runs on the clock, at its own pace, and its turn is the view's
   // to choose: the next pick while E is held at a door, otherwise a wait.
   const fpOn = placed !== null && firstPersonOn(runView, placed.level.floor);
+  const bark = useBark(run, fpOn);
   const fpHeld = useRef<HeldAction | null>(null);
   const holdFp = useCallback((held: HeldAction | null) => {
     fpHeld.current = held;
@@ -461,6 +462,7 @@ export function RunScreen({
       detailsKey={fpOn ? "I" : "D"}
       onDetails={toggleDetails}
       hud={hud}
+      bark={bark}
       loading={settingUp}
       onTake={() => play({ kind: "take" })}
       onRestart={restart}

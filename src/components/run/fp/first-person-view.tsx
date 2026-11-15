@@ -22,13 +22,12 @@ import type { HeldAction } from "./run-view";
 import { Actors, type Marks } from "./actors";
 import { Controller } from "./controller";
 import { ControlsHint } from "./controls-hint";
-import { FrameRateWatch } from "./flashlight";
 import { hintDone, hintPhase, hintTicks, type HintPhase, type HintProgress } from "./hint";
-import { earshot, noiseCue, noticeOf, type NoiseCue, type Notice } from "./notice";
-import { NoticeGlow } from "./notice-glow";
+import { noiseCue, noticeOf, type NoiseCue, type Notice } from "./notice";
 import { readPalette } from "./palette";
 import { buildFloorGroup, disposeGroup, type RoomTone } from "./scene";
 import { sightOf, type Sight } from "./sight";
+import { SuspicionMeter } from "./suspicion-meter";
 import { FP } from "./tuning";
 import { createWalker, heldAction, promptFor, stepWalker, type Prompt } from "./walker";
 import { buildWorld, groundOf } from "./world";
@@ -204,11 +203,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
     const progress: HintProgress = { walkedM: 0, lookedRad: 0, sneaked: false, used: false };
     let doneAt: number | null = null;
     let hintKey = "";
-    let noticeKey = "";
+    let noticedRun: RunState | null = null;
     let looked = { yaw: controller.yaw, pitch: controller.pitch };
-    // The flashlights' real lights go, once, if the frame rate drops (issue 146). The rate is on the view for a readout.
-    const watch = new FrameRateWatch();
-    let rateAt = 0;
     let last = performance.now();
     let owed = 0;
     let use = false;
@@ -224,19 +220,12 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       raf = requestAnimationFrame(frame);
       const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
       last = now;
-      if (watch.frame(dt)) actors.dropLights();
-      if (now - rateAt > 1000) {
-        rateAt = now;
-        host.dataset.fps = watch.fps.toFixed(0);
-        host.dataset.lights = actors.lightsOn ? "real" : "unlit";
-      }
       const { run: current, onAct: act } = latest.current;
       if (current !== seen) {
         actors.sync(current, now);
         seen = current;
         sight = sightOf(current, ground.unitM);
         noise = noiseCue(current);
-        actors.showHeard(earshot(current));
       }
 
       // The movement runs at a fixed step, however fast the screen draws.
@@ -282,7 +271,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         FP.eyeM + lift + Math.sin(controller.pitch),
         walker.pos.y + Math.sin(controller.yaw) * flat,
       );
-      actors.update(now, walker.pos);
+      actors.update(now);
       renderer.render(scene, camera);
 
       // Labels: each at its piece, hidden behind the view and behind walls (a beacon shows through).
@@ -340,11 +329,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         hintKey = nextHint;
         setHint({ phase, progress: { ...progress } });
       }
-      const noticed = noticeOf(current, sight, walker.pos, ground.nodes, (a, b) => ground.clear(a, b, current.locked));
-      const nextNotice = JSON.stringify([noticed.level, noticed.tone, noticed.reason, noise, current.turn]);
-      if (nextNotice !== noticeKey) {
-        noticeKey = nextNotice;
-        setNotice({ notice: noticed, noise });
+      // The meter changes only with the run: read once a new state has come in.
+      if (seen !== noticedRun) {
+        noticedRun = seen;
+        setNotice({ notice: noticeOf(current, sight), noise });
       }
       if (!drawn) {
         drawn = true;
@@ -400,7 +388,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         />
       ) : null}
 
-      {notice && !over ? <NoticeGlow notice={notice.notice} noise={notice.noise} turn={run.turn} /> : null}
+      {notice && !over ? <SuspicionMeter notice={notice.notice} noise={notice.noise} turn={run.turn} /> : null}
       {over ? null : <ControlsHint phase={hint.phase} ticks={hintTicks(hint.progress)} dragToLook={hud.refused} />}
 
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-end px-6 py-3">
