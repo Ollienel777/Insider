@@ -339,7 +339,6 @@ export function RunScreen({
   // First person (issue 115) always runs on the clock, at its own pace, and its turn is the view's
   // to choose: the next pick while E is held at a door, otherwise a wait.
   const fpOn = placed !== null && firstPersonOn(runView, placed.level.floor, scan);
-  const bark = useBark(run, fpOn);
   const fpHeld = useRef<HeldAction | null>(null);
   const holdFp = useCallback((held: HeldAction | null) => {
     fpHeld.current = held;
@@ -423,6 +422,8 @@ export function RunScreen({
     // First person is played in real time: the HUD says seconds and plain words, not hops and turns.
     pace,
   });
+  // In first person a guard that hears the player says so on the radio, where the radio's own line lets it (issue 146).
+  const bark = useBark(run, fpOn, hud?.radio ?? null);
 
   useEffect(() => {
     if (!run) return;
