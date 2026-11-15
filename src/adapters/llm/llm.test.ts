@@ -171,10 +171,13 @@ describe("structuredCall", () => {
     const selection = selectChatModel("fast", LIVE, { createAnthropicClient: stub.createClient });
 
     const started = performance.now();
-    const answer = await structuredCall(Answer, PROMPT, { fake: () => FAKE, selection });
+    const fake = vi.fn(() => FAKE);
+    const answer = await structuredCall(Answer, PROMPT, { fake, selection });
     const elapsed = performance.now() - started;
 
     expect(answer).toEqual({ value: FAKE, recorded: true, reason: "timeout" });
+    // The fake is told why it is asked (issue 140: the crew's 503 carries it).
+    expect(fake).toHaveBeenCalledWith("timeout");
     expect(elapsed).toBeLessThan(1_000);
     // The slow request is cancelled, not left running.
     expect(stub.calls[0].signal?.aborted).toBe(true);
@@ -201,8 +204,10 @@ describe("structuredCall", () => {
       // The gate forces LLM_MODE=fake, so ask for live explicitly.
       for (const [k, v] of Object.entries({ ...LIVE, LLM_MODE: "live" })) vi.stubEnv(k, v);
       vi.stubEnv(name, value);
-      const answer = await structuredCall(Answer, PROMPT, { fake: FAKE });
+      const fake = vi.fn(() => FAKE);
+      const answer = await structuredCall(Answer, PROMPT, { fake });
       expect(answer, `${name}=${value}`).toEqual({ value: FAKE, recorded: true, reason: "configuration" });
+      expect(fake).toHaveBeenCalledWith("configuration");
     }
     warn.mockRestore();
   });
