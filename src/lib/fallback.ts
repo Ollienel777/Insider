@@ -13,7 +13,7 @@ export interface Fallback {
   message: string;
 }
 
-export type FallbackCause = "failed" | "timeout" | "no-scan" | "unknown" | "unplaceable";
+export type FallbackCause = "failed" | "timeout" | "no-scan" | "unknown" | "unplaceable" | "not-started" | "not-started-hidden";
 
 /**
  * A live service answered "no such id" for an id the fixtures know (the demo
@@ -41,16 +41,29 @@ export function fallbackMessage(service: Service, cause: FallbackCause = "failed
   const name = service === "llm" ? "The model" : label;
   if (cause === "no-scan") return `This building has no ${label} scan, so ${WHAT[service]}.`;
   if (cause === "unplaceable") return `The ${label} scan can't hold this level, so ${WHAT[service]}.`;
+  if (cause === "not-started-hidden") {
+    return `The ${label} scan's viewer didn't start (the window was hidden), so ${WHAT[service]}. Open it again with the window in front to load the scan.`;
+  }
+  if (cause === "not-started") return `The ${label} scan's viewer didn't start, so ${WHAT[service]}.`;
   if (cause === "unknown") return `${name} doesn't know this building, so ${WHAT[service]}.`;
   if (cause === "timeout") return `${name} didn't answer in time, so ${WHAT[service]}.`;
   return `${name} didn't answer, so ${WHAT[service]}.`;
 }
 
+/**
+ * The model's toast when a live call left no reply on a building with no recording (issue 140):
+ * the plan is worked out from the board, not a recording.
+ */
+export function boardStandsIn(cause: "timeout" | "failed"): string {
+  return `The model didn't answer${cause === "timeout" ? " in time" : ""}, so the plan is worked out from the board.`;
+}
+
 let sequence = 0;
 
-export function newFallback(service: Service, cause: FallbackCause = "failed"): Fallback {
+/** A fallback event; `message` replaces the toast's usual line, for a stand-in other than the fixtures. */
+export function newFallback(service: Service, cause: FallbackCause = "failed", message: string = fallbackMessage(service, cause)): Fallback {
   sequence += 1;
-  return { service, id: `${service}-${Date.now().toString(36)}-${sequence}`, message: fallbackMessage(service, cause) };
+  return { service, id: `${service}-${Date.now().toString(36)}-${sequence}`, message };
 }
 
 /** A response body's `fallback`, when it carries a well-formed one. */

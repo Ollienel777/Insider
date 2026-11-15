@@ -40,12 +40,13 @@ import { usePlayMode } from "./play-mode";
 import { useTurnClock } from "./turn-clock";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
-import { loadCrewPlan, type StoredCrewPlan } from "./crew-plan-store";
+import { loadCrewPlan, PLAN_HEADING, planSourceOf, type StoredCrewPlan } from "./crew-plan-store";
 import { clearRunLog, keepRunLogInMemory, runLogOf, saveRunLog } from "./run-log-store";
 import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postureOf, runRecordOf, type RunRecord } from "./run-history";
 import { MuteToggle, useRunSound } from "./run-sound";
 import { RunStage } from "./run-stage";
 import { placeOrFixture } from "./scan-fallback";
+import { ScanWait, useWaitsOnScan } from "./scan-wait";
 import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, useScanPreload, ViewSwitch, type HeldAction } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
@@ -179,8 +180,9 @@ export function RunScreen({
     // Until the board has its fresh run, there is no run on it: the last one's log goes now.
     clearRunLog(building.id, undefined, missionId);
     const matterport = getMatterport(heistMode);
+    const abandon = new AbortController();
     matterport.adapter
-      .loadFloor(building)
+      .loadFloor(building, abandon.signal)
       .then(
         async (floor) => {
           if (!live) return;
@@ -200,10 +202,15 @@ export function RunScreen({
       });
     return () => {
       live = false;
+      // Nobody is waiting for this load now (the screen closed, or the stand-in floor plan was taken): a scan stops loading.
+      abandon.abort();
     };
   }, [building, manifest, heistMode, attempt, placeAndStart, missionId]);
 
   const load: Load = manifest ? loaded : { status: "no-floor" };
+  // While the floor loads, the bar says "from fixtures" only once the browser knows no scan is loading:
+  // on a live scan the skeleton says what it waits for, and before the demo status is in, nobody knows.
+  const sourcePending = useWaitsOnScan(building, heistMode) !== false && load.status === "loading";
   const placed = load.status === "ready" ? load.placed : null;
   // The placement and the Chief's summary use `history`, read when the level was placed; the
   // Forget button uses `storedRuns`, which also counts a run that ended since.
@@ -497,7 +504,7 @@ export function RunScreen({
               {/* A kit building's label (below) names its floor, so the line doesn't say it twice. */}
               {source === "costar" ? null : (
                 <span className="max-md:hidden">
-                  {load.status === "ready" && load.live ? " · floor plan from the scan" : " · floor plan from fixtures"}
+                  {load.status === "ready" && load.live ? " · floor plan from the scan" : sourcePending ? null : " · floor plan from fixtures"}
                 </span>
               )}
             </span>
@@ -537,7 +544,11 @@ export function RunScreen({
               />
             ) : null}
             {load.status === "loading" ? (
-              <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
+              <>
+                <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
+                {/* On a live scan the skeleton says so, and in time offers the stand-in floor plan (issue 145). */}
+                <ScanWait building={building} heistMode={heistMode} onStandIn={() => setAttempt((a) => a + 1)} />
+              </>
             ) : load.status === "no-floor" ? (
               <BoardMessage
                 testId="board-empty"
@@ -703,6 +714,8 @@ function RunPanel({
   }
   const briefed = crewPlan ? crewPlanSteps(placed, run, crewPlan.plan) : [];
   const fromCrew = briefed.length > 0;
+  // A plan worked out from the board when the crew had no reply (issue 140) is said as such (issue 142).
+  const source = planSourceOf(crewPlan, briefed.length);
   const steps = fromCrew ? briefed : planSteps(placed, run, manifest.mission.objective, realTime);
   const orders = guardOrders(placed, run);
   const floor = placed.level.floor;
@@ -732,9 +745,9 @@ function RunPanel({
 
       <section aria-labelledby="plan-label" className="flex flex-col gap-2">
         <h2 id="plan-label" className="label-caps text-text-3">
-          {fromCrew ? "The crew's plan" : "The plan"}
+          {PLAN_HEADING[source]}
         </h2>
-        <ol data-testid="plan" data-source={fromCrew ? "crew" : "level"} className="flex flex-col">
+        <ol data-testid="plan" data-source={source} className="flex flex-col">
           {steps.map((step, i) => (
             <li
               key={i}
