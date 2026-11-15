@@ -40,7 +40,7 @@ import { usePlayMode } from "./play-mode";
 import { useTurnClock } from "./turn-clock";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
-import { loadCrewPlan, type StoredCrewPlan } from "./crew-plan-store";
+import { loadCrewPlan, PLAN_HEADING, planSourceOf, type StoredCrewPlan } from "./crew-plan-store";
 import { clearRunLog, keepRunLogInMemory, runLogOf, saveRunLog } from "./run-log-store";
 import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postureOf, runRecordOf, type RunRecord } from "./run-history";
 import { MuteToggle, useRunSound } from "./run-sound";
@@ -667,8 +667,8 @@ function RunPanel({
   }
   const briefed = crewPlan ? crewPlanSteps(placed, run, crewPlan.plan) : [];
   const fromCrew = briefed.length > 0;
-  // A plan worked out on the board when the crew gave no reply (issue 140) is not the crew's own.
-  const fromBoard = fromCrew && crewPlan?.source === "board";
+  // A plan worked out from the board when the crew had no reply (issue 140) is said as such (issue 142).
+  const source = planSourceOf(crewPlan, briefed.length);
   const steps = fromCrew ? briefed : planSteps(placed, run, manifest.mission.objective);
   const orders = guardOrders(placed, run);
   const floor = placed.level.floor;
@@ -698,9 +698,9 @@ function RunPanel({
 
       <section aria-labelledby="plan-label" className="flex flex-col gap-2">
         <h2 id="plan-label" className="label-caps text-text-3">
-          {fromBoard ? "The board's plan" : fromCrew ? "The crew's plan" : "The plan"}
+          {PLAN_HEADING[source]}
         </h2>
-        <ol data-testid="plan" data-source={fromBoard ? "board" : fromCrew ? "crew" : "level"} className="flex flex-col">
+        <ol data-testid="plan" data-source={source} className="flex flex-col">
           {steps.map((step, i) => (
             <li
               key={i}

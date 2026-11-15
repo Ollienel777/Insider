@@ -14,7 +14,7 @@ function together(ids: readonly string[]): string {
  * A zone's name as the Chief says it, after "in" or "lock": without the board's "(vacant)" tag (any
  * other bracket is part of the name), and
  * with "the" unless it is a numbered suite or office ("Suite 1400", not "the Suite 1400"). Issue 140:
- * a kit building's zones are its suites, and this template is what speaks them there.
+ * a kit building's zones are its suites, so this template speaks them on a kit building.
  */
 export function placeName(name: string): string {
   const bare = name.replace(/\s*\(vacant\)\s*$/i, "").trim();

@@ -13,7 +13,8 @@
 // the first one the board plays clean. Its pushback names what those waits get
 // past: the camera or guard that catches the same plan played without them.
 // With no quiet way through, the plan is the shortest one, and the pushback
-// says who catches it and where.
+// says who catches it and where. The pushback speaks as the board does, to the
+// player ("sees you"), never as the crew: the crew said nothing (issue 142).
 //
 // Pure: same placement, same plan.
 "use client";
@@ -23,7 +24,10 @@ import { objectiveNoun } from "@/lib/objective-noun";
 import type { PlacedEntry, PlacedLevel } from "./placer";
 import { adviceFor, validatePlan, zoneLabel } from "./validate-plan";
 
-/** How sure the crew sounds: a plan the board plays clean, or one it knows is caught. */
+/**
+ * The confidence the plan's shape requires: higher for a plan the board plays clean than for one it
+ * knows is caught. No model gave it, so the Plan panel does not show it for a board plan (issue 142).
+ */
 const SURE_CLEAN = 0.6;
 const SURE_CAUGHT = 0.3;
 /** The most turns the plan waits at one stop; past this the shapes are not worth trying. */
@@ -40,12 +44,7 @@ const TURNS = ["", "one turn", "two turns", "three turns", "four turns"];
 
 type Step = CrewPlan["steps"][number];
 
-/** A zone's name in the plan's words, without the board's "(vacant)" tag (as the Chief says it). */
-const placeLabel = (placed: PlacedLevel, zoneId: string) => zoneLabel(placed, zoneId).replace(/\s*\(vacant\)\s*$/i, "");
-
-
-export function fallbackPlan(placed: PlacedLevel, options: { maxTries?: number } = {}): CrewPlan {
-  const maxTries = options.maxTries ?? MAX_TRIES;
+export function fallbackPlan(placed: PlacedLevel): CrewPlan {
   const { level } = placed;
   const way = (e: PlacedEntry) => e.label.toLowerCase();
   const start = placed.entries.find((e) => e.nodeId === level.start) ?? placed.entries[0];
@@ -144,24 +143,19 @@ export function fallbackPlan(placed: PlacedLevel, options: { maxTries?: number }
     const straight = caughtOn(shape(0, null, 0, exit));
     const stop = best.find((s) => s.action.startsWith("Through "));
     const pushback = hurried?.by
-      ? `${hurried.text} The waits in this plan let ${hurried.by} look away: hold where it says, then move.`
+      ? `Without its waits: ${hurried.text} The waits in this plan let ${hurried.by} look away: hold where it says, then move.`
       : straight?.by && stop
-        ? `${straight.text} Going through ${placeLabel(placed, stop.zoneId)} keeps out of ${straight.by}'s way.`
-        : `Nothing catches this way if you keep moving: in by the ${way(start)}, out by the ${way(exit)}. ${clearOf(best)}`;
+        ? `The straight way: ${straight.text} Going through ${zoneLabel(placed, stop.zoneId)} keeps you out of ${straight.by}'s way.`
+        : `Nothing catches you this way if you keep moving: in by the ${way(start)}, out by the ${way(exit)}. ${clearOf(best)}`;
     return { steps: best, pushback, confidence: SURE_CLEAN };
   }
 
   // No quiet way through (or none that fits a plan's stops): the shortest plan, and who catches it.
   const steps = shape(0, null, 0, exitOrder[0]);
-  const shortest = validatePlan(placed, { steps, pushback: "", confidence: 0 });
-  // The objective can't be reached at all: say so plainly, rather than a plan with its middle struck out.
-  if (shortest.dropped.some((d) => d.zoneId === placed.objective.zoneId)) {
-    return { steps: steps.slice(0, 1), pushback: `There's no way to the ${noun} on this board.`, confidence: SURE_CAUGHT };
-  }
-  const warning = shortest.warnings[0];
+  const warning = validatePlan(placed, { steps, pushback: "", confidence: 0 }).warnings[0];
   const caughtLine = warning ? ` ${warning.text}` : "";
   const pushback = advice
-    ? `No plan's shape fits the quiet way here; follow the waits the board marks.${caughtLine}`
+    ? `The quiet way doesn't fit a plan's stops here; follow the waits the board marks.${caughtLine}`
     : `There's no way through this floor unseen.${caughtLine}`;
   return { steps, pushback, confidence: SURE_CAUGHT };
 }

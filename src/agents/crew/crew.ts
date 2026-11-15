@@ -23,6 +23,8 @@ export interface CrewAnswer {
    * `fallback` field, which is the demo status's toast.
    */
   source?: "board";
+  /** With `source`: the server no longer held the level, so no model was called (issue 142). */
+  levelLost?: true;
 }
 
 /** An order the crew will not read. */

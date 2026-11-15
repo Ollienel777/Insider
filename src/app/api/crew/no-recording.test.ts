@@ -49,4 +49,17 @@ describe("POST /api/crew on a kit building with no recording", () => {
     await expect(brief).rejects.toBeInstanceOf(NoRecordingError);
     await expect(brief).rejects.toMatchObject({ reason: "error" });
   });
+
+  it("marks a 404 for a level the server no longer holds, so the Plan screen can still work one out (issue 142)", async () => {
+    // Nothing stored: a restarted server, or another instance, has lost the kit level.
+    const response = await POST(
+      new Request("http://localhost/api/crew", {
+        method: "POST",
+        headers: { cookie: `${FORCE_COOKIE}=llm` },
+        body: JSON.stringify({ buildingId: "900001", order: "Go in quietly", missionId: "romaine-1974" }),
+      }),
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ code: "no-level" });
+  });
 });

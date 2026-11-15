@@ -28,7 +28,9 @@ export async function POST(request: Request): Promise<Response> {
       ...(missionId && { missionId }),
       ...(forced && { selection: forcedChatModelSelection() }),
     });
-    if (!answer) return Response.json({ error: `no cached level for building "${buildingId}"` }, { status: 404 });
+    // `code`: the server holds no level for this building. A kit level lives in one server's memory, so a
+    // restart or another instance loses it while the browser still holds the board (issue 142).
+    if (!answer) return Response.json({ error: `no cached level for building "${buildingId}"`, code: "no-level" }, { status: 404 });
     return Response.json(withLlmFallback(answer));
   } catch (error) {
     if (error instanceof CrewRequestError) return Response.json({ error: error.message }, { status: 400 });

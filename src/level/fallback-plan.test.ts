@@ -51,8 +51,8 @@ describe.each([
     expect(named, plan.pushback).toBeDefined();
     const onBoard = [...placed.cameras.map((c) => c.id), ...placed.guards.map((g) => g.id)];
     expect(onBoard).toContain(named);
-    // The board's voice, not the crew's: no "I", "us" or "we".
-    expect(plan.pushback).not.toMatch(/\b(I|us|we)\b/);
+    // In the board's voice, never the crew's: the crew said nothing (issue 142).
+    expect(plan.pushback).not.toMatch(/\b(we|us|our|I)\b|we're/);
   });
 
   it("is the same plan every time for the same placement", () => {
@@ -101,8 +101,9 @@ describe("the fallback plan on an open-plan scan with no quiet route", () => {
   it("names what catches it, says there is no way through unseen, and sounds unsure", () => {
     const warning = checked.warnings[0];
     expect(warning.by).not.toBeNull();
-    // The board's warning, as the board says it.
+    // The board's warning as the board says it, not in the crew's voice (issue 142).
     expect(plan.pushback).toContain(warning.text);
+    expect(plan.pushback).not.toMatch(/\b(we|us|our|I)\b|we're/);
     expect(plan.pushback).toMatch(new RegExp(`\\b${warning.by}\\b`));
     expect(plan.pushback).toContain("no way through this floor unseen");
     expect(plan.confidence).toBe(0.3);
@@ -131,7 +132,8 @@ describe("the fallback plan on a floor where nothing is in the way", () => {
   it("goes straight through, clean, and names the cameras it stays clear of", () => {
     expect(validatePlan(placed, plan).outcome).toBe("clean");
     expect(plan.steps).toHaveLength(3);
-    expect(plan.pushback).toMatch(/^Nothing catches this way if you keep moving/);
+    expect(plan.pushback).toMatch(/^Nothing catches you this way if you keep moving/);
+    expect(plan.pushback).not.toMatch(/\b(we|us|our|I)\b|we're/);
     expect(plan.pushback).toContain(`${blind[0].id}`);
     expect(plan.pushback).toMatch(/never get eyes on it\.$/);
   });
