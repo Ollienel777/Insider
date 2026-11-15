@@ -69,7 +69,7 @@ export function ShowcaseCard({ showcase: s, missionId, selected, onSelect }: Sho
       data-selected={selected || undefined}
       onClick={() => onSelect(s.id)}
       className={cn(
-        "grid cursor-pointer gap-4 rounded-md border bg-surface-2 p-4 shadow-e-1 transition-colors duration-fast md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]",
+        "flex h-full cursor-pointer flex-col gap-4 rounded-md border bg-surface-2 p-4 shadow-e-1 transition-colors duration-fast",
         selected ? "border-accent bg-accent-wash" : "border-border hover:border-border-strong",
       )}
     >
