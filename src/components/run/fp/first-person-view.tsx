@@ -40,6 +40,8 @@ export interface FirstPersonViewProps {
   onHeld: (held: HeldAction | null) => void;
   /** The player paused the clock with P. */
   paused: boolean;
+  /** Shift went down or up: the HUD's time left is then at a walk or a run. */
+  onWalking?: (walking: boolean) => void;
 }
 
 interface Hud {
@@ -73,7 +75,7 @@ function hasWebGL(): boolean {
   }
 }
 
-export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused }: FirstPersonViewProps) {
+export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, onWalking }: FirstPersonViewProps) {
   const surface = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const labelLayer = useRef<HTMLDivElement>(null);
@@ -85,10 +87,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
   // The loop reads the latest run and the latest `play` without being rebuilt for each turn. Updated in a
   // layout effect, before the browser paints, so no animation frame reads the run before last.
-  const latest = useRef({ run, onAct, onUnavailable, onHeld });
+  const latest = useRef({ run, onAct, onUnavailable, onHeld, onWalking });
   useLayoutEffect(() => {
-    latest.current = { run, onAct, onUnavailable, onHeld };
-  }, [run, onAct, onUnavailable, onHeld]);
+    latest.current = { run, onAct, onUnavailable, onHeld, onWalking };
+  }, [run, onAct, onUnavailable, onHeld, onWalking]);
 
   useEffect(() => {
     const host = surface.current;
@@ -192,6 +194,9 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
     let bob = 0;
     let hudKey = "";
     let areas = false;
+    // Each mount starts at a run, whatever the Run screen last heard.
+    let walking = false;
+    latest.current.onWalking?.(false);
     // The turn clock asks the view what a turn the player lets run out should be.
     latest.current.onHeld((state) => heldAction(walker, ground, state, { use: controller.using, yaw: controller.yaw }));
     let raf = 0;
@@ -210,6 +215,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       // The movement runs at a fixed step, however fast the screen draws.
       controller.frame(dt);
       const controls = controller.controls();
+      if (controls.walk !== walking) {
+        walking = controls.walk;
+        latest.current.onWalking?.(walking);
+      }
       use ||= controls.usePressed;
       owed += dt;
       const stood = walker.pos;

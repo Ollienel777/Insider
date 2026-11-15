@@ -13,7 +13,8 @@ export const ALARM_STYLE: Readonly<Record<AlarmState, { label: string; text: str
   lockdown: { label: "Lockdown", text: "text-danger", bar: "border-danger", note: "The floor is locked down." },
 };
 
-export function AlarmBanner({ alarm, turn }: { alarm: AlarmState; turn: number }) {
+/** `turn` is null in first person, played in real time: no turn count shows. */
+export function AlarmBanner({ alarm, turn }: { alarm: AlarmState; turn: number | null }) {
   const style = ALARM_STYLE[alarm];
   return (
     <section
@@ -25,9 +26,11 @@ export function AlarmBanner({ alarm, turn }: { alarm: AlarmState; turn: number }
     >
       <div className="flex items-baseline justify-between">
         <p className="label-caps text-text-3">Alarm</p>
-        <p className="label-caps text-text-3">
-          Turn <span data-testid="turn" className="font-mono text-text-1">{turn}</span>
-        </p>
+        {turn === null ? null : (
+          <p className="label-caps text-text-3">
+            Turn <span data-testid="turn" className="font-mono text-text-1">{turn}</span>
+          </p>
+        )}
       </div>
       <p
         role="status"

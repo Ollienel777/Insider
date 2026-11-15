@@ -1,7 +1,8 @@
-// /spike/mesh?m=MODEL_ID: a sandbox for walking freely inside one real scan
+// /spike/mesh#m=MODEL_ID: a sandbox for walking freely inside one real scan
 // (issue 118). Our own three.js renderer over the scan's mesh, painted from
 // its panoramas. Off the demo path; needs the Model API key and live mode,
-// and says so when it has neither.
+// and says so when it has neither. The id goes after `#`, which the browser
+// never sends, so the server's request log never shows it (model-hash.ts).
 //
 // Options: `faces=high|2k|4k` (panorama sharpness, default 2k),
 // `mesh=50k|500k`, `detail=0` (no Matterpak mesh), `textured=0` (paint it
@@ -9,7 +10,7 @@
 // (leave holes open), `repair=0` (the mesh as scanned: shards in, no planes
 // carried across gaps; `shards` or `planes` for one of the two), `debug=1`.
 import type { Metadata } from "next";
-import { MESH_RESOLUTIONS, MODEL_ID, PANO_RESOLUTIONS, type MeshResolution, type PanoResolution } from "@/lib/scan-mesh/manifest";
+import { MESH_RESOLUTIONS, PANO_RESOLUTIONS, type MeshResolution, type PanoResolution } from "@/lib/scan-mesh/manifest";
 import { ScanWalkScreen } from "./scan-walk";
 
 export const metadata: Metadata = {
@@ -31,11 +32,8 @@ function pick<T extends string>(value: string | null, allowed: readonly T[], fal
 
 export default async function ScanMeshPage({ searchParams }: { searchParams: Promise<Search> }) {
   const search = await searchParams;
-  const m = one(search.m);
   return (
     <ScanWalkScreen
-      modelId={m !== null && MODEL_ID.test(m) ? m : null}
-      given={m !== null}
       faces={pick<PanoResolution>(one(search.faces), PANO_RESOLUTIONS, "2k")}
       mesh={pick<MeshResolution>(one(search.mesh), MESH_RESOLUTIONS, "50k")}
       detail={one(search.detail) !== "0"}
