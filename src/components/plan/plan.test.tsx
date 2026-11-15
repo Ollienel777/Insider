@@ -74,7 +74,7 @@ describe("the Plan screen's brief on a building with no recording (issue 140)", 
           error: 'no recorded crew replies for "247386"',
           code: "no-recording",
           ...(reason && { reason }),
-          ...(reason === "timeout" && { fallback: { service: "llm", id: "llm-test-1", message: "The model didn't answer in time, so a recorded reply stands in." } }),
+          ...(reason === "timeout" && { fallback: { service: "llm", id: "llm-test-1", message: "The model didn't answer in time, so the crew's plan is worked out from the board." } }),
         },
         { status: 503 },
       )) as unknown as typeof fetch;

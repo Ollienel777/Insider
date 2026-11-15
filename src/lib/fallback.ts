@@ -46,11 +46,20 @@ export function fallbackMessage(service: Service, cause: FallbackCause = "failed
   return `${name} didn't answer, so ${WHAT[service]}.`;
 }
 
+/**
+ * The model's toast when a live call left no reply on a building with no recording (issue 140):
+ * the crew's plan is worked out from the board, not a recording.
+ */
+export function boardStandsIn(cause: "timeout" | "failed"): string {
+  return `The model didn't answer${cause === "timeout" ? " in time" : ""}, so the crew's plan is worked out from the board.`;
+}
+
 let sequence = 0;
 
-export function newFallback(service: Service, cause: FallbackCause = "failed"): Fallback {
+/** A fallback event; `message` replaces the toast's usual line, for a stand-in other than the fixtures. */
+export function newFallback(service: Service, cause: FallbackCause = "failed", message: string = fallbackMessage(service, cause)): Fallback {
   sequence += 1;
-  return { service, id: `${service}-${Date.now().toString(36)}-${sequence}`, message: fallbackMessage(service, cause) };
+  return { service, id: `${service}-${Date.now().toString(36)}-${sequence}`, message };
 }
 
 /** A response body's `fallback`, when it carries a well-formed one. */

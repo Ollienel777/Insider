@@ -130,7 +130,7 @@ export function fallbackPlan(placed: PlacedLevel): CrewPlan {
       ? `${ours(hurried.text)} The waits in this plan let ${hurried.by} look away: hold where it says, then move.`
       : straight?.by && stop
         ? `${ours(straight.text)} Going through ${zoneLabel(placed, stop.zoneId)} keeps us out of ${straight.by}'s way.`
-        : `Nothing sees this way if we keep moving: in by the ${way(start)}, out by the ${way(exit)}. ${clearOf(best)}`;
+        : `Nothing catches us this way if we keep moving: in by the ${way(start)}, out by the ${way(exit)}. ${clearOf(best)}`;
     return { steps: best, pushback, confidence: SURE_CLEAN };
   }
 

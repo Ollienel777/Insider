@@ -127,7 +127,7 @@ describe("the fallback plan on a floor where nothing is in the way", () => {
   it("goes straight through, clean, and names the cameras it stays clear of", () => {
     expect(validatePlan(placed, plan).outcome).toBe("clean");
     expect(plan.steps).toHaveLength(3);
-    expect(plan.pushback).toMatch(/^Nothing sees this way if we keep moving/);
+    expect(plan.pushback).toMatch(/^Nothing catches us this way if we keep moving/);
     expect(plan.pushback).toContain(`${blind[0].id}`);
     expect(plan.pushback).toMatch(/never get eyes on it\.$/);
   });
