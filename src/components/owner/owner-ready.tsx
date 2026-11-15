@@ -469,7 +469,7 @@ export function OwnerReady({
               onOpenFixed={openFixed}
             />
           )}
-          <Link href={debriefHref} data-testid="owner-back" className={cn(buttonVariants({ variant: "ghost" }), "self-start")}>
+          <Link href={debriefHref} data-testid="owner-back" className={cn(buttonVariants({ variant: "secondary" }), "self-start")}>
             Back to the debrief
           </Link>
         </div>

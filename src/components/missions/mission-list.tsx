@@ -119,7 +119,7 @@ function MissionCard({ mission }: { mission: Mission }) {
         ) : (
           <p className="flex h-10 items-center text-sm text-text-2">No source: written for the game.</p>
         )}
-        <p className="text-sm text-text-2">{MISSION_DISCLAIMER}</p>
+        <p className="text-xs text-text-2">{MISSION_DISCLAIMER}</p>
       </div>
     </article>
   );

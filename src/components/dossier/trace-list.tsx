@@ -68,7 +68,7 @@ export function TraceList({
             ))}
           </p>
       </div>
-      <p data-testid="trace-banner" className="rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm text-text-2">
+      <p data-testid="trace-banner" className="text-sm text-text-2">
         {banner}
       </p>
 
