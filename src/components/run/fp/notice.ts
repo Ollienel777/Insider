@@ -122,7 +122,7 @@ export function noticeOf(
     }
   }
 
-  const level = seenBy.length > 0 ? 1 : Math.max(close, heardBy.length > 0 ? 0.5 : 0, tripped ? 0.8 : 0);
+  const level = Math.round((seenBy.length > 0 ? 1 : Math.max(close, heardBy.length > 0 ? 0.5 : 0, tripped ? 0.8 : 0)) * 20) / 20;
   const tone: NoticeTone = seenBy.length > 0 || tripped ? "danger" : level > 0 ? "warning" : "calm";
   const reason =
     seenBy.length > 0
@@ -131,8 +131,8 @@ export function noticeOf(
         ? `${name(tripped)} saw you`
         : heardBy.length > 0
           ? `${heardBy.join(", ")} heard you`
-          : closeTo && close > 0
+          : closeTo && level > 0
             ? `Near ${name(closeTo)}'s sight`
             : null;
-  return { level: Math.round(level * 20) / 20, tone, seenBy, closeTo: close > 0 ? closeTo : null, heardBy, tripped, reason };
+  return { level, tone, seenBy, closeTo: level > 0 ? closeTo : null, heardBy, tripped, reason };
 }
