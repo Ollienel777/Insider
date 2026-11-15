@@ -9,7 +9,7 @@ building from the kit.
   on 15 November (00:00 ET).
 - **Owner Mode** gets 15 seconds after the Debrief (Q9, status issue #1).
 
-Written against `main` at a678cce, at 02:03 UTC on 15 November.
+Written against `main` at a3c71c7, at 02:49 UTC on 15 November.
 
 - **What was walked:** on c08ae94, in fake mode (a production build with every
   service on `fake`, at 1440×900):
@@ -37,7 +37,9 @@ Written against `main` at a678cce, at 02:03 UTC on 15 November.
   in the tab's memory only, so a reload empties the Debrief. Move with the
   step rail and the buttons.
 - **Keep the window in front, and its tab active, while a page loads.** A
-  hidden or background tab drops the scan to the fixture floor.
+  hidden or background tab drops the scan to the fixture floor. Since #159 it
+  says so: "The Matterport scan's viewer didn't start (the window was hidden),
+  so the board uses the fixture floor."
 - Never click **Drill** (on hold, Q8). On the board, never press **S**: it arms
   a sprint, and the numbers then mark rooms two hops away.
 - If a beat breaks, say its fallback line, do its fallback click, move on.
@@ -187,9 +189,9 @@ no reason to stop in a suite (Open items, 4).
    opens. Say: **"Every guard, camera and lock says which data put it
    there."** Press **Esc**.
 3. The crew's plan appears, checked on the board. A live reply carries no
-   tag. Click **Start the run** at once, in this same window, and say the
-   Plan line while the Run opens. That gives the scan those seconds to finish
-   loading before beat 6. Say: **"The crew answers in plain English, and the
+   tag. Click **Start the run** at once, in this same window. Run opens in
+   about 2–3 s, because the floor built on Plan carries over (Open items, 8).
+   Say the Plan line over it: **"The crew answers in plain English, and the
    board checks its plan."**
 
 Fallbacks:
@@ -232,9 +234,10 @@ in, or fails on stage.
 
 Live only, not walked here.
 
-Screen: the Run, labelled **Real CoStar record · real Matterport scan**. The
-scan was loaded before the pitch, or is finishing now (checklist). Once its
-mesh is in, the player waits at most 12 s for the picture around them.
+Screen: the Run, labelled **Real CoStar record · real Matterport scan**. It
+opened in about 2–3 s on the floor built on Plan, with the scan loaded before
+the pitch (checklist; Open items, 8). If the scan's mesh is still coming, the
+player waits for the picture around them: at most 12 s once the mesh is in.
 
 1. Check that the label says **real Matterport scan**.
 2. If the Run didn't open in first person, click **First person** (top right,
@@ -265,6 +268,9 @@ the Chief. The debrief shows how."**
 
 Fallbacks, one per fix and one per known rough edge:
 
+- **Run is slow to open.** Without the floor-keeping fix it takes about 13 s.
+  Fill it: **"Every guard, camera and lock in there comes from a rule on its
+  CoStar record."**
 - **The cameras don't show in the scan, or sweep too fast to read.** Point at
   the HUD's alarm. Say: **"The cameras are game fiction too. The alarm says
   when one has you."**
@@ -443,17 +449,26 @@ in the server's memory.
 - [ ] **localhost only.** Open `http://localhost:<port>` (3000 unless `PORT`
       is set), never the network address. The Matterport SDK key allows only
       localhost.
-- [ ] **`.env.local`** (gitignored; the values never leave the machine). The
-      names, not the values, are:
+- [ ] **`.env.local`** (gitignored; the values never leave the machine). Names
+      only, except the two values given here:
   - `HEIST_MODE=live`, or the per-service `LLM_MODE`, `COSTAR_MODE`,
     `VEXCEL_MODE` and `NEXT_PUBLIC_MATTERPORT_MODE`;
-  - the model: `ANTHROPIC_API_KEY`, or Bedrock's `LLM_PROVIDER`,
-    `BEDROCK_ENABLED`, `AWS_REGION` and `BEDROCK_MODEL_ID`;
+  - the model, on the Anthropic API:
+    - `ANTHROPIC_API_KEY`;
+    - `ANTHROPIC_MODEL_FAST=claude-haiku-5-5`, the bare id, exactly that, for
+      the crew and the Chief (Nelson's call, after #165);
+    - `ANTHROPIC_MODEL_BUILDER`, left as it is.
+
+    Leave `LLM_PROVIDER` unset, or `anthropic`, and Bedrock off. #165's review
+    found Claude 5 on Bedrock answers nothing.
   - CoStar: `COSTAR_KIT_DIR`;
   - Matterport: `NEXT_PUBLIC_MATTERPORT_SDK_KEY`, plus `MATTERPORT_API_KEY`
     and `MATTERPORT_API_TOKEN` for the scan's mesh and panoramas;
   - Vexcel: `VEXCEL_API_KEY`;
   - `SHOWCASE_LEVELS`, pairing the showcase building with `romaine-1974`.
+    The showcase building comes through this, so
+    `NEXT_PUBLIC_MATTERPORT_MODEL_OVERRIDE` must be **empty** on the demo
+    machine.
 - [ ] **Build after setting them.** `NEXT_PUBLIC_*` is fixed at build time:
       `npm ci`, then `npm run build`, then `npm start`. Build a `main` that
       has #157 (`feat/118-scan-join`) merged.
@@ -553,7 +568,11 @@ in the repo or the video's files.
    tab.** Fake mode locks the switch. Expect the result to stay on screen when
    you switch it back, since the page re-renders without a reload. The
    checklist checks it.
-8. **The scan-keeping fix isn't merged.** It keeps the scan per model for the
-   tab's session, and starts loading it from the Plan screen. It ships on the
-   scan-join agent's branch after #157. Until it merges, the checklist's early
-   load does nothing, and the scan loads when Run opens.
+8. **Two scan fixes aren't merged.** Both ship on the scan-join agent's branch
+   after #157.
+   - **The scan-keeping fix** keeps the scan per model for the tab's session,
+     and starts loading it from the Plan screen. Until it merges, the
+     checklist's early load does nothing, and the scan loads when Run opens.
+   - **The floor-keeping fix** keeps the built floor across Plan and Run, so
+     **Start the run** opens Run in about 2–3 s instead of about 13 s. Beat 6
+     is written for it, with a one-line fallback for the slow load.
