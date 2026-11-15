@@ -8,11 +8,12 @@ which quotes [`tracks/prizes.md`](../tracks/prizes.md).
 open in fake mode with no keys; the gate checks it on every pull request.
 *Live* means it needs the event's keys and the CoStar data kit, neither of
 which is public, so a judge sees it only at the table. The live path, Cast to
-Debrief on a real Los Angeles office building from the kit, with live Vexcel,
+Debrief on Century Park, a real Los Angeles office building from the kit, with live Vexcel,
 its Matterport scan as the floor and Claude answering, was played end to end
 by the team on 14 and 15 November. This repo holds the code for it and no
 recording of it: SPEC §4.5 keeps every kit record, scan asset and id out of
-the repo, and the building is not named here for the same reason.
+the repo. The CoStar crew said yes to showing the building publicly (Q10,
+status issue #1, 15 November), so it is named here and on Devpost.
 
 **Statuses.** **Met**: true on `main`, and the row says whether in the repo,
 live or both. **Partly met**: some of it is true; the row says what is
