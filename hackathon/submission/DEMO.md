@@ -22,6 +22,23 @@ before the rehearsal; re-check the lines they touch then:
 - #206, Owner Mode on the showcase building. Beat 8 plays on it, with F1's
   prepared pair as the fallback.
 
+## Pitches per judging table
+
+Each table scores different things, so each gets its own 2-minute cue card.
+They reuse this file's beats by number. This file stays the home for the
+setup, the fallbacks, the checklist and each beat's detail.
+
+| table | pitch | what changes from this script |
+|---|---|---|
+| Entertainment, our main track, and Best Overall | [`pitches/entertainment.md`](pitches/entertainment.md) | The story leads, and the data stays light. Charity comes from the `prevent` missions and Owner Mode. |
+| CoStar, "AI for the Built World" | [`pitches/costar.md`](pitches/costar.md) | All three layers are named. Owner Mode gets 30 s. No Debrief. |
+| LangChain, "Best use of deepagents" | [`pitches/langchain.md`](pitches/langchain.md) | The two agents' traces, with a prepared F1 Dossier tab for their payloads. No crew order, Debrief or Owner Mode. |
+| Amazon, "Best Practical AI Innovation" (optional) | [`pitches/amazon.md`](pitches/amazon.md) | Owner Mode first. The Chief adapts within a run, and between runs on F1, which needs one F1 run played after the reset. No beats 1–4 or 7. |
+
+Before each table, run the checklist's
+[last few minutes](#demo-machine-checklist) again, starting with the reset,
+plus that pitch's own additions. The cue card below is the general pitch.
+
 ## Cue card
 
 One line per beat. The detail and the fallbacks are in the beats below.
