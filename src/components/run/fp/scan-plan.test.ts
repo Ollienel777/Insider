@@ -3,7 +3,7 @@
 // No scan data.
 import { describe, expect, it } from "vitest";
 import type { Seg, Vec } from "./ground";
-import { derivePlan, onPlanFloor, PLAN, planSolid, squareOf, type PlanInput, type ScanPlan } from "./scan-plan";
+import { addFurniture, derivePlan, onPlanFloor, PLAN, planSolid, squareOf, type PlanInput, type ScanPlan } from "./scan-plan";
 
 type P3 = [number, number, number];
 
@@ -220,5 +220,48 @@ describe("squareOf", () => {
     // Clutter at odd angles, less of it.
     for (let i = 0; i < 5; i++) pieces.push({ a: { x: i, y: i }, b: { x: i + 0.3, y: i + 0.5 } });
     expect(squareOf(pieces)).toBeCloseTo(0.3, 2);
+  });
+});
+
+describe("addFurniture", () => {
+  // Room A's desk (x 1–2.2, z 2.5–3.2, 0.75 m tall) stands; a cupboard hung on B's north wall (z 3.6–4, 1.5–2.1 m) does not.
+  const { input } = building(0);
+  const desk = (x: number, z: number) => x >= 1 && x <= 2.2 && z >= 2.5 && z <= 3.2;
+  const cupboard = (x: number, z: number) => x >= 7 && x <= 9 && z >= 3.55 && z <= 3.9;
+  const furnished = () => {
+    const plan = derivePlan(input);
+    addFurniture(
+      plan,
+      input.nodes,
+      input.paths,
+      (x, z) => (desk(x, z) ? 0.75 : cupboard(x, z) ? 2.1 : 0),
+      (x, z) => (desk(x, z) ? 0.75 : 0),
+    );
+    return plan;
+  };
+
+  it("boxes the desk, at its height", () => {
+    const plan = furnished();
+    const box = plan.furniture.find((b) => b.corners.every((c) => c.x > 0.9 && c.x < 2.3 && c.y > 2.4 && c.y < 3.3));
+    expect(box).toBeDefined();
+    expect(box!.top).toBeCloseTo(0.75, 2);
+    const area = Math.abs((box!.corners[1].x - box!.corners[0].x) * (box!.corners[3].y - box!.corners[0].y)) || Math.abs((box!.corners[1].y - box!.corners[0].y) * (box!.corners[3].x - box!.corners[0].x));
+    expect(area).toBeGreaterThan(0.5);
+  });
+
+  it("leaves a hung cupboard to its wall", () => {
+    const plan = furnished();
+    expect(plan.furniture.some((b) => b.corners.some((c) => c.x > 6.9 && c.y > 3.4))).toBe(false);
+  });
+
+  it("stops the body at a box but lets the eye see over a desk", () => {
+    const plan = furnished();
+    const solid = planSolid(plan);
+    // A body walked up to the desk's side is held off it.
+    const out = solid.pushOut(1.6, 0, 2.4, 0.25);
+    expect(out.z).toBeLessThanOrEqual(2.5 - 0.25);
+    // Line of sight at 1.4 m passes over it; at 0.5 m it does not.
+    expect(solid.hit([1.6, 1.4, 2], [0, 0, 1], 1.5)).toBeNull();
+    expect(solid.hit([1.6, 0.5, 2], [0, 0, 1], 1.5)).not.toBeNull();
   });
 });

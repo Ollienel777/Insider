@@ -27,6 +27,7 @@ import {
   type Camera,
   type Object3D,
 } from "three";
+import type { MeshWorld } from "@/app/spike/mesh/collider";
 import { act, type Action, type RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
 import { objectiveLabel, objectiveNoun } from "@/lib/objective-noun";
@@ -43,7 +44,8 @@ import { noticeOf } from "./notice";
 import { readPalette } from "./palette";
 import { joinRefusal, joinScan } from "./scan-join";
 import { nodeFloors, scanGround } from "./scan-ground";
-import { derivePlan, PLAN, planSolid } from "./scan-plan";
+import { addFurniture, derivePlan, FURNITURE, PLAN, planSolid, type ScanPlan } from "./scan-plan";
+import { fetchPhotoPanos, PhotoSet } from "./scan-photo";
 import { buildPlanGroup } from "./scan-plan-scene";
 import { meshSolid } from "./scan-solid";
 import { buildFloorGroup, disposeGroup, type RoomTone } from "./scene";
@@ -140,15 +142,17 @@ const LABEL_BASE = "absolute left-0 top-0 rounded-sm border px-1.5 py-0.5 font-m
 const LABEL_PITCH = 26;
 
 /**
- * How a live scan is drawn in first person: as one of our floors, its plan
- * worked out from its mesh (the default), or its own photographed picture,
- * kept to compare (`?scanlook=photo`).
+ * How a live scan is drawn in first person: as a set built to its plan and
+ * dressed in its own photographs (the default); as one of our floors, its
+ * plan in the fixture floors' colours (`?scanlook=blockout`); or as its own
+ * photographed mesh, kept to compare (`?scanlook=photo`).
  */
-function scanLook(): "plan" | "photo" {
+function scanLook(): "set" | "blockout" | "photo" {
   try {
-    return new URLSearchParams(window.location.search).get("scanlook") === "photo" ? "photo" : "plan";
+    const look = new URLSearchParams(window.location.search).get("scanlook");
+    return look === "photo" || look === "blockout" ? look : "set";
   } catch {
-    return "plan";
+    return "set";
   }
 }
 
@@ -428,7 +432,12 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
      * fixture floor's light, fog and camera over `floorGroup`, with the
      * floor at `floorY`. A fixture floor and a scan's plan both draw this way.
      */
-    const ourStage = (floorGroup: Group, ground: Stage["ground"], floorY: number, extra: Pick<Stage, "cameraMount"> = {}): Stage | null => {
+    const ourStage = (
+      floorGroup: Group,
+      ground: Stage["ground"],
+      floorY: number,
+      extra: Partial<Pick<Stage, "cameraMount" | "settled" | "counts">> & { tick?: (renderer: WebGLRenderer) => void; dispose?: () => void } = {},
+    ): Stage | null => {
       if (!hasWebGL()) return null;
       let renderer: WebGLRenderer;
       try {
@@ -460,10 +469,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       return {
         ground,
         liftY: floorY,
-        ...extra,
+        cameraMount: extra.cameraMount,
         add: (object) => pieces.add(object),
-        settled: () => true,
-        counts: () => null,
+        settled: extra.settled ?? (() => true),
+        counts: extra.counts ?? (() => null),
         resize() {
           const { clientWidth: w, clientHeight: h } = host;
           if (w === 0 || h === 0) return;
@@ -481,11 +490,13 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           camera.position.set(at.x, eye, at.y);
           const flat = Math.cos(pitch);
           camera.lookAt(at.x + Math.cos(yaw) * flat, eye + Math.sin(pitch), at.y + Math.sin(yaw) * flat);
+          extra.tick?.(renderer);
           renderer.render(scene, camera);
           return camera;
         },
         dispose() {
           target.removeEventListener("webglcontextlost", onLost);
+          extra.dispose?.();
           disposeGroup(floorGroup);
           renderer.dispose();
         },
@@ -520,7 +531,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
      * scan's own picture is not shown. Null, with the board back and a line
      * saying why, when the board doesn't stand on the scan.
      */
-    const planStage = (handle: ScanHandle): Stage | null => {
+    const planStage = (handle: ScanHandle, dressed: boolean): Stage | null => {
       const { view } = handle;
       const tree = view.meshTree;
       if (!tree) return null;
@@ -566,9 +577,19 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           return y !== null && Math.abs(y - floorY) < 0.3;
         },
       });
+      // The furniture, on the set only: the blockout draws none, and none may stop the player unseen.
+      if (dressed) {
+        addFurniture(
+          plan,
+          floor.nodes.map((n) => ({ x: n.x, y: n.y })),
+          paths,
+          (x, z) => tree.floorBelow(x, floorY + FURNITURE.highM, z, FURNITURE.highM - 0.2),
+          (x, z) => tree.floorBelow(x, floorY + FURNITURE.standM, z, FURNITURE.standM + 0.3),
+        );
+      }
       // Counts only.
       console.info(
-        `First person draws the scan's plan: ${plan.walls.length} walls (${plan.stats.boundary} at the floor's edge), ${plan.doorways.length} doorways, in ${Math.round(performance.now() - started)} ms`,
+        `First person draws the scan's plan: ${plan.walls.length} walls (${plan.stats.boundary} at the floor's edge), ${plan.doorways.length} doorways, ${plan.furniture.length} pieces of furniture, in ${Math.round(performance.now() - started)} ms`,
       );
       const ground = scanGround(floor, planSolid(plan), join.heights, { leashM: PLAN.leashM + 1 });
       const nodeRoom = new Map(floor.nodes.map((n) => [n.id, n.roomId]));
@@ -585,7 +606,51 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         }
         return best ? toneOfRoom(nodeRoom.get(best.id) ?? "") : "plain";
       };
-      const made = ourStage(buildPlanGroup(plan, palette, tone), ground, floorY, { cameraMount: scanCameraMount(ground) });
+      const blockout = buildPlanGroup(plan, palette, tone);
+      if (!dressed) return finishPlan(ourStage(blockout, ground, floorY, { cameraMount: scanCameraMount(ground) }), plan, tree);
+      // The set: the blockout until the photographs are in hand, then the photographs, painted as they arrive.
+      const set = new Group();
+      set.add(blockout);
+      let photos: PhotoSet | null = null;
+      let photosFailed = false;
+      const startNode = ground.nodes.get(latest.current.run.playerNode);
+      void fetchPhotoPanos(handle.modelId, floorY)
+        .then((panos) => {
+          if (gone || panos.length === 0) {
+            photosFailed = true;
+            return;
+          }
+          photos = new PhotoSet(plan, panos, startNode ?? { x: 0, y: 0 });
+          blockout.visible = false;
+          set.add(photos.group);
+          // Counts only.
+          console.info(`First person paints the set from ${panos.length} panoramas at ${(photos.texelM * 100).toFixed(1)} cm a texel`);
+        })
+        .catch(() => {
+          photosFailed = true;
+        });
+      let told = false;
+      return finishPlan(
+        ourStage(set, ground, floorY, {
+          cameraMount: scanCameraMount(ground),
+          tick(renderer) {
+            photos?.step(renderer);
+            if (photos && !told && photos.progress().done) {
+              told = true;
+              console.info(`First person painted the set in ${photos.seconds?.toFixed(1)} s`);
+              if (process.env.NODE_ENV !== "production") (window as unknown as { __fpPainted?: boolean }).__fpPainted = true;
+            }
+          },
+          settled: () => photosFailed || (photos?.progress().done ?? false),
+          counts: () => (photos ? { held: photos.progress().painted, total: photos.progress().total } : { held: 0, total: 0 }),
+          dispose: () => photos?.dispose(),
+        }),
+        plan,
+        tree,
+      );
+    };
+
+    const finishPlan = (made: Stage | null, plan: ScanPlan, tree: MeshWorld): Stage | null => {
       // For the debug overlay in development: never in a production build.
       if (process.env.NODE_ENV !== "production") (window as unknown as { __fpPlan?: unknown }).__fpPlan = { plan, mesh: tree, objective: placed.level.objective };
       return made;
@@ -657,7 +722,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
     };
 
     let stopListening = () => {};
-    const photo = scanLook() === "photo";
+    const look = scanLook();
+    const photo = look === "photo";
     if (world) {
       begin(fixtureStage(world));
     }
@@ -683,7 +749,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       phase();
       void scan.ready.then((ok) => {
         if (gone || !ok) return;
-        const made = photo ? scanStage(scan) : planStage(scan);
+        const made = photo ? scanStage(scan) : planStage(scan, look === "set");
         if (made) begin(made);
       });
     }

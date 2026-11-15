@@ -107,8 +107,18 @@ export interface PlanFloor {
   cells: Uint8Array;
 }
 
+/** A piece of furniture: a box standing on the floor, square to the building. */
+export interface PlanBox {
+  /** Its footprint's corners, plan (x, y), in order round it. */
+  corners: [Vec, Vec, Vec, Vec];
+  /** Its top, y-up, absolute. */
+  top: number;
+}
+
 export interface ScanPlan {
   angle: number;
+  /** The furniture (`addFurniture`); none until it is added. */
+  furniture: PlanBox[];
   floorY: number;
   ceilingY: number;
   walls: PlanWall[];
@@ -573,6 +583,7 @@ export function derivePlan(input: PlanInput): ScanPlan {
 
   return {
     angle,
+    furniture: [],
     floorY,
     ceilingY,
     walls,
@@ -608,7 +619,11 @@ export function fromCellFrame(floor: PlanFloor, u: number, v: number): Vec {
  */
 export function planSolid(plan: ScanPlan): ScanSolid {
   const half = PLAN.thickM / 2;
-  const walls = plan.walls;
+  // Walls are full height and as thick as drawn; a box's sides stand as high as its top, and no thicker.
+  const walls: { a: Vec; b: Vec; top: number; thick: number }[] = [
+    ...plan.walls.map((w) => ({ a: w.a, b: w.b, top: Infinity, thick: half })),
+    ...plan.furniture.flatMap((box) => box.corners.map((a, k) => ({ a, b: box.corners[(k + 1) % 4], top: box.top, thick: 0.01 }))),
+  ];
   const { floorY, ceilingY } = plan;
   return {
     floorBelow(x, fromY, z, depth) {
@@ -616,12 +631,12 @@ export function planSolid(plan: ScanPlan): ScanSolid {
       return onPlanFloor(plan.floor, x, z) ? floorY : null;
     },
     pushOut(x, _feetY, z, radius) {
-      const reach = radius + half;
       let px = x;
       let pz = z;
       for (let pass = 0; pass < 4; pass++) {
         let moved = false;
-        for (const { a, b } of walls) {
+        for (const { a, b, thick } of walls) {
+          const reach = radius + thick;
           if (px < Math.min(a.x, b.x) - reach || px > Math.max(a.x, b.x) + reach) continue;
           if (pz < Math.min(a.y, b.y) - reach || pz > Math.max(a.y, b.y) + reach) continue;
           const dx = b.x - a.x;
@@ -655,7 +670,8 @@ export function planSolid(plan: ScanPlan): ScanSolid {
       const dx = dir[0] / len / flat;
       const dz = dir[2] / len / flat;
       let best: number | null = null;
-      for (const { a, b } of walls) {
+      for (const { a, b, top } of walls) {
+        if (oy > top) continue;
         const ex = b.x - a.x;
         const ez = b.y - a.y;
         const den = dx * ez - dz * ex;
@@ -672,4 +688,163 @@ export function planSolid(plan: ScanPlan): ScanSolid {
       return best;
     },
   };
+}
+
+/** Every number the furniture is found by. Metres. */
+export const FURNITURE = Object.freeze({
+  /** The grid the tops are measured on. */
+  cellM: 0.1,
+  /** Lower than this over the floor is a bin or a box on the floor, not furniture. */
+  lowM: 0.45,
+  /** The bands a top falls in: desks, chairs and counters; then partitions, cabinets and shelves. */
+  bandsM: [1.0] as readonly number[],
+  /** Higher than this is the ceiling's, not the floor's. */
+  highM: 2.2,
+  /** Under a top higher than `hangM`, what stands on the floor is looked for from `standM` down: a cupboard hung on a wall has bare floor there. */
+  hangM: 1.5,
+  standM: 1.3,
+  /** No furniture this close to a wall's line: that is the wall's own clutter. */
+  wallClearM: 0.15,
+  /** No furniture this close to a scan position, or to a walk between two: the scanner stood and walked there. */
+  nodeClearM: 0.45,
+  pathClearM: 0.3,
+  /** A box thinner than this is dropped (a half-height wall is a box one cell thick). */
+  minSideM: 0.1,
+  minAreaM2: 0.08,
+  maxBoxes: 600,
+});
+
+/**
+ * Finds the furniture: what stands between knee and head height on the
+ * plan's floor, measured by `topAt` (the highest thing under (x, y) below
+ * `highM` over the floor, or null), grouped by height band and covered by
+ * boxes square to the building, largest first. Keeps clear of the walls, the
+ * scan positions and the walks between them. Adds them to `plan.furniture`.
+ */
+export function addFurniture(
+  plan: ScanPlan,
+  nodes: readonly Vec[],
+  paths: readonly Seg[],
+  topAt: (x: number, y: number) => number | null,
+  /** What is under (x, y) below `standM` over the floor: what stands there, or the floor itself under something that hangs. */
+  lowAt: (x: number, y: number) => number | null = () => null,
+): void {
+  const F = FURNITURE;
+  const { floor, floorY } = plan;
+  const angle = floor.angle;
+  const cell = F.cellM;
+  const cols = Math.ceil((floor.cols * floor.cell) / cell);
+  const rows = Math.ceil((floor.rows * floor.cell) / cell);
+  const band = new Int8Array(cols * rows).fill(-1);
+  const height = new Float32Array(cols * rows);
+  const wallsUV = plan.walls.map((w) => [rot(w.a, angle), rot(w.b, angle)] as const);
+  const nodesUV = nodes.map((n) => rot(n, angle));
+  const pathsUV = paths.map((p) => [rot(p.a, angle), rot(p.b, angle)] as const);
+  const segDist = (p: { u: number; v: number }, a: { u: number; v: number }, b: { u: number; v: number }) => {
+    const du = b.u - a.u;
+    const dv = b.v - a.v;
+    const len2 = du * du + dv * dv || 1;
+    const t = Math.max(0, Math.min(1, ((p.u - a.u) * du + (p.v - a.v) * dv) / len2));
+    return Math.hypot(p.u - a.u - t * du, p.v - a.v - t * dv);
+  };
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const p = { u: floor.u0 + (i + 0.5) * cell, v: floor.v0 + (j + 0.5) * cell };
+      const w = unrot(p.u, p.v, angle);
+      if (!onPlanFloor(floor, w.x, w.y)) continue;
+      const top = topAt(w.x, w.y);
+      if (top === null) continue;
+      const h = top - floorY;
+      if (h < F.lowM || h > F.highM) continue;
+      // Something high with bare floor under it hangs on a wall: a cupboard, not furniture.
+      if (h > F.hangM) {
+        const low = lowAt(w.x, w.y);
+        if (low !== null && low - floorY < 0.1) continue;
+      }
+      if (nodesUV.some((n) => Math.abs(n.u - p.u) < F.nodeClearM && Math.abs(n.v - p.v) < F.nodeClearM && Math.hypot(n.u - p.u, n.v - p.v) < F.nodeClearM)) continue;
+      if (wallsUV.some(([a, b]) => segDist(p, a, b) < F.wallClearM)) continue;
+      if (pathsUV.some(([a, b]) => segDist(p, a, b) < F.pathClearM)) continue;
+      const k = j * cols + i;
+      band[k] = F.bandsM.filter((b) => h >= b).length;
+      height[k] = h;
+    }
+  }
+  // A cell missed among its band's neighbours (a shelf's gap, a ray between two slats) is that band's.
+  for (let pass = 0; pass < 2; pass++) {
+    const was = band.slice();
+    for (let j = 1; j < rows - 1; j++) {
+      for (let i = 1; i < cols - 1; i++) {
+        const k = j * cols + i;
+        if (was[k] >= 0) continue;
+        const near = [was[k - 1], was[k + 1], was[k - cols], was[k + cols]].filter((b) => b >= 0);
+        if (near.length < 3) continue;
+        const b = Math.max(...near);
+        if (near.filter((x) => x === b).length < 3) continue;
+        band[k] = b;
+        const hs = [k - 1, k + 1, k - cols, k + cols].filter((n) => was[n] === b).map((n) => height[n]);
+        height[k] = hs.reduce((a, h) => a + h, 0) / hs.length;
+      }
+    }
+  }
+  // Boxes: within each connected patch of one band, the largest rectangle, again and again.
+  const boxes: PlanBox[] = [];
+  const minCells = Math.max(1, Math.round(F.minSideM / cell));
+  const seen = new Uint8Array(cols * rows);
+  for (let start = 0; start < band.length && boxes.length < F.maxBoxes; start++) {
+    if (band[start] < 0 || seen[start]) continue;
+    const b = band[start];
+    const patch: number[] = [start];
+    seen[start] = 1;
+    let [i0, i1, j0, j1] = [cols, 0, rows, 0];
+    for (let h = 0; h < patch.length; h++) {
+      const k = patch[h];
+      const i = k % cols;
+      const j = (k - i) / cols;
+      i0 = Math.min(i0, i);
+      i1 = Math.max(i1, i + 1);
+      j0 = Math.min(j0, j);
+      j1 = Math.max(j1, j + 1);
+      for (const n of [i > 0 ? k - 1 : -1, i < cols - 1 ? k + 1 : -1, j > 0 ? k - cols : -1, j < rows - 1 ? k + cols : -1]) {
+        if (n >= 0 && !seen[n] && band[n] === b) {
+          seen[n] = 1;
+          patch.push(n);
+        }
+      }
+    }
+    const w = i1 - i0;
+    const run = new Int32Array(w);
+    while (boxes.length < F.maxBoxes) {
+      let best = { area: 0, i0: 0, j0: 0, i1: 0, j1: 0 };
+      run.fill(0);
+      for (let j = j0; j < j1; j++) {
+        for (let x = 0; x < w; x++) run[x] = band[j * cols + i0 + x] === b ? run[x] + 1 : 0;
+        // The largest rectangle under the histogram `run`, ending at row j.
+        const stack: number[] = [];
+        for (let x = 0; x <= w; x++) {
+          const h = x < w ? run[x] : 0;
+          while (stack.length > 0 && run[stack[stack.length - 1]] >= h) {
+            const hh = run[stack.pop()!];
+            const left = stack.length > 0 ? stack[stack.length - 1] + 1 : 0;
+            const width = x - left;
+            if (hh >= minCells && width >= minCells && hh * width > best.area) best = { area: hh * width, i0: i0 + left, j0: j - hh + 1, i1: i0 + x, j1: j + 1 };
+          }
+          stack.push(x);
+        }
+      }
+      if (best.area * cell * cell < F.minAreaM2) break;
+      const tops: number[] = [];
+      for (let j = best.j0; j < best.j1; j++) {
+        for (let i = best.i0; i < best.i1; i++) {
+          tops.push(height[j * cols + i]);
+          band[j * cols + i] = -1;
+        }
+      }
+      tops.sort((p, q) => p - q);
+      const top = floorY + tops[Math.floor(tops.length / 2)];
+      const [u0, u1] = [floor.u0 + best.i0 * cell, floor.u0 + best.i1 * cell];
+      const [v0, v1] = [floor.v0 + best.j0 * cell, floor.v0 + best.j1 * cell];
+      boxes.push({ corners: [unrot(u0, v0, angle), unrot(u1, v0, angle), unrot(u1, v1, angle), unrot(u0, v1, angle)], top });
+    }
+  }
+  plan.furniture = boxes;
 }
