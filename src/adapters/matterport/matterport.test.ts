@@ -316,6 +316,111 @@ describe("insideViewFor (the Run screen's Inside view)", () => {
   });
 });
 
+describe("a load its caller gave up on (issue 145)", () => {
+  it("rejects as the live load did, and is neither a failure nor a fallback", async () => {
+    const abandon = new AbortController();
+    const fallbacks: string[] = [];
+    let calls = 0;
+    const live = {
+      loadFloor: (_b: unknown, signal?: AbortSignal) => {
+        calls += 1;
+        return new Promise<null>((_resolve, reject) =>
+          signal?.addEventListener("abort", () => reject(Object.assign(new Error("given up on"), { name: "TimeoutError" }))),
+        );
+      },
+    };
+    const adapter = withFixtureFloor(live, createFakeMatterport(), (f) => fallbacks.push(f.id));
+    const load = adapter.loadFloor({ id: "F1", matterportModelId: "m" }, abandon.signal);
+    abandon.abort();
+    await expect(load).rejects.toThrow("given up on");
+    expect(fallbacks).toEqual([]);
+    expect(adapter.failed()).toBe(false);
+    // The connection is not written off: the next load goes live again.
+    void adapter.loadFloor({ id: "F1", matterportModelId: "m" }).catch(() => {});
+    expect(calls).toBe(2);
+  });
+
+  it("still fails over for good when a load nobody gave up on fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const adapter = withFixtureFloor({ loadFloor: async () => Promise.reject(new Error("down")) }, createFakeMatterport(), () => {});
+    expect(adapter.failed()).toBe(false);
+    expect((await adapter.loadFloor({ id: "F1", matterportModelId: "m" }, new AbortController().signal))?.source).toBe("fixture");
+    expect(adapter.failed()).toBe(true);
+    warn.mockRestore();
+  });
+});
+
+describe("willLoadLive (what a board says it is waiting for, issue 145)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  /** A fresh page on live Matterport: the adapter and the demo status it reports to. */
+  async function livePage() {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_MATTERPORT_MODE", "live");
+    vi.stubEnv("NEXT_PUBLIC_MATTERPORT_SDK_KEY", "test-key");
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const status = await import("@/lib/demo-status");
+    // As `DemoSafety` does in the browser: until then the force is read from a cookie, and there is no document here.
+    status.initStatus({ configured: { llm: "fake", costar: "fake", vexcel: "fake", matterport: "live" }, forced: [] });
+    return { matterport: await import("./index"), status };
+  }
+  const scanned = { id: "48213", matterportModelId: "abcDEF123" };
+
+  it("is true for a building with a scan on live Matterport, and false for one with none", async () => {
+    const { matterport } = await livePage();
+    expect(matterport.willLoadLive(scanned)).toBe(true);
+    expect(matterport.willLoadLive({ id: "F2" })).toBe(false);
+    expect(matterport.willLoadLive({ id: "F2", matterportModelId: "" })).toBe(false);
+  });
+
+  it("is false in fake mode", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_MATTERPORT_MODE", "fake");
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const matterport = await import("./index");
+    expect(matterport.willLoadLive(scanned)).toBe(false);
+  });
+
+  it("is false while Matterport is forced to fixtures, and true again when the force is lifted", async () => {
+    const { matterport, status } = await livePage();
+    status.setForced("matterport", true, () => {});
+    expect(matterport.willLoadLive(scanned)).toBe(false);
+    status.setForced("matterport", false, () => {});
+    expect(matterport.willLoadLive(scanned)).toBe(true);
+  });
+
+  it("stays true after a building with no scan fell back: the next building's scan still loads", async () => {
+    const { matterport, status } = await livePage();
+    expect((await matterport.getMatterport().adapter.loadFloor({ id: "F1" }))?.source).toBe("fixture");
+    expect(status.getStatus().fellBack.has("matterport")).toBe(true);
+    expect(matterport.willLoadLive(scanned)).toBe(true);
+  });
+
+  it("stays true after a scan the level couldn't be placed on", async () => {
+    const { matterport, status } = await livePage();
+    status.reportFallback(matterport.unplaceableFallback("48213"));
+    expect(matterport.willLoadLive(scanned)).toBe(true);
+  });
+
+  it("stays true after a load its caller gave up on, which reports nothing", async () => {
+    const { matterport, status } = await livePage();
+    const abandon = new AbortController();
+    abandon.abort();
+    await expect(matterport.getMatterport().adapter.loadFloor(scanned, abandon.signal)).rejects.toMatchObject({ name: "AbortError" });
+    expect(status.getStatus().fellBack.size).toBe(0);
+    expect(status.getStatus().toasts).toEqual([]);
+    expect(matterport.willLoadLive(scanned)).toBe(true);
+  });
+
+  it("is false once a load has failed over for good", async () => {
+    const { matterport } = await livePage();
+    // With no document the live connection rejects: a failed load.
+    expect((await matterport.getMatterport().adapter.loadFloor(scanned))?.source).toBe("fixture");
+    expect(matterport.willLoadLive(scanned)).toBe(false);
+  });
+});
+
 describe("matterportEnv (what the browser bundle reads)", () => {
   afterEach(() => vi.unstubAllEnvs());
 

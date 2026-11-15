@@ -1,46 +1,28 @@
-// What the board's skeleton says while a live scan loads (issue 145): when it
-// speaks at all, and what it draws before and after the wait turns slow. The
-// timer and the click are checked in a browser against a slowed scan (the PR
-// says how); here the panel is rendered for each state it can be in.
+// What the board's skeleton says while a live scan loads (issue 145): what the
+// panel draws in each state it can be in, when it turns slow, and what the
+// button does. Whether a load waits on a scan is the adapter's answer
+// (`willLoadLive`, matterport.test.ts); that the two boards hold the panel is
+// in scan-wait-wiring.test.tsx.
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import type { Service } from "@/lib/mode";
-import { ScanWait, ScanWaitPanel, STAND_IN_AFTER_MS, waitsOnScan } from "./scan-wait";
-
-const status = (fellBack: Service[] = [], ready = true) => ({ ready, fellBack: new Set(fellBack) });
-
-describe("waitsOnScan", () => {
-  it("is true for a building with a scan while Matterport is live on the page", () => {
-    expect(waitsOnScan(status(), "live", "abcDEF123")).toBe(true);
-  });
-
-  it("is false on fixtures: fake mode, and forced in the demo settings (the adapter's mode is then fake)", () => {
-    expect(waitsOnScan(status(), "fake", "abcDEF123")).toBe(false);
-  });
-
-  it("is false once Matterport has fallen back to fixtures in this browser", () => {
-    expect(waitsOnScan(status(["matterport"]), "live", "abcDEF123")).toBe(false);
-    // Another service falling back says nothing about the scan.
-    expect(waitsOnScan(status(["costar"]), "live", "abcDEF123")).toBe(true);
-  });
-
-  it("is false for a building with no scan, and before the browser has its status", () => {
-    expect(waitsOnScan(status(), "live", undefined)).toBe(false);
-    expect(waitsOnScan(status(), "live", "")).toBe(false);
-    expect(waitsOnScan(status([], false), "live", "abcDEF123")).toBe(false);
-  });
-});
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { offerStandInAfter, ScanWait, ScanWaitPanel, STAND_IN_AFTER_MS, takeStandIn } from "./scan-wait";
 
 describe("the scan wait panel", () => {
-  it("says the scan is loading, as a status, and offers nothing yet", () => {
-    const out = renderToStaticMarkup(<ScanWaitPanel slow={false} onStandIn={() => {}} />);
+  it("is an empty status region first, so its words arrive as a change a screen reader announces", () => {
+    const out = renderToStaticMarkup(<ScanWaitPanel state="mounting" onStandIn={() => {}} />);
     expect(out).toContain('data-testid="scan-wait"');
+    expect(out).toMatch(/<div role="status"[^>]*><\/div>/);
+    expect(out).not.toContain("<button");
+  });
+
+  it("says the scan is loading, as a status, and offers nothing yet", () => {
+    const out = renderToStaticMarkup(<ScanWaitPanel state="loading" onStandIn={() => {}} />);
     expect(out).toMatch(/<div role="status"[^>]*><p[^>]*>Loading the scan<\/p><\/div>/);
     expect(out).not.toContain("<button");
   });
 
   it("offers the stand-in floor plan once the wait is slow, and says how to get the scan back", () => {
-    const out = renderToStaticMarkup(<ScanWaitPanel slow onStandIn={() => {}} />);
+    const out = renderToStaticMarkup(<ScanWaitPanel state="slow" onStandIn={() => {}} />);
     expect(out).toContain("Loading the scan");
     expect(out).toContain("The stand-in floor plan is ready now.");
     expect(out).toContain("open the demo settings with Shift+?");
@@ -49,10 +31,85 @@ describe("the scan wait panel", () => {
     expect(out.match(/<button/g)).toHaveLength(1);
     expect(out).toMatch(/<button[^>]*class="[^"]*\bh-10\b/);
   });
+});
 
-  it("waits longer than a fast scan takes before it offers the way out", () => {
-    // Issue 141: on a fast connection the board was up in 12 to 20 s on the dev server, which loads twice.
-    expect(STAND_IN_AFTER_MS).toBeGreaterThanOrEqual(10_000);
+describe("when the stand-in floor plan is offered", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  /** A page whose visibility the test sets. */
+  function page(state: "visible" | "hidden") {
+    const listeners = new Set<() => void>();
+    const doc = {
+      visibilityState: state,
+      addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+    };
+    vi.stubGlobal("document", doc);
+    return {
+      listeners,
+      set(next: "visible" | "hidden") {
+        doc.visibilityState = next;
+        [...listeners].forEach((listener) => listener());
+      },
+    };
+  }
+
+  it("waits longer than a fast scan takes: 6 to 10 s on the production build", () => {
+    expect(STAND_IN_AFTER_MS).toBe(15_000);
+  });
+
+  it("is not offered a millisecond early, and is offered once", () => {
+    vi.useFakeTimers();
+    const onSlow = vi.fn();
+    offerStandInAfter(onSlow);
+    vi.advanceTimersByTime(STAND_IN_AFTER_MS - 1);
+    expect(onSlow).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onSlow).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(STAND_IN_AFTER_MS * 2);
+    expect(onSlow).toHaveBeenCalledTimes(1);
+  });
+
+  it("is never offered once the wait is over (the panel left the page)", () => {
+    vi.useFakeTimers();
+    const onSlow = vi.fn();
+    const stop = offerStandInAfter(onSlow);
+    vi.advanceTimersByTime(STAND_IN_AFTER_MS - 1);
+    stop();
+    vi.advanceTimersByTime(STAND_IN_AFTER_MS);
+    expect(onSlow).not.toHaveBeenCalled();
+  });
+
+  it("counts only time the page is showing, as the scan's own deadlines do", () => {
+    vi.useFakeTimers();
+    const tab = page("visible");
+    const onSlow = vi.fn();
+    const stop = offerStandInAfter(onSlow);
+    vi.advanceTimersByTime(5_000);
+    tab.set("hidden");
+    vi.advanceTimersByTime(60_000);
+    expect(onSlow).not.toHaveBeenCalled();
+    tab.set("visible");
+    vi.advanceTimersByTime(STAND_IN_AFTER_MS - 5_000 - 1);
+    expect(onSlow).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onSlow).toHaveBeenCalledTimes(1);
+    stop();
+    expect(tab.listeners.size).toBe(0);
+  });
+});
+
+describe("taking the stand-in floor plan", () => {
+  it("forces Matterport to fixtures for the session, then loads the floor again", () => {
+    const calls: string[] = [];
+    takeStandIn(
+      () => calls.push("reload"),
+      (service, on) => calls.push(`force ${service} ${on}`),
+    );
+    expect(calls).toEqual(["force matterport true", "reload"]);
   });
 });
 

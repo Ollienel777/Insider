@@ -69,6 +69,18 @@ export class MatterportNotStartedError extends Error {
   }
 }
 
+/**
+ * The caller stopped waiting for the scan's floor (it left the screen, or
+ * took the stand-in floor plan): the load stops where it is. Not a failure of
+ * the scan or the connection, so nothing falls back or toasts for it.
+ */
+export class MatterportAbandonedError extends Error {
+  constructor() {
+    super("Matterport: the scan's load was given up on");
+    this.name = "AbortError";
+  }
+}
+
 /** Whether the page is showing. With no document (the server, unit tests on node) it counts as showing. */
 function pageVisible(): boolean {
   return typeof document === "undefined" || document.visibilityState === "visible";
@@ -199,8 +211,14 @@ export function within<T>(
  * `connect`, bounded by `ms`. A session that opens after the deadline is
  * disconnected at once, so a late player does not linger in the page.
  */
-export function connectWithin(connect: ShowcaseConnect, modelId: string, sdkKey: string, ms: number): Promise<ShowcaseSession> {
-  return within((signal) => connect(modelId, sdkKey, signal), "the Showcase connection", ms, (session) => session.disconnect());
+export function connectWithin(
+  connect: ShowcaseConnect,
+  modelId: string,
+  sdkKey: string,
+  ms: number,
+  outer?: AbortSignal,
+): Promise<ShowcaseSession> {
+  return within((signal) => connect(modelId, sdkKey, signal), "the Showcase connection", ms, (session) => session.disconnect(), outer);
 }
 
 function isTimeout(error: unknown): boolean {
@@ -231,12 +249,14 @@ export const ROOMS_WAIT_MS = 30_000;
  * `timeoutMs` to arrive. The rooms then have `ROOMS_WAIT_MS`. Running out of
  * that is not a failure: the answer then has no rooms, as for a model that
  * has none, and says the wait ran out. Both waits count visible time only
- * (`visibleTimeout`).
+ * (`visibleTimeout`). When `signal` aborts first, both waits stop and the
+ * call rejects with a `MatterportAbandonedError`.
  */
 function snapshots(
   sweepData: ObservableCollection<unknown>,
   roomData: ObservableCollection<unknown>,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<{ sweeps: Record<string, unknown>; rooms: Record<string, unknown>; roomsRanOut: boolean }> {
   return new Promise((resolve, reject) => {
     let sweeps: Record<string, unknown> | null = null;
@@ -244,16 +264,27 @@ function snapshots(
     let done = false;
     let stopRoomsWait: (() => void) | undefined;
     const subscriptions: { cancel(): void }[] = [];
+    const onAbort = () => {
+      if (done) return;
+      done = true;
+      stopSweepsDeadline();
+      stopRoomsWait?.();
+      queueMicrotask(() => subscriptions.forEach((s) => s.cancel()));
+      reject(new MatterportAbandonedError());
+    };
     const finish = (roomsRanOut = false) => {
       if (done || !sweeps) return;
       done = true;
       stopRoomsWait?.();
+      signal?.removeEventListener("abort", onAbort);
       // The SDK may call back before `subscribe` returns.
       queueMicrotask(() => subscriptions.forEach((s) => s.cancel()));
       resolve({ sweeps, rooms, roomsRanOut });
     };
     const stopSweepsDeadline = visibleTimeout(() => {
+      if (done) return;
       done = true;
+      signal?.removeEventListener("abort", onAbort);
       subscriptions.forEach((s) => s.cancel());
       reject(new MatterportTimeoutError("Sweep.data", timeoutMs));
     }, timeoutMs);
@@ -276,6 +307,8 @@ function snapshots(
         },
       }),
     );
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
 
@@ -289,13 +322,17 @@ export function createLiveMatterport(config: LiveMatterportConfig): MatterportAd
   // A deadline that runs out after the page was hidden, or with the player
   // short of playing, is the player not starting, not the scan: a board built
   // without its rooms is one room, and the level can't be placed on it.
-  async function load(modelId: string) {
+  // A caller that stopped waiting (`signal`) ends the load where it is, with a
+  // `MatterportAbandonedError`: before the player opens, when it was still queued.
+  async function load(modelId: string, signal?: AbortSignal) {
+    if (signal?.aborted) throw new MatterportAbandonedError();
     const page = watchHidden();
     try {
       let session: ShowcaseSession;
       try {
-        session = await connectWithin(connect, modelId, sdkKey!, connectTimeoutMs);
+        session = await connectWithin(connect, modelId, sdkKey!, connectTimeoutMs, signal);
       } catch (error) {
+        if (signal?.aborted) throw new MatterportAbandonedError();
         if (page.hidden() && isTimeout(error)) throw new MatterportNotStartedError(true);
         throw error;
       }
@@ -304,7 +341,7 @@ export function createLiveMatterport(config: LiveMatterportConfig): MatterportAd
       try {
         let got: Awaited<ReturnType<typeof snapshots>>;
         try {
-          got = await snapshots(session.sdk.Sweep.data, session.sdk.Room.data, timeoutMs);
+          got = await snapshots(session.sdk.Sweep.data, session.sdk.Room.data, timeoutMs, signal);
         } catch (error) {
           if (isTimeout(error) && stalled()) throw new MatterportNotStartedError(page.hidden());
           throw error;
@@ -325,10 +362,10 @@ export function createLiveMatterport(config: LiveMatterportConfig): MatterportAd
   // 26.11, so a load waits for the one before it to settle.
   let queue: Promise<unknown> = Promise.resolve();
   return {
-    loadFloor(building) {
+    loadFloor(building, signal) {
       const modelId = building.matterportModelId;
       if (!modelId) return Promise.resolve(null);
-      const next = queue.then(() => load(modelId));
+      const next = queue.then(() => load(modelId, signal));
       queue = next.catch(() => {});
       return next;
     },

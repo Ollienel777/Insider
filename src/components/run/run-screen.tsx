@@ -180,8 +180,9 @@ export function RunScreen({
     // Until the board has its fresh run, there is no run on it: the last one's log goes now.
     clearRunLog(building.id, undefined, missionId);
     const matterport = getMatterport(heistMode);
+    const abandon = new AbortController();
     matterport.adapter
-      .loadFloor(building)
+      .loadFloor(building, abandon.signal)
       .then(
         async (floor) => {
           if (!live) return;
@@ -201,12 +202,15 @@ export function RunScreen({
       });
     return () => {
       live = false;
+      // Nobody is waiting for this load now (the screen closed, or the stand-in floor plan was taken): a scan stops loading.
+      abandon.abort();
     };
   }, [building, manifest, heistMode, attempt, placeAndStart, missionId]);
 
   const load: Load = manifest ? loaded : { status: "no-floor" };
-  // While a live scan loads, the bar does not yet say where the floor plan is from: the skeleton says what it waits for.
-  const scanLoading = useWaitsOnScan(building, heistMode) && load.status === "loading";
+  // While the floor loads, the bar says "from fixtures" only once the browser knows no scan is loading:
+  // on a live scan the skeleton says what it waits for, and before the demo status is in, nobody knows.
+  const sourcePending = useWaitsOnScan(building, heistMode) !== false && load.status === "loading";
   const placed = load.status === "ready" ? load.placed : null;
   // The placement and the Chief's summary use `history`, read when the level was placed; the
   // Forget button uses `storedRuns`, which also counts a run that ended since.
@@ -486,7 +490,7 @@ export function RunScreen({
               {/* A kit building's label (below) names its floor, so the line doesn't say it twice. */}
               {source === "costar" ? null : (
                 <span className="max-md:hidden">
-                  {load.status === "ready" && load.live ? " · floor plan from the scan" : scanLoading ? null : " · floor plan from fixtures"}
+                  {load.status === "ready" && load.live ? " · floor plan from the scan" : sourcePending ? null : " · floor plan from fixtures"}
                 </span>
               )}
             </span>

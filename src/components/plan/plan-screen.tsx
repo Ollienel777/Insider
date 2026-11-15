@@ -73,11 +73,12 @@ export function PlanScreen({
     if (!manifest) return;
     let live = true;
     const matterport = getMatterport(heistMode);
+    const abandon = new AbortController();
     const fail = (error: unknown) => {
       if (live) setLoad({ status: "error", message: error instanceof Error ? error.message : String(error) });
     };
     matterport.adapter
-      .loadFloor(building)
+      .loadFloor(building, abandon.signal)
       .then(async (floor) => {
         if (!live) return;
         if (!floor) return setLoad({ status: "no-floor" });
@@ -95,6 +96,8 @@ export function PlanScreen({
       .catch(fail);
     return () => {
       live = false;
+      // Nobody is waiting for this load now (the screen closed, or the stand-in floor plan was taken): a scan stops loading.
+      abandon.abort();
     };
   }, [building, manifest, heistMode, missionId, source, attempt]);
 
@@ -111,8 +114,9 @@ export function PlanScreen({
   }, [ask]);
 
   const load: Load = manifest ? loaded : { status: "no-floor" };
-  // While a live scan loads, the bar does not yet say where the floor plan is from: the skeleton says what it waits for.
-  const scanLoading = useWaitsOnScan(building, heistMode) && load.status === "loading";
+  // While the floor loads, the bar says "from fixtures" only once the browser knows no scan is loading:
+  // on a live scan the skeleton says what it waits for, and before the demo status is in, nobody knows.
+  const sourcePending = useWaitsOnScan(building, heistMode) !== false && load.status === "loading";
   const placed = load.status === "ready" ? load.placed : null;
   const run = useMemo(() => (placed ? createRun(placed.level) : null), [placed]);
   const answer = ask.status === "answered" ? ask.answer : null;
@@ -160,7 +164,7 @@ export function PlanScreen({
               <LayerDot layer="matterport" decorative />
               Matterport
               <span className="max-md:hidden">
-                {load.status === "ready" && load.live ? " · floor plan from the scan" : scanLoading ? null : " · floor plan from fixtures"}
+                {load.status === "ready" && load.live ? " · floor plan from the scan" : sourcePending ? null : " · floor plan from fixtures"}
               </span>
             </span>
             <span aria-hidden className="h-4 w-px bg-border" />
