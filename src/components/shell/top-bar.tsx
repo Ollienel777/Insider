@@ -20,8 +20,15 @@ export function TopBar({ status, building }: TopBarProps) {
     >
       <Link
         href="/"
-        className="inline-flex h-10 items-center justify-self-start rounded-sm whitespace-nowrap text-base font-semibold tracking-tight text-text-1"
+        className="group inline-flex h-10 items-center gap-2 justify-self-start rounded-sm whitespace-nowrap font-display text-2xl font-normal tracking-wide text-text-1"
       >
+        {/* The game's logo mark: a yellow key-tile with an H, like a coin on the board. */}
+        <span
+          aria-hidden
+          className="grid size-8 -rotate-6 place-items-center rounded-sm border-2 border-border-strong bg-accent font-display text-lg text-accent-ink shadow-[inset_0_2px_0_var(--key-sheen),0_3px_0_var(--ink-shadow)] transition-transform duration-base ease-out group-hover:rotate-6"
+        >
+          H
+        </span>
         Heist Anywhere
       </Link>
       <div data-testid="building-slot" className="min-w-0 truncate text-sm">

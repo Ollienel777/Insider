@@ -8,24 +8,25 @@ import { cn } from "@/lib/utils";
 // For a link styled as a button, put `buttonVariants(...)` on the <Link>.
 export const buttonVariants = cva(
   [
-    "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-sm",
-    "text-sm font-medium select-none",
-    "transition-colors duration-fast ease-out",
+    // The game look (issue 166): a chunky, outlined button on a hard shadow that presses down on click.
+    "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-sm border-2 border-border-strong",
+    "font-display text-base font-normal tracking-wider select-none",
+    "shadow-[inset_0_2px_0_var(--key-sheen),inset_0_-3px_0_var(--key-shade),0_4px_0_var(--ink-shadow)] transition-[transform,box-shadow,background-color,color] duration-fast ease-out",
+    "hover:-translate-y-px active:translate-y-[3px] active:shadow-[inset_0_2px_0_var(--key-shade),0_1px_0_var(--ink-shadow)]",
     "disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50",
-    "[&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:stroke-[1.5]",
+    "[&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:stroke-[2.25]",
   ],
   {
     variants: {
       variant: {
         primary: "bg-accent text-accent-ink hover:bg-accent-hover active:bg-accent-active",
-        secondary:
-          "border border-border bg-surface-2 text-text-1 hover:border-border-strong hover:bg-surface-3 active:bg-surface-2",
-        ghost: "text-text-2 hover:bg-surface-3 hover:text-text-1 active:bg-surface-2",
+        secondary: "bg-surface-3 text-text-1 hover:bg-n-700 active:bg-surface-3",
+        ghost: "border-transparent bg-transparent text-text-2 shadow-none hover:bg-surface-3 hover:text-text-1 active:shadow-none",
       },
       size: {
-        default: "h-10 px-4",
-        lg: "h-12 px-5 text-base",
-        icon: "size-10",
+        default: "h-11 px-5",
+        lg: "h-14 px-6 text-lg",
+        icon: "size-11",
       },
     },
     defaultVariants: { variant: "secondary", size: "default" },

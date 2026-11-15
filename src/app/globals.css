@@ -9,63 +9,70 @@
    components use the CSS variables or the Tailwind keys below, never a hex
    value (src/app/tokens.test.ts enforces both halves). */
 :root {
-  /* neutrals (cool slate) */
-  --n-950: #07090c;
-  --n-900: #0c1015;
-  --n-850: #11161d;
-  --n-800: #171d26;
-  --n-700: #232b37;
-  --n-600: #323c4b;
-  --n-500: #4a5566;
-  --n-400: #7d8899; /* lightened from #6b7686 so --text-3 passes AA (R1-M6) */
-  --n-300: #939caa;
-  --n-200: #bcc3cd;
-  --n-100: #e1e5ea;
-  --n-50: #f4f6f8;
+  /* The game theme (issue 166): a heist planning table, blueprint blue.
+     The scale keeps its names, so the board, the panels and every chip move
+     together. */
+  --n-950: #0f2233;
+  --n-900: #15304a;
+  --n-850: #1b3a58;
+  --n-800: #224567;
+  --n-700: #2c5378;
+  --n-600: #3a6690;
+  --n-500: #5b85ad;
+  --n-400: #93b3d1;
+  --n-300: #b8cfe3;
+  --n-200: #d6e4f0;
+  --n-100: #edf3f9;
+  --n-50: #ffffff;
 
   /* surfaces */
   --surface-0: var(--n-950); /* page, board backdrop */
   --surface-1: var(--n-900); /* panels */
   --surface-2: var(--n-850); /* raised rows, inputs */
   --surface-3: var(--n-800); /* hover */
-  --border: var(--n-700);
-  --border-strong: var(--n-600);
+  /* A dark ink outline, as a cartoon draws its shapes. */
+  --border: #071521;
+  --border-strong: #040d15;
+  --ink-shadow: #05101a;
+  /* A key's sheen and shade, after 21st's Tactile 3D Button (bidyut10). */
+  --key-sheen: rgb(255 255 255 / 0.35);
+  --key-shade: rgb(0 0 0 / 0.18);
 
   /* text */
-  --text-1: var(--n-50); /* primary */
-  --text-2: var(--n-300); /* secondary */
-  --text-3: var(--n-400); /* labels only, 12px mono caps, never body */
+  --text-1: var(--n-50);
+  --text-2: var(--n-300);
+  --text-3: var(--n-400);
 
-  /* the one accent: signal amber */
-  --accent: #f2a93b;
-  --accent-hover: #f6bb5f;
-  --accent-active: #d98f22;
-  --accent-ink: #1a1206; /* text on accent */
-  --accent-wash: rgb(242 169 59 / 0.12);
+  /* the accent: a sunny yellow, for the one big button and the player */
+  --accent: #ffc23d;
+  --accent-hover: #ffd36e;
+  --accent-active: #f0ab12;
+  --accent-ink: #2b1a00;
+  --accent-wash: rgb(255 194 61 / 0.16);
 
-  /* semantic, used only for their meaning */
-  --success: #3ccf91;
-  --warning: #f5d547;
-  --danger: #ff5a5f;
+  /* semantic */
+  --success: #3fd6a0;
+  --warning: #ffab3d;
+  --danger: #ff5b3a;
 
-  /* data layers: only on 8px layer dots, the provenance thread, the Layer lens */
-  --layer-costar: #7aa7ff;
-  --layer-vexcel: #c08cff;
-  --layer-matterport: #4fd1c5;
+  /* data layers */
+  --layer-costar: #5fb4ff;
+  --layer-vexcel: #ff8ad8;
+  --layer-matterport: #3fd6a0;
 
-  /* radius */
-  --r-sm: 6px; /* chips, inputs, buttons */
-  --r-md: 10px; /* panels, cards */
+  /* radius: soft and toy-like */
+  --r-sm: 12px; /* chips, inputs, buttons */
+  --r-md: 20px; /* panels, cards */
 
-  /* elevation */
-  --e-1: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 1px 2px rgb(0 0 0 / 0.4);
-  --e-2: 0 12px 32px rgb(0 0 0 / 0.5);
+  /* elevation: a hard drop under every block, like a printed sticker */
+  --e-1: 0 4px 0 var(--ink-shadow);
+  --e-2: 0 6px 0 var(--ink-shadow), 0 18px 36px rgb(0 0 0 / 0.45);
 
   /* motion */
   --t-fast: 150ms;
   --t-base: 200ms;
   --t-slow: 300ms;
-  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease: cubic-bezier(0.34, 1.4, 0.64, 1); /* a little bounce */
 }
 
 /* The Tailwind theme. `initial` drops Tailwind's default palette, radii,
@@ -131,12 +138,16 @@
   --default-transition-duration: var(--t-fast);
   --default-transition-timing-function: var(--ease);
 
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-sans: var(--font-nunito), ui-rounded, ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display-face), var(--font-nunito), ui-rounded, sans-serif;
+  /* No terminal mono in the game look: data and ids set in the rounded body face. */
+  --font-mono: var(--font-nunito), ui-rounded, ui-sans-serif, sans-serif;
   --font-weight-*: initial;
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
 
   --text-*: initial;
   --text-xs: 12px;
@@ -169,12 +180,13 @@
   transition-duration: --value(--duration-*);
 }
 
-/* The mono caps label (DESIGN.md type scale, `xs`). */
+/* The small label over a value: a chunky rounded caps, like a game's HUD. */
 @utility label-caps {
-  font-family: var(--font-mono);
+  font-family: var(--font-nunito), sans-serif;
+  font-weight: 800;
   font-size: 12px;
   line-height: 16px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
@@ -183,11 +195,30 @@ html {
 }
 
 body {
-  background: var(--surface-0);
+  /* A blueprint: flat blue with faint drafting lines, no glow. */
+  background:
+    linear-gradient(rgb(255 255 255 / 0.035) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, rgb(255 255 255 / 0.035) 1px, transparent 1px) 0 0 / 32px 32px,
+    var(--surface-0);
+  background-attachment: fixed;
   color: var(--text-1);
   font-family: var(--font-sans);
-  /* Tabular figures on every number (DESIGN.md, Type). */
-  font-feature-settings: "tnum", "cv11";
+  font-feature-settings: "tnum";
+}
+
+/* Titles in the chunky display face. */
+/* In the base layer, so a label-caps heading keeps the label face. */
+@layer base {
+  h1,
+  h2 {
+    font-family: var(--font-display-face), var(--font-nunito), sans-serif;
+    font-weight: 400;
+    letter-spacing: 0.02em;
+  }
+
+  h3 {
+    font-weight: 800;
+  }
 }
 
 /* One focus ring for every control: 2px accent, offset from the control so it
