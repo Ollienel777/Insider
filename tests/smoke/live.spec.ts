@@ -8,6 +8,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 /** The turn's length (`LIVE_TURN_MS`, src/components/run/turn-clock.ts); the timer's bar is checked against it below. */
 const LIVE_TURN_MS = 1100;
+/** The turn after a sighting that raised the alarm (`ALARM_BEAT_MS`, src/components/run/turn-clock.ts, issue 222). */
+const ALARM_BEAT_MS = 2500;
 const RUN_LOG = "heist:run-log:F1:romaine-1974";
 const PLAY_MODE = "heist:play-mode";
 
@@ -242,8 +244,11 @@ test("Live: a clock turn raises the alarm and calls the Chief, whose re-plan lan
   await expect(page.getByTestId("chief-panel")).toHaveAttribute("data-state", "pending");
   expect(calls).toBe(1);
 
-  // The clock does not hold for the Chief: with his call still out, the next turn passes.
-  await tick(page, LIVE_TURN_MS);
+  // The clock does not hold for the Chief: with his call still out, the next turn passes, after the
+  // alarm beat that follows a sighting that raised the alarm (issue 222).
+  await tick(page, ALARM_BEAT_MS - 1);
+  await expect(turn(page)).toHaveText("4");
+  await tick(page, 1);
   await expect(turn(page)).toHaveText("5");
   await expect(page.getByTestId("chief-panel")).toHaveAttribute("data-state", "pending");
 
