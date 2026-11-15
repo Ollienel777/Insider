@@ -64,13 +64,12 @@ test("the demo path: mission picker to Debrief and Try again on F1, in fake mode
   // Beat 1: the hook. The mission picker lists the five missions; the demo picks romaine-1974.
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Pick a mission");
-  const missions = page.getByTestId("mission-card");
-  await expect(missions).toHaveCount(5);
-  for (const card of await missions.all()) await expect(card).toBeVisible();
-  const romaine = missions.filter({ hasText: "The Romaine Street Papers" });
+  await expect(page.getByTestId("mission-tab")).toHaveCount(5);
+  const romaine = page.getByTestId("mission-card");
+  await expect(romaine).toHaveAttribute("data-mission", "romaine-1974");
   await expect(romaine.getByTestId("inspired-by")).toContainText("1974");
   await shot(page, "beat-1-missions");
-  await page.getByRole("link", { name: /The Romaine Street Papers/ }).click();
+  await page.getByRole("link", { name: "Take the job" }).click();
 
   // Beat 2: the agent casts the building. The recorded run replays (no Skip, as
   // the presenter lets it play): the funnel opens at the fixture inventory's

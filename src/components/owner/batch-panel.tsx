@@ -119,7 +119,7 @@ export function BatchPanel({
   onOpenFixed: () => void;
 }) {
   const back = (
-    <Button variant="ghost" data-testid="owner-edit" className="self-start" onClick={onEdit}>
+    <Button variant="secondary" data-testid="owner-edit" className="self-start" onClick={onEdit}>
       Edit the setup
     </Button>
   );

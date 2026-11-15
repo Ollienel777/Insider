@@ -705,7 +705,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
             </p>
           ) : null}
           {over ? null : (
-          <p data-testid="fp-hint" className="flex items-center gap-3 rounded-sm bg-surface-1 px-3 py-1.5 text-sm text-text-2 shadow-e-1">
+          <p data-testid="fp-hint" className="flex max-w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-sm bg-surface-1 px-3 py-1.5 text-sm text-text-2 shadow-e-1">
             {hud.locked ? null : (
               <span data-testid="fp-look-hint" className="text-text-1">
                 {hud.refused ? "Hold the mouse button and drag to look" : "Click to look, or hold and drag"}
@@ -749,7 +749,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
       {/* The end of the run: what happened and why, and the way on. The view takes no more input. */}
       {end ? (
-        <div data-testid="fp-end" data-status={run.status} className="absolute inset-0 grid place-items-center bg-surface-0/55 p-6">
+        <div data-testid="fp-end" data-status={run.status} className="absolute inset-0 grid place-items-center bg-n-50/55 p-6">
           <div role="status" className="flex max-w-lg flex-col items-center gap-3 rounded-md border border-border bg-surface-1 px-8 py-6 text-center shadow-e-2">
             <p className="label-caps text-text-3">{end.outcome === "won" ? "Run complete" : "Run over"}</p>
             <p data-testid="fp-over" className={cn("text-2xl font-semibold", end.outcome === "won" ? "text-success" : "text-danger")}>

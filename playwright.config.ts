@@ -25,6 +25,9 @@ export default defineConfig({
   reporter: [["list"]],
   use: {
     baseURL,
+    // The game opens Run in first person (issue 166). The specs play the board by its number keys,
+    // so every browser starts with the board chosen; first-person.spec.ts switches view itself.
+    storageState: { cookies: [], origins: [{ origin: baseURL, localStorage: [{ name: "heist:run-view", value: "board" }] }] },
     trace: "retain-on-failure",
     // Playwright gives a click, fill or read no limit of its own, and a goto
     // none either, so a hung one ran until its test's timeout: 90 s on the

@@ -43,7 +43,7 @@ const theme = declarations(block(css, /@theme inline\s*\{/));
 
 describe("DESIGN.md tokens in globals.css", () => {
   it("parses a full token set from DESIGN.md", () => {
-    expect(designColours.size).toBe(32);
+    expect(designColours.size).toBe(34);
     expect([...designOthers.keys()].sort()).toEqual(
       ["--e-1", "--e-2", "--r-md", "--r-sm", "--t-base", "--t-fast", "--t-slow"].sort(),
     );
@@ -97,6 +97,18 @@ describe("contrast", () => {
 
   it.each(["--accent", "--accent-hover", "--accent-active"])("--accent-ink on %s is at least AA", (fill) => {
     expect(contrast(resolve("--accent-ink"), resolve(fill))).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it.each(["--success", "--warning"].flatMap((status) => surfaces.map((s) => [status, s])))("status text %s on %s is at least AA", (status, surface) => {
+    expect(contrast(resolve(status), resolve(surface))).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it.each(["--text-1", "--text-2", "--text-3"])("%s on the folder's manila is at least AA", (text) => {
+    expect(contrast(resolve(text), resolve("--manila"))).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it.each(surfaces)("the board's deep accent on %s is at least 3:1, as a graphic", (surface) => {
+    expect(contrast(resolve("--accent-deep"), resolve(surface))).toBeGreaterThanOrEqual(3);
   });
 
   it("measures DESIGN.md's old --text-3 as failing, so the check has teeth", () => {

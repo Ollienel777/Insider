@@ -5,9 +5,9 @@ import { expect, test, type Page } from "@playwright/test";
 // elements the board tints, and each element is drawn in its layers' colours.
 
 const COLOUR = {
-  costar: "rgb(122, 167, 255)",
-  vexcel: "rgb(192, 140, 255)",
-  matterport: "rgb(79, 209, 197)",
+  costar: "rgb(47, 111, 176)",
+  vexcel: "rgb(143, 67, 164)",
+  matterport: "rgb(31, 138, 118)",
 } as const;
 type Layer = keyof typeof COLOUR;
 const LAYERS = Object.keys(COLOUR) as Layer[];
