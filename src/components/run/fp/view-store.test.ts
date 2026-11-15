@@ -2,7 +2,7 @@
 // first person was chosen, and never an error when storage is blocked.
 import { describe, expect, it } from "vitest";
 import type { FloorGraph } from "@/domain";
-import { firstPersonOffered, firstPersonOn, type ScanPreload } from "./run-view";
+import { firstPersonOffered, firstPersonOn, SCAN_NO_MESH, scanStageOf, type ScanHandle, type ScanPreload } from "./run-view";
 import { DEFAULT_RUN_VIEW, loadRunView, RUN_VIEW_KEY, saveRunView, type RunViewState } from "./view-store";
 
 function memory(): Storage & { map: Map<string, string> } {
@@ -78,5 +78,26 @@ describe("whether the Run screen shows first person", () => {
     expect(firstPersonOffered(floor("matterport"))).toBe(false);
     expect(firstPersonOffered(floor("matterport"), loading)).toBe(true);
     expect(firstPersonOffered(floor("matterport"), failed)).toBe(false);
+  });
+});
+
+describe("what first person does on a live scan with the preload as it stands", () => {
+  // A stand-in: the choice only looks at whether there is a handle, never into it.
+  const handle = { canvas: null } as unknown as ScanHandle;
+  const loading: ScanPreload = { handle: null, failed: null, ready: false };
+
+  it("waits while the preload's module is still on its way, and walks the scan once its handle comes", () => {
+    // First person mounts first (its chunk is the lighter one): offered, and waiting, not refused.
+    expect(firstPersonOffered({ source: "matterport" } as FloorGraph, loading)).toBe(true);
+    expect(scanStageOf(loading)).toEqual({ kind: "wait" });
+    // Then the handle: the scan is walked, and the board is not given back.
+    expect(scanStageOf({ handle, failed: null, ready: false })).toEqual({ kind: "walk", handle });
+    expect(scanStageOf({ handle, failed: null, ready: true })).toEqual({ kind: "walk", handle });
+  });
+
+  it("gives the board back with the preload's own line when it fails, and the no-mesh line only with no preload", () => {
+    const line = "The scan's mesh didn't download. You're on the board.";
+    expect(scanStageOf({ handle: null, failed: line, ready: false })).toEqual({ kind: "refuse", line });
+    expect(scanStageOf(null)).toEqual({ kind: "refuse", line: SCAN_NO_MESH });
   });
 });

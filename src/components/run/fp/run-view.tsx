@@ -10,8 +10,10 @@ import { Footprints, Grid3x3, type LucideIcon } from "lucide-react";
 import type { FloorGraph } from "@/domain";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import type { Pace } from "../play-hud";
 import type { ScanHandle } from "./scan-preload";
 import { FP } from "./tuning";
+import { buildWorld, edgePath, type World } from "./world";
 import type { RunView, RunViewState } from "./view-store";
 
 export type { ScanHandle } from "./scan-preload";
@@ -28,8 +30,24 @@ export const FirstPersonView = dynamic(() => import("./first-person-view"), {
 /** First person's turn: short enough that the guards never seem to wait on the player (issue 115). */
 export { FP_TURN_MS as FIRST_PERSON_TURN_MS } from "./tuning";
 
-/** First person's pace, for the HUD to speak in seconds rather than hops and turns (`usePlayHud`). */
-export const FIRST_PERSON_PACE = Object.freeze({ unitM: FP.unitM, runMps: FP.runMps, turnMs: FP.turnMs });
+/** Each floor's walls, built once for the HUD's pace however often it asks. */
+const worlds = new WeakMap<FloorGraph, World>();
+
+/**
+ * First person's pace on `floor`, for the HUD to speak in seconds rather than
+ * hops and turns (`usePlayHud`): the controller's own speed, a walk while
+ * Shift is held and a run otherwise, and each edge walked through its doorway
+ * as the body walks it.
+ */
+export function firstPersonPace(floor: FloorGraph, walking: boolean): Pace {
+  const pace = { unitM: FP.unitM, mps: walking ? FP.walkMps : FP.runMps, turnMs: FP.turnMs };
+  // A live scan's floor has no walls of ours to walk through: node to node in a straight line.
+  if (floor.source !== "fixture") return pace;
+  let world = worlds.get(floor);
+  if (!world) worlds.set(floor, (world = buildWorld(floor)));
+  const built = world;
+  return { ...pace, edge: (a, b) => edgePath(built, a, b) };
+}
 
 /** The turn the clock plays for first person, which the view supplies: the next pick while E is held, or a wait. */
 export type HeldAction = (run: import("@/engine").RunState) => import("@/engine").Action;
@@ -62,6 +80,29 @@ export interface ScanPreload {
 }
 
 const LOADING: ScanPreload = Object.freeze({ handle: null, failed: null, ready: false });
+
+/** The line first person gives when a live scan's floor has no mesh to walk at all. */
+export const SCAN_NO_MESH = "This scan has no mesh to walk, so first person isn't offered on it. You're on the board.";
+
+/** What first person does on a live scan's floor with `scan` as it stands: wait for it, walk it, or give the board back. */
+export type ScanStage =
+  | { kind: "wait" }
+  | { kind: "walk"; handle: ScanHandle }
+  | { kind: "refuse"; line: string };
+
+/**
+ * First person's choice on a live scan, from the preload as it stands. While
+ * the preload's own `import()` is still resolving it has neither a handle nor
+ * a failure: that is a wait, never "no mesh" (the view can mount first, since
+ * its chunk is the lighter one). Only a preload that failed, or none at all,
+ * gives the board back.
+ */
+export function scanStageOf(scan: ScanPreload | null): ScanStage {
+  if (!scan) return { kind: "refuse", line: SCAN_NO_MESH };
+  if (scan.failed !== null) return { kind: "refuse", line: scan.failed };
+  if (scan.handle) return { kind: "walk", handle: scan.handle };
+  return { kind: "wait" };
+}
 
 /**
  * Starts loading the scan for first person as soon as there is a model id,
