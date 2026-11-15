@@ -11,7 +11,6 @@ import {
   Vector3,
   WebGLRenderTarget,
   type PerspectiveCamera,
-  type Scene,
   type WebGLRenderer,
 } from "three";
 import { blendWeights, type BlendMode } from "@/lib/scan-mesh/blend";
@@ -89,17 +88,14 @@ export class WalkRecorder {
   /** Keeps this frame's numbers and steps on; calls `done` once the route is walked. */
   capture(
     renderer: WebGLRenderer,
-    scene: Scene,
+    draw: (target: WebGLRenderTarget) => void,
     camera: PerspectiveCamera,
     world: MeshWorld,
     used: readonly PanoUse[],
     mode: BlendMode,
   ): void {
-    const before = renderer.getRenderTarget();
-    renderer.setRenderTarget(this.target);
-    renderer.render(scene, camera);
+    draw(this.target);
     renderer.readRenderTargetPixels(this.target, 0, 0, WIDTH, HEIGHT, this.pixels);
-    renderer.setRenderTarget(before);
 
     let light = 0;
     let change = 0;

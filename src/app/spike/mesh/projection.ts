@@ -23,6 +23,10 @@
 // projection switched off, the mesh shows bare: shaded from its face normals,
 // since the scan's mesh carries no texture coordinates.
 //
+// This is the material for a mesh with no texture of its own (the 50k mesh,
+// shown first). The detailed mesh, which has one, is painted by
+// photo-material.ts, which also draws the backdrop.
+//
 // Colours are passed through untouched: the panorama texels are display
 // values, the output is display values, and nothing is lit.
 import { BackSide, DoubleSide, Matrix3, ShaderMaterial, Vector3, type CubeTexture } from "three";

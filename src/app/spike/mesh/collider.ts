@@ -14,6 +14,8 @@ const BODY_TOP = 1.7;
 const PASSES = 4;
 /** A contact steeper than this (|dy| / distance) is floor or ceiling, not wall. */
 const VERTICAL = 0.75;
+/** A push straight out of a wall that clears it slower than this (per metre) is left to the contact's own lean. */
+const MIN_RATE = 0.2;
 
 export class MeshWorld implements MoveWorld {
   readonly bvh: MeshBVH;
@@ -22,6 +24,7 @@ export class MeshWorld implements MoveWorld {
   private readonly box = new Box3();
   private readonly onTriangle = new Vector3();
   private readonly onSegment = new Vector3();
+  private readonly normal = new Vector3();
 
   constructor(
     geometry: BufferGeometry,
@@ -37,7 +40,7 @@ export class MeshWorld implements MoveWorld {
   }
 
   pushOut(x: number, feetY: number, z: number, radius: number): { x: number; z: number } {
-    const { segment, box, onTriangle, onSegment } = this;
+    const { segment, box, onTriangle, onSegment, normal } = this;
     const bottom = feetY + this.stepUp + radius;
     const top = Math.max(bottom + 0.01, feetY + BODY_TOP - radius);
     segment.start.set(x, bottom, z);
@@ -60,10 +63,35 @@ export class MeshWorld implements MoveWorld {
           if (Math.abs(dy) / distance > VERTICAL) return false;
           const flat = Math.hypot(dx, dz);
           if (flat < 1e-6) return false;
+          let ux = dx / flat;
+          let uz = dz / flat;
+          // How far the capsule moves away from the contact per metre pushed along (ux, uz).
+          let rate = flat / distance;
+          // Against a wall, a contact above or below the capsule's ends (a
+          // quad's diagonal, a few centimetres under it) leans along the
+          // wall; pushed that way, a body pressed into the wall creeps along
+          // it a little every frame (issue 118). Such a contact pushes
+          // straight out of the wall instead. One met side on (a doorway's
+          // jamb) still pushes the way it leans, so the body slides round it.
+          triangle.getNormal(normal);
+          const across = Math.hypot(normal.x, normal.z);
+          if (across > 1 - VERTICAL) {
+            const out = dx * normal.x + dy * normal.y + dz * normal.z;
+            const inPlaneUp = Math.abs(dy - out * normal.y);
+            const inPlaneAlong = Math.hypot(dx - out * normal.x, dz - out * normal.z);
+            const nx = (Math.sign(out) * normal.x) / across;
+            const nz = (Math.sign(out) * normal.z) / across;
+            const along = (nx * dx + nz * dz) / distance;
+            if (inPlaneUp > inPlaneAlong && along > MIN_RATE) {
+              ux = nx;
+              uz = nz;
+              rate = along;
+            }
+          }
           // Far enough sideways that the capsule clears the triangle.
-          const push = (radius - distance) * (distance / flat);
-          const sx = (dx / flat) * push;
-          const sz = (dz / flat) * push;
+          const push = (radius - distance) / rate;
+          const sx = ux * push;
+          const sz = uz * push;
           segment.start.x += sx;
           segment.start.z += sz;
           segment.end.x += sx;

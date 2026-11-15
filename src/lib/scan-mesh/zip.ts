@@ -114,3 +114,53 @@ export function localHeaderLength(header: Uint8Array): number | null {
   if (header.length < 30 || v.getUint32(0, true) !== LOCAL) return null;
   return 30 + v.getUint16(26, true) + v.getUint16(28, true);
 }
+
+/**
+ * Room for the local header past its fixed 30 bytes: its name and extra
+ * field, which can differ from the directory's copy. Read in the same
+ * request as the data, so one range request fetches one file.
+ */
+export const LOCAL_SLACK = 1024;
+
+/** The byte range (inclusive) to fetch for `entry`: its local header, with slack, and its data. */
+export function entryRange(entry: ZipEntry): [number, number] {
+  return [entry.localOffset, entry.localOffset + 30 + LOCAL_SLACK + entry.compressedSize - 1];
+}
+
+/**
+ * The entry's compressed data, from the bytes `entryRange` fetched; null
+ * when they don't start with its local header or the header is longer than
+ * the slack allowed for.
+ */
+export function entryData(fetched: Uint8Array, entry: ZipEntry): Uint8Array | null {
+  const header = localHeaderLength(fetched.subarray(0, 30));
+  if (header === null || header + entry.compressedSize > fetched.length) return null;
+  return fetched.subarray(header, header + entry.compressedSize);
+}
+
+/** What a Matterpak holds for its textured mesh: the mesh, its material library and its texture images. */
+export interface MatterpakParts {
+  obj: ZipEntry;
+  mtl: ZipEntry | null;
+  /** By file name, without any folder. */
+  images: Map<string, ZipEntry>;
+}
+
+const baseName = (name: string) => name.slice(name.lastIndexOf("/") + 1);
+
+/**
+ * The textured mesh's files in a Matterpak's directory, or null with no
+ * mesh: the largest OBJ, the material library beside it, and every JPEG or
+ * PNG. Only files stored or deflated are of use.
+ */
+export function matterpakParts(entries: readonly ZipEntry[]): MatterpakParts | null {
+  const usable = entries.filter((e) => e.method === 0 || e.method === 8);
+  const obj = usable.filter((e) => /\.obj$/i.test(e.name)).sort((a, b) => b.size - a.size)[0];
+  if (!obj) return null;
+  const stem = obj.name.replace(/\.obj$/i, "");
+  const mtls = usable.filter((e) => /\.mtl$/i.test(e.name));
+  const mtl = mtls.find((e) => e.name.replace(/\.mtl$/i, "") === stem) ?? mtls[0] ?? null;
+  const images = new Map<string, ZipEntry>();
+  for (const e of usable) if (/\.(jpe?g|png)$/i.test(e.name)) images.set(baseName(e.name), e);
+  return { obj, mtl, images };
+}

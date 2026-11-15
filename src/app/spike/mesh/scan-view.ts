@@ -15,10 +15,17 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  DoubleSide,
+  LinearFilter,
+  LinearMipmapLinearFilter,
   Mesh,
   MeshBasicMaterial,
+  OrthographicCamera,
   PerspectiveCamera,
+  Ray,
   Scene,
+  Texture,
+  Vector3,
   WebGLRenderer,
   WebGLRenderTarget,
   type CubeTexture,
@@ -33,14 +40,20 @@ import {
   type ScanDetail,
   type ScanManifest,
 } from "@/lib/scan-mesh/manifest";
+import { fitLevels, type LevelSample } from "@/lib/scan-mesh/levels";
 import { TUNING, type MoveWorld } from "@/lib/scan-mesh/movement";
+import { packShelves, type Placement } from "@/lib/scan-mesh/atlas";
+import { PATCH_MARGIN, type PlanePatch } from "@/lib/scan-mesh/planes";
 import { parseObj } from "@/lib/scan-mesh/obj";
 import { feetUnder, linksFresh, poseVelocity, sharpLayer, viewStats, type ScanPose, type ViewStats } from "@/lib/scan-mesh/pose";
+import { distanceToGroup, type TexturedGroup } from "@/lib/scan-mesh/textured";
 import { MeshWorld } from "./collider";
-import type { DetailReply, DetailRequest } from "./detail-worker";
+import type { DetailReply, DetailRequest, RepairStats } from "./detail-worker";
 import { matchExposure } from "./exposure-match";
+import { HoleFill } from "./hole-fill";
 import { blankCube, PanoStore, type PanoCounts, type PanoUse } from "./panos";
-import { createScanMaterial } from "./projection";
+import { createPhotoMaterial, createPhotoUniforms, type PhotoUniforms } from "./photo-material";
+import { createScanMaterial, SLOTS } from "./projection";
 
 export type { ScanPose } from "@/lib/scan-mesh/pose";
 export { eyePose, yawFromHeading } from "@/lib/scan-mesh/pose";
@@ -55,6 +68,20 @@ export interface ScanViewOptions {
   mesh?: MeshResolution;
   /** Whether to load the Matterpak's detailed mesh for the picture, where the scan has one. Default true. */
   detail?: boolean;
+  /**
+   * Whether the detailed mesh has the Matterpak's own textures under the
+   * panoramas: a surface no panorama near the eye saw shows its texture.
+   * Default true; off, the panoramas alone paint it, as they do the 50k mesh.
+   */
+  textured?: boolean;
+  /** Whether to fill what no scanned surface covers from the pixels around it, and close the mesh's small holes. Default true. */
+  fill?: boolean;
+  /**
+   * The detailed mesh's repairs: its shards left out, and its flat surfaces
+   * carried across their gaps and over what no panorama saw of them. "all"
+   * by default; "none", or one of the two, to compare.
+   */
+  repair?: "all" | "none" | "shards" | "planes";
   /** Vertical field of view, degrees. */
   fov?: number;
   /** Called whenever `status()` has news: a phase, the detailed mesh, the exposure match. */
@@ -67,6 +94,32 @@ export interface ScanDetailStatus {
   megabytes: number;
   seconds: number;
   reason?: string;
+  /** The Matterpak's textures: how many, how many are in (small, and full size near the eye), and whether all have been fetched. */
+  textures?: ScanTextureStatus;
+  /** Small holes in the detailed mesh that were closed. */
+  holes?: number;
+  /** The mesh's repairs: its shards left out, and its planes' patches. */
+  repair?: ScanRepairStatus;
+}
+
+export interface ScanRepairStatus {
+  /** Null until the repair is in. */
+  stats: RepairStats | null;
+  /** Patches carried across gaps in planes, and how many have a texture made for them so far. */
+  patches: number;
+  synthesized: number;
+}
+
+export interface ScanTextureStatus {
+  total: number;
+  small: number;
+  sharp: number;
+  megabytes: number;
+  /** Seconds from the mesh's arrival to every texture fetched. */
+  seconds: number;
+  done: boolean;
+  /** What the textures take on the GPU, roughly, megabytes. */
+  gpuMegabytes: number;
 }
 
 export interface ScanExposureStatus {
@@ -102,6 +155,50 @@ export const DEFAULT_FOV = 71;
 const LINK_MARGIN = 20_000;
 const MEASURE_WIDTH = 160;
 const MEASURE_HEIGHT = 90;
+/** The textures are first decoded this many pixels square: all of them fit in GPU memory at once. */
+const SMALL_TEXTURE = 512;
+/** Textures of surfaces this close to the eye, metres, are shown sharper, this many pixels square... */
+const SHARP_REACH = 4;
+const SHARP_TEXTURE = 1024;
+/** ...this many at most (each about 5.6 MB of GPU memory)... */
+const SHARP_MAX = 12;
+/** ...chosen again this often, seconds. */
+const SHARP_EVERY = 0.3;
+/** Textures put on the GPU in one frame at most: small ones, and full-size ones. */
+const UPLOADS_SMALL = 4;
+const UPLOADS_SHARP = 1;
+/** Full-size panorama cubes kept on the GPU beside the textures, at most (each 2k one is about 134 MB). */
+const SHARP_CUBES = 5;
+/** A patch's picture is this fine, metres a pixel, and at most this many pixels a side. */
+const PATCH_TEXEL = 0.012;
+const PATCH_PIXELS = 256;
+/** How far either side of a patch's plane its picture takes the mesh from, metres. */
+const PATCH_SLAB = 0.07;
+/** Patches this far from the eye, metres, wait for their own texture until it comes nearer; and frames between two pictures. */
+const PATCH_REACH = 18;
+const PATCH_EVERY = 3;
+/** The patches' textures share pages this many pixels square, each with this much clear round it, sampled down to this many smaller copies. */
+const PAGE_SIZE = 2048;
+const PAGE_GUTTER = 4;
+const PAGE_LEVELS = 3;
+const SOURCE_WIDTH = 160;
+const SOURCE_HEIGHT = 90;
+
+/** What paints the view, as parts of the frame (they sum to 1). */
+export interface ViewSources {
+  /** No surface at all: the panoramas' far view shows (a window, or a gap nothing closes). */
+  void: number;
+  /** A surface painted from the panoramas. */
+  pano: number;
+  /** The mesh's own texture, where no panorama near the eye saw the surface. */
+  texture: number;
+  /** A stand-in's own texture, made from the surface round it. */
+  synth: number;
+  /** A stand-in nothing painted: filled from the pixels around it. */
+  smear: number;
+  /** Stand-ins altogether (closed holes, planes carried across gaps), however painted. */
+  standin: number;
+}
 
 class LoadError extends Error {}
 
@@ -112,7 +209,10 @@ export class ScanView {
   /** Resolves true once the scan can be walked and drawn, false if it can't. */
   readonly ready: Promise<boolean>;
   private readonly blank: CubeTexture;
+  /** The panoramas alone, for a mesh with no texture of its own: the 50k mesh, shown until the detailed one is in. */
   private readonly material: ShaderMaterial;
+  /** The panoramas' uniforms, shared by every material that paints by the photo rule (photo-material.ts). */
+  private readonly photo: PhotoUniforms;
   private readonly backdropMaterial: ShaderMaterial;
   private readonly backdrop: Mesh;
   private readonly abort = new AbortController();
@@ -136,6 +236,33 @@ export class ScanView {
   private velocity: [number, number] | null = null;
   private used: PanoUse[] = [];
   private readonly state: ScanViewStatus;
+  /** The textured mesh: its groups, each one's material and textures, and what has arrived but isn't on the GPU yet. */
+  private groups: TexturedGroup[] = [];
+  private groupMaterials: ShaderMaterial[] = [];
+  private small: (Texture | null)[] = [];
+  private sharp: (Texture | null)[] = [];
+  private sharpWanted = new Set<number>();
+  private sharpClock = 0;
+  private arrived: { group: number; sharp: boolean; image: ImageBitmap }[] = [];
+  private readonly fill: HoleFill | null;
+  private readonly fillMaterial: ShaderMaterial;
+  /** For the fans that close small holes: a step farther behind, so a plane's patch over the same hole wins. */
+  private readonly fanMaterial: ShaderMaterial;
+  private fillMeshes: Mesh[] = [];
+  private patchWait = 0;
+  /**
+   * The planes' patches: where each one's own texture has got to, the size
+   * of the picture taken of its surroundings, the part of that picture the
+   * patch itself covers (x, y, width, height), and where that part goes on
+   * the patches' shared pages.
+   */
+  private patches: { patch: PlanePatch; centre: Vector3; state: "idle" | "asked" | "done" | "none"; picture: [number, number]; scale: number; crop: [number, number, number, number]; place: Placement }[] = [];
+  private pages: { raw: WebGLTexture; texture: Texture; material: ShaderMaterial; mesh: Mesh }[] = [];
+  private patchAsked = -1;
+  /** The detailed mesh again in a scene of its own, for taking a patch's picture of the surface round it. */
+  private readonly patchScene = new Scene();
+  private patchMesh: Mesh | null = null;
+  private readonly patchCamera = new OrthographicCamera(0, 1, 1, 0, 0.01, 1);
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -147,10 +274,15 @@ export class ScanView {
     this.camera.rotation.order = "YXZ";
     this.renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.setClearColor(new Color().setRGB(0.027, 0.035, 0.047), 1);
+    this.fill = options.fill === false ? null : new HoleFill(this.renderer);
+    // Alpha 0 marks a pixel no surface covered, for the fill.
+    this.renderer.setClearColor(new Color().setRGB(0.027, 0.035, 0.047), this.fill ? 0 : 1);
     this.blank = blankCube();
     this.material = createScanMaterial(this.blank);
-    this.backdropMaterial = createScanMaterial(this.blank, true);
+    this.photo = createPhotoUniforms(this.blank);
+    this.backdropMaterial = createPhotoMaterial(this.photo, "backdrop");
+    this.fillMaterial = createPhotoMaterial(this.photo, "stand-in");
+    this.fanMaterial = createPhotoMaterial(this.photo, "stand-in", null, 2);
     this.backdrop = new Mesh(new BoxGeometry(1000, 1000, 1000), this.backdropMaterial);
     this.backdrop.renderOrder = -1;
     this.backdrop.frustumCulled = false;
@@ -186,19 +318,32 @@ export class ScanView {
     const velocity = this.velocity ?? poseVelocity(this.lastPose, this.pose, dt);
     this.lastPose = { ...this.pose };
     this.velocity = null;
+    this.showTextures(dt);
     if (this.panos) {
       this.used = this.panos.update(
         [x, y, z],
         velocity,
         dt,
-        [this.material, this.backdropMaterial],
+        [this.material, { uniforms: this.photo }],
         this.blank,
         this.linksUsable(),
       );
       if (this.panos.needsLinks) void this.refreshLinks();
       this.startExposure();
     }
+    this.draw(null);
+  }
+
+  /** Renders the current view to `target` (null: the screen), filled where no surface covers it. */
+  draw(target: WebGLRenderTarget | null): void {
+    if (this.fill) {
+      this.fill.render(this.scene, this.camera, target);
+      return;
+    }
+    const before = this.renderer.getRenderTarget();
+    this.renderer.setRenderTarget(target);
     this.renderer.render(this.scene, this.camera);
+    this.renderer.setRenderTarget(before);
   }
 
   /** The drawing size, CSS pixels. */
@@ -233,18 +378,36 @@ export class ScanView {
 
   /** The scan position nearest `eye`, by index, or -1. */
   nearestScan(eye: Vec3): number {
-    return this.panos?.nearest(eye) ?? -1;
+    if (this.panos) return this.panos.nearest(eye);
+    let best = -1;
+    let near = Infinity;
+    (this.manifest?.panos ?? []).forEach((p, i) => {
+      const d = Math.hypot(p.position[0] - eye[0], p.position[1] - eye[1], p.position[2] - eye[2]);
+      if (d < near) {
+        near = d;
+        best = i;
+      }
+    });
+    return best;
   }
 
   /** Whether the picture around `eye` has arrived, so a player can be let loose there. */
   settled(eye: Vec3): boolean {
+    if (this.groups.length > 0) {
+      // The textured mesh: settled once the textures near the eye are in.
+      return this.groups.every((g, i) => this.small[i] !== null || !g.image || distanceToGroup(g, eye) > SHARP_REACH || this.state.detail.textures?.done);
+    }
     return !this.panos || this.panos.settled(eye);
   }
 
   status(): ScanViewStatus {
     return {
       ...this.state,
-      detail: { ...this.state.detail },
+      detail: {
+        ...this.state.detail,
+        textures: this.state.detail.textures ? { ...this.state.detail.textures } : undefined,
+        repair: this.state.detail.repair ? { ...this.state.detail.repair } : undefined,
+      },
       exposure: this.state.exposure ? { ...this.state.exposure } : null,
       timings: { ...this.state.timings },
     };
@@ -264,7 +427,7 @@ export class ScanView {
   /** 1 shows the panoramas, 0 the bare mesh, and in between a mix. */
   setProjection(amount: number): void {
     this.material.uniforms.uProjection.value = amount;
-    this.backdropMaterial.uniforms.uProjection.value = amount;
+    this.photo.uProjection.value = amount;
   }
 
   setBlend(mode: BlendMode): void {
@@ -272,7 +435,7 @@ export class ScanView {
   }
 
   get blend(): BlendMode {
-    return this.panos?.mode ?? "view";
+    return this.panos?.mode ?? "photo";
   }
 
   /** Apply the exposure gains or not: to see what they do. */
@@ -282,10 +445,8 @@ export class ScanView {
   }
 
   setFixes(fixes: Partial<ScanFixes>): void {
-    for (const material of [this.material, this.backdropMaterial]) {
-      if (fixes.agree !== undefined) material.uniforms.uAgree.value = fixes.agree ? 1 : 0;
-      if (fixes.fill !== undefined) material.uniforms.uFill.value = fixes.fill ? 1 : 0;
-    }
+    if (fixes.agree !== undefined) this.material.uniforms.uAgree.value = fixes.agree ? 1 : 0;
+    if (fixes.fill !== undefined) this.material.uniforms.uFill.value = fixes.fill ? 1 : 0;
   }
 
   /** 0 the picture, 1 the coverage, 2 the doubles (projection.ts says what the colours mean). */
@@ -318,6 +479,11 @@ export class ScanView {
 
   /** The current view's coverage and doubles, from a small copy rendered in the debug looks (lib/scan-mesh/pose.ts's `viewStats`). */
   measure(): ViewStats {
+    if (this.groups.length > 0) {
+      // The photo rule: one panorama a point, so nothing doubles; what no panorama saw has its texture.
+      const sources = this.measureSources();
+      return { mesh: 1 - sources.void - sources.standin, unseen: 0, unseenNear: 0, unseenClose: 0, unseenMixed: 0, ghost: 0, spread: 0, doubled: 0, filled: sources.void };
+    }
     const target = new WebGLRenderTarget(MEASURE_WIDTH, MEASURE_HEIGHT);
     const pixels = new Uint8Array(MEASURE_WIDTH * MEASURE_HEIGHT * 4);
     const coverage = new Uint8Array(pixels.length);
@@ -415,14 +581,24 @@ export class ScanView {
       geometry.computeBoundingSphere();
       this.geometry = geometry;
       this.meshWorld = new MeshWorld(geometry, TUNING.stepUp);
+      this.addLevels(this.meshWorld);
       state.timings.build = (performance.now() - at) / 1000;
       state.triangles = parsed.index.length / 3;
       this.drawn = new Mesh(geometry, this.material);
       this.scene.add(this.drawn);
 
       const sharp = sharpLayer(this.faces);
-      this.panos = new PanoStore(this.renderer, geometry, sharp.capacity, sharp.size);
+      this.panos = new PanoStore(this.renderer, geometry, Math.min(sharp.capacity, SHARP_CUBES), sharp.size);
       this.panos.onStale = () => void this.refreshLinks();
+      const sight = new Ray();
+      const world = this.meshWorld;
+      this.panos.blocked = (eye, origin) => {
+        sight.origin.set(eye[0], eye[1], eye[2]);
+        sight.direction.set(origin[0] - eye[0], origin[1] - eye[1], origin[2] - eye[2]);
+        const reach = sight.direction.length();
+        sight.direction.divideScalar(Math.max(reach, 1e-6));
+        return world.bvh.raycastFirst(sight, DoubleSide, 0, Math.max(0, reach - 0.3)) !== null;
+      };
       this.panos.setPanos(manifest.panos);
 
       this.loadDetail(manifest.detail);
@@ -462,7 +638,9 @@ export class ScanView {
   /**
    * Fetch the Matterpak's detailed mesh in a worker and, once in, draw it and
    * see the panoramas' occlusion against it. Walking stays on the 50k mesh,
-   * whose floors are clean. Only the mesh file is pulled from the archive.
+   * whose floors are clean. Then, where the Matterpak has them, its textures
+   * stream in, nearest the eye first: each part of the mesh then has its own
+   * texture under the panoramas, for what none of them near the eye saw.
    */
   private loadDetail(detail: ScanDetail | null): void {
     const status = this.state.detail;
@@ -472,51 +650,539 @@ export class ScanView {
     }
     if (!detail || detail.bytes === null || !isAllowedAssetUrl(detail.url)) return;
     status.state = "loading";
+    const textured = this.options.textured !== false;
     // The 9 MB or so of mesh first: the full-size faces, hundreds of megabytes, wait for it.
     if (this.panos) this.panos.holdSharp = true;
     const release = () => {
       if (this.panos) this.panos.holdSharp = false;
     };
+    const fail = (reason: string) => {
+      this.detailWorker?.terminate();
+      this.detailWorker = null;
+      release();
+      if (status.state === "loading") {
+        status.state = "failed";
+        status.reason = reason;
+      }
+      this.push();
+    };
     try {
       const worker = new Worker(new URL("./detail-worker.ts", import.meta.url), { type: "module" });
       this.detailWorker = worker;
       worker.onmessage = (event: MessageEvent<DetailReply>) => {
-        worker.terminate();
-        this.detailWorker = null;
-        release();
         const reply = event.data;
         if (this.disposed) return;
-        if ("failed" in reply) {
-          status.state = "failed";
-          status.reason = reply.failed;
-          this.push();
+        if (reply.kind === "failed") return fail(reply.failed);
+        if (reply.kind === "mesh") {
+          this.useDetail(reply);
+          release();
+          if (reply.textured === 0) {
+            worker.terminate();
+            this.detailWorker = null;
+          }
           return;
         }
-        const geometry = new BufferGeometry();
-        geometry.setAttribute("position", new BufferAttribute(reply.positions, 3));
-        geometry.setIndex(new BufferAttribute(reply.index, 1));
-        geometry.computeBoundingSphere();
-        this.detailGeometry = geometry;
-        if (this.drawn) this.drawn.geometry = geometry;
-        if (this.wire) this.wire.geometry = geometry;
-        this.panos?.setGeometry(geometry);
-        Object.assign(status, { state: "ready", triangles: reply.index.length / 3, megabytes: reply.megabytes, seconds: reply.seconds });
+        if (reply.kind === "repair") {
+          this.useRepair(reply);
+          return;
+        }
+        if (reply.kind === "inpainted") {
+          this.usePatchPicture(reply.id, reply.pixels);
+          return;
+        }
+        if (reply.kind === "texture") {
+          this.arrived.push(reply);
+          return;
+        }
+        const textures = this.state.detail.textures;
+        if (textures) Object.assign(textures, { done: true, megabytes: reply.megabytes, seconds: reply.seconds });
         this.push();
       };
-      worker.onerror = (event) => {
-        worker.terminate();
-        this.detailWorker = null;
-        release();
-        status.state = "failed";
-        status.reason = `worker: ${event.message}`;
-        this.push();
+      worker.onerror = (event) => fail(`worker: ${event.message}`);
+      const request: DetailRequest = {
+        kind: "load",
+        url: detail.url,
+        bytes: detail.bytes,
+        textures: textured,
+        small: SMALL_TEXTURE,
+        sharp: SHARP_TEXTURE,
+        repair: this.options.repair ?? "all",
+        panos: (this.manifest?.panos ?? []).filter((p) => p.faces !== null).map((p) => [p.position[0], p.position[1], p.position[2]]),
       };
-      const request: DetailRequest = { url: detail.url, bytes: detail.bytes };
       worker.postMessage(request);
     } catch {
       release();
       status.state = "failed";
     }
+  }
+
+  private useDetail(reply: Extract<DetailReply, { kind: "mesh" }>): void {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(reply.positions, 3));
+    geometry.setAttribute("uv", new BufferAttribute(reply.uvs, 2));
+    geometry.setIndex(new BufferAttribute(reply.index, 1));
+    geometry.computeBoundingSphere();
+    this.detailGeometry = geometry;
+    if (reply.textured > 0) {
+      this.groups = reply.groups;
+      reply.groups.forEach((g, i) => geometry.addGroup(g.start, g.count, i));
+      this.groupMaterials = reply.groups.map(() => this.material);
+      this.small = reply.groups.map(() => null);
+      this.sharp = reply.groups.map(() => null);
+    }
+    if (this.drawn) {
+      this.drawn.geometry = geometry;
+      this.drawn.material = reply.textured > 0 ? this.groupMaterials : this.material;
+    }
+    if (this.wire) this.wire.geometry = geometry;
+    this.panos?.setGeometry(geometry);
+    Object.assign(this.state.detail, {
+      state: "ready",
+      triangles: reply.index.length / 3,
+      megabytes: reply.megabytes,
+      seconds: reply.seconds,
+      textures: reply.textured > 0 ? { total: reply.textured, small: 0, sharp: 0, megabytes: 0, seconds: 0, done: false, gpuMegabytes: 0 } : undefined,
+      repair: { stats: null, patches: 0, synthesized: 0 },
+    });
+    this.push();
+  }
+
+  /**
+   * The repaired mesh: its triangles without the unseen ones a patch stands
+   * in for, the patches themselves, and the fans closing its small holes.
+   * The panoramas' depth is rendered again from the result.
+   */
+  private useRepair(reply: Extract<DetailReply, { kind: "repair" }>): void {
+    const geometry = this.detailGeometry;
+    if (!geometry) return;
+    geometry.setAttribute("position", new BufferAttribute(reply.positions, 3));
+    geometry.computeBoundingSphere();
+    geometry.setIndex(new BufferAttribute(reply.index, 1));
+    if (this.groups.length > 0) {
+      geometry.clearGroups();
+      reply.groups.forEach((g, i) => geometry.addGroup(g.start, g.count, i));
+      this.groups = reply.groups;
+    }
+    this.useFill(reply.fans, reply.stats.holes);
+    if (this.fill && reply.patches.length > 0) this.usePatches(reply.patches, reply.patchPositions, reply.patchUvs);
+    this.panos?.setGeometry(geometry);
+    const repair = this.state.detail.repair;
+    if (repair) Object.assign(repair, { stats: reply.stats, patches: reply.patches.length });
+    this.push();
+  }
+
+  private useFill(triangles: Float32Array, holes: number): void {
+    this.state.detail.holes = holes;
+    if (!this.fill || triangles.length === 0) return;
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(triangles, 3));
+    geometry.computeBoundingSphere();
+    this.addFill(new Mesh(geometry, this.fanMaterial));
+    // A closed hole hides what is behind it from a panorama, like the surface it stands for.
+    this.panos?.addOccluder(geometry);
+  }
+
+  private addFill(mesh: Mesh): void {
+    this.fillMeshes.push(mesh);
+    this.scene.add(mesh);
+  }
+
+  /**
+   * A floor plane and a ceiling plane for each level, just behind the mesh's
+   * own (lib/scan-mesh/levels.ts), from the floor under each scan position
+   * and the ceiling over it, so a hole in either shows a surface at the right
+   * height rather than the level below or nothing.
+   */
+  private addLevels(world: MeshWorld): void {
+    const manifest = this.manifest;
+    if (!this.fill || !manifest) return;
+    const ray = new Ray(new Vector3(), new Vector3(0, 1, 0));
+    const samples: LevelSample[] = [];
+    manifest.panos.forEach((pano, i) => {
+      const feet = this.feetAt(i);
+      if (!feet) return;
+      ray.origin.set(pano.position[0], pano.position[1], pano.position[2]);
+      const up = world.bvh.raycastFirst(ray, DoubleSide, 0, 8);
+      samples.push({ x: feet[0], z: feet[2], floor: feet[1], ceiling: up ? up.point.y : null });
+    });
+    for (const level of fitLevels(samples)) {
+      const [x0, z0] = level.min;
+      const [x1, z1] = level.max;
+      const positions: number[] = [];
+      for (const y of [level.floor, level.ceiling]) {
+        positions.push(x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z0, x1, y, z1, x0, y, z1);
+      }
+      const plane = new BufferGeometry();
+      plane.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
+      plane.computeBoundingSphere();
+      this.addFill(new Mesh(plane, this.fillMaterial));
+    }
+  }
+
+  /**
+   * One frame of the textures: put on the GPU a few of those that have
+   * arrived, and choose which are shown full size.
+   */
+  private showTextures(dt: number): void {
+    if (this.groups.length === 0) return;
+    let small = 0;
+    let sharp = 0;
+    const later: { group: number; sharp: boolean; image: ImageBitmap }[] = [];
+    for (const item of this.arrived) {
+      if (item.sharp ? sharp >= UPLOADS_SHARP : small >= UPLOADS_SMALL) {
+        later.push(item);
+        continue;
+      }
+      if (item.sharp) sharp++;
+      else small++;
+      this.applyTexture(item.group, item.sharp, item.image);
+    }
+    this.arrived = later;
+
+    this.sharpClock -= dt;
+    const textures = this.state.detail.textures;
+    if (textures?.done && this.arrived.length === 0) this.askPatchPicture();
+    if (this.sharpClock <= 0) {
+      this.sharpClock = SHARP_EVERY;
+      this.chooseSharp();
+      this.detailWorker?.postMessage({ kind: "eye", eye: [this.pose.x, this.pose.y, this.pose.z] } satisfies DetailRequest);
+      if (textures) {
+        textures.small = this.small.filter(Boolean).length;
+        textures.sharp = this.sharp.filter(Boolean).length;
+        const bytes = [...this.small, ...this.sharp].reduce((sum, t) => sum + ((t?.userData.bytes as number | undefined) ?? 0), 0);
+        textures.gpuMegabytes = bytes / 1e6;
+      }
+    }
+  }
+
+  private applyTexture(group: number, sharp: boolean, image: ImageBitmap): void {
+    if (sharp && !this.sharpWanted.has(group)) {
+      image.close();
+      return;
+    }
+    const texture = new Texture(image);
+    texture.flipY = false;
+    texture.generateMipmaps = true;
+    texture.minFilter = LinearMipmapLinearFilter;
+    texture.magFilter = LinearFilter;
+    texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+    texture.needsUpdate = true;
+    // RGBA, and a third again for the smaller copies; the image is let go once uploaded.
+    texture.userData.bytes = image.width * image.height * 4 * (4 / 3);
+    this.renderer.initTexture(texture);
+    image.close();
+    const slot = sharp ? this.sharp : this.small;
+    slot[group]?.dispose();
+    slot[group] = texture;
+    this.showGroup(group);
+  }
+
+  private showGroup(group: number): void {
+    const map = this.sharp[group] ?? this.small[group];
+    if (!map) return;
+    const material = this.groupMaterials[group];
+    if (material === this.material) this.groupMaterials[group] = createPhotoMaterial(this.photo, "mesh", map);
+    else material.uniforms.uMap.value = map;
+  }
+
+  /** The textures within reach of the eye, nearest first, at full size; the rest small. */
+  private chooseSharp(): void {
+    const eye: [number, number, number] = [this.pose.x, this.pose.y, this.pose.z];
+    const near = this.groups
+      .map((g, i) => ({ i, d: distanceToGroup(g, eye), c: Math.hypot(g.centre[0] - eye[0], g.centre[1] - eye[1], g.centre[2] - eye[2]) }))
+      .filter(({ i, d }) => d <= SHARP_REACH && this.small[i] !== null)
+      // Nearest first; among the boxes the eye stands in, the one whose middle is nearest.
+      .sort((a, b) => a.d - b.d || a.c - b.c)
+      .slice(0, SHARP_MAX)
+      .map(({ i }) => i);
+    const wanted = new Set(near);
+    for (const i of this.sharpWanted) {
+      if (wanted.has(i)) continue;
+      this.sharp[i]?.dispose();
+      this.sharp[i] = null;
+      this.showGroup(i);
+    }
+    const asked = near.filter((i) => !this.sharpWanted.has(i));
+    this.sharpWanted = wanted;
+    if (asked.length > 0) this.detailWorker?.postMessage({ kind: "sharp", groups: asked } satisfies DetailRequest);
+  }
+
+  /**
+   * The planes' patches, drawn a page at a time: each patch's part of its
+   * picture has a place on a shared page (lib/scan-mesh/atlas.ts), its
+   * corners' texture coordinates are moved there, and one mesh a page draws
+   * every patch on it. A page starts empty (alpha 0): a patch is painted by
+   * the panoramas and the fill until its own texture is written.
+   */
+  private usePatches(list: PlanePatch[], positions: Float32Array, uvs: Float32Array): void {
+    const gl = this.renderer.getContext() as WebGL2RenderingContext;
+    const sized = list.map((patch) => {
+      const scale = Math.max(PATCH_TEXEL, Math.max(patch.width, patch.height) / PATCH_PIXELS);
+      const width = Math.max(8, Math.round(patch.width / scale));
+      const height = Math.max(8, Math.round(patch.height / scale));
+      // The picture has a margin of the surface round the gap, to fill it from; the patch covers the middle.
+      const mx = Math.min(Math.floor(PATCH_MARGIN / scale), (width - 2) >> 1);
+      const my = Math.min(Math.floor(PATCH_MARGIN / scale), (height - 2) >> 1);
+      return { scale, picture: [width, height] as [number, number], crop: [mx, my, width - 2 * mx, height - 2 * my] as [number, number, number, number] };
+    });
+    const packed = packShelves(sized.map((s) => [s.crop[2], s.crop[3]] as const), PAGE_SIZE, PAGE_GUTTER);
+    const corners: number[] = Array.from({ length: packed.pages }, () => 0);
+    list.forEach((patch, i) => {
+      const { picture, crop } = sized[i];
+      const place = packed.placements[i];
+      corners[place.page] += patch.count;
+      for (let k = patch.start; k < patch.start + patch.count; k++) {
+        // Half a pixel in from the picture's edge, so the page's empty texels beside it are never sampled at full size.
+        const px = Math.min(crop[2] - 0.5, Math.max(0.5, uvs[k * 2] * picture[0] - crop[0]));
+        const py = Math.min(crop[3] - 0.5, Math.max(0.5, uvs[k * 2 + 1] * picture[1] - crop[1]));
+        uvs[k * 2] = (place.x + px) / PAGE_SIZE;
+        uvs[k * 2 + 1] = (place.y + py) / PAGE_SIZE;
+      }
+      const centre = new Vector3(...patch.origin).addScaledVector(new Vector3(...patch.u), patch.width / 2).addScaledVector(new Vector3(...patch.v), patch.height / 2);
+      this.patches.push({ patch, centre, state: "idle", place, ...sized[i] });
+    });
+    for (let page = 0; page < packed.pages; page++) {
+      const pagePositions = new Float32Array(corners[page] * 3);
+      const pageUvs = new Float32Array(corners[page] * 2);
+      let at = 0;
+      list.forEach((patch, i) => {
+        if (packed.placements[i].page !== page) return;
+        pagePositions.set(positions.subarray(patch.start * 3, (patch.start + patch.count) * 3), at * 3);
+        pageUvs.set(uvs.subarray(patch.start * 2, (patch.start + patch.count) * 2), at * 2);
+        at += patch.count;
+      });
+      const geometry = new BufferGeometry();
+      geometry.setAttribute("position", new BufferAttribute(pagePositions, 3));
+      geometry.setAttribute("uv", new BufferAttribute(pageUvs, 2));
+      geometry.computeBoundingSphere();
+      // The page, made and written here rather than by three.js: a patch's picture goes up alone, not the whole page again.
+      const raw = gl.createTexture();
+      this.renderer.state.bindTexture(gl.TEXTURE_2D, raw);
+      gl.texStorage2D(gl.TEXTURE_2D, PAGE_LEVELS + 1, gl.RGBA8, PAGE_SIZE, PAGE_SIZE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      this.renderer.state.unbindTexture();
+      const texture = new Texture();
+      const properties = this.renderer.properties.get(texture) as { __webglTexture?: WebGLTexture; __webglInit?: boolean };
+      properties.__webglTexture = raw;
+      properties.__webglInit = true;
+      const material = createPhotoMaterial(this.photo, "stand-in", texture);
+      const mesh = new Mesh(geometry, material);
+      this.addFill(mesh);
+      this.pages.push({ raw, texture, material, mesh });
+    }
+    const all = new BufferGeometry();
+    all.setAttribute("position", new BufferAttribute(positions, 3));
+    this.panos?.addOccluder(all);
+  }
+
+  /**
+   * Asks for the next patch's own texture, the nearest the eye first: a
+   * picture of the mesh's surface in the patch's plane round the gap, as its
+   * textures have it, whose missing part the worker fills with more of the
+   * same surface (lib/scan-mesh/inpaint.ts). One at a time, and the picture
+   * is read back from the GPU without holding the frame for it.
+   */
+  private askPatchPicture(): void {
+    if (this.patchAsked !== -1 || !this.detailWorker || !this.detailGeometry || this.patches.length === 0) return;
+    if (this.patchWait-- > 0) return;
+    let next = -1;
+    let near = PATCH_REACH * PATCH_REACH;
+    const eye = this.camera.position;
+    this.patches.forEach((p, i) => {
+      if (p.state !== "idle") return;
+      const d = p.centre.distanceToSquared(eye);
+      if (d < near) {
+        near = d;
+        next = i;
+      }
+    });
+    if (next === -1) return;
+    const { patch, scale, picture, crop: part } = this.patches[next];
+    const [width, height] = picture;
+    if (!this.patchMesh) {
+      this.patchMesh = new Mesh(this.detailGeometry, this.groupMaterials);
+      this.patchMesh.frustumCulled = false;
+      this.patchScene.add(this.patchMesh);
+    }
+    this.patchAsked = next;
+    this.patchWait = PATCH_EVERY;
+    this.patches[next].state = "asked";
+    const side = patch.donor ? Math.max(8, Math.round(patch.donor.size / scale)) : 0;
+    // Nothing seen of its own plane beside it: a well-seen square of another goes beside the picture, to be carried on from.
+    const donor = patch.donor;
+    const pictures = Promise.all([
+      this.patchPicture(patch.origin, patch.u, patch.v, patch.width, patch.height, width, height),
+      donor ? this.patchPicture(donor.origin, donor.u, donor.v, donor.size, donor.size, side, side) : null,
+    ]);
+    void pictures
+      .then(([own, beside]) => {
+        if (this.disposed || !this.detailWorker) return;
+        let pixels = own;
+        let total: [number, number] = [width, height];
+        let crop: [number, number, number, number] = [...part];
+        if (beside) {
+          total = [side + width, Math.max(side, height)];
+          crop = [side + part[0], part[1], part[2], part[3]];
+          pixels = new Uint8Array(total[0] * total[1] * 4);
+          for (let y = 0; y < side; y++) pixels.set(beside.subarray(y * side * 4, (y + 1) * side * 4), y * total[0] * 4);
+          for (let y = 0; y < height; y++) pixels.set(own.subarray(y * width * 4, (y + 1) * width * 4), (y * total[0] + side) * 4);
+        }
+        this.detailWorker.postMessage({ kind: "inpaint", id: next, width: total[0], height: total[1], pixels, crop } satisfies DetailRequest, [pixels.buffer]);
+      })
+      .catch(() => {
+        // The GPU would not give the picture back: the patch stays as the panoramas and the fill paint it.
+        this.patches[next].state = "none";
+        if (this.patchAsked === next) this.patchAsked = -1;
+      });
+  }
+
+  /**
+   * The detailed mesh as it is painted now, looking square at a plane: the
+   * rectangle from `origin` along `u` and `v`, `width` by `height` pixels,
+   * and a thin slab of the scene either side of the plane. Alpha 0 where the
+   * mesh has nothing there. Painted as the eye sees it, from the panoramas
+   * in use where they saw the surface: a patch's texture is then made from
+   * the same sharp picture that will lie beside it.
+   */
+  private async patchPicture(origin: Vec3, uAxis: Vec3, vAxis: Vec3, across: number, up: number, width: number, height: number): Promise<Uint8Array> {
+    const u = new Vector3(...uAxis);
+    const v = new Vector3(...vAxis);
+    const w = new Vector3().crossVectors(u, v);
+    const camera = this.patchCamera;
+    camera.right = across;
+    camera.top = up;
+    camera.near = 1 - PATCH_SLAB;
+    camera.far = 1 + PATCH_SLAB;
+    camera.updateProjectionMatrix();
+    camera.matrixAutoUpdate = false;
+    camera.matrix.makeBasis(u, v, w).setPosition(new Vector3(...origin).add(w));
+    camera.matrixWorld.copy(camera.matrix);
+    camera.matrixWorldInverse.copy(camera.matrix).invert();
+    camera.matrixWorldAutoUpdate = false;
+
+    const target = new WebGLRenderTarget(width, height);
+    const pixels = new Uint8Array(width * height * 4);
+    const before = this.renderer.getRenderTarget();
+    const clear = this.renderer.getClearColor(new Color());
+    const alpha = this.renderer.getClearAlpha();
+    const standing = [...(this.photo.uPanoOn.value as number[])];
+    try {
+      // What each panorama really saw, by its depth: standing on one does not make it see round corners here.
+      (this.photo.uPanoOn.value as number[]).fill(0);
+      this.renderer.setRenderTarget(target);
+      this.renderer.setClearColor(clear, 0);
+      this.renderer.clear();
+      this.renderer.render(this.patchScene, camera);
+    } finally {
+      standing.forEach((on, slot) => ((this.photo.uPanoOn.value as number[])[slot] = on));
+      this.renderer.setClearColor(clear, alpha);
+      this.renderer.setRenderTarget(before);
+    }
+    try {
+      // Read back when the GPU has it ready, a frame or two on: reading at once would hold this frame for it.
+      const read = this.renderer.readRenderTargetPixelsAsync(target, 0, 0, width, height, pixels);
+      // three.js leaves its pack buffer bound while it waits, and any plain read in the meantime would fail.
+      const gl = this.renderer.getContext() as WebGL2RenderingContext;
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      await read;
+    } finally {
+      target.dispose();
+    }
+    return pixels;
+  }
+
+  /** A patch's own texture, written to its place on its page. */
+  private usePatchPicture(id: number, pixels: Uint8ClampedArray | null): void {
+    const entry = this.patches[id];
+    if (this.patchAsked === id) this.patchAsked = -1;
+    if (!entry) return;
+    const page = this.pages[entry.place.page];
+    if (!pixels || !page || pixels.length !== entry.crop[2] * entry.crop[3] * 4) {
+      entry.state = "none";
+      return;
+    }
+    const gl = this.renderer.getContext() as WebGL2RenderingContext;
+    this.renderer.state.bindTexture(gl.TEXTURE_2D, page.raw);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, entry.place.x, entry.place.y, entry.crop[2], entry.crop[3], gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(pixels.buffer));
+    gl.generateMipmap(gl.TEXTURE_2D);
+    this.renderer.state.unbindTexture();
+    entry.state = "done";
+    const repair = this.state.detail.repair;
+    if (repair) repair.synthesized++;
+  }
+
+  /** Whether the repair is in and every patch that gets a texture of its own has it. */
+  repairReady(): boolean {
+    const repair = this.state.detail.repair;
+    if (this.state.detail.state !== "ready" || !repair) return true;
+    const eye = this.camera.position;
+    return repair.stats !== null && this.patches.every((p) => p.state === "done" || p.state === "none" || p.centre.distanceTo(eye) > PATCH_REACH);
+  }
+
+  /**
+   * Whether the picture is whole: every texture in and on the GPU, every
+   * panorama's small cube and depth made from the latest mesh, and full-size
+   * cubes for the panoramas in use.
+   */
+  imagingReady(): boolean {
+    const textures = this.state.detail.textures;
+    if (this.state.detail.state === "loading" || (textures && (!textures.done || this.arrived.length > 0))) return false;
+    const counts = this.panos?.counts();
+    if (!this.panos || !counts) return true;
+    return counts.low + counts.failed >= counts.total && this.panos.depthsCurrent && counts.sharpLoading === 0 && counts.sharp >= Math.min(SLOTS, counts.total - counts.failed);
+  }
+
+  /**
+   * What paints the current view (`ViewSources`), from a small copy rendered
+   * in the photo materials' source colours (photo-material.ts): red the
+   * panoramas' part, green a texture's, blue a stand-in, alpha 0 nothing.
+   */
+  measureSources(): ViewSources {
+    const target = new WebGLRenderTarget(SOURCE_WIDTH, SOURCE_HEIGHT);
+    const pixels = new Uint8Array(SOURCE_WIDTH * SOURCE_HEIGHT * 4);
+    const before = this.renderer.getRenderTarget();
+    const clear = this.renderer.getClearColor(new Color());
+    const alpha = this.renderer.getClearAlpha();
+    const backdrop = this.backdrop.visible;
+    try {
+      this.backdrop.visible = false;
+      this.photo.uDebug.value = 3;
+      this.renderer.setRenderTarget(target);
+      this.renderer.setClearColor(clear, 0);
+      this.renderer.clear();
+      this.renderer.render(this.scene, this.camera);
+      this.renderer.readRenderTargetPixels(target, 0, 0, SOURCE_WIDTH, SOURCE_HEIGHT, pixels);
+    } finally {
+      this.photo.uDebug.value = 0;
+      this.backdrop.visible = backdrop;
+      this.renderer.setClearColor(clear, alpha);
+      this.renderer.setRenderTarget(before);
+      target.dispose();
+    }
+    const out: ViewSources = { void: 0, pano: 0, texture: 0, synth: 0, smear: 0, standin: 0 };
+    const count = pixels.length / 4;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i + 3] < 128) {
+        out.void += 1 / count;
+        continue;
+      }
+      const pano = pixels[i] / 255;
+      const own = pixels[i + 1] / 255;
+      out.pano += pano / count;
+      if (pixels[i + 2] >= 128) {
+        out.standin += 1 / count;
+        out.synth += own / count;
+        out.smear += Math.max(0, 1 - pano - own) / count;
+      } else out.texture += (1 - pano) / count;
+    }
+    return out;
   }
 
   /** Once every panorama has its small cube, compare neighbours' colours and even out their exposures. */
@@ -550,6 +1216,18 @@ export class ScanView {
     this.geometry?.dispose();
     this.detailGeometry?.dispose();
     this.detailWorker?.terminate();
+    for (const item of this.arrived) item.image.close();
+    for (const texture of [...this.small, ...this.sharp]) texture?.dispose();
+    for (const material of this.groupMaterials) if (material !== this.material) material.dispose();
+    for (const mesh of this.fillMeshes) mesh.geometry.dispose();
+    for (const page of this.pages) {
+      this.renderer.properties.remove(page.texture);
+      this.renderer.getContext().deleteTexture(page.raw);
+      page.material.dispose();
+    }
+    this.fillMaterial.dispose();
+    this.fanMaterial.dispose();
+    this.fill?.dispose();
     this.material.dispose();
     this.backdropMaterial.dispose();
     this.backdrop.geometry.dispose();

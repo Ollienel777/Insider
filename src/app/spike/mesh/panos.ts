@@ -34,6 +34,7 @@ import {
   Vector3,
   WebGLCubeRenderTarget,
   type BufferGeometry,
+  type IUniform,
   type ShaderMaterial,
   type WebGLRenderer,
 } from "three";
@@ -41,6 +42,7 @@ import { conjugate, quatToMat3, type Vec3 } from "@/lib/scan-mesh/coords";
 import { isAllowedAssetUrl, type ScanPano } from "@/lib/scan-mesh/manifest";
 import { nearestFirst, planSharp, sharpOrder } from "@/lib/scan-mesh/pano-plan";
 import { slotFades, type BlendMode } from "@/lib/scan-mesh/blend";
+import { panoCosts, priorities, rankPanos, standingOn } from "@/lib/scan-mesh/photo";
 import type { Rgb } from "@/lib/scan-mesh/exposure";
 import type { ExposureSource } from "./exposure-match";
 import { alignToCube, CUBE_LOOKUP_FLIP, panoDistance, panoWeights } from "@/lib/scan-mesh/skybox";
@@ -54,6 +56,8 @@ const LOW_FETCHES = 6;
 const SHARP_FETCHES = 2;
 /** How quickly a panorama's share follows its target, per second. */
 const SHARE_RATE = 7;
+/** Under the photo rule, the panoramas nearest the eye that are checked for a wall between them and it. */
+const SIGHT_CHECKS = 8;
 /** How quickly a slot fades between its small cube and its sharp one, per second: slow enough not to read as a swap. */
 const SHARP_RATE = 0.9;
 /** How quickly the exposure gains ease in once solved, per second. */
@@ -68,6 +72,8 @@ const DEPTH_SIZE = 256;
 const STRIPS = 8;
 /** A frame hands the GPU no new work once it has spent this long on it, ms. */
 const BUDGET = 4;
+/** Depth cubes rendered in one frame at most: each is the whole mesh six times, which the clock above does not see (the GPU does it later). */
+const DEPTHS = 2;
 /** After a refused fetch, none starts for this long (new links are on their way), ms. */
 const BACK_OFF = 1500;
 const TRIES = 3;
@@ -182,6 +188,7 @@ export class PanoStore {
   private blockedUntil = 0;
   private lowJobs: LowJob[] = [];
   private depthQueue: Entry[] = [];
+  private depthsLeft = 0;
   private sharpJob: SharpJob | null = null;
   private sharpBusy = false;
   /** Sharp cubes made and not in use, all `sharpSize` across; `warming` more are still to be made. */
@@ -207,8 +214,12 @@ export class PanoStore {
   onStale: (() => void) | null = null;
   /** Set by `update` when bytes are still wanted and the links have run out. */
   needsLinks = false;
-  /** How the slots are weighted (lib/scan-mesh/blend.ts). */
-  mode: BlendMode = "view";
+  /** How the slots are weighted (lib/scan-mesh/blend.ts, and photo.ts for "photo"). */
+  mode: BlendMode = "photo";
+  /** Whether something stands between `eye` and a panorama at `origin`: the photo rule ranks such a panorama lower. */
+  blocked: ((eye: Vec3, origin: Vec3) => boolean) | null = null;
+  /** The photo rule's panoramas in use last frame, the lead first, as places in the list of those ready. */
+  private ranked: Entry[] = [];
   /** While true, no full-size faces are fetched: the link is left to something smaller and more urgent. */
   holdSharp = false;
   /** Whether the exposure gains are applied (to compare with and without). */
@@ -370,8 +381,23 @@ export class PanoStore {
    */
   setGeometry(geometry: BufferGeometry): void {
     this.depthMesh.geometry = geometry;
+    this.renderDepthsAgain();
+  }
+
+  /** More surface for the panoramas' occlusion to be seen against (a closed hole hides what is behind it, like the wall it stands for). */
+  addOccluder(geometry: BufferGeometry): void {
+    this.depthScene.add(new Mesh(geometry, this.depthMaterial));
+    this.renderDepthsAgain();
+  }
+
+  private renderDepthsAgain(): void {
     const queued = new Set(this.depthQueue);
     for (const e of this.shown) if (e.depth && !queued.has(e)) this.depthQueue.push(e);
+  }
+
+  /** Whether every depth cube has been rendered from the latest geometry. */
+  get depthsCurrent(): boolean {
+    return this.depthQueue.length === 0 && this.lowJobs.length === 0;
   }
 
   /** The panorama nearest `eye`, by index, or -1. */
@@ -415,7 +441,7 @@ export class PanoStore {
     eye: Vec3,
     velocity: readonly [number, number],
     dt: number,
-    materials: readonly ShaderMaterial[],
+    materials: readonly { uniforms: Record<string, IUniform> }[],
     blank: CubeTexture,
     linksUsable: boolean,
   ): PanoUse[] {
@@ -428,7 +454,21 @@ export class PanoStore {
 
     const ready = near.map((at) => shown[at]).filter((e) => e.lowCube !== null && e.depth !== null);
     const distances = ready.map((e) => panoDistance(eye, e.pano.position));
-    const targets = this.mode === "view" ? slotFades(distances, SLOTS) : panoWeights(distances, KEEP);
+    let targets: number[];
+    if (this.mode === "photo") {
+      // One panorama leads, kept until another is clearly nearer; one behind a wall counts as farther.
+      const blocked = this.blocked;
+      const costs = panoCosts(
+        eye,
+        ready.map((e) => e.pano.position),
+        (i) => i >= SIGHT_CHECKS || (blocked !== null && distances[i] > 0.3 && blocked(eye, ready[i].pano.position)),
+      );
+      const at = new Map(ready.map((e, i) => [e, i]));
+      const before = this.ranked.flatMap((e) => (at.has(e) ? [at.get(e) as number] : []));
+      const now = rankPanos(costs, before, SLOTS);
+      this.ranked = now.map((i) => ready[i]);
+      targets = priorities(ready.length, now);
+    } else targets = this.mode === "view" ? slotFades(distances, SLOTS) : panoWeights(distances, KEEP);
     const target = new Map<Entry, number>();
     ready.forEach((e, i) => target.set(e, targets[i]));
     const blend = 1 - Math.exp(-SHARE_RATE * dt);
@@ -463,9 +503,10 @@ export class PanoStore {
         u[`uDepth${slot}`].value = e?.depth?.texture ?? blank;
         (u.uPanoShare.value as number[])[slot] = e ? e.share : 0;
         (u.uPanoSharp.value as number[])[slot] = e?.sharpCube ? e.sharpMix : 0;
+        if (u.uPanoOn) (u.uPanoOn.value as number[])[slot] = e ? standingOn(panoDistance(eye, e.pano.position)) : 0;
         const gain = e ? this.gains.get(e.index) : undefined;
         (u.uPanoGain.value as Vector3[])[slot].set(gain?.[0] ?? 1, gain?.[1] ?? 1, gain?.[2] ?? 1);
-        u.uMode.value = this.mode === "view" ? 0 : 1;
+        u.uMode.value = this.mode === "nearest" ? 1 : 0;
         if (e) {
           (u.uPanoPos.value as Vector3[])[slot].copy(e.origin);
           (u.uPanoInv.value as Matrix3[])[slot].copy(e.toPano);
@@ -693,6 +734,9 @@ export class PanoStore {
     gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     if (mipmaps) {
+      // A floor seen at a slant stays sharp.
+      const anisotropic = this.renderer.extensions.get("EXT_texture_filter_anisotropic") as { TEXTURE_MAX_ANISOTROPY_EXT: number } | null;
+      if (anisotropic) gl.texParameterf(gl.TEXTURE_CUBE_MAP, anisotropic.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, this.renderer.capabilities.getMaxAnisotropy()));
       // One texel a face: the driver puts off making the texture until it is
       // written to, and this is the moment to pay for that.
       const texel = new Uint8Array(4);
@@ -739,7 +783,8 @@ export class PanoStore {
     }
     // Small cubes and depth cubes are cheap: several a frame. A sharp cube's
     // strip is real work for the GPU however quick the call returns: one a frame.
-    while (this.lowJobs.length + this.depthQueue.length > 0 && performance.now() - start < BUDGET) this.step();
+    this.depthsLeft = DEPTHS;
+    while (this.lowJobs.length + (this.depthsLeft > 0 ? this.depthQueue.length : 0) > 0 && performance.now() - start < BUDGET) this.step();
     if (performance.now() - start < BUDGET) this.step();
   }
 
@@ -770,8 +815,9 @@ export class PanoStore {
       return true;
     }
 
-    const seen = this.depthQueue.shift();
+    const seen = this.depthsLeft > 0 ? this.depthQueue.shift() : undefined;
     if (seen) {
+      this.depthsLeft--;
       const old = seen.depth;
       seen.depth = this.renderDepth(seen.origin);
       old?.dispose();
@@ -854,26 +900,38 @@ export class PanoStore {
     return target;
   }
 
-  dispose(): void {
-    this.disposed = true;
-    this.abort.abort();
-    this.dropWorker();
+  /**
+   * Lets go of the store a piece at a time: the first call stops all
+   * fetching and decoding, and each call frees one panorama's cubes, or one
+   * spare sharp cube. Freeing a gigabyte of textures at once holds the GPU,
+   * and the frame, for a second or two; a piece a frame doesn't. True once
+   * everything is gone.
+   */
+  release(): boolean {
     const gl = this.renderer.getContext();
-    for (const job of this.lowJobs) {
-      if (job.raw) gl.deleteTexture(job.raw);
-      for (const image of job.images.slice(job.next)) image.close();
+    if (!this.disposed) {
+      this.disposed = true;
+      this.abort.abort();
+      this.dropWorker();
+      for (const job of this.lowJobs) {
+        if (job.raw) gl.deleteTexture(job.raw);
+        for (const image of job.images.slice(job.next)) image.close();
+      }
+      this.lowJobs = [];
+      if (this.sharpJob) {
+        if (this.sharpJob.raw) this.discard(this.sharpJob.raw);
+        this.sharpJob.strips.forEach((cut, slot) =>
+          cut.forEach((strip, k) => {
+            if (slot > this.sharpJob!.slot || (slot === this.sharpJob!.slot && k >= this.sharpJob!.strip)) strip.close();
+          }),
+        );
+        this.sharpJob = null;
+      }
+      this.shown = [];
+      return false;
     }
-    this.lowJobs = [];
-    if (this.sharpJob) {
-      if (this.sharpJob.raw) this.discard(this.sharpJob.raw);
-      this.sharpJob.strips.forEach((cut, slot) =>
-        cut.forEach((strip, k) => {
-          if (slot > this.sharpJob!.slot || (slot === this.sharpJob!.slot && k >= this.sharpJob!.strip)) strip.close();
-        }),
-      );
-      this.sharpJob = null;
-    }
-    for (const e of this.entries) {
+    const e = this.entries.pop();
+    if (e) {
       if (e.sharpCube) this.renderer.properties.remove(e.sharpCube);
       if (e.sharp) this.discard(e.sharp);
       if (e.lowCube) this.renderer.properties.remove(e.lowCube);
@@ -881,13 +939,22 @@ export class PanoStore {
       e.depth?.dispose();
       e.lowBytes = null;
       e.sharpBytes = null;
+      return false;
     }
-    this.entries = [];
-    this.shown = [];
-    for (const raw of this.pool) this.discard(raw);
-    this.pool = [];
-    this.depthMaterial.dispose();
-    (this.far.material as ShaderMaterial).dispose();
-    this.far.geometry.dispose();
+    const raw = this.pool.pop();
+    if (raw) {
+      this.discard(raw);
+      return false;
+    }
+    if (this.depthMaterial) {
+      this.depthMaterial.dispose();
+      (this.far.material as ShaderMaterial).dispose();
+      this.far.geometry.dispose();
+    }
+    return true;
+  }
+
+  dispose(): void {
+    while (!this.release());
   }
 }

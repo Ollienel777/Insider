@@ -1,7 +1,17 @@
 // A tiny made-up archive, built here byte by byte, in both plain and zip64 form.
 import { deflateRawSync, inflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { END_SEARCH, findEnd, listEntries, localHeaderLength, readZip64End } from "./zip";
+import {
+  END_SEARCH,
+  entryData,
+  entryRange,
+  findEnd,
+  listEntries,
+  localHeaderLength,
+  matterpakParts,
+  readZip64End,
+  type ZipEntry,
+} from "./zip";
 
 interface File {
   name: string;
@@ -123,5 +133,64 @@ describe("the zip reader", () => {
     expect(readZip64End(junk)).toBeNull();
     expect(listEntries(junk)).toEqual([]);
     expect(localHeaderLength(junk)).toBeNull();
+  });
+});
+
+/** The archive's directory, read the way the page reads it. */
+function directory(zip: Buffer): ZipEntry[] {
+  const end = findEnd(new Uint8Array(zip.subarray(Math.max(0, zip.length - END_SEARCH))));
+  if (!end) throw new Error("no end");
+  const place = "zip64" in end ? readZip64End(new Uint8Array(zip.subarray(end.zip64, end.zip64 + 56))) : end;
+  if (!place) throw new Error("no zip64 end");
+  return listEntries(new Uint8Array(zip.subarray(place.offset, place.offset + place.size)));
+}
+
+const PACK: File[] = [
+  { name: "cloud.xyz", data: Buffer.from("1 2 3\n".repeat(50)), deflate: true },
+  { name: "small.obj", data: Buffer.from("v 0 0 0\n"), deflate: true },
+  { name: "model.obj", data: Buffer.from("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n".repeat(10)), deflate: true },
+  { name: "other.mtl", data: Buffer.from("newmtl x\n"), deflate: false },
+  { name: "model.mtl", data: Buffer.from("newmtl a\nmap_Kd model_000.jpg\n"), deflate: true },
+  { name: "tex/model_000.jpg", data: Buffer.from("jpeg one"), deflate: false },
+  { name: "model_001.JPG", data: Buffer.from("jpeg two"), deflate: true },
+  { name: "plan.pdf", data: Buffer.from("pdf"), deflate: false },
+];
+
+describe("a Matterpak's textured mesh files", () => {
+  it.each([false, true])("finds the largest mesh, its own material library and every image (zip64: %s)", (zip64) => {
+    const parts = matterpakParts(directory(archive(PACK, zip64)));
+    expect(parts?.obj.name).toBe("model.obj");
+    expect(parts?.mtl?.name).toBe("model.mtl");
+    expect([...(parts?.images.keys() ?? [])]).toEqual(["model_000.jpg", "model_001.JPG"]);
+  });
+
+  it("takes any material library when none is named for the mesh, and is null with no mesh", () => {
+    const parts = matterpakParts(directory(archive(PACK.filter((f) => f.name !== "model.mtl"))));
+    expect(parts?.mtl?.name).toBe("other.mtl");
+    expect(matterpakParts(directory(archive(PACK.filter((f) => !f.name.endsWith(".obj")))))).toBeNull();
+  });
+
+  it("skips files packed in a way it can't unpack", () => {
+    const entries = directory(archive(PACK)).map((e) => (e.name === "model.obj" ? { ...e, method: 12 } : e));
+    expect(matterpakParts(entries)?.obj.name).toBe("small.obj");
+  });
+
+  it.each([false, true])("pulls each file out with one range read (zip64: %s)", (zip64) => {
+    const zip = archive(PACK, zip64);
+    for (const [i, entry] of directory(zip).entries()) {
+      const [start, end] = entryRange(entry);
+      const data = entryData(new Uint8Array(zip.subarray(start, end + 1)), entry);
+      expect(data).not.toBeNull();
+      const bytes = Buffer.from(data!);
+      expect((PACK[i].deflate ? inflateRawSync(bytes) : bytes).toString()).toBe(PACK[i].data.toString());
+    }
+  });
+
+  it("refuses bytes that don't start with the entry's header, or stop short of its data", () => {
+    const zip = archive(PACK);
+    const entry = directory(zip)[2];
+    const [start, end] = entryRange(entry);
+    expect(entryData(new Uint8Array(zip.subarray(start + 1, end + 1)), entry)).toBeNull();
+    expect(entryData(new Uint8Array(zip.subarray(start, start + 40)), entry)).toBeNull();
   });
 });

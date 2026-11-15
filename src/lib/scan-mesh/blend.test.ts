@@ -91,3 +91,23 @@ describe("slotFades", () => {
     for (let i = 0; i < 3; i++) expect(Math.abs(a[i] - b[i])).toBeLessThan(0.002);
   });
 });
+
+describe("blendWeights, the photo rule", () => {
+  it("shares a point out by rank among the panoramas that saw it", () => {
+    const ranked: BlendSource[] = [
+      { origin: [0, 1.5, 0], share: 1, seen: 1 },
+      { origin: [2, 1.5, 0], share: 0.4, seen: 1 },
+    ];
+    const w = blendWeights("photo", [0.5, 1.5, 0], [1, 1.5, -3], WALL_NORMAL, ranked);
+    expect(w[0]).toBeGreaterThan(0.6);
+    expect(w[0] + w[1]).toBeCloseTo(1, 9);
+  });
+
+  it("gives a point the lead did not see to the next", () => {
+    const ranked: BlendSource[] = [
+      { origin: [0, 1.5, 0], share: 1, seen: 0 },
+      { origin: [2, 1.5, 0], share: 0.4, seen: 1 },
+    ];
+    expect(blendWeights("photo", [0.5, 1.5, 0], [1, 1.5, -3], WALL_NORMAL, ranked)).toEqual([0, 1]);
+  });
+});

@@ -2,7 +2,7 @@
 // scan like a shooter. The scan itself is drawn by scan-view.ts, which this
 // drives the way a game's first-person view would: input and movement here,
 // then a pose and a render each frame.
-import type { BlendMode } from "@/lib/scan-mesh/blend";
+import { BLEND_MODES, type BlendMode } from "@/lib/scan-mesh/blend";
 import type { Vec3 } from "@/lib/scan-mesh/coords";
 import type { MeshResolution, PanoResolution } from "@/lib/scan-mesh/manifest";
 import { applyLook, stepMove, TUNING, viewBob, type MoveState } from "@/lib/scan-mesh/movement";
@@ -11,7 +11,7 @@ import type { WalkSample } from "@/lib/scan-mesh/walk-stats";
 import type { MeshWorld } from "./collider";
 import type { PanoUse } from "./panos";
 import { RECORD_STEP, WalkRecorder, type RecordOptions } from "./recorder";
-import { ScanView, type ScanFixes, type ScanPhase, type ScanViewStatus } from "./scan-view";
+import { ScanView, type ScanDetailStatus, type ScanFixes, type ScanPhase, type ScanViewStatus } from "./scan-view";
 
 export type WalkPhase = ScanPhase;
 
@@ -41,7 +41,7 @@ export interface WalkHud {
   /** How much of the building is in memory. */
   building: WalkBuilding;
   /** The detailed mesh from the scan's Matterpak, which takes over the picture once in. */
-  detail: { state: "none" | "loading" | "ready" | "failed" | "off"; triangles: number; megabytes: number; seconds: number; reason?: string };
+  detail: ScanDetailStatus;
   /** The exposure match: pairs of panoramas compared, the gains' range, and whether they are applied; null until solved. */
   exposure: { pairs: number; low: number; high: number; on: boolean; before: number; after: number } | null;
   faces: PanoResolution;
@@ -77,6 +77,10 @@ export interface WalkOptions {
   mesh: MeshResolution;
   /** Whether to load the Matterpak's detailed mesh when the scan has one. */
   detail: boolean;
+  /** Whether to paint it with its own textures, and fill what nothing covers (scan-view.ts); both default on. */
+  textured?: boolean;
+  repair?: "all" | "none" | "shards" | "planes";
+  fill?: boolean;
   reducedMotion: boolean;
   /** Exposes the engine on `window` for poking at from the console. */
   debug: boolean;
@@ -151,6 +155,9 @@ export class ScanWalk {
       faces: options.faces,
       mesh: options.mesh,
       detail: options.detail,
+      textured: options.textured,
+      repair: options.repair,
+      fill: options.fill,
       onChange: () => this.push(),
     });
     this.hud = {
@@ -161,7 +168,7 @@ export class ScanWalk {
       grounded: false,
       speed: 0,
       projection: true,
-      blend: "view",
+      blend: "photo",
       fixes: true,
       exposure: null,
       detail: { state: "none", triangles: 0, megabytes: 0, seconds: 0 },
@@ -334,7 +341,7 @@ export class ScanWalk {
     if (event.code === "KeyT") this.setProjection(!this.projection);
     if (event.code === "KeyG") this.view.toggleWire();
     if (event.code === "KeyE") this.setExposure(!(this.hud.exposure?.on ?? true));
-    if (event.code === "KeyB") this.setBlend(this.hud.blend === "view" ? "nearest" : "view");
+    if (event.code === "KeyB") this.setBlend(BLEND_MODES[(BLEND_MODES.indexOf(this.hud.blend) + 1) % BLEND_MODES.length]);
     if (event.code === "KeyF") this.setFixes({ agree: !this.fixes, fill: !this.fixes });
     const count = this.view.scanPositions().length;
     if ((event.code === "KeyP" || event.code === "KeyN") && this.state && count > 0) {
@@ -442,7 +449,7 @@ export class ScanWalk {
     this.view.render(this.step(dt));
     const world = this.view.meshTree;
     if (this.recorder && world) {
-      this.recorder.capture(this.view.renderer, this.view.scene, this.view.camera, world, this.view.inUse(), this.view.blend);
+      this.recorder.capture(this.view.renderer, (target) => this.view.draw(target), this.view.camera, world, this.view.inUse(), this.view.blend);
     }
 
     this.frames++;
@@ -547,6 +554,18 @@ export class ScanWalk {
       b.gpuMegabytes = counts.gpu / 1e6;
       if (b.firstSharp === null && counts.sharp > 0) b.firstSharp = now;
       if (b.allHeld === null && counts.total > 0 && counts.held + counts.failed >= counts.total) b.allHeld = now;
+    }
+    const textures = status.detail.textures;
+    if (textures) {
+      // The textured mesh: the building is its textures, under the panoramas.
+      const b = this.hud.building;
+      b.held = textures.small;
+      b.total = textures.total;
+      b.megabytes = textures.megabytes;
+      b.low = textures.small;
+      b.sharp = textures.sharp;
+      b.gpuMegabytes = textures.gpuMegabytes + (counts ? counts.gpu / 1e6 : 0);
+      if (b.allHeld === null && textures.done) b.allHeld = (performance.now() - this.opened) / 1000;
     }
     this.hud.building.worstFrame = this.gaps.reduce((worst, [, gap]) => Math.max(worst, gap), 0);
     this.hud.fps = this.fps;
