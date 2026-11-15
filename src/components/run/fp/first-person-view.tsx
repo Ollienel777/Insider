@@ -32,7 +32,7 @@ import type { PlacedLevel } from "@/level/placer";
 import { objectiveLabel, objectiveNoun } from "@/lib/objective-noun";
 import { cn } from "@/lib/utils";
 import { cameraMount, choices, roomName } from "../board";
-import type { HeldAction, ScanHandle } from "./run-view";
+import { scanStageOf, type HeldAction, type ScanHandle, type ScanPreload } from "./run-view";
 import { Actors, type Marks } from "./actors";
 import { Controller } from "./controller";
 import type { Ground, Vec } from "./ground";
@@ -62,8 +62,8 @@ export interface FirstPersonViewProps {
   onHeld: (held: HeldAction | null) => void;
   /** The player paused the clock with P. */
   paused: boolean;
-  /** On a floor from a live scan: the scan, opened when the Run screen opened (scan-preload.ts). */
-  scan?: ScanHandle | null;
+  /** On a floor from a live scan: the scan's preload, started when the Run screen opened (scan-preload.ts). */
+  scan?: ScanPreload | null;
   /** The player is let loose (true), or the view is gone (false): on a scan the Run screen holds the clock until then. */
   onReady?: (ready: boolean) => void;
   /** Shift went down or up: the HUD's time left is then at a walk or a run. */
@@ -141,6 +141,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
   const onScan = placed.level.floor.source !== "fixture";
   const world = useMemo(() => (onScan ? null : buildWorld(placed.level.floor)), [placed, onScan]);
+  // The preload's parts the view acts on: its object changes when it turns ready, which must not rebuild the stage.
+  const scanGiven = scan !== null;
+  const scanHandle = scan?.handle ?? null;
+  const scanFailed = scan?.failed ?? null;
 
   // The loop reads the latest run and the latest `play` without being rebuilt for each turn. Updated in a
   // layout effect, before the browser paints, so no animation frame reads the run before last.
@@ -485,6 +489,14 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
     let stopListening = () => {};
     if (world) {
       begin(fixtureStage(world));
+    }
+    const choice = world ? null : scanStageOf(scanGiven ? { handle: scanHandle, failed: scanFailed, ready: false } : null);
+    const scan = choice?.kind === "walk" ? choice.handle : null;
+    if (choice?.kind === "wait") {
+      // The preload's own module is still on its way: the scan comes as a new handle, which runs this again.
+      loading({ line: "Opening the scan", held: 0, total: 0 });
+    } else if (choice?.kind === "refuse") {
+      unavailable(choice.line);
     } else if (scan) {
       // The scan's canvas, under the labels and the HUD, while this view shows.
       host.insertBefore(scan.canvas, labels);
@@ -500,8 +512,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         const made = scanStage(scan);
         if (made) begin(made);
       });
-    } else {
-      unavailable("This scan has no mesh to walk, so first person isn't offered on it. You're on the board.");
     }
 
     return () => {
@@ -514,7 +524,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         scan.canvas.remove();
       }
     };
-  }, [world, placed, scan]);
+  }, [world, placed, scanGiven, scanHandle, scanFailed]);
 
   const noun = objectiveNoun(placed.level.missionId);
   const over = run.status !== "playing";

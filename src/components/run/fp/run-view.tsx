@@ -81,6 +81,29 @@ export interface ScanPreload {
 
 const LOADING: ScanPreload = Object.freeze({ handle: null, failed: null, ready: false });
 
+/** The line first person gives when a live scan's floor has no mesh to walk at all. */
+export const SCAN_NO_MESH = "This scan has no mesh to walk, so first person isn't offered on it. You're on the board.";
+
+/** What first person does on a live scan's floor with `scan` as it stands: wait for it, walk it, or give the board back. */
+export type ScanStage =
+  | { kind: "wait" }
+  | { kind: "walk"; handle: ScanHandle }
+  | { kind: "refuse"; line: string };
+
+/**
+ * First person's choice on a live scan, from the preload as it stands. While
+ * the preload's own `import()` is still resolving it has neither a handle nor
+ * a failure: that is a wait, never "no mesh" (the view can mount first, since
+ * its chunk is the lighter one). Only a preload that failed, or none at all,
+ * gives the board back.
+ */
+export function scanStageOf(scan: ScanPreload | null): ScanStage {
+  if (!scan) return { kind: "refuse", line: SCAN_NO_MESH };
+  if (scan.failed !== null) return { kind: "refuse", line: scan.failed };
+  if (scan.handle) return { kind: "walk", handle: scan.handle };
+  return { kind: "wait" };
+}
+
 /**
  * Starts loading the scan for first person as soon as there is a model id,
  * and keeps it while the Run screen stays open. Null with no model id.

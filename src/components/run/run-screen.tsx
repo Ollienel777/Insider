@@ -576,7 +576,7 @@ export function RunScreen({
                 onHeld={holdFp}
                 onWalking={setWalking}
                 paused={clock.state === "paused"}
-                scan={scan?.handle ?? null}
+                scan={scan}
                 onReady={setFpReady}
                 onUnavailable={(why) => {
                   runView.fail(why);

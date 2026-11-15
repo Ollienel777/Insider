@@ -9,6 +9,8 @@ import { FloorGraph } from "@/domain";
 import type { Collision, Ground, Vec } from "./ground";
 import { doorBar, SCAN, scanGround, type ScanHeights, type ScanSolid, type Vec3 } from "./scan-ground";
 import { meshSolid } from "./scan-solid";
+import { doorInView } from "./walker";
+import type { RunState } from "@/engine";
 
 const DT = 1 / 120;
 const STEP_UP = 0.45;
@@ -359,6 +361,19 @@ describe("a doorway two board edges cross, each with its own door", () => {
     // "a"'s door picked: the doorway is open, though "e"'s door is still locked.
     expect(walk(on, at("a"), { x: 3, y: 0 }, 2, ["door:e:b"]).pos.x).toBeGreaterThan(WALL_E);
     expect(on.clear(at("a"), at("b"), ["door:e:b"])).toBe(true);
+  });
+
+  it("names the door on the edge out of the area the body stands in, from either side's area", () => {
+    const on = scanGround(twoDoors(), solid, { eye: new Map(), floor: new Map() });
+    const run = { locked: both } as unknown as RunState;
+    // Facing east (+x), at the doorway's height, from inside "a"'s area and then from inside "e"'s.
+    const inA: Vec = { x: 3.8, y: DOORWAY.y };
+    const inE: Vec = { x: 1.6, y: DOORWAY.y - 0.6 };
+    expect(on.regionOf(inA)).toBe("a");
+    expect(on.regionOf(inE)).toBe("e");
+    // Both doors' bars are in the line of the view from each place: the nearest alone can't name both.
+    expect(doorInView(on, run, inA, 0)?.doorId).toBe("door:a:b");
+    expect(doorInView(on, run, inE, Math.atan2(0.6, DOORWAY.x - inE.x), 4)?.doorId).toBe("door:e:b");
   });
 
   it("is open whatever is locked when an edge with no lock runs through it", () => {
