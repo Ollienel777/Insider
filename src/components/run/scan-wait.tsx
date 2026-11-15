@@ -26,6 +26,16 @@ export function waitsOnScan(status: Pick<DemoStatus, "ready" | "fellBack">, mode
   return status.ready && mode === "live" && !status.fellBack.has("matterport") && Boolean(modelId);
 }
 
+/**
+ * Whether a load of `building`'s floor on this page waits on its live scan.
+ * False on the server, and until the browser has its demo status.
+ */
+export function useWaitsOnScan(building: Pick<Building, "id" | "matterportModelId">, heistMode?: string): boolean {
+  const status = useSyncExternalStore(subscribeStatus, getStatus, getServerStatus);
+  // The adapter is asked only once the browser has its status: on the server there is nothing to wait for.
+  return status.ready && waitsOnScan(status, getMatterport(heistMode).mode, scanModelId(building));
+}
+
 /** The words over the board's skeleton: what it is waiting for and, once the wait is `slow`, the way out. */
 export function ScanWaitPanel({ slow, onStandIn }: { slow: boolean; onStandIn: () => void }) {
   return (
@@ -34,7 +44,7 @@ export function ScanWaitPanel({ slow, onStandIn }: { slow: boolean; onStandIn: (
       className="absolute inset-x-6 inset-y-0 flex flex-col items-center justify-center gap-3 p-6 text-center"
     >
       <div role="status" className="flex flex-col items-center gap-3">
-        <p className="label-caps text-text-3">Loading the scan</p>
+        <p className="label-caps text-text-2">Loading the scan</p>
         {slow ? (
           <p className="max-w-md text-sm text-text-2">
             The scan is taking a while. The stand-in floor plan is ready now. To switch the scan back on, open the demo
@@ -65,14 +75,13 @@ export function ScanWait({
   heistMode?: string;
   onStandIn: () => void;
 }) {
-  const status = useSyncExternalStore(subscribeStatus, getStatus, getServerStatus);
+  const waiting = useWaitsOnScan(building, heistMode);
   const [slow, setSlow] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setSlow(true), STAND_IN_AFTER_MS);
     return () => clearTimeout(timer);
   }, []);
-  // The adapter is asked only once the browser has its status: on the server there is nothing to wait for.
-  if (!status.ready || !waitsOnScan(status, getMatterport(heistMode).mode, scanModelId(building))) return null;
+  if (!waiting) return null;
   return (
     <ScanWaitPanel
       slow={slow}

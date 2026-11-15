@@ -17,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { Building, LevelManifest } from "@/domain";
 import { createRun } from "@/engine";
 import { placeOrFixture } from "@/components/run/scan-fallback";
-import { ScanWait } from "@/components/run/scan-wait";
+import { ScanWait, useWaitsOnScan } from "@/components/run/scan-wait";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { validatePlan } from "@/level/validate-plan";
 import { askCrew, crewRequest, EXAMPLE_ORDER, type CrewAnswer } from "./crew-request";
@@ -111,6 +111,8 @@ export function PlanScreen({
   }, [ask]);
 
   const load: Load = manifest ? loaded : { status: "no-floor" };
+  // While a live scan loads, the bar does not yet say where the floor plan is from: the skeleton says what it waits for.
+  const scanLoading = useWaitsOnScan(building, heistMode) && load.status === "loading";
   const placed = load.status === "ready" ? load.placed : null;
   const run = useMemo(() => (placed ? createRun(placed.level) : null), [placed]);
   const answer = ask.status === "answered" ? ask.answer : null;
@@ -156,7 +158,7 @@ export function PlanScreen({
               <LayerDot layer="matterport" decorative />
               Matterport
               <span className="max-md:hidden">
-                {load.status === "ready" && load.live ? " · floor plan from the scan" : " · floor plan from fixtures"}
+                {load.status === "ready" && load.live ? " · floor plan from the scan" : scanLoading ? null : " · floor plan from fixtures"}
               </span>
             </span>
             <span aria-hidden className="h-4 w-px bg-border" />

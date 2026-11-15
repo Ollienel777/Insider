@@ -46,7 +46,7 @@ import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postur
 import { MuteToggle, useRunSound } from "./run-sound";
 import { RunStage } from "./run-stage";
 import { placeOrFixture } from "./scan-fallback";
-import { ScanWait } from "./scan-wait";
+import { ScanWait, useWaitsOnScan } from "./scan-wait";
 import { FIRST_PERSON_PACE, FIRST_PERSON_TURN_MS, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, ViewSwitch, type HeldAction } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
@@ -205,6 +205,8 @@ export function RunScreen({
   }, [building, manifest, heistMode, attempt, placeAndStart, missionId]);
 
   const load: Load = manifest ? loaded : { status: "no-floor" };
+  // While a live scan loads, the bar does not yet say where the floor plan is from: the skeleton says what it waits for.
+  const scanLoading = useWaitsOnScan(building, heistMode) && load.status === "loading";
   const placed = load.status === "ready" ? load.placed : null;
   // The placement and the Chief's summary use `history`, read when the level was placed; the
   // Forget button uses `storedRuns`, which also counts a run that ended since.
@@ -477,7 +479,7 @@ export function RunScreen({
               {/* A kit building's label (below) names its floor, so the line doesn't say it twice. */}
               {source === "costar" ? null : (
                 <span className="max-md:hidden">
-                  {load.status === "ready" && load.live ? " · floor plan from the scan" : " · floor plan from fixtures"}
+                  {load.status === "ready" && load.live ? " · floor plan from the scan" : scanLoading ? null : " · floor plan from fixtures"}
                 </span>
               )}
             </span>
