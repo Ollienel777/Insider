@@ -53,6 +53,15 @@ import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, 
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
+/**
+ * What the status line says as a run opens at `entry`: how to move, in the
+ * controls of the view the run is played in. On the board, the numbers; in
+ * first person, W to walk and the mouse to look, as its first-move hint says.
+ */
+export function openingLine(entry: string, firstPerson: boolean): string {
+  return `You're in at the ${entry.toLowerCase()}. ${firstPerson ? "W to walk, the mouse to look." : "Pick a number to move."}`;
+}
+
 /** The seed every run of the demo uses, so a rehearsed run plays the same way in front of judges. */
 export const RUN_SEED = 7;
 
@@ -118,6 +127,8 @@ export function RunScreen({
   const [storedRuns, setStoredRuns] = useState(0);
   const [run, setRun] = useState<RunState | null>(null);
   const [status, setStatus] = useState<string>("");
+  /** The way in the run opened at, while the status line still says so: first person words it for its own keys. */
+  const [opening, setOpening] = useState<string | null>(null);
   const [muted, toggleMute] = useRunSound(run);
   const missionId = useMissionId();
   /** Walking or sprinting (issue 121): `S` switches; any action, and Restart, go back to walking. */
@@ -193,7 +204,8 @@ export function RunScreen({
           const placed = await placeOrFixture(building, floor, (on) => (live ? placeAndStart(manifest, on) : null));
           if (!live) return;
           if (!placed) return setLoad({ status: "no-floor" });
-          setStatus(`You're in at the ${placed.entries[0].label.toLowerCase()}. Pick a number to move.`);
+          setStatus(openingLine(placed.entries[0].label, false));
+          setOpening(placed.entries[0].label);
         },
         (error: unknown) => {
           if (live) setLoad({ status: "error", message: error instanceof Error ? error.message : String(error) });
@@ -366,6 +378,8 @@ export function RunScreen({
   // First person (issue 115) always runs on the clock, at its own pace, and its turn is the view's
   // to choose: the next pick while E is held at a door, otherwise a wait.
   const fpOn = placed !== null && firstPersonOn(runView, placed.level.floor, scan);
+  // The opening line names the player's own controls: the numbers on the board, W and the mouse in first person.
+  const shownStatus = opening !== null && status === openingLine(opening, false) ? openingLine(opening, fpOn) : status;
   const fpHeld = useRef<HeldAction | null>(null);
   const holdFp = useCallback((held: HeldAction | null) => {
     fpHeld.current = held;
@@ -445,7 +459,7 @@ export function RunScreen({
     crewPlan,
     chief,
     revealed,
-    status,
+    status: shownStatus,
     // First person is played in real time: the HUD says seconds and plain words, not hops and turns.
     pace,
   });
@@ -659,7 +673,7 @@ export function RunScreen({
       footer={
           <div className="flex h-16 shrink-0 items-center justify-between gap-6 px-6">
             <p data-testid="run-status" aria-live="polite" className="min-w-0 text-sm text-text-1 md:truncate">
-              {status}
+              {shownStatus}
             </p>
             <div className={cn("flex shrink-0 items-center gap-4 text-sm text-text-2 max-md:hidden", fpOn ? "hidden" : null)}>
               <span className="flex items-center gap-2">

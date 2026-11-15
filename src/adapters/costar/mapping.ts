@@ -143,9 +143,14 @@ export interface ListingSpace {
 /**
  * The vacant spaces a listing markets now: active lease listings only, with
  * no off-market date and no lease pending, on a numbered floor and with a
- * size. A space with no suite number is named by its space id. Throws
+ * size. A space with no suite name is `UNNAMED_SPACE` here, and numbered on
+ * its floor when the kit's spaces are gathered (kit.ts): the kit's own space
+ * id is a record id, and never goes on screen. Throws
  * `KitRecordError` on a record with no id or of the wrong shape.
  */
+/** The suite of a space the kit gives no suite name: numbered on its floor by kit.ts ("unnamed space 2"). */
+export const UNNAMED_SPACE = "unnamed space";
+
 export function toListingSpaces(record: unknown): ListingSpace[] {
   kitId(record, "commercial listing");
   const listing = parse(RawListing, record, "commercial listing");
@@ -157,7 +162,7 @@ export function toListingSpaces(record: unknown): ListingSpace[] {
     const floor = kitFloor(raw.floorName);
     const sf = raw.squareFeetMax || raw.squareFeetMin;
     if (!propertyId || floor === null || !sf || sf <= 0) continue;
-    const suite = raw.suite?.trim() || `space ${raw.id}`;
+    const suite = raw.suite?.trim() || UNNAMED_SPACE;
     out.push({ propertyId, space: AvailableSpace.parse({ floor, suite, sf }) });
   }
   return out;

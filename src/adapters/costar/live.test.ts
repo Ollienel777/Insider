@@ -109,7 +109,8 @@ describe("mapping.ts", () => {
     ]);
     expect(toListingSpaces(listing)).toEqual([
       { propertyId: "42", space: { floor: 6, suite: "600", sf: 2410 } },
-      { propertyId: "42", space: { floor: 6, suite: "space 555", sf: 2410 } },
+      // A space with no suite name is never named by its kit id: the reader numbers it on its floor.
+      { propertyId: "42", space: { floor: 6, suite: "unnamed space", sf: 2410 } },
       { propertyId: "43", space: { floor: 3, suite: "300", sf: 2410 } },
     ]);
     expect(toListingSpaces({ ...listing, listingStatus: 3 })).toEqual([]);
@@ -148,7 +149,9 @@ describe("the kit reader", () => {
       { floor: 7, suite: "701", sf: 5120 },
     ]);
     expect(a.matterportModelId).toBe("mpTestAAAA001");
-    expect(index.properties.get("900004")!.building).toMatchObject({ city: "Houston", buildingClass: "A", availableSpace: [{ floor: 20, suite: "space 70000400" }] });
+    expect(index.properties.get("900004")!.building).toMatchObject({ city: "Houston", buildingClass: "A", availableSpace: [{ floor: 20, suite: "unnamed space 1" }] });
+    // No kit space id names a space anywhere in the index.
+    for (const { building } of index.properties.values()) for (const s of building.availableSpace) expect(s.suite).not.toMatch(/\d{5,}/);
     expect(index.stats).toMatchObject({ records: 4, indexed: 3, skipped: { type: 1 }, spaces: 3, scanned: 3 });
   });
 

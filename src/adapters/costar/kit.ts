@@ -11,7 +11,7 @@ import { open } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import type { AvailableSpace } from "@/domain";
-import { KIT_FILES, type KitFile, type KitProperty, type SkipReason, scanColumns, toKitProperty, toListingSpaces, toScan } from "./mapping";
+import { KIT_FILES, type KitFile, type KitProperty, type SkipReason, scanColumns, toKitProperty, toListingSpaces, toScan, UNNAMED_SPACE } from "./mapping";
 
 const ALLOWED: ReadonlySet<string> = new Set(Object.values(KIT_FILES));
 
@@ -94,9 +94,14 @@ export async function loadKitIndex(dir: string, log: Pick<Console, "warn"> = con
   let spaceCount = 0;
   for await (const [n, line] of kitLines(dir, "listings")) {
     try {
-      for (const { propertyId, space } of toListingSpaces(JSON.parse(line))) {
+      for (const { propertyId, space: listed } of toListingSpaces(JSON.parse(line))) {
         const list = spaces.get(propertyId) ?? [];
-        if (list.some((s) => s.floor === space.floor && s.suite === space.suite)) continue;
+        // A space with no suite name is numbered on its floor, never named by its kit id.
+        const unnamed = listed.suite === UNNAMED_SPACE;
+        const space = unnamed
+          ? { ...listed, suite: `${UNNAMED_SPACE} ${list.filter((s) => s.floor === listed.floor && s.suite.startsWith(UNNAMED_SPACE)).length + 1}` }
+          : listed;
+        if (!unnamed && list.some((s) => s.floor === space.floor && s.suite === space.suite)) continue;
         list.push(space);
         spaces.set(propertyId, list);
         spaceCount += 1;

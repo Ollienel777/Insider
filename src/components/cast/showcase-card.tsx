@@ -56,6 +56,11 @@ interface ShowcaseCardProps {
  * and where it does not, then links to its Scout, Dossier, Plan and Run on this
  * mission. Its heading picks it for "Scout it", like a finalist's.
  */
+/** "Century City, Los Angeles"; the city once when the record's neighbourhood is the city itself. */
+export function placeLine(neighbourhood: string, city: string): string {
+  return neighbourhood.trim().toLowerCase() === city.trim().toLowerCase() || !neighbourhood.trim() ? city : `${neighbourhood}, ${city}`;
+}
+
 export function ShowcaseCard({ showcase: s, missionId, selected, onSelect }: ShowcaseCardProps) {
   return (
     <article
@@ -79,13 +84,9 @@ export function ShowcaseCard({ showcase: s, missionId, selected, onSelect }: Sho
           }}
           className="-m-1 block min-w-0 rounded-sm p-1 text-left"
         >
-          <span className="block label-caps text-text-3">
-            Showcase · CoStar record · <span className="font-mono">{s.id}</span>
-          </span>
+          <span className="block label-caps text-text-3">Showcase · CoStar record</span>
           <span className={cn("mt-1 block truncate text-base font-semibold", selected ? "text-accent" : "text-text-1")}>{s.name}</span>
-          <span className="block text-sm text-text-2">
-            {s.neighbourhood}, {cityName(s.city)}
-          </span>
+          <span className="block text-sm text-text-2">{placeLine(s.neighbourhood, cityName(s.city))}</span>
         </button>
         <dl className="grid grid-cols-4 gap-2">
           {(

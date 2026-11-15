@@ -1,3 +1,4 @@
+import { placeLine } from "./showcase-card";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -392,5 +393,36 @@ describe("fitView", () => {
   it("keeps the basemap's own bounds when every point is on it", () => {
     const bounds = BASEMAPS.LA.bounds;
     expect(fitView(bounds, [{ lat: 34.05226, lng: -118.25287 }])).toBe(bounds);
+  });
+});
+
+describe("the showcase card's place line", () => {
+  it("names the place once when the record's neighbourhood is its city", () => {
+    expect(placeLine("Los Angeles", "Los Angeles")).toBe("Los Angeles");
+    expect(placeLine("", "Los Angeles")).toBe("Los Angeles");
+    expect(placeLine("Century City", "Los Angeles")).toBe("Century City, Los Angeles");
+  });
+});
+
+describe("the showcase card's heading", () => {
+  it("says it is a CoStar record without showing the record's id", async () => {
+    const { ShowcaseCard } = await import("./showcase-card");
+    const showcase = {
+      id: "900042",
+      name: "Made-up Tower",
+      neighbourhood: "Los Angeles",
+      city: "LA",
+      yearBuilt: 1972,
+      buildingClass: "B",
+      stories: 30,
+      layers: { costar: true, vexcel: false, matterport: true },
+      level: "built",
+      reasons: [],
+    } as unknown as Parameters<typeof ShowcaseCard>[0]["showcase"];
+    const html = renderToStaticMarkup(<ShowcaseCard showcase={showcase} missionId="romaine-1974" selected={false} onSelect={() => {}} />);
+    const pick = html.slice(html.indexOf('data-testid="showcase-pick"'), html.indexOf("</button>"));
+    expect(pick).toContain("Showcase · CoStar record");
+    expect(pick).not.toContain("900042");
+    expect(pick).toContain("Made-up Tower");
   });
 });

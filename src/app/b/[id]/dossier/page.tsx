@@ -84,7 +84,7 @@ export default async function DossierPage({
       name={building.name}
       place={`${building.neighbourhood}, ${cityName(building.city)}`}
       facts={dossierFacts(building)}
-      rows={dataToLevelRows(level.manifest, cast)}
+      rows={dataToLevelRows(level.manifest, cast, building.source === "costar")}
       mission={level.manifest.mission}
       trace={level.trace}
       // A kit building's real record (#95); only the Run, which places the level, names its floor.
