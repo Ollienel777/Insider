@@ -44,6 +44,7 @@ import {
   updateCamera,
 } from "./owner-edit";
 import type { Selection } from "./owner-board";
+import { measureSetup } from "./setup-measure";
 import { SetupPanel, type Draft, type Tool } from "./setup-panel";
 import type { OwnerBatch, OwnerFix } from "./use-owner-batch";
 
@@ -126,6 +127,63 @@ describe("the editor's states", () => {
     // The board shows the guard on its post meanwhile: the playable setup has no problem.
     expect(validateOwnerSetup(playable(drawing, floor), floor)).toEqual([]);
     expect(playable(drawing, floor).guards.find((g) => g.id === "G1")!.round).toEqual([]);
+  });
+
+  it("with a problem, no coverage or unwatched routes: says to fix it, even with a measure passed (issue 132)", () => {
+    const drawing = extendRound(startRound(starting, "G1"), "G1", "mc-4");
+    // The batch would not play it, so there is nothing honest to measure; the playable part would give a number.
+    expect(measureSetup(manifest, floor, drawing)).toBeNull();
+    expect(measureSetup(manifest, floor, playable(drawing, floor))).not.toBeNull();
+    const html = renderToStaticMarkup(
+      <SetupPanel
+        floor={floor}
+        draft={{ setup: drawing, pristine: false, state: "editing" }}
+        problems={problemsOf(drawing, floor)}
+        selection={null}
+        tool="select"
+        saved={[]}
+        batchError={null}
+        onTool={noop}
+        onSelect={noop}
+        onEdit={noop}
+        onRename={noop}
+        onSave={noop}
+        onLoad={noop}
+        onDelete={noop}
+        onReset={noop}
+        measure={measureSetup(manifest, floor, starting)}
+      />,
+    );
+    expect(html).toContain('data-testid="owner-setup-measure-blocked"');
+    expect(html).toContain("Fix the problem below to measure coverage and unwatched routes.");
+    expect(html).not.toContain("Coverage:");
+    expect(html).not.toContain('data-testid="owner-setup-measure"');
+  });
+
+  it("without a problem, the two numbers and what they mean, but no line on attempts it has not played", () => {
+    const html = renderToStaticMarkup(
+      <SetupPanel
+        floor={floor}
+        draft={{ setup: starting, pristine: true, state: "untouched" }}
+        problems={problemsOf(starting, floor)}
+        selection={null}
+        tool="select"
+        saved={[]}
+        batchError={null}
+        onTool={noop}
+        onSelect={noop}
+        onEdit={noop}
+        onRename={noop}
+        onSave={noop}
+        onLoad={noop}
+        onDelete={noop}
+        onReset={noop}
+        measure={measureSetup(manifest, floor, starting)}
+      />,
+    );
+    expect(html).toContain("Coverage: 47% of the floor is watched at some point in every night the crew plays.");
+    expect(html).toContain('data-testid="owner-setup-measure-note"');
+    expect(html).not.toContain('data-testid="owner-setup-measure-timing"');
   });
 
   it("an element off the floor is named, and left off the board", () => {
@@ -409,11 +467,20 @@ describe("50 attempts, the fix, and the rerun", () => {
         stale={false}
         fixedSaved={null}
         side="before"
+        measures={{ before: measureSetup(manifest, floor, starting)!, after: measureSetup(manifest, floor, rerun.fixed!)! }}
         onEdit={noop}
         onRetry={noop}
         onOpenFixed={noop}
       />,
     );
+    // Under the count, the floor plan's two numbers, what they mean, and how 17 got out with no route unwatched.
+    expect(html).toContain(
+      "Unwatched routes: 0 of 2 ways in have, on any of the 10 nights the crew plays, a route to the files that no camera or guard sees that night.",
+    );
+    expect(html).toContain('data-testid="owner-measure-note"');
+    expect(html).toContain("so the 17 attempts that got out did it by timing, or were seen and not caught.");
+    expect(html).toContain("47% watched · 0/2 ways in unwatched");
+    expect(html).toContain("Coverage 47% → 50%, unwatched routes 0 → 0.");
     expect(html).toMatch(/data-testid="owner-count" data-escaped="17" data-total="50"/);
     expect(html).toMatch(/data-testid="owner-before-count" data-escaped="17" data-total="50"/);
     expect(html).toMatch(/data-testid="owner-after-count" data-escaped="0" data-total="50"/);

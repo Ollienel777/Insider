@@ -13,6 +13,7 @@ import type { AlarmState } from "@/domain";
 import {
   hearingRange,
   neighbours,
+  picksToOpen,
   shortestPath,
   visibleFrom,
   watched,
@@ -48,19 +49,59 @@ export interface Route {
  * with how many it passes. Null when the floor does not join the two at all.
  */
 export function routeLeft(run: RunState): Route | null {
+  const route = routePath(run);
+  return route ? { goal: route.path[route.path.length - 1], hops: route.path.length - 1, locks: route.lockedDoors.length } : null;
+}
+
+/** The nodes of `routeLeft`'s route, in order from the player's, and the locked doors on it. */
+function routePath(run: RunState): { path: readonly string[]; lockedDoors: readonly string[] } | null {
   const { board } = run;
   const goals = run.carrying ? board.level.exits : [board.level.objective];
   const locked = (exit: Exit) => exit.doorId !== undefined && run.locked.includes(exit.doorId);
   const open = shortestPath(board, run.playerNode, goals, (exit) => !locked(exit));
-  if (open) return { goal: open[open.length - 1], hops: open.length - 1, locks: 0 };
+  if (open) return { path: open, lockedDoors: [] };
   const through = shortestPath(board, run.playerNode, goals);
   if (!through) return null;
-  let locks = 0;
+  const lockedDoors: string[] = [];
   for (let i = 1; i < through.length; i++) {
     const exit = neighbours(board, through[i - 1]).find((e) => e.to === through[i]);
-    if (exit && locked(exit)) locks += 1;
+    if (exit?.doorId !== undefined && locked(exit)) lockedDoors.push(exit.doorId);
   }
-  return { goal: through[through.length - 1], hops: through.length - 1, locks };
+  return { path: through, lockedDoors };
+}
+
+// ---- first person: the same in real time ----------------------------------------
+
+/**
+ * First person's pace (issue 115), for the HUD to speak in seconds rather than
+ * hops and turns: metres to a floor-plan unit, the running speed, and a turn.
+ */
+export interface Pace {
+  unitM: number;
+  runMps: number;
+  turnMs: number;
+}
+
+/**
+ * About how many seconds the route left takes in first person: running node
+ * to node along it, plus a turn for each pick its locked doors still need.
+ * Rounded up, so it never says 0 until the player is there. Null with no route.
+ */
+export function secondsLeft(run: RunState, pace: Pace): number | null {
+  const route = routePath(run);
+  if (!route) return null;
+  let metres = 0;
+  for (let i = 1; i < route.path.length; i++) {
+    const a = run.board.nodes.get(route.path[i - 1]);
+    const b = run.board.nodes.get(route.path[i]);
+    if (a && b) metres += Math.hypot(b.x - a.x, b.y - a.y) * pace.unitM;
+  }
+  let picks = 0;
+  for (const doorId of route.lockedDoors) {
+    const done = run.picking?.doorId === doorId ? run.picking.progress : 0;
+    picks += Math.max(0, picksToOpen(run.board.level, doorId) - done);
+  }
+  return Math.ceil(metres / pace.runMps + (picks * pace.turnMs) / 1000);
 }
 
 // ---- who noticed the player ------------------------------------------------------
@@ -194,6 +235,8 @@ export interface ObjectiveInfo {
   goal: string;
   /** Hops left on the route; null when there is no route, or the run is over. */
   hops: number | null;
+  /** In first person only: about how many seconds the route takes (`secondsLeft`), said in place of the hops. */
+  seconds?: number | null;
   /** Locked doors on the route. */
   locks: number;
   /** "Files taken" once the player carries the objective; null before. */
@@ -209,9 +252,16 @@ export interface ObjectiveInfo {
  * it; once the player carries it, the nearest exit by name and the hops to
  * that; once the run is over, how it ended.
  */
-export function objectiveInfo(placed: PlacedLevel, run: RunState, objective: string, exitCondition: string): ObjectiveInfo {
+export function objectiveInfo(
+  placed: PlacedLevel,
+  run: RunState,
+  objective: string,
+  exitCondition: string,
+  /** First person's pace: the count is then in seconds (`seconds`), not hops. */
+  pace: Pace | null = null,
+): ObjectiveInfo {
   const noun = objectiveNoun(placed.level.missionId);
-  const still = { hops: null, locks: 0, taken: null, take: null };
+  const still = { hops: null, locks: 0, taken: null, take: null, ...(pace ? { seconds: null } : {}) };
   if (run.status === "won") return { ...still, label: "Clean exit", goal: `Out with the ${noun}.`, outcome: "won" };
   if (run.status === "caught") {
     const room = roomName(placed.level.floor, run.playerNode);
@@ -220,18 +270,27 @@ export function objectiveInfo(placed: PlacedLevel, run: RunState, objective: str
   const route = routeLeft(run);
   const hops = route?.hops ?? null;
   const locks = route?.locks ?? 0;
+  const timed = pace ? { seconds: secondsLeft(run, pace) } : {};
   if (!run.carrying) {
     const take = canTake(run) ? `Take the ${noun}` : null;
-    return { label: "Objective", goal: objective, hops, locks, taken: null, take, outcome: null };
+    return { label: "Objective", goal: objective, hops, ...timed, locks, taken: null, take, outcome: null };
   }
   const exit = placed.entries.find((e) => e.nodeId === route?.goal);
   const goal = exit ? `Out by the ${exit.label.toLowerCase()}` : exitCondition;
-  return { label: "Way out", goal, hops, locks, taken: `${noun[0].toUpperCase()}${noun.slice(1)} taken`, take: null, outcome: null };
+  return { label: "Way out", goal, hops, ...timed, locks, taken: `${noun[0].toUpperCase()}${noun.slice(1)} taken`, take: null, outcome: null };
 }
 
-/** The radio's last word once the run is over: what it took, and where the replay is. */
-export function endNote(run: RunState): string {
+/**
+ * The radio's last word once the run is over: what it took, and where the
+ * replay is. In first person (`realTime`) a turn is not something the player
+ * counted, so it says only the alarm raises, in plain words.
+ */
+export function endNote(run: RunState, realTime = false): string {
   const raises = run.alarmEvents.filter((e) => e.cause.kind !== "decay").length;
+  if (realTime) {
+    const alarms = raises === 0 ? "No alarm raised" : `${raises === 1 ? "One alarm" : `${raises} alarms`} raised`;
+    return `${alarms}. The debrief has the replay.`;
+  }
   const turns = `${run.turn} ${run.turn === 1 ? "turn" : "turns"}`;
   return `${turns}, ${raises} alarm ${raises === 1 ? "raise" : "raises"}. The debrief has the replay.`;
 }
@@ -252,11 +311,19 @@ export function chiefTag(state: Extract<ChiefState, { status: "ready" }>): strin
  * Live puts away). After that it is the next plan step: the briefed plan's
  * when there is one, else the level's own, as in the Run panel's plan.
  */
-export function nextStep(placed: PlacedLevel, run: RunState, objective: string, crewPlan: StoredCrewPlan | null): string | null {
+export function nextStep(
+  placed: PlacedLevel,
+  run: RunState,
+  objective: string,
+  crewPlan: StoredCrewPlan | null,
+  /** First person: the keys that move are W, A, S and D, not the numbers. */
+  realTime = false,
+): string | null {
   const moved = run.turns.some((t) => t.player.kind !== "wait");
-  if (!moved) return `You're in at the ${placed.entries[0].label.toLowerCase()}. Pick a number to move.`;
+  const how = realTime ? "Move with W, A, S and D." : "Pick a number to move.";
+  if (!moved) return `You're in at the ${placed.entries[0].label.toLowerCase()}. ${how}`;
   const briefed = crewPlan ? crewPlanSteps(placed, run, crewPlan.plan) : [];
-  const steps = briefed.length > 0 ? briefed : planSteps(placed, run, objective);
+  const steps = briefed.length > 0 ? briefed : planSteps(placed, run, objective, realTime);
   return steps.find((s) => s.state === "next")?.label ?? null;
 }
 
@@ -290,6 +357,7 @@ export function radioFacts({
   chief,
   revealed,
   status,
+  realTime = false,
 }: {
   placed: PlacedLevel;
   run: RunState;
@@ -300,9 +368,11 @@ export function radioFacts({
   chief: ChiefState;
   revealed: Pick<Revealed, "words" | "done">;
   status: string;
+  /** First person: said in real time, with no turns or number keys. */
+  realTime?: boolean;
 }): RadioFacts {
   const playing = run.status === "playing";
-  const step = playing ? nextStep(placed, run, mission.objective, crewPlan) : null;
+  const step = playing ? nextStep(placed, run, mission.objective, crewPlan, realTime) : null;
   const notice = playing ? noticeOf(placed, before, run, status) : null;
   // The Chief's own words, who it sends where and why, are read out to the end, after the run's too.
   const reading = chief.status === "ready" ? chief : null;
@@ -310,7 +380,7 @@ export function radioFacts({
     run: run.board,
     step,
     // The crew's opening line is the status line's own: said once, as the step. Once the run is over, the last word is how it went.
-    note: playing ? (notice === step ? null : notice) : endNote(run),
+    note: playing ? (notice === step ? null : notice) : endNote(run, realTime),
     callout: playing ? calloutOf(watchers, run.turn - 1, roomName(placed.level.floor, run.playerNode)) : null,
     chief: reading
       ? { answer: reading, lines: chiefLines(reading.answer.orders.rationale, revealed.words), done: revealed.done, tag: chiefTag(reading) }
@@ -361,6 +431,7 @@ export function usePlayHud({
   chief,
   revealed,
   status,
+  pace = null,
 }: {
   live: boolean;
   placed: PlacedLevel | null;
@@ -374,6 +445,8 @@ export function usePlayHud({
   revealed: Revealed;
   /** The screen's status line. Its notices go out on the radio (`noticeOf`). */
   status: string;
+  /** First person's pace: the HUD then speaks in seconds and plain words, not hops and turns. */
+  pace?: Pace | null;
 }): PlayHud | null {
   const { before, after } = useLastTurn(run);
   const on = live && placed !== null && run !== null && mission !== null;
@@ -381,14 +454,14 @@ export function usePlayHud({
 
   const { words, done } = revealed;
   const facts = useMemo(
-    () => (on ? radioFacts({ placed, run, before, watchers, mission, crewPlan, chief, revealed: { words, done }, status }) : null),
-    [on, placed, run, before, watchers, mission, crewPlan, chief, words, done, status],
+    () => (on ? radioFacts({ placed, run, before, watchers, mission, crewPlan, chief, revealed: { words, done }, status, realTime: pace !== null }) : null),
+    [on, placed, run, before, watchers, mission, crewPlan, chief, words, done, status, pace],
   );
   const radio = useRadio(facts);
 
   const objective = useMemo(
-    () => (on ? objectiveInfo(placed, run, mission.objective, mission.exitCondition) : null),
-    [on, placed, run, mission],
+    () => (on ? objectiveInfo(placed, run, mission.objective, mission.exitCondition, pace) : null),
+    [on, placed, run, mission, pace],
   );
   if (!on || !objective) return null;
   return { objective, danger: { alarm: run.alarm, watchers }, radio };

@@ -27,6 +27,9 @@ export interface GroundDoor {
   centre: Vec;
   /** The door's face across the doorway. */
   bar: Seg;
+  /** The engine's edge through it: the node on each side. */
+  a: string;
+  b: string;
 }
 
 export interface Collision {
@@ -54,4 +57,11 @@ export interface Ground {
   clear(p: Vec, q: Vec, locked: readonly string[]): boolean;
   /** The way to walk the engine's edge from node `a` to node `b`: through its doorway, not the wall. */
   path(a: string, b: string): Vec[];
+  /**
+   * The node whose area `pos` stands in, or null off the floor. The floor is
+   * split into one area per node: each point belongs to exactly one node,
+   * reachable from it without crossing a wall, and each node's area is in one
+   * piece. Standing in an area is standing on that node, as the engine sees it.
+   */
+  regionOf(pos: Vec): string | null;
 }

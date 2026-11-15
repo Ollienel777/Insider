@@ -3,7 +3,8 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
 
 // The smoke test (SPEC §6 step 6): a production server on PORT, always one
-// this run started itself, in fake mode.
+// this run started itself, in fake mode. Except on GitHub Actions the gate sets
+// PORT to a free port just before the smoke, so parallel gates do not collide (#36).
 const port = Number(process.env.PORT ?? 3100);
 const baseURL = `http://127.0.0.1:${port}`;
 
