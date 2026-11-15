@@ -30,7 +30,7 @@ test("a no-recording 503 becomes the board's plan on Plan, with its toast, and r
 
   const reply = page.getByTestId("crew-reply");
   await expect(reply).toHaveAttribute("data-source", "board");
-  await expect(page.getByTestId("board-plan-chip")).toHaveText("Worked out on the board");
+  await expect(page.getByTestId("board-plan-chip")).toHaveText("No crew reply");
   await expect(page.getByTestId("board-plan-chip")).toHaveAttribute("title", /didn't answer within the time limit/);
   await expect(page.getByTestId("recorded-chip")).toHaveCount(0);
   await expect(reply).toContainText("The board's plan");

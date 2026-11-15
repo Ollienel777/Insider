@@ -44,7 +44,11 @@ const TURNS = ["", "one turn", "two turns", "three turns", "four turns"];
 
 type Step = CrewPlan["steps"][number];
 
-export function fallbackPlan(placed: PlacedLevel): CrewPlan {
+/** A zone's name in the plan's words, without the board's "(vacant)" tag (as the Chief says it). */
+const placeLabel = (placed: PlacedLevel, zoneId: string) => zoneLabel(placed, zoneId).replace(/\s*\(vacant\)\s*$/i, "");
+
+export function fallbackPlan(placed: PlacedLevel, options: { maxTries?: number } = {}): CrewPlan {
+  const maxTries = options.maxTries ?? MAX_TRIES;
   const { level } = placed;
   const way = (e: PlacedEntry) => e.label.toLowerCase();
   const start = placed.entries.find((e) => e.nodeId === level.start) ?? placed.entries[0];
@@ -145,14 +149,19 @@ export function fallbackPlan(placed: PlacedLevel): CrewPlan {
     const pushback = hurried?.by
       ? `Without its waits: ${hurried.text} The waits in this plan let ${hurried.by} look away: hold where it says, then move.`
       : straight?.by && stop
-        ? `The straight way: ${straight.text} Going through ${zoneLabel(placed, stop.zoneId)} keeps you out of ${straight.by}'s way.`
+        ? `The straight way: ${straight.text} Going through ${placeLabel(placed, stop.zoneId)} keeps you out of ${straight.by}'s way.`
         : `Nothing catches you this way if you keep moving: in by the ${way(start)}, out by the ${way(exit)}. ${clearOf(best)}`;
     return { steps: best, pushback, confidence: SURE_CLEAN };
   }
 
   // No quiet way through (or none that fits a plan's stops): the shortest plan, and who catches it.
   const steps = shape(0, null, 0, exitOrder[0]);
-  const warning = validatePlan(placed, { steps, pushback: "", confidence: 0 }).warnings[0];
+  const shortest = validatePlan(placed, { steps, pushback: "", confidence: 0 });
+  // The objective can't be reached at all: the way in alone, and says so, rather than a plan with its middle struck out.
+  if (shortest.dropped.some((d) => d.zoneId === placed.objective.zoneId)) {
+    return { steps: steps.slice(0, 1), pushback: `There's no way to the ${noun} on this board.`, confidence: SURE_CAUGHT };
+  }
+  const warning = shortest.warnings[0];
   const caughtLine = warning ? ` ${warning.text}` : "";
   const pushback = advice
     ? `The quiet way doesn't fit a plan's stops here; follow the waits the board marks.${caughtLine}`
