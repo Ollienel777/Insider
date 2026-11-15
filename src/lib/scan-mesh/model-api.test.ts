@@ -1,6 +1,6 @@
 // A stubbed `fetch`: nothing here reaches the Model API, and the key is made up.
 import { describe, expect, it, vi } from "vitest";
-import { fetchScanModel, MODEL_API_URL, ModelApiError, modelApiRefusal } from "./model-api";
+import { archiveLength, fetchScanModel, MODEL_API_URL, ModelApiError, modelApiRefusal } from "./model-api";
 
 const LIVE = { NEXT_PUBLIC_MATTERPORT_MODE: "live", MATTERPORT_API_KEY: "key-abc", MATTERPORT_API_TOKEN: "token-xyz" };
 
@@ -60,5 +60,28 @@ describe("fetchScanModel", () => {
     const error = failure as ModelApiError;
     expect(error.status).toBe(status);
     expect(error.message).not.toMatch(/key-abc|token-xyz|abcDEF12345/);
+  });
+});
+
+describe("archiveLength", () => {
+  const url = "https://cdn-2.matterport.com/models/x/archive.zip";
+
+  it("reads the length from a ranged answer", async () => {
+    const fetchImpl = vi.fn(async () => new Response(new Uint8Array([1]), { status: 206, headers: { "content-range": "bytes 0-0/535000000" } }));
+    expect(await archiveLength(url, fetchImpl as unknown as typeof fetch)).toBe(535000000);
+  });
+
+  it("drops an answer that ignored the range without reading its body", async () => {
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        if (pulled > 100) throw new Error("read the whole archive");
+        controller.enqueue(new Uint8Array(1024));
+      },
+    });
+    const fetchImpl = vi.fn(async () => new Response(body, { status: 200 }));
+    expect(await archiveLength(url, fetchImpl as unknown as typeof fetch)).toBeNull();
+    expect(pulled).toBeLessThanOrEqual(1);
   });
 });
