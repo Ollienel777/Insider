@@ -570,6 +570,13 @@ export function RunScreen({
                 paused={clock.state === "paused"}
                 scan={scan?.handle ?? null}
                 onReady={setFpReady}
+                endAction={
+                  over ? (
+                    <Link data-testid="fp-debrief" href={buildingHref(building.id, "debrief", missionId)} className={buttonVariants({ variant: "primary" })}>
+                      See the debrief
+                    </Link>
+                  ) : null
+                }
                 onUnavailable={(why) => {
                   runView.fail(why);
                   setStatus(why ?? FP_UNAVAILABLE);
