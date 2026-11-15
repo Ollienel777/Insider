@@ -578,6 +578,8 @@ interface PanelProps {
  */
 export function ScoutPanel({ building, load, selected, onPick, onRetry }: PanelProps) {
   const aerial = load.status === "ready" ? load.aerial : null;
+  // An estimate from CoStar facts (a kit building), not a measurement: the aerial says so once it lands.
+  const estimated = aerial ? aerial.derived === true : isFactsOnly(building.source);
   const facts: { term: string; value: ReactNode; layer: "costar" | "vexcel" }[] = [
     { term: "Built", value: building.yearBuilt, layer: "costar" },
     { term: "Class", value: building.buildingClass, layer: "costar" },
@@ -585,7 +587,8 @@ export function ScoutPanel({ building, load, selected, onPick, onRetry }: PanelP
     {
       term: "Height",
       value: aerial ? (
-        `${Math.round(aerial.heightM)} m`
+        // A derived massing's height is its stories at a typical storey, not measured from the imagery.
+        `${estimated ? "~" : ""}${Math.round(aerial.heightM)} m`
       ) : load.status === "error" ? (
         <span data-testid="height-unavailable" className="text-text-3">
           <span aria-hidden>—</span>
@@ -594,7 +597,7 @@ export function ScoutPanel({ building, load, selected, onPick, onRetry }: PanelP
       ) : (
         <Skeleton data-testid="height-skeleton" className="mt-1 h-4 w-12" />
       ),
-      layer: "vexcel",
+      layer: estimated ? "costar" : "vexcel",
     },
   ];
 
@@ -651,6 +654,12 @@ export function ScoutPanel({ building, load, selected, onPick, onRetry }: PanelP
               Retry
             </Button>
           </div>
+        ) : aerial!.entries.length === 0 && aerial!.derived ? (
+          // Aimed from the building's CoStar facts, which mark no dock or door.
+          <p data-testid="entries-untagged" className="text-sm text-text-2">
+            No entries are tagged for this building: nothing in its CoStar facts marks a dock or a door. A level built for it
+            offers the roof hatch and the street lobby, which every office building has.
+          </p>
         ) : aerial!.entries.length === 0 ? (
           <p className="text-sm text-text-2">The aerial tags no entries on this building.</p>
         ) : (
