@@ -805,8 +805,10 @@ Q10, per status issue #1 (23:10 UTC on 14 November), and in the SPEC since
   on the board.
 - Where this script plays the scan, the voice-over describes it instead.
 
-That holds unless the CoStar crew says yes. Nothing from a scan or the kit goes
-in the repo or the video's files.
+The CoStar crew has since said yes (15 November, recorded on status issue #1),
+so the video and the Devpost gallery may show the run on Century Park's scan.
+Nothing from a scan or the kit goes in the repo; screenshots and the video live
+on Devpost.
 
 ## Open items
 
