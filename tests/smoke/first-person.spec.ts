@@ -77,7 +77,8 @@ async function holdUntil(page: Page, keys: { key: string; code: string }, select
 }
 
 test("first person runs in real time, and walking into the next node's area plays the engine's move", async ({ page }) => {
-  // Mostly the software WebGL's start, which on a two-core VM is slow: the demo path's budget.
+  // Its own waits add up past the default 30 s on a busy machine (the first render, software WebGL's
+  // start, the walk), and it timed out there; the E test below has the same budget.
   test.setTimeout(90_000);
   await open(page, "F1");
   if (!(await firstPerson(page))) return;

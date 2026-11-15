@@ -129,7 +129,7 @@ describe("the editor's states", () => {
     expect(playable(drawing, floor).guards.find((g) => g.id === "G1")!.round).toEqual([]);
   });
 
-  it("with a problem, no coverage or unwatched routes: says to fix it, even with a measure passed (issue 132)", () => {
+  it("with a problem, no coverage or open windows: says to fix it, even with a measure passed (issue 132)", () => {
     const drawing = extendRound(startRound(starting, "G1"), "G1", "mc-4");
     // The batch would not play it, so there is nothing honest to measure; the playable part would give a number.
     expect(measureSetup(manifest, floor, drawing)).toBeNull();
@@ -155,7 +155,7 @@ describe("the editor's states", () => {
       />,
     );
     expect(html).toContain('data-testid="owner-setup-measure-blocked"');
-    expect(html).toContain("Fix the problem below to measure coverage and unwatched routes.");
+    expect(html).toContain("Fix the problem below to measure coverage and open windows.");
     expect(html).not.toContain("Coverage:");
     expect(html).not.toContain('data-testid="owner-setup-measure"');
   });
@@ -473,14 +473,12 @@ describe("50 attempts, the fix, and the rerun", () => {
         onOpenFixed={noop}
       />,
     );
-    // Under the count, the floor plan's two numbers, what they mean, and how 17 got out with no route unwatched.
-    expect(html).toContain(
-      "Unwatched routes: 0 of 2 ways in have, on any of the 10 nights the crew plays, a route to the files that no camera or guard sees that night.",
-    );
+    // Under the count, the floor plan's two numbers and what they mean; with windows open, no line on how the 17 got out.
+    expect(html).toContain("Open windows: 40 of 80 moments in the 10 nights the crew plays let a crew in and out unseen. A moment is a way in at any turn of a night; the attempts all start at turn 0.");
     expect(html).toContain('data-testid="owner-measure-note"');
-    expect(html).toContain("so the 17 attempts that got out did it by timing, or were seen and not caught.");
-    expect(html).toContain("47% watched · 0/2 ways in unwatched");
-    expect(html).toContain("Coverage 47% → 50%, unwatched routes 0 → 0.");
+    expect(html).not.toContain('data-testid="owner-measure-timing"');
+    expect(html).toContain("47% watched · 40/80 open");
+    expect(html).toContain("Coverage 47% → 50%, open windows 40 of 80 → 0 of 80.");
     expect(html).toMatch(/data-testid="owner-count" data-escaped="17" data-total="50"/);
     expect(html).toMatch(/data-testid="owner-before-count" data-escaped="17" data-total="50"/);
     expect(html).toMatch(/data-testid="owner-after-count" data-escaped="0" data-total="50"/);
