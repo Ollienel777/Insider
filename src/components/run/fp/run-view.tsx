@@ -108,11 +108,15 @@ export function scanStageOf(scan: ScanPreload | null): ScanStage {
  * Starts loading the scan for first person as soon as there is a model id,
  * or takes the tab's scan of it if one is held already (scan-hold.ts): the
  * Plan screen starts it, and the Run screen finds it in or on its way.
- * Unmounting lets nothing go. Null with no model id. `open` is for tests.
+ * Unmounting lets nothing go. Null with no model id. With `primeAt` (the
+ * Plan screen gives the run's start node), the scan's picture around that
+ * position is drawn, unseen, once it is in, so first person opens on it.
+ * `open` is for tests.
  */
 export function useScanPreload(
   modelId: string | null,
   open: () => Promise<(modelId: string) => ScanHandle> = () => import("./scan-preload").then((m) => m.openScan),
+  primeAt: string | null = null,
 ): ScanPreload | null {
   const [state, setState] = useState<{ modelId: string; preload: ScanPreload } | null>(null);
   useEffect(() => {
@@ -129,15 +133,22 @@ export function useScanPreload(
         void held.ready.then((ok) => {
           const message = held.status().message;
           set(ok ? { handle: held, failed: null, ready: true } : { handle: null, failed: message ? `${message} You're on the board.` : SCAN_FAILED, ready: false });
+          if (ok && primeAt && !gone) {
+            void import("./scan-preload").then(({ primeScan }) => {
+              if (!gone) stopPrime = primeScan(held, primeAt);
+            });
+          }
         });
       })
       .catch(() => set({ handle: null, failed: FP_UNAVAILABLE, ready: false }));
+    let stopPrime = () => {};
     return () => {
       gone = true;
+      stopPrime();
     };
     // `open` is a test seam, not something the scan depends on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelId]);
+  }, [modelId, primeAt]);
   if (!modelId) return null;
   return state?.modelId === modelId ? state.preload : LOADING;
 }

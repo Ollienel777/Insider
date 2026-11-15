@@ -113,7 +113,8 @@ export function PlanScreen({
   // on its way; the tab keeps it across screens (fp/scan-hold.ts). Nothing on fixtures.
   const liveScan = load.status === "ready" && load.live;
   const scanModel = useMemo(() => (liveScan ? scanMeshModelFor(building, heistMode) : null), [liveScan, building, heistMode]);
-  useScanPreload(scanModel);
+  // Its picture around the run's start is drawn, unseen, as well, so first person opens on it.
+  useScanPreload(scanModel, undefined, load.status === "ready" ? load.placed.level.start : null);
   const placed = load.status === "ready" ? load.placed : null;
   const run = useMemo(() => (placed ? createRun(placed.level) : null), [placed]);
   const answer = ask.status === "answered" ? ask.answer : null;
