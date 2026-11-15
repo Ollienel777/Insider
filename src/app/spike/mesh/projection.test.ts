@@ -1,13 +1,30 @@
-// The scan material's fade under a panorama's own tripod (issue 198): off by
-// default, and wired into the weight of every panorama. What it draws is
-// checked by eye on a live scan.
+// The scan material's patch under a panorama's own tripod (issue 198). The
+// shader's expression for how deep a ray is in the patch is also JavaScript,
+// so it is run here as the shader runs it. What the fill looks like is checked
+// by eye on a live scan.
 import { CubeTexture, type Vector3 } from "three";
 import { describe, expect, it } from "vitest";
-import { createScanMaterial, NADIR_INNER_DEG, NADIR_OUTER_DEG } from "./projection";
+import { createScanMaterial, NADIR_DEPTH } from "./projection";
 
-const cos = (degrees: number) => Math.cos((degrees * Math.PI) / 180);
+/** GLSL's smoothstep. */
+const smoothstep = (lo: number, hi: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - lo) / (hi - lo)));
+  return t * t * (3 - 2 * t);
+};
+const depthOf = new Function("smoothstep", "uNadir", "along", `return ${NADIR_DEPTH};`) as (
+  step: typeof smoothstep,
+  nadir: Vector3,
+  along: { x: number; y: number; z: number },
+) => number;
 
-describe("the fade under a panorama's own tripod", () => {
+/** How deep a ray `degrees` from straight down (y up) is in the patch, by the material's own angles. */
+const depthAt = (degrees: number) => {
+  const nadir = createScanMaterial(new CubeTexture()).uniforms.uNadir.value as Vector3;
+  const r = (degrees * Math.PI) / 180;
+  return depthOf(smoothstep, nadir, { x: Math.sin(r), y: -Math.cos(r), z: 0 });
+};
+
+describe("the patch under a panorama's own tripod", () => {
   it("is off until a caller turns it on: the blend is as it was", () => {
     for (const backdrop of [false, true]) {
       const nadir = createScanMaterial(new CubeTexture(), backdrop).uniforms.uNadir.value as Vector3;
@@ -15,18 +32,19 @@ describe("the fade under a panorama's own tripod", () => {
     }
   });
 
-  it("covers a patch that is narrower inside than out, both well short of the horizon", () => {
-    expect(NADIR_INNER_DEG).toBeLessThan(NADIR_OUTER_DEG);
-    expect(NADIR_OUTER_DEG).toBeLessThan(60);
-    const nadir = createScanMaterial(new CubeTexture()).uniforms.uNadir.value as Vector3;
-    expect(nadir.x).toBeCloseTo(cos(NADIR_OUTER_DEG));
-    expect(nadir.y).toBeCloseTo(cos(NADIR_INNER_DEG));
-    // The cosine grows towards straight down, so the fade runs from the outer angle's to the inner's.
-    expect(nadir.x).toBeLessThan(nadir.y);
+  // Measured by eye on a live scan: the blur under the tripod reached about 27° from straight down.
+  it("covers in full the floor the photograph blurs, out to 27° from straight down", () => {
+    for (let degrees = 0; degrees <= 27; degrees += 1) expect(depthAt(degrees)).toBe(1);
   });
 
-  it("scales a panorama's weight, so one that saw the floor from the side takes over", () => {
+  // At a tripod 1.4 m up, 35° is 1 m out from its foot: past that the panorama's own picture is sharp.
+  it("leaves the panorama's sharp picture alone past 35° from straight down, and everything above", () => {
+    for (let degrees = 35; degrees <= 180; degrees += 5) expect(depthAt(degrees)).toBe(0);
+  });
+
+  it("is what the shader runs, for every panorama it blends", () => {
     const { fragmentShader } = createScanMaterial(new CubeTexture());
-    expect(fragmentShader).toContain("base *= 1.0 - uNadir.z * smoothstep(uNadir.x, uNadir.y, -along.y);");
+    expect(fragmentShader).toContain(`nadir = uNadir.z * ${NADIR_DEPTH};`);
+    for (let i = 0; i < 4; i++) expect(fragmentShader).toContain(`m[${i}], n[${i}]);`);
   });
 });

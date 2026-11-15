@@ -42,7 +42,7 @@ import { ControlsHint } from "./hint-card";
 import { noticeOf } from "./notice";
 import { readPalette } from "./palette";
 import { joinRefusal, joinScan } from "./scan-join";
-import { fillOn, NADIR_FADE } from "./scan-fill";
+import { fillScan } from "./scan-fill";
 import { scanGround } from "./scan-ground";
 import { meshSolid } from "./scan-solid";
 import { buildFloorGroup, disposeGroup, type RoomTone } from "./scene";
@@ -489,7 +489,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       }
       const ground = scanGround(placed.level.floor, meshSolid(tree), join.heights);
       // The blurred patch under each scan position is painted from a panorama that saw that floor from the side (scan-fill.ts).
-      view.setNadirFade(fillOn() ? NADIR_FADE : 0);
+      const unfill = fillScan(view);
       const pieces = new Group();
       pieces.name = "run-pieces";
       // The scan's picture needs no light; the guards, cameras and doors do.
@@ -532,7 +532,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         },
         dispose() {
           pieces.removeFromParent();
-          view.setNadirFade(0);
+          unfill();
         },
       };
     };
