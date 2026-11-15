@@ -4,8 +4,8 @@
 // a card at the left of the view, clear of the middle the player looks
 // through, big enough to read at a glance, each control ticked off as it is
 // tried. It fades once the player has walked and looked about (hint.ts);
-// under reduced motion it goes at once. Shift is a walk, as the view's own
-// line of keys calls it: slower, and no quieter to the engine.
+// under reduced motion it goes at once. There is no walk key (issue 189):
+// WASD, the mouse and hold E are the whole of it.
 import { Check } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -28,7 +28,6 @@ export function ControlsHint({ phase, ticks, dragToLook }: { phase: HintPhase; t
       <ul className="grid grid-cols-[auto_1fr_auto] items-center gap-x-4 gap-y-3 text-base text-text-1">
         <Row done={ticks.move} keys={<><Cap>W</Cap><Cap>A</Cap><Cap>S</Cap><Cap>D</Cap></>}>move</Row>
         <Row done={ticks.look} keys={<Cap wide>{dragToLook ? "Drag" : "Mouse"}</Cap>}>look around</Row>
-        <Row done={ticks.sneak} keys={<Cap wide>Shift</Cap>}>walk</Row>
         <Row done={ticks.use} keys={<>hold <Cap>E</Cap></>}>at doors, to pick the lock</Row>
       </ul>
     </div>
