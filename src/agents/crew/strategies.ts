@@ -4,12 +4,16 @@
 // the guard roster and the security profile, never the floor (SPEC §4.5).
 // Live, the fast model answers within LLM_TIMEOUT_MS; in fake mode, on a
 // timeout or on a failure, the recorded strategies answer, and the answer
-// says so. Every strategy is checked against the manifest: one naming an
-// entry or zone the level does not have is dropped with a reason.
+// says so. A building with no recording (a showcase kit building, whose level
+// lives in memory and may not enter the repo, issue 205) gets strategies worked
+// out from its manifest's entries instead (`derivedStrategies`), never written
+// down. Every strategy is checked against the manifest: one naming an entry or
+// zone the level does not have is dropped with a reason.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { readLevel } from "@/agents/builder/live-levels";
+import { isFixtureBuilding } from "@/agents/builder/cache";
 import { defaultMissionId } from "@/agents/builder/missions";
 import { structuredCall, type StructuredAnswer, type StructuredCallOptions } from "@/adapters/llm";
 import { Strategy, StrategySet, type DroppedStrategy, type LevelManifest } from "@/domain";
@@ -42,6 +46,8 @@ export interface StrategiesAnswer {
   recorded: boolean;
   /** Why the recording answered: structuredCall's reason, or "error" when no live strategy survived the clamp. */
   reason?: StructuredAnswer<StrategySet>["reason"];
+  /** True when the stand-in was `derivedStrategies` (no recording for the building), not a recording. */
+  derived?: boolean;
 }
 
 export interface StrategiesOptions {
@@ -68,6 +74,24 @@ export async function loadStrategyRecording(
     throw error;
   }
   return StrategyRecording.parse(JSON.parse(raw));
+}
+
+/**
+ * Five strategies worked out from the manifest alone, for a building with no
+ * recording (issue 205): its first two ways in, each way of choosing a route,
+ * and the three tempers, so the batch still plays a spread of attempts when the
+ * model doesn't answer. Deterministic, so the counts hold from run to run.
+ */
+export function derivedStrategies(manifest: LevelManifest): Strategy[] {
+  const [first, second = first] = manifest.entries.map((e) => e.id);
+  if (!first) return [];
+  return [
+    { id: "fast", name: "In and out fast", entryId: first, exitId: first, timing: "immediate", route: "shortest", via: [], risk: "high", rationale: "The shortest way there and back, before anyone looks." },
+    { id: "patient", name: "Wait out the round", entryId: first, exitId: first, timing: "wait-for-round", route: "shortest", via: [], risk: "low", rationale: "Let the guards pass, then take the short way." },
+    { id: "cameras", name: "Keep off the cameras", entryId: first, exitId: second, timing: "immediate", route: "avoid-cameras", via: [], risk: "medium", rationale: "A longer way round, out of the cameras' sight." },
+    { id: "quiet", name: "Through the quiet suites", entryId: second, exitId: second, timing: "wait-for-round", route: "quiet-zones", via: [], risk: "low", rationale: "Through the vacant suites, where nobody walks at night." },
+    { id: "bold", name: "Sprint past the cameras", entryId: second, exitId: first, timing: "immediate", route: "avoid-cameras", via: [], risk: "high", rationale: "Out of the cameras' sight, and fast where it can't be." },
+  ];
 }
 
 /**
@@ -151,10 +175,16 @@ export async function proposeStrategies(
   const cached = missionId ? await readLevel(buildingId, missionId, options.levelsDir) : null;
   if (!cached) return null;
   const { manifest } = cached;
+  // Set by the stand-in, read after the call (an object, so the compiler sees it can change).
+  const stand = { derived: false };
   const fake = async (): Promise<StrategySet> => {
     const file = await loadStrategyRecording(buildingId, options.fixturesDir);
-    if (!file) throw new NoRecordingError(`no recorded crew strategies for "${buildingId}"`);
-    return { strategies: file.strategies };
+    if (file) return { strategies: file.strategies };
+    // No recording: a fixture building must have one; any other (a showcase kit building) gets the derived set.
+    const strategies = isFixtureBuilding(buildingId) ? [] : derivedStrategies(manifest);
+    if (strategies.length === 0) throw new NoRecordingError(`no recorded crew strategies for "${buildingId}"`);
+    stand.derived = true;
+    return { strategies };
   };
   const context: StrategyContext = { ...crewContext(manifest), entries: manifest.entries.map((e) => e.id) };
   const answer = await structuredCall(StrategySet, strategiesMessages(context), {
@@ -169,14 +199,22 @@ export async function proposeStrategies(
     // Every live strategy named an id the level does not have: the recording
     // stands in, as for a failed call, and the live drops stay reported.
     const file = await loadStrategyRecording(buildingId, options.fixturesDir);
-    if (file) {
-      const recorded = clampStrategies(manifest, file.strategies);
-      return { strategies: recorded.strategies, dropped: [...clamped.dropped, ...recorded.dropped], recorded: true, reason: "error" };
+    const standIn = file?.strategies ?? (isFixtureBuilding(buildingId) ? null : derivedStrategies(manifest));
+    if (standIn && standIn.length > 0) {
+      const recorded = clampStrategies(manifest, standIn);
+      return {
+        strategies: recorded.strategies,
+        dropped: [...clamped.dropped, ...recorded.dropped],
+        recorded: true,
+        reason: "error",
+        ...(!file && { derived: true }),
+      };
     }
   }
   return {
     ...clamped,
     recorded: answer.recorded,
     ...(answer.reason && { reason: answer.reason }),
+    ...(answer.recorded && stand.derived && { derived: true }),
   };
 }

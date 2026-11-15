@@ -55,8 +55,8 @@ export function demoSetups(buildingId: string): readonly DemoSetup[] {
   return DEMO[buildingId] ?? [];
 }
 
-/** True when `setup` is one of the prepared setups, unchanged (its name included). */
-export function isDemoSetup(setup: OwnerSetup): boolean {
+/** True when `setup` is one of the prepared setups (`demos`, F1's by default), unchanged (its name included). */
+export function isDemoSetup(setup: OwnerSetup, demos: readonly DemoSetup[] = demoSetups(setup.buildingId)): boolean {
   const json = JSON.stringify(setup);
-  return demoSetups(setup.buildingId).some((d) => JSON.stringify(d.setup) === json);
+  return demos.some((d) => JSON.stringify(d.setup) === json);
 }

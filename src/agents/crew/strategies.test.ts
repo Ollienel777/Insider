@@ -8,14 +8,18 @@ import { LevelManifest, type Strategy } from "@/domain";
 import type { Fallback } from "@/lib/fallback";
 import cached from "../../../data/levels/F1.romaine-1974.json";
 import { POST } from "../../app/api/crew/strategies/route";
+import { clearKitLevels, levelKey, store } from "@/agents/builder/live-levels";
+import type { CachedLevel } from "@/agents/builder/cache";
 import {
   clampStrategies,
   crewContext,
   loadStrategyRecording,
+  NoRecordingError,
   proposeStrategies,
   STRATEGIES_PROMPT_HEAD,
   strategiesMessages,
 } from "./index";
+import { derivedStrategies } from "./strategies";
 
 const manifest = LevelManifest.parse(structuredClone(cached));
 
@@ -92,6 +96,26 @@ describe("proposeStrategies", () => {
     expect(answer.strategies).toHaveLength(5);
     const recording = (await loadStrategyRecording("F1"))!;
     expect(answer.strategies).toEqual(recording.strategies);
+  });
+
+  // Issue 205: a showcase kit building has no recording (nothing of it may enter the repo), so a stand-in is worked out.
+  it("answers a kit building with no recording with the derived strategies, all legal, and says so", async () => {
+    // The fictional test kit building, on F1's manifest held in memory as an on-demand level is.
+    const kit = { manifest: { ...manifest, buildingId: "900101" }, trace: {} } as unknown as CachedLevel;
+    store.set(levelKey("900101", manifest.mission.id), { status: "built", level: kit });
+    try {
+      const answer = (await proposeStrategies("900101", { missionId: manifest.mission.id }))!;
+      expect(answer).toMatchObject({ recorded: true, reason: "fake mode", derived: true, dropped: [] });
+      expect(answer.strategies).toEqual(derivedStrategies(kit.manifest));
+      expect(new Set(answer.strategies.map((s) => s.id)).size).toBe(5);
+      expect(clampStrategies(kit.manifest, answer.strategies).dropped).toEqual([]);
+    } finally {
+      clearKitLevels();
+    }
+  });
+
+  it("still refuses a fixture building with no recording: a fixture's stand-in is recorded", async () => {
+    await expect(proposeStrategies("F2")).rejects.toBeInstanceOf(NoRecordingError);
   });
 
   it("is null for a building with no cached level", async () => {

@@ -27,6 +27,8 @@ export type OwnerBatch =
       summary: BatchSummary;
       recorded: boolean;
       reason?: string;
+      /** The stand-in was the rule-based set (no recording for the building, issue 205). */
+      derived?: boolean;
       ms: number;
     }
   | { status: "error"; message: string };
@@ -88,6 +90,7 @@ export function useOwnerBatch(manifest: LevelManifest | null, floor: FloorGraph 
             summary: summariseBatch(result),
             recorded: answer.recorded,
             ...(answer.reason && { reason: answer.reason }),
+            ...(answer.derived && { derived: true }),
             ms: Math.round(performance.now() - started),
           });
         })
