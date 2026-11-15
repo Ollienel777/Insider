@@ -30,6 +30,7 @@ import {
   PerspectiveCamera,
   RedFormat,
   RGBAFormat,
+  RGFormat,
   Scene,
   Vector3,
   WebGLCubeRenderTarget,
@@ -47,6 +48,7 @@ import type { Rgb } from "@/lib/scan-mesh/exposure";
 import type { ExposureSource } from "./exposure-match";
 import { alignToCube, CUBE_LOOKUP_FLIP, panoDistance, panoWeights } from "@/lib/scan-mesh/skybox";
 import type { DecodeReply, DecodeRequest } from "./decode-worker";
+import { createKindMaterial, DepthCombiner } from "./depth-clean";
 import { createDistanceMaterial, SLOTS } from "./projection";
 
 /** Panoramas blended for one standpoint under the nearest rule. */
@@ -66,6 +68,8 @@ const GAIN_RATE = 1.5;
 const HORIZON = 1.2;
 /** The small cube's face when it has to be made from the full-size bytes, pixels. */
 const LOW_SIZE = 512;
+/** A panorama's tiny cube, pixels a face: its light alone, for matching one panorama's brightness to another's where they meet. */
+const TINY_SIZE = 16;
 /** A depth cube's face, pixels: a third of a degree each, plenty to tell in front from behind. */
 const DEPTH_SIZE = 256;
 /** Strips a full-size face goes to the GPU in. */
@@ -98,6 +102,9 @@ interface Entry {
   low: WebGLTexture | null;
   lowCube: CubeTexture | null;
   lowStarted: boolean;
+  /** The tiny cube: the panorama's light without its detail (sphere-material.ts matches brightness with it). */
+  tiny: WebGLTexture | null;
+  tinyCube: CubeTexture | null;
   depth: WebGLCubeRenderTarget | null;
   sharp: WebGLTexture | null;
   sharpCube: CubeTexture | null;
@@ -111,6 +118,7 @@ interface Entry {
 interface LowJob {
   entry: Entry;
   images: ImageBitmap[];
+  tinyImages: ImageBitmap[];
   raw: WebGLTexture | null;
   next: number;
 }
@@ -209,6 +217,14 @@ export class PanoStore {
   private readonly depthMaterial = createDistanceMaterial();
   private readonly depthCamera = new PerspectiveCamera(90, 1, 0.05, 4000);
   private readonly far: Mesh;
+  /** The mesh's depth, before it is made one with the sheets' (depth-clean.ts); one, reused. */
+  private rawDepth: WebGLCubeRenderTarget | null = null;
+  /** The walls' sheets (lib/scan-mesh/panes.ts) and the floor and ceiling planes, for where the mesh found nothing; their depth, one cube reused. */
+  private readonly sheetScene = new Scene();
+  private readonly sheetFar: Mesh;
+  private sheetDepth: WebGLCubeRenderTarget | null = null;
+  private combiner: DepthCombiner | null = null;
+  private readonly sheetMaterials: { tall?: ShaderMaterial; low?: ShaderMaterial; level?: ShaderMaterial } = {};
   private readonly abort = new AbortController();
   /** Called when a face link is refused: the engine fetches new links. */
   onStale: (() => void) | null = null;
@@ -252,6 +268,10 @@ export class PanoStore {
     farMaterial.side = BackSide;
     this.far = new Mesh(new BoxGeometry(2000, 2000, 2000), farMaterial);
     this.depthScene.add(this.far);
+    const sheetFar = createDistanceMaterial();
+    sheetFar.side = BackSide;
+    this.sheetFar = new Mesh(new BoxGeometry(2000, 2000, 2000), sheetFar);
+    this.sheetScene.add(this.sheetFar);
     try {
       this.worker = new Worker(new URL("./decode-worker.ts", import.meta.url), { type: "module" });
       this.worker.onmessage = (event: MessageEvent<DecodeReply>) => {
@@ -326,6 +346,8 @@ export class PanoStore {
         low: null,
         lowCube: null,
         lowStarted: false,
+        tiny: null,
+        tinyCube: null,
         depth: null,
         sharp: null,
         sharpCube: null,
@@ -360,7 +382,7 @@ export class PanoStore {
       if (e.sharpStage === "ready" || e.sharpStage === "leaving") out.sharp++;
       if (e.sharpStage === "working") out.sharpLoading++;
       // Six faces of half floats (one channel, or four where the GPU can't render to one), and their depth buffer.
-      if (e.depth) out.gpu += DEPTH_SIZE * DEPTH_SIZE * 6 * (this.depthTexel + 4);
+      if (e.depth) out.gpu += DEPTH_SIZE * DEPTH_SIZE * 6 * (this.depthTexel * 2 + 4);
     }
     out.gpu += this.lowTexels * 4;
     // Every sharp cube made so far, in use or pooled, with its smaller copies.
@@ -393,6 +415,13 @@ export class PanoStore {
   /** More surface for the panoramas' occlusion to be seen against (a closed hole hides what is behind it, like the wall it stands for). */
   addOccluder(geometry: BufferGeometry): void {
     this.depthScene.add(new Mesh(geometry, this.depthMaterial));
+    this.renderDepthsAgain();
+  }
+
+  /** Surfaces that stand in only where the mesh found nothing: the walls' sheets, the floor and ceiling planes. Marked as glass in the depth. */
+  addSheets(geometry: BufferGeometry, kind: "tall" | "low" | "level"): void {
+    this.sheetMaterials[kind] ??= createKindMaterial(kind === "tall" ? 1 : kind === "low" ? 0.75 : 0.5);
+    this.sheetScene.add(new Mesh(geometry, this.sheetMaterials[kind]));
     this.renderDepthsAgain();
   }
 
@@ -507,6 +536,7 @@ export class PanoStore {
         u[`uPano${slot}`].value = e?.sharpCube ?? blank;
         u[`uLow${slot}`].value = e?.lowCube ?? blank;
         u[`uDepth${slot}`].value = e?.depth?.texture ?? blank;
+        if (u[`uTiny${slot}`]) u[`uTiny${slot}`].value = e?.tinyCube ?? blank;
         (u.uPanoShare.value as number[])[slot] = e ? e.share : 0;
         (u.uPanoSharp.value as number[])[slot] = e?.sharpCube ? e.sharpMix : 0;
         if (u.uPanoOn) (u.uPanoOn.value as number[])[slot] = e ? standingOn(panoDistance(eye, e.pano.position)) : 0;
@@ -634,7 +664,9 @@ export class PanoStore {
       }
       const size = images[0].width;
       if (!images.every((i) => i.width === size && i.height === size)) throw new Error("faces differ in size");
-      this.lowJobs.push({ entry: e, images, raw: null, next: 0 });
+      const tinyImages: ImageBitmap[] = [];
+      for (const image of images) tinyImages.push(await createImageBitmap(image, { ...BITMAP, resizeWidth: TINY_SIZE, resizeHeight: TINY_SIZE, resizeQuality: "high" }));
+      this.lowJobs.push({ entry: e, images, tinyImages, raw: null, next: 0 });
     } catch {
       for (const image of images) image.close();
       if (!this.disposed) e.lowState = "failed";
@@ -814,6 +846,16 @@ export class PanoStore {
       low.next++;
       if (low.next === 6) {
         this.lowJobs.shift();
+        const tiny = this.allocate(TINY_SIZE, false);
+        state.bindTexture(gl.TEXTURE_CUBE_MAP, tiny);
+        this.unpack(gl);
+        low.tinyImages.forEach((image, face) => {
+          gl.texSubImage2D(gl.TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, image);
+          image.close();
+        });
+        state.unbindTexture();
+        low.entry.tiny = tiny;
+        low.entry.tinyCube = this.wrap(tiny);
         low.entry.low = low.raw;
         low.entry.lowCube = this.wrap(low.raw);
         this.depthQueue.push(low.entry);
@@ -871,37 +913,57 @@ export class PanoStore {
     return true;
   }
 
-  /** How far the mesh is from `origin` in every direction, as a cube map. */
+  /** How far the mesh is from `origin` in every direction, as a cube map; with the walls' sheets where it is seen through or found nothing (depth-clean.ts). */
   private renderDepth(origin: Vector3): WebGLCubeRenderTarget {
     const renderer = this.renderer;
     // One channel is all it needs, where the GPU can render to one.
     const single = renderer.extensions.has("EXT_color_buffer_float");
     this.depthTexel = single ? 2 : 8;
-    const target = new WebGLCubeRenderTarget(DEPTH_SIZE, {
-      type: HalfFloatType,
-      format: single ? RedFormat : RGBAFormat,
-      minFilter: LinearFilter,
-      magFilter: LinearFilter,
-      generateMipmaps: false,
-      depthBuffer: true,
-    });
+    const make = (size: number, two = false) =>
+      new WebGLCubeRenderTarget(size, {
+        type: HalfFloatType,
+        format: single ? (two ? RGFormat : RedFormat) : RGBAFormat,
+        minFilter: LinearFilter,
+        magFilter: LinearFilter,
+        generateMipmaps: false,
+        depthBuffer: true,
+      });
     const before = renderer.getRenderTarget();
     const face = renderer.getActiveCubeFace();
     const level = renderer.getActiveMipmapLevel();
     this.depthMaterial.uniforms.uOrigin.value.copy(origin);
-    (this.far.material as ShaderMaterial).uniforms.uOrigin.value.copy(origin);
-    this.far.position.copy(origin);
-    this.far.updateMatrixWorld();
+    for (const material of Object.values(this.sheetMaterials)) material.uniforms.uOrigin.value.copy(origin);
+    for (const far of [this.far, this.sheetFar]) {
+      (far.material as ShaderMaterial).uniforms.uOrigin.value.copy(origin);
+      far.position.copy(origin);
+      far.updateMatrixWorld();
+    }
     const camera = this.depthCamera;
     camera.position.copy(origin);
-    CUBE_CAMERAS.forEach(([look, up], i) => {
-      camera.up.copy(up);
-      camera.lookAt(origin.x + look.x, origin.y + look.y, origin.z + look.z);
-      camera.updateMatrixWorld();
-      renderer.setRenderTarget(target, i);
-      renderer.clear();
-      renderer.render(this.depthScene, camera);
-    });
+    const faces = (target: WebGLCubeRenderTarget, scene: Scene) => {
+      CUBE_CAMERAS.forEach(([look, up], i) => {
+        camera.up.copy(up);
+        camera.lookAt(origin.x + look.x, origin.y + look.y, origin.z + look.z);
+        camera.updateMatrixWorld();
+        renderer.setRenderTarget(target, i);
+        renderer.clear();
+        renderer.render(scene, camera);
+      });
+    };
+    let target: WebGLCubeRenderTarget;
+    if (this.sheetScene.children.length > 1) {
+      // The mesh's depth, the sheets', and the two as one: the sheets where the mesh found nothing.
+      this.rawDepth ??= make(DEPTH_SIZE);
+      this.sheetDepth ??= make(DEPTH_SIZE, true);
+      this.combiner ??= new DepthCombiner();
+      faces(this.rawDepth, this.depthScene);
+      faces(this.sheetDepth, this.sheetScene);
+      target = this.combiner.target(DEPTH_SIZE, single);
+      this.combiner.combine(this.rawDepth.texture, this.sheetDepth.texture, target, origin, camera, faces);
+    } else {
+      target = make(DEPTH_SIZE);
+      faces(target, this.depthScene);
+    }
     renderer.setRenderTarget(before, face, level);
     return target;
   }
@@ -922,6 +984,7 @@ export class PanoStore {
       for (const job of this.lowJobs) {
         if (job.raw) gl.deleteTexture(job.raw);
         for (const image of job.images.slice(job.next)) image.close();
+        for (const image of job.tinyImages) image.close();
       }
       this.lowJobs = [];
       if (this.sharpJob) {
@@ -942,6 +1005,8 @@ export class PanoStore {
       if (e.sharp) this.discard(e.sharp);
       if (e.lowCube) this.renderer.properties.remove(e.lowCube);
       if (e.low) gl.deleteTexture(e.low);
+      if (e.tinyCube) this.renderer.properties.remove(e.tinyCube);
+      if (e.tiny) gl.deleteTexture(e.tiny);
       e.depth?.dispose();
       e.lowBytes = null;
       e.sharpBytes = null;
@@ -953,6 +1018,11 @@ export class PanoStore {
       return false;
     }
     if (this.depthMaterial) {
+      this.rawDepth?.dispose();
+      this.sheetDepth?.dispose();
+      this.combiner?.dispose();
+      (this.sheetFar.material as ShaderMaterial).dispose();
+      for (const material of Object.values(this.sheetMaterials)) material.dispose();
       this.depthMaterial.dispose();
       (this.far.material as ShaderMaterial).dispose();
       this.far.geometry.dispose();

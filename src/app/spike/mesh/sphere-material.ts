@@ -30,7 +30,7 @@
 // its depth found nothing. Behind both is the mesh itself, so no gap ever
 // shows nothing. When the lead changes, the new one comes in over a few
 // frames as a fine screen of pixels (`uSolid`) rather than at a stroke.
-import { DoubleSide, ShaderMaterial, type IUniform } from "three";
+import { DoubleSide, ShaderMaterial, Vector3, type IUniform } from "three";
 import type { PhotoUniforms } from "./photo-material";
 
 /** The angle between a vertex's depth samples, radians: about a degree, the sphere's own grid. */
@@ -55,6 +55,10 @@ varying vec3 vDirection;
 varying float vDepth;
 varying vec3 vWorld;
 varying float vJump;
+/** Across the sphere toward the far side of a jump in depth. */
+varying vec3 vFar;
+/** 1 where the depth is a wall's sheet standing in for glass (depth-clean.ts's green). */
+varying float vGlass;
 
 float depthAt(vec3 direction) {
   return clamp(texture(uDepth${slot}, direction).r, ${DEPTH_NEAR.toFixed(2)}, ${DEPTH_FAR.toFixed(1)});
@@ -79,6 +83,10 @@ void main() {
     most = max(most, s[k]);
   }
   vJump = most / least;
+  // Toward the far side: the depth's slope across the nine samples (before they are sorted).
+  float gx = (s[2] + s[5] + s[8]) - (s[0] + s[3] + s[6]);
+  float gy = (s[6] + s[7] + s[8]) - (s[0] + s[1] + s[2]);
+  vFar = across * gx + up * gy;
   // The median: sorted, the middle one.
   for (int a = 0; a < 8; a++) {
     for (int b = 0; b < 8 - a; b++) {
@@ -102,6 +110,7 @@ void main() {
   // A vertex whose own sample is with the median keeps a share of it: detail survives where the depth is steady.
   depth = mix(depth, own, 0.35 * (1.0 - smoothstep(0.02, 0.08, abs(own - median) / median)));
   vDepth = depth;
+  vGlass = texture(uDepth${slot}, direction).g;
   vec4 world = vec4(uPanoPos[${slot}] + direction * depth, 1.0);
   vWorld = world.xyz;
   // Behind the lead: farther along the eye's own line to it, so it lands on the same pixel.
@@ -114,32 +123,103 @@ void main() {
 const fragment = (slot: number) => /* glsl */ `
 uniform mat3 uPanoInv[4];
 uniform vec3 uPanoGain[4];
+uniform vec3 uPanoPos[4];
 uniform float uPanoSharp[4];
+uniform float uPanoShare[4];
 uniform samplerCube uPano${slot};
 uniform samplerCube uLow${slot};
+uniform samplerCube uTiny${slot};
+uniform samplerCube uTiny${1 - slot};
+uniform samplerCube uDepth${1 - slot};
+/** 1 to even out the two panoramas' light where they meet. */
+uniform float uMatch;
 /** How much of the sphere is drawn: 1 all of it, less a screen of its pixels (the lead coming in). */
 uniform float uSolid;
 varying vec3 vDirection;
 varying vec3 vWorld;
 varying float vJump;
 varying float vDepth;
+varying vec3 vFar;
+varying float vGlass;
+/** 1: the skin across a jump is drawn, far back, in the colour of the jump's far side; 0: it is left out. */
+uniform float uSkinFill;
+uniform float uBehind;
+/** For debugging: a tint on this sphere's surface, and on its skins. */
+uniform vec3 uTint;
+uniform vec3 uSkinTint;
+uniform float uGlassDebug;
 
 void main() {
   // The skin across a jump in depth: at an edge, and lying along the panorama's own line of sight.
   vec3 normal = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
-  if (vJump > ${JUMP.toFixed(2)} && abs(dot(normal, normalize(vDirection))) < ${SKIN.toFixed(2)}) discard;
+  bool skin = vJump > ${JUMP.toFixed(2)} && abs(dot(normal, normalize(vDirection))) < ${SKIN.toFixed(2)};
+  if (skin && uSkinFill < 0.5) discard;
+  // What the eye sees there was hidden from this panorama: the other one's
+  // surface, where it has one, is in front of it (the skin is drawn at the
+  // back of the depth range); else the far side carried across the gap, which
+  // reads as the room beyond going on, not as a shard of the wall in front.
+  gl_FragDepth = skin ? (uBehind > 0.5 ? 0.99995 : 0.9999) : gl_FragCoord.z;
+  vec3 seenDirection = vDirection;
+  if (skin) {
+    float far = length(vFar);
+    if (far > 1e-5) seenDirection = normalize(vDirection + (vFar / far) * ${(DEPTH_STEP * 3).toFixed(4)});
+  }
   // Where the depth found nothing (a hole in the mesh, a window) there is no surface to draw: what is behind shows.
   if (vDepth > ${(0.97).toFixed(2)} * ${DEPTH_FAR.toFixed(1)}) discard;
   if (uSolid < 1.0) {
     float grain = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453);
     if (grain > uSolid) discard;
   }
-  vec3 lookup = uPanoInv[${slot}] * vDirection;
+  vec3 lookup = uPanoInv[${slot}] * seenDirection;
   float sharp = uPanoSharp[${slot}];
   vec3 colour = sharp >= 1.0 ? textureCube(uPano${slot}, lookup).rgb
     : sharp <= 0.0 ? textureCube(uLow${slot}, lookup).rgb
     : mix(textureCube(uLow${slot}, lookup).rgb, textureCube(uPano${slot}, lookup).rgb, sharp);
-  gl_FragColor = vec4(colour * uPanoGain[${slot}], 1.0);
+  colour *= uPanoGain[${slot}];
+  // Glass: what the panorama saw through it lies on the pane, a little
+  // tinted, with a sheen that grows as the pane is seen edge on.
+  // A floor or a ceiling the scan has a gap in (green 0.5): tiles, in the light round them.
+  float level = smoothstep(0.3, 0.45, vGlass) * (1.0 - smoothstep(0.6, 0.75, vGlass));
+  if (level > 0.01 && abs(normal.y) > 0.8 && vWorld.y > cameraPosition.y + 0.3) {
+    vec3 tile = textureCube(uTiny${slot}, lookup).rgb * uPanoGain[${slot}];
+    float l = dot(tile, vec3(0.333));
+    vec3 base = vec3(0.86, 0.86, 0.84) * clamp(l / 0.8, 0.7, 1.15);
+    vec2 g = abs(fract(vWorld.xz / 0.61) - 0.5);
+    float seam = 1.0 - smoothstep(0.47, 0.49, max(g.x, g.y));
+    vec3 ceiling = base * mix(0.72, 1.0, seam);
+    colour = mix(colour, ceiling, level);
+  }
+  if (vGlass > 0.7) {
+    float pane = smoothstep(0.75, 0.98, vGlass);
+    vec3 toEye = normalize(cameraPosition - vWorld);
+    float facing = abs(dot(normal, toEye));
+    float fresnel = 0.02 + 0.45 * pow(1.0 - facing, 5.0);
+    float streak = 0.5 + 0.5 * sin(dot(vWorld, vec3(1.9, 2.6, 1.9)) * 2.2);
+    vec3 sky = vec3(0.88, 0.92, 0.95);
+    vec3 glassy = colour * vec3(0.95, 0.985, 0.99) * (1.0 - fresnel) + sky * (fresnel + 0.03 * streak * streak);
+    colour = mix(colour, glassy, pane);
+  }
+  // The light, not the detail, is shared with the other panorama by how far
+  // along the eye is from one to the other: its own light is swapped for the
+  // two's blend (each from its tiny cube, so only the broad brightness and
+  // colour move), where the other saw this point too. Both spheres aim at the
+  // same blend, so when the lead changes the light does not.
+  float other = uPanoShare[${1 - slot}];
+  float mine = uPanoShare[${slot}];
+  if (uMatch > 0.5 && other > 0.002) {
+    vec3 own = textureCube(uTiny${slot}, lookup).rgb * uPanoGain[${slot}];
+    vec3 toOther = vWorld - uPanoPos[${1 - slot}];
+    float reach = length(toOther);
+    float seen = textureCube(uDepth${1 - slot}, toOther / max(reach, 1e-4)).r;
+    float sees = smoothstep(0.82, 0.92, seen / max(reach, 1e-3));
+    vec3 theirs = textureCube(uTiny${1 - slot}, uPanoInv[${1 - slot}] * (toOther / max(reach, 1e-4))).rgb * uPanoGain[${1 - slot}];
+    float t = sees * other / max(other + mine, 1e-4);
+    vec3 target = mix(own, theirs, t);
+    vec3 ratio = clamp((target + 0.02) / (own + 0.02), vec3(0.6), vec3(1.6));
+    colour *= ratio;
+  }
+  if (uGlassDebug > 0.5) colour = mix(colour, vec3(1.0, 0.0, 1.0), 0.6 * vGlass);
+  gl_FragColor = vec4(colour * (skin ? uSkinTint : uTint), 1.0);
 }
 `;
 
@@ -150,7 +230,7 @@ void main() {
  * `uSolid` how far in the lead has come.
  */
 export function createSphereMaterial(panos: PhotoUniforms, slot: 0 | 1): ShaderMaterial {
-  const uniforms: Record<string, IUniform> = { ...panos, uBehind: { value: 0 }, uSolid: { value: 1 } };
+  const uniforms: Record<string, IUniform> = { ...panos, uBehind: { value: 0 }, uSolid: { value: 1 }, uMatch: { value: 1 }, uSkinFill: { value: 0 }, uTint: { value: new Vector3(1, 1, 1) }, uSkinTint: { value: new Vector3(1, 1, 1) }, uGlassDebug: { value: 0 } };
   return new ShaderMaterial({
     uniforms,
     vertexShader: vertex(slot),

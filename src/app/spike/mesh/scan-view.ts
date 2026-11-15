@@ -274,6 +274,8 @@ export class ScanView {
   /** For the fans that close small holes: a step farther behind, so a plane's patch over the same hole wins. */
   private readonly fanMaterial: ShaderMaterial;
   private fillMeshes: Mesh[] = [];
+  /** The floor and ceiling planes (`addLevels`): where a panorama's depth found nothing up or down, these are its depth. */
+  private levelPlanes: BufferGeometry[] = [];
   private patchWait = 0;
   /**
    * The planes' patches: where each one's own texture has got to, the size
@@ -565,6 +567,18 @@ export class ScanView {
     this.scene.add(this.wire);
   }
 
+  /** For the console: the walls' sheets drawn over the view, tall red and low yellow (lib/scan-mesh/panes.ts). */
+  showSheets(): void {
+    for (const [geometry, kind] of this.sheetGeometries) {
+      const material = new MeshBasicMaterial({ color: kind === "tall" ? 0xff2020 : 0xffd020, wireframe: true, depthTest: false });
+      const mesh = new Mesh(geometry, material);
+      mesh.renderOrder = 100;
+      this.scene.add(mesh);
+    }
+  }
+
+  private sheetGeometries: [BufferGeometry, "tall" | "low"][] = [];
+
   /** The current view's coverage and doubles, from a small copy rendered in the debug looks (lib/scan-mesh/pose.ts's `viewStats`). */
   measure(): ViewStats {
     if (this.groups.length > 0) {
@@ -691,6 +705,7 @@ export class ScanView {
         return world.bvh.raycastFirst(sight, DoubleSide, 0, Math.max(0, reach - 0.3)) !== null;
       };
       this.panos.setPanos(manifest.panos);
+      for (const plane of this.levelPlanes) this.panos.addSheets(plane, "level");
 
       this.loadDetail(manifest.detail);
       state.phase = "ready";
@@ -857,6 +872,14 @@ export class ScanView {
       this.groups = reply.groups;
     }
     this.useFill(reply.fans, reply.stats.holes);
+    for (const kind of ["tall", "low"] as const) {
+      if (reply.sheets[kind].length === 0) continue;
+      const sheets = new BufferGeometry();
+      sheets.setAttribute("position", new BufferAttribute(reply.sheets[kind], 3));
+      sheets.computeBoundingSphere();
+      this.panos?.addSheets(sheets, kind);
+      this.sheetGeometries.push([sheets, kind]);
+    }
     if (this.fill && reply.patches.length > 0) this.usePatches(reply.patches, reply.patchPositions, reply.patchUvs);
     this.panos?.setGeometry(geometry);
     const repair = this.state.detail.repair;
@@ -910,6 +933,7 @@ export class ScanView {
       plane.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
       plane.computeBoundingSphere();
       this.addFill(new Mesh(plane, this.fillMaterial));
+      this.levelPlanes.push(plane);
     }
   }
 

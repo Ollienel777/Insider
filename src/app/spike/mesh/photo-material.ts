@@ -54,6 +54,7 @@ export function createPhotoUniforms(blank: CubeTexture): PhotoUniforms {
     uniforms[`uPano${i}`] = { value: blank };
     uniforms[`uLow${i}`] = { value: blank };
     uniforms[`uDepth${i}`] = { value: blank };
+    uniforms[`uTiny${i}`] = { value: blank };
   }
   return uniforms;
 }

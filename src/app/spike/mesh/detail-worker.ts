@@ -12,6 +12,7 @@
 import { closeHoles } from "@/lib/scan-mesh/holes";
 import { inpaint } from "@/lib/scan-mesh/inpaint";
 import { isAllowedAssetUrl } from "@/lib/scan-mesh/manifest";
+import { wallSheets, type WallSheets } from "@/lib/scan-mesh/panes";
 import { fillPlanes, fitPlanes, flattenPlanes, type PlanePatch } from "@/lib/scan-mesh/planes";
 import { dropTriangles, findFloaters, findShards, SHARD_SCRAP } from "@/lib/scan-mesh/shards";
 import { seenWork } from "./seen";
@@ -82,6 +83,8 @@ export type DetailReply =
       patchPositions: Float32Array;
       patchUvs: Float32Array;
       patches: PlanePatch[];
+      /** The upright planes as whole sheets, gaps spanned (lib/scan-mesh/panes.ts): unindexed triangles. */
+      sheets: WallSheets;
       stats: RepairStats;
     }
   /** A picture's gaps filled; null when it had nothing to fill them from. */
@@ -358,6 +361,7 @@ async function repair(
   );
   work.done();
   const afterFill = performance.now();
+  const sheets = wallSheets(vertices, kept.welded, fit, panos);
   const trimmed = dropTriangles(kept.index, kept.welded, kept.groups, fill.replaced);
   groups = trimmed.groups;
   const closed = closeHoles(vertices, kept.welded);
@@ -373,6 +377,7 @@ async function repair(
       patchPositions: fill.positions,
       patchUvs: fill.uvs,
       patches: fill.patches,
+      sheets,
       stats: {
         shards: dropped + floaters.count,
         found,
@@ -391,7 +396,7 @@ async function repair(
         steps: [(afterSeen - started) / 1000, (afterFit - afterSeen) / 1000, (afterFill - afterFit) / 1000, (performance.now() - afterFill) / 1000],
       },
     },
-    [positions.buffer, trimmed.index.buffer, closed.triangles.buffer, fill.positions.buffer, fill.uvs.buffer],
+    [positions.buffer, trimmed.index.buffer, closed.triangles.buffer, fill.positions.buffer, fill.uvs.buffer, sheets.tall.buffer, sheets.low.buffer],
   );
 }
 
