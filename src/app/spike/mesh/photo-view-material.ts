@@ -37,9 +37,33 @@ uniform vec3 uShift;
 varying vec3 vDirection;
 /** Where the panorama looks just past this vertex's edge, on its far side: what a stretched triangle is painted with. */
 varying vec3 vBack;
+varying float vConfidence;
 
 float depthAt(vec3 direction) {
   return clamp(texture(uDepth${slot}, direction).r, ${DEPTH_NEAR.toFixed(2)}, ${DEPTH_FAR.toFixed(1)});
+}
+
+/**
+ * How far the depth round a vertex is from flat, and the mean inverse depth
+ * round it. Across any plane the inverse depth is linear in the direction,
+ * so for samples opposite each other on a ring the mean of their inverse
+ * depths is the vertex's own: a floor seen at a slant counts as flat, as it
+ * is. x: the worst of four such pairs, as a part of the vertex's inverse
+ * depth (0 on a plane, large at an edge or a thin thing); y: the mean
+ * inverse depth of the ring's eight samples.
+ */
+vec2 ring(vec3 direction, vec3 across, vec3 up, float radius, float own) {
+  float worst = 0.0;
+  float total = 0.0;
+  for (int k = 0; k < 4; k++) {
+    float a = float(k) * 0.7853982;
+    vec3 side = (across * cos(a) + up * sin(a)) * radius;
+    float a1 = 1.0 / depthAt(direction + side);
+    float a2 = 1.0 / depthAt(direction - side);
+    worst = max(worst, abs(0.5 * (a1 + a2) * own - 1.0));
+    total += a1 + a2;
+  }
+  return vec2(worst, total / 8.0);
 }
 
 void main() {
@@ -83,6 +107,25 @@ void main() {
   }
   float depth = count > 0.0 ? sum / count : median;
   depth = mix(depth, own, 0.25 * (1.0 - smoothstep(0.02, 0.08, abs(own - median) / median)));
+  // How far this vertex's depth can be trusted to move it: none at a jump in depth or a thin thing
+  // (the samples close round it are not on one plane; glass and reflections, whose depth is noise,
+  // come out the same), rising over a few degrees as the rings farther out agree, so nothing steps.
+  vec2 r1 = ring(direction, across, up, ${(DEPTH_STEP * 1.5).toFixed(4)}, own);
+  vec2 r2 = ring(direction, across, up, ${(DEPTH_STEP * 3).toFixed(4)}, own);
+  vec2 r4 = ring(direction, across, up, ${(DEPTH_STEP * 6).toFixed(4)}, own);
+  float c1 = 1.0 - smoothstep(0.03, 0.12, r1.x);
+  float c2 = 1.0 - smoothstep(0.04, 0.16, r2.x);
+  float c4 = 1.0 - smoothstep(0.05, 0.2, r4.x);
+  float confidence = c1 * mix(1.0, c2, 0.75) * mix(1.0, c4, 0.5);
+  vConfidence = confidence;
+  // Where the depth is not trusted, the vertex moves by the depth of the
+  // wide neighbourhood round it (the mean of the inverse depths, which is
+  // a plane's own across a plane) rather than its own: a thin partition top
+  // or a glass door frame rides with what is round it as one smooth sheet,
+  // instead of waving. Held still outright, as a first try had it, the
+  // still parts sheared against the moving ones wherever they met.
+  float wide = (r2.y + 2.0 * r4.y) / 3.0;
+  depth = 1.0 / mix(wide, 1.0 / depth, confidence);
   vec3 world = uPanoPos[${slot}] + direction * max(depth, ${PARALLAX_NEAR.toFixed(2)}) + uShift;
   gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
 }
@@ -96,8 +139,11 @@ uniform samplerCube uPano${slot};
 uniform samplerCube uLow${slot};
 /** The angle a screen pixel spans, radians. */
 uniform float uPixel;
+/** 1 shows each pixel's confidence in red (debug). */
+uniform float uShowConfidence;
 varying vec3 vDirection;
 varying vec3 vBack;
+varying float vConfidence;
 
 void main() {
   // A triangle stretched across a jump in depth spans far more of the screen than of the panorama:
@@ -109,13 +155,15 @@ void main() {
   vec3 colour = sharp >= 1.0 ? textureCube(uPano${slot}, lookup).rgb
     : sharp <= 0.0 ? textureCube(uLow${slot}, lookup).rgb
     : mix(textureCube(uLow${slot}, lookup).rgb, textureCube(uPano${slot}, lookup).rgb, sharp);
-  gl_FragColor = vec4(colour * uPanoGain[${slot}], 1.0);
+  colour *= uPanoGain[${slot}];
+  if (uShowConfidence > 0.5) colour = mix(colour, vec3(1.0, 0.0, 0.0), 0.6 * (1.0 - vConfidence));
+  gl_FragColor = vec4(colour, 1.0);
 }
 `;
 
 /** The material for the panorama in the store's slot `slot`, drawn alone and whole. `uShift` is set each frame. */
 export function createPhotoViewMaterial(panos: PhotoUniforms, slot: number): ShaderMaterial {
-  const uniforms: Record<string, IUniform> = { ...panos, uShift: { value: new Vector3() }, uPixel: { value: 0.001 } };
+  const uniforms: Record<string, IUniform> = { ...panos, uShift: { value: new Vector3() }, uShowConfidence: { value: 0 }, uPixel: { value: 0.001 } };
   return new ShaderMaterial({
     uniforms,
     vertexShader: vertex(slot),

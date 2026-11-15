@@ -287,6 +287,8 @@ export class ScanView {
   private photoLead = -1;
   private photoFrom = -1;
   private photoFade = 1;
+  /** In the photo view: tint what the depth is not trusted to move (debug, setConfidenceView). */
+  private showConfidence = false;
   private fadeTarget: WebGLRenderTarget | null = null;
   private readonly fadeScene = new Scene();
   private readonly fadeCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -479,6 +481,7 @@ export class ScanView {
     this.photoMeshes.forEach((mesh, i) => (mesh.visible = i === slot));
     const uniforms = (this.photoMeshes[slot].material as ShaderMaterial).uniforms;
     (uniforms.uShift.value as Vector3).set(shift[0], shift[1], shift[2]);
+    uniforms.uShowConfidence.value = this.showConfidence ? 1 : 0;
     const height = target ? target.height : this.renderer.getDrawingBufferSize(new Vector2()).y;
     uniforms.uPixel.value = (this.camera.fov * Math.PI) / 180 / Math.max(1, height);
     this.renderer.setRenderTarget(target);
@@ -651,6 +654,11 @@ export class ScanView {
   }
 
   /** 0 the picture, 1 the coverage, 2 the doubles (projection.ts says what the colours mean). */
+  /** In the photo view: tint red what is held still because its depth is not trusted. */
+  setConfidenceView(on: boolean): void {
+    this.showConfidence = on;
+  }
+
   setDebugView(mode: number): void {
     this.material.uniforms.uDebug.value = mode;
   }
