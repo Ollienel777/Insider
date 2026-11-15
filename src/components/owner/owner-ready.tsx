@@ -102,7 +102,7 @@ export function OwnerReady({
   debriefHref: string;
   /** A showcase kit building (issue 205): its setup lines say so, and its demo pair is worked out from the board. */
   showcase?: boolean;
-  /** Setups stay in this tab's memory, never in storage: a kit building, or a board from a scan (SPEC §4.5, #180). */
+  /** Setups stay in this tab's memory, never in storage: a kit building, or a board from a scan (SPEC §4.5). */
   inMemory?: boolean;
 }) {
   const generated = useMemo(() => placeLevel(manifest, floor, OWNER_SEED), [manifest, floor]);

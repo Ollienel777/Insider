@@ -110,7 +110,7 @@ export function OwnerScreen({
         floor={load.floor}
         debriefHref={debriefHref}
         showcase={scope === "showcase"}
-        // A kit building's level and a scan's board stay out of browser storage (SPEC §4.5, #180), as Run keeps its runs.
+        // A kit building's level and a scan's board stay out of browser storage (SPEC §4.5), as Run keeps its runs.
         inMemory={scope === "showcase" || load.live}
       />
     );

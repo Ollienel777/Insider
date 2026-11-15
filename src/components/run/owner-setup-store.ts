@@ -5,7 +5,7 @@
 // `localStorage` throws when site data is blocked, so it is reached inside the
 // `try`. Writes say whether they landed, so the editor can show the error state.
 // On a showcase building's live scan (issue 205) a setup is held in this tab's
-// memory instead (`inMemory`), never in storage (SPEC §4.5, #180): it goes when
+// memory instead (`inMemory`), never in storage (SPEC §4.5): it goes when
 // the tab closes.
 import { z } from "zod";
 import { OwnerSetup } from "@/domain/owner-setup";
