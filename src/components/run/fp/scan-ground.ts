@@ -144,9 +144,12 @@ export function doorBar(a: Vec, b: Vec, solid: ScanSolid, probeY: number): { cen
 /**
  * The scan's `floor` (the board's own `FloorGraph`) as a `Ground`, over the
  * scan's mesh. `heights` places each node's floor; nodes the mesh has no floor
- * under take the floor's median height.
+ * under take the floor's median height. `leashM` is how far from every scan
+ * position a body may go (`SCAN.leashM` by default; a scan's plan, whose floor
+ * already ends where it was scanned, reaches further).
  */
-export function scanGround(floor: FloorGraph, solid: ScanSolid, heights: ScanHeights): ScanGround {
+export function scanGround(floor: FloorGraph, solid: ScanSolid, heights: ScanHeights, options: { leashM?: number } = {}): ScanGround {
+  const leashM = options.leashM ?? SCAN.leashM;
   const floors = nodeFloors(floor, solid, heights);
   const floorY = median([...floors.values()]) ?? median([...heights.eye.values()].map((y) => y - 1.5)) ?? 0;
   const nodes = new Map<string, GroundNode>(floor.nodes.map((n) => [n.id, { id: n.id, x: n.x, y: n.y }]));
@@ -212,7 +215,7 @@ export function scanGround(floor: FloorGraph, solid: ScanSolid, heights: ScanHei
   /** Whether a body may stand at `p`: near the scan's positions, over the floor or close enough to a position that a hole is still floor. */
   const standable = (p: Vec): boolean => {
     const near = nearestNode(p);
-    if (near > SCAN.leashM) return false;
+    if (near > leashM) return false;
     return floorAt(p) !== null || near <= SCAN.holeM;
   };
 

@@ -25,7 +25,7 @@ import type { World } from "./world";
 export type RoomTone = "lit" | "plain" | "dark";
 
 /** Flat faces gathered into one mesh, each vertex with its own colour. */
-class Faces {
+export class Faces {
   private positions: number[] = [];
   private normals: number[] = [];
   private colours: number[] = [];
@@ -49,7 +49,7 @@ class Faces {
   }
 }
 
-function lines(points: number[], colour: Color, opacity: number): LineSegments {
+export function lines(points: number[], colour: Color, opacity: number): LineSegments {
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new Float32BufferAttribute(points, 3));
   return new LineSegments(geometry, new LineBasicMaterial({ color: colour, transparent: opacity < 1, opacity }));

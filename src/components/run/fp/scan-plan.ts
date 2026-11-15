@@ -1,0 +1,675 @@
+// A live scan's floor plan (issue 118), worked out in the browser from the
+// scan's mesh, so first person can draw a scanned building the way it draws a
+// fixture floor (scene.ts): straight walls, door frames, a flat floor and
+// ceiling, in the fixture's colours and light, at the scan's own scale and
+// layout. Nothing of it is stored: the plan lives as long as the view.
+//
+// How:
+// - The mesh is sliced at a few heights over the walked floor, above the
+//   desks (`PLAN.sliceM`). What cuts every slice is wall; a desk, a chair or
+//   a low partition reaches one at most.
+// - The slices' pieces vote for the building's square: the direction most of
+//   their length runs along, modulo a right angle. Pieces square to it are
+//   kept, the rest (curves, clutter) dropped, and the kept ones gathered into
+//   lines: one wall per line, its two faces taken as one.
+// - Along each line, the stretches covered at enough heights are its walls,
+//   short gaps closed and short pieces dropped.
+// - Wherever a walk between two scan positions crosses a wall, or a scan
+//   position stands on one, a doorway is cut: the scanner walked through.
+// - The floor is what can be reached from the scan positions on the mesh's
+//   own floor without crossing a wall, near enough to a position to have been
+//   scanned. Walls with floor on neither side go; where the floor ends with no
+//   wall, a wall is put, so what stops the player is always drawn.
+//
+// Pure: the mesh comes in as arrays and its floor as a question, so the tests
+// build made-up buildings. Plan x and y are the scan's x and z, as in
+// scan-ground.ts.
+import type { Seg, Vec } from "./ground";
+import type { ScanSolid, Vec3 } from "./scan-ground";
+
+/** Every number the plan is worked out by. Metres. */
+export const PLAN = Object.freeze({
+  /** The slices' heights above the floor: over the desks, under the ceiling. */
+  sliceM: [1.1, 1.5, 1.9] as readonly number[],
+  /** A triangle this flat (|normal y|) is a floor, a desk top or a ceiling, not a wall. */
+  uprightMax: 0.55,
+  /** A slice piece within this of the building's square is kept. */
+  squareRad: (12 * Math.PI) / 180,
+  /** The bins a line's pieces are gathered in. */
+  binM: 0.05,
+  /** A wall's two faces, or a face and its noise, this close are one line. */
+  mergeM: 0.2,
+  /** Less slice than this along a line is not a wall. */
+  lineMinM: 0.6,
+  /** Gaps this short along a line's walls are closed. */
+  closeM: 0.3,
+  /** Gaps this short are bridged too: a stretch of glass or a hole in the scan. */
+  bridgeM: 0.8,
+  /** A wall's end this close to a square wall's line is taken to it. */
+  cornerM: 0.4,
+  /** A wall shorter than this is clutter. */
+  minRunM: 0.4,
+  /** The doorway cut where a walk crosses a wall. */
+  doorM: 1.0,
+  /** A scan position this close to a wall's line opens a doorway in it. */
+  nodeClearM: 0.45,
+  /** A wall's thickness, drawn and collided with. */
+  thickM: 0.12,
+  /** The floor's cells. */
+  cellM: 0.25,
+  /** No floor further than this from every scan position: past it was not scanned. Far enough to reach the walls of a room seen through its door. */
+  leashM: 6.5,
+  /** Within this of a scan position, a hole in the mesh's floor is still floor. */
+  holeM: 1.5,
+  /** A gap between two walls on a line up to this wide is a doorway, framed; wider is open floor. */
+  doorwayMaxM: 2.0,
+  /** A doorway up to this wide has a lintel over it, as a fixture floor's doors do. */
+  lintelMaxM: 1.6,
+});
+
+export interface PlanInput {
+  /** The mesh, y-up, metres: xyz triples. */
+  positions: ArrayLike<number>;
+  /** Its triangles; null for a plain list of triangles. */
+  index: ArrayLike<number> | null;
+  /** The walked floor's height. */
+  floorY: number;
+  ceilingY: number;
+  /** The scan positions on this floor. */
+  nodes: readonly Vec[];
+  /** The straight walks between them: the board's edges. */
+  paths: readonly Seg[];
+  /** Whether the mesh has this floor (within a step of `floorY`) under (x, y). */
+  hasFloor: (x: number, y: number) => boolean;
+}
+
+export interface PlanWall extends Seg {
+  /** Put where the floor ends with no wall of the scan's. */
+  boundary: boolean;
+}
+
+/** A gap between two walls on one line. `a` and `b` are the walls' ends either side. */
+export interface PlanDoorway extends Seg {
+  width: number;
+  lintel: boolean;
+}
+
+/** The floor as cells on the building's square. */
+export interface PlanFloor {
+  /** The square's turn: plan (x, y) to cell frame (u, v) is a rotation by minus this. */
+  angle: number;
+  u0: number;
+  v0: number;
+  cell: number;
+  cols: number;
+  rows: number;
+  /** 1 where the floor is, by row then column. */
+  cells: Uint8Array;
+}
+
+export interface ScanPlan {
+  angle: number;
+  floorY: number;
+  ceilingY: number;
+  walls: PlanWall[];
+  doorways: PlanDoorway[];
+  floor: PlanFloor;
+  /** Counts, for the console and the tests: no positions. */
+  stats: { pieces: number; lines: number; cuts: number; boundary: number };
+}
+
+interface Piece {
+  /** Where across the line it lies, and its stretch along. */
+  c: number;
+  lo: number;
+  hi: number;
+  level: number;
+}
+
+interface Line {
+  /** Constant v (an east-west wall in the cell frame) or constant u. */
+  along: "u" | "v";
+  c: number;
+  runs: [number, number][];
+}
+
+const rot = (p: Vec, angle: number): { u: number; v: number } => {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return { u: p.x * c + p.y * s, v: -p.x * s + p.y * c };
+};
+const unrot = (u: number, v: number, angle: number): Vec => {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return { x: u * c - v * s, y: u * s + v * c };
+};
+
+/** The slice of every upright triangle near the nodes, at each of `heights`, as 2D pieces (plan x, y). */
+export function slicePieces(input: PlanInput, heights: readonly number[]): { a: Vec; b: Vec; level: number }[] {
+  const { positions, index, nodes } = input;
+  const count = index ? index.length : positions.length / 3;
+  const near = PLAN.leashM + 1;
+  const out: { a: Vec; b: Vec; level: number }[] = [];
+  const lowest = Math.min(...heights);
+  const highest = Math.max(...heights);
+  const corner = (k: number) => {
+    const i = (index ? index[k] : k) * 3;
+    return [positions[i], positions[i + 1], positions[i + 2]] as const;
+  };
+  for (let t = 0; t + 2 < count; t += 3) {
+    const p = corner(t);
+    const q = corner(t + 1);
+    const r = corner(t + 2);
+    const yMin = Math.min(p[1], q[1], r[1]);
+    const yMax = Math.max(p[1], q[1], r[1]);
+    if (yMax < lowest || yMin > highest) continue;
+    // Upright only.
+    const ux = q[0] - p[0], uy = q[1] - p[1], uz = q[2] - p[2];
+    const vx = r[0] - p[0], vy = r[1] - p[1], vz = r[2] - p[2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const nl = Math.hypot(nx, ny, nz);
+    if (nl < 1e-12 || Math.abs(ny) / nl > PLAN.uprightMax) continue;
+    const mx = (p[0] + q[0] + r[0]) / 3;
+    const mz = (p[2] + q[2] + r[2]) / 3;
+    let close = false;
+    for (const n of nodes) {
+      if (Math.abs(n.x - mx) < near && Math.abs(n.y - mz) < near && Math.hypot(n.x - mx, n.y - mz) < near) {
+        close = true;
+        break;
+      }
+    }
+    if (!close) continue;
+    for (let level = 0; level < heights.length; level++) {
+      const h = heights[level] + 1e-5;
+      if (h < yMin || h > yMax) continue;
+      const hits: Vec[] = [];
+      for (const [s, e] of [[p, q], [q, r], [r, p]] as const) {
+        if ((s[1] - h) * (e[1] - h) < 0) {
+          const k = (h - s[1]) / (e[1] - s[1]);
+          hits.push({ x: s[0] + k * (e[0] - s[0]), y: s[2] + k * (e[2] - s[2]) });
+        }
+      }
+      if (hits.length === 2 && Math.hypot(hits[1].x - hits[0].x, hits[1].y - hits[0].y) > 1e-4) out.push({ a: hits[0], b: hits[1], level });
+    }
+  }
+  return out;
+}
+
+/** The building's square: the turn, within ±45°, that most of the pieces' length runs along or across. */
+export function squareOf(pieces: readonly Seg[]): number {
+  const BINS = 90;
+  const hist = new Float64Array(BINS);
+  const quarter = Math.PI / 2;
+  for (const { a, b } of pieces) {
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    let ang = Math.atan2(b.y - a.y, b.x - a.x) % quarter;
+    if (ang < 0) ang += quarter;
+    hist[Math.min(BINS - 1, Math.floor((ang / quarter) * BINS))] += len;
+  }
+  let best = 0;
+  let bestW = -1;
+  for (let i = 0; i < BINS; i++) {
+    let w = 0;
+    for (let d = -2; d <= 2; d++) w += hist[(i + d + BINS) % BINS];
+    if (w > bestW) {
+      bestW = w;
+      best = i;
+    }
+  }
+  // Refine: the length-weighted mean of the pieces within 5° of the peak, on a circle of period 90°.
+  const peak = ((best + 0.5) / BINS) * quarter;
+  let sx = 0;
+  let sy = 0;
+  for (const { a, b } of pieces) {
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const ang = Math.atan2(b.y - a.y, b.x - a.x);
+    const off = Math.atan2(Math.sin(4 * (ang - peak)), Math.cos(4 * (ang - peak))) / 4;
+    if (Math.abs(off) > (5 * Math.PI) / 180) continue;
+    sx += Math.cos(4 * ang) * len;
+    sy += Math.sin(4 * ang) * len;
+  }
+  let angle = sx === 0 && sy === 0 ? peak : Math.atan2(sy, sx) / 4;
+  while (angle >= Math.PI / 4) angle -= quarter;
+  while (angle < -Math.PI / 4) angle += quarter;
+  return angle;
+}
+
+/** Sorted, merged intervals, gaps shorter than `close` closed. */
+function union(intervals: [number, number][], close: number): [number, number][] {
+  const sorted = [...intervals].sort((p, q) => p[0] - q[0]);
+  const out: [number, number][] = [];
+  for (const [lo, hi] of sorted) {
+    const last = out[out.length - 1];
+    if (last && lo <= last[1] + close) last[1] = Math.max(last[1], hi);
+    else out.push([lo, hi]);
+  }
+  return out;
+}
+
+/** `runs` less the stretches in `cuts`. */
+function subtract(runs: [number, number][], cuts: [number, number][]): [number, number][] {
+  let out = runs;
+  for (const [c0, c1] of cuts) {
+    const next: [number, number][] = [];
+    for (const [lo, hi] of out) {
+      if (c1 <= lo || c0 >= hi) next.push([lo, hi]);
+      else {
+        if (c0 > lo) next.push([lo, c0]);
+        if (c1 < hi) next.push([c1, hi]);
+      }
+    }
+    out = next;
+  }
+  return out;
+}
+
+/** Gathers one direction's pieces into lines, each with the stretches covered at `need` heights. */
+function linesOf(pieces: Piece[], along: "u" | "v", levels: number): Line[] {
+  if (pieces.length === 0) return [];
+  const need = Math.min(2, levels);
+  const lo = Math.min(...pieces.map((p) => p.c)) - 1;
+  const hi = Math.max(...pieces.map((p) => p.c)) + 1;
+  const bins = Math.ceil((hi - lo) / PLAN.binM) + 1;
+  const weight = new Float64Array(bins);
+  const binOf = (c: number) => Math.min(bins - 1, Math.max(0, Math.floor((c - lo) / PLAN.binM)));
+  for (const p of pieces) weight[binOf(p.c)] += p.hi - p.lo;
+  const smooth = new Float64Array(bins);
+  for (let i = 0; i < bins; i++) smooth[i] = (weight[i - 1] ?? 0) + weight[i] + (weight[i + 1] ?? 0);
+  const taken = new Uint8Array(pieces.length);
+  const order = pieces.map((_, i) => i).sort((p, q) => pieces[p].c - pieces[q].c);
+  const reach = Math.ceil(PLAN.mergeM / PLAN.binM);
+  const lines: Line[] = [];
+  for (;;) {
+    let best = -1;
+    for (let i = 0; i < bins; i++) if (best < 0 || smooth[i] > smooth[best]) best = i;
+    if (best < 0 || smooth[best] < PLAN.lineMinM) break;
+    const centre = lo + (best + 0.5) * PLAN.binM;
+    for (let i = Math.max(0, best - reach); i <= Math.min(bins - 1, best + reach); i++) smooth[i] = 0;
+    const mine: Piece[] = [];
+    for (const k of order) {
+      if (taken[k] || Math.abs(pieces[k].c - centre) > PLAN.mergeM) continue;
+      taken[k] = 1;
+      mine.push(pieces[k]);
+    }
+    if (mine.length === 0) continue;
+    let sum = 0;
+    let wsum = 0;
+    for (const p of mine) {
+      sum += p.c * (p.hi - p.lo);
+      wsum += p.hi - p.lo;
+    }
+    // Where enough heights cover the line.
+    const events: [number, number][] = [];
+    for (let level = 0; level < levels; level++) {
+      for (const [s, e] of union(mine.filter((p) => p.level === level).map((p) => [p.lo, p.hi]), PLAN.closeM)) {
+        events.push([s, 1], [e, -1]);
+      }
+    }
+    events.sort((p, q) => p[0] - q[0] || q[1] - p[1]);
+    const covered: [number, number][] = [];
+    let depth = 0;
+    let start = 0;
+    for (const [at, d] of events) {
+      const was = depth;
+      depth += d;
+      if (was < need && depth >= need) start = at;
+      if (was >= need && depth < need) covered.push([start, at]);
+    }
+    const runs = union(covered, PLAN.bridgeM).filter(([s, e]) => e - s >= PLAN.minRunM);
+    if (runs.length > 0) lines.push({ along, c: sum / wsum, runs });
+  }
+  return lines;
+}
+
+/**
+ * Closes the corners: a wall's end within `PLAN.cornerM` of a square wall
+ * that reaches across its line is taken to that wall's line, so walls meet
+ * at corners and tees with no crack between them.
+ */
+function joinCorners(lines: Line[]): void {
+  const reach = PLAN.cornerM;
+  for (const line of lines) {
+    const others = lines.filter((l) => l.along !== line.along);
+    const meets = (at: number) => {
+      let best: number | null = null;
+      for (const o of others) {
+        if (Math.abs(o.c - at) > reach) continue;
+        if (!o.runs.some(([lo, hi]) => line.c >= lo - reach && line.c <= hi + reach)) continue;
+        if (best === null || Math.abs(o.c - at) < Math.abs(best - at)) best = o.c;
+      }
+      return best;
+    };
+    line.runs = union(
+      line.runs.map(([lo, hi]) => [meets(lo) ?? lo, meets(hi) ?? hi] as [number, number]).filter(([lo, hi]) => hi > lo),
+      0,
+    );
+  }
+}
+
+/** Works out the plan of the walked floor. Deterministic: the same mesh gives the same plan. */
+export function derivePlan(input: PlanInput): ScanPlan {
+  const { floorY, ceilingY, nodes, paths, hasFloor } = input;
+  const top = ceilingY - floorY - 0.2;
+  const heights = PLAN.sliceM.filter((h) => h < top).map((h) => floorY + h);
+  if (heights.length === 0) heights.push(floorY + Math.min(1.1, Math.max(0.5, top)));
+  const raw = slicePieces(input, heights);
+  const angle = squareOf(raw);
+
+  // Square pieces, in the cell frame.
+  const across: Piece[] = [];
+  const down: Piece[] = [];
+  for (const { a, b, level } of raw) {
+    const p = rot(a, angle);
+    const q = rot(b, angle);
+    const dir = Math.atan2(q.v - p.v, q.u - p.u);
+    const flat = Math.abs(Math.atan2(Math.sin(2 * dir), Math.cos(2 * dir))) / 2; // 0 along u, π/2 along v
+    if (flat < PLAN.squareRad) across.push({ c: (p.v + q.v) / 2, lo: Math.min(p.u, q.u), hi: Math.max(p.u, q.u), level });
+    else if (Math.PI / 2 - flat < PLAN.squareRad) down.push({ c: (p.u + q.u) / 2, lo: Math.min(p.v, q.v), hi: Math.max(p.v, q.v), level });
+  }
+  const lines = [...linesOf(across, "v", heights.length), ...linesOf(down, "u", heights.length)];
+  joinCorners(lines);
+
+  // Doorways: wherever a walk crosses a wall, or a scan position stands on one.
+  const nodesUV = nodes.map((n) => rot(n, angle));
+  const pathsUV = paths.map((s) => [rot(s.a, angle), rot(s.b, angle)] as const);
+  let cuts = 0;
+  for (const line of lines) {
+    // `along` "v" is a line of constant v: its runs are stretches of u.
+    const acrossOf = (p: { u: number; v: number }) => (line.along === "v" ? p.v : p.u);
+    const alongOf = (p: { u: number; v: number }) => (line.along === "v" ? p.u : p.v);
+    const holes: [number, number][] = [];
+    for (const [p, q] of pathsUV) {
+      const dp = acrossOf(p) - line.c;
+      const dq = acrossOf(q) - line.c;
+      if (dp * dq >= 0) continue;
+      const t = dp / (dp - dq);
+      const at = alongOf(p) + t * (alongOf(q) - alongOf(p));
+      const len = Math.hypot(q.u - p.u, q.v - p.v) || 1;
+      const sin = Math.abs(acrossOf(q) - acrossOf(p)) / len;
+      const w = Math.min(2.5, PLAN.doorM / Math.max(sin, 0.4));
+      holes.push([at - w / 2, at + w / 2]);
+    }
+    for (const n of nodesUV) {
+      if (Math.abs(acrossOf(n) - line.c) < PLAN.nodeClearM) holes.push([alongOf(n) - PLAN.doorM / 2, alongOf(n) + PLAN.doorM / 2]);
+    }
+    line.runs = subtract(line.runs, union(holes, 0)).filter(([s, e]) => e - s >= PLAN.minRunM);
+    cuts += holes.length;
+  }
+
+  // The floor: cells on the mesh's floor, holes in it filled, reached from the scan positions without crossing a wall.
+  const cell = PLAN.cellM;
+  const pad = PLAN.leashM + 0.5;
+  const u0 = Math.min(...nodesUV.map((n) => n.u)) - pad;
+  const v0 = Math.min(...nodesUV.map((n) => n.v)) - pad;
+  const cols = Math.max(1, Math.ceil((Math.max(...nodesUV.map((n) => n.u)) + pad - u0) / cell));
+  const rows = Math.max(1, Math.ceil((Math.max(...nodesUV.map((n) => n.v)) + pad - v0) / cell));
+  const centreU = (i: number) => u0 + (i + 0.5) * cell;
+  const centreV = (j: number) => v0 + (j + 0.5) * cell;
+  const nearest = new Float32Array(cols * rows).fill(Infinity);
+  // Distance to the nearest node, cell by cell, only near the nodes.
+  const span = Math.ceil(pad / cell);
+  for (const n of nodesUV) {
+    const ci = Math.floor((n.u - u0) / cell);
+    const cj = Math.floor((n.v - v0) / cell);
+    for (let j = Math.max(0, cj - span); j <= Math.min(rows - 1, cj + span); j++) {
+      for (let i = Math.max(0, ci - span); i <= Math.min(cols - 1, ci + span); i++) {
+        const d = Math.hypot(centreU(i) - n.u, centreV(j) - n.v);
+        if (d < nearest[j * cols + i]) nearest[j * cols + i] = d;
+      }
+    }
+  }
+  const candidate = new Uint8Array(cols * rows);
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const k = j * cols + i;
+      const d = nearest[k];
+      if (d > PLAN.leashM) continue;
+      if (d <= PLAN.holeM) candidate[k] = 1;
+      else {
+        const w = unrot(centreU(i), centreV(j), angle);
+        if (hasFloor(w.x, w.y)) candidate[k] = 1;
+      }
+    }
+  }
+  // Holes in the mesh's floor (under a desk, a tripod's shadow): what the outside cannot reach is floor.
+  const outside = new Uint8Array(cols * rows);
+  const queue: number[] = [];
+  for (let i = 0; i < cols; i++) for (const j of [0, rows - 1]) queue.push(j * cols + i);
+  for (let j = 0; j < rows; j++) for (const i of [0, cols - 1]) queue.push(j * cols + i);
+  for (let h = 0; h < queue.length; h++) {
+    const k = queue[h];
+    if (outside[k] || candidate[k]) continue;
+    outside[k] = 1;
+    const i = k % cols;
+    const j = (k - i) / cols;
+    if (i > 0) queue.push(k - 1);
+    if (i < cols - 1) queue.push(k + 1);
+    if (j > 0) queue.push(k - cols);
+    if (j < rows - 1) queue.push(k + cols);
+  }
+  for (let k = 0; k < candidate.length; k++) if (!outside[k] && nearest[k] <= PLAN.leashM) candidate[k] = 1;
+
+  // The steps between cells a wall stands across.
+  const stopRight = new Uint8Array(cols * rows); // from (i, j) to (i + 1, j)
+  const stopDown = new Uint8Array(cols * rows); // from (i, j) to (i, j + 1)
+  for (const line of lines) {
+    for (const [lo, hi] of line.runs) {
+      if (line.along === "u") {
+        const i = Math.floor((line.c - u0) / cell - 0.5);
+        if (i < 0 || i >= cols - 1) continue;
+        for (let j = Math.max(0, Math.ceil((lo - v0) / cell - 0.5)); j <= Math.min(rows - 1, Math.floor((hi - v0) / cell - 0.5)); j++) stopRight[j * cols + i] = 1;
+      } else {
+        const j = Math.floor((line.c - v0) / cell - 0.5);
+        if (j < 0 || j >= rows - 1) continue;
+        for (let i = Math.max(0, Math.ceil((lo - u0) / cell - 0.5)); i <= Math.min(cols - 1, Math.floor((hi - u0) / cell - 0.5)); i++) stopDown[j * cols + i] = 1;
+      }
+    }
+  }
+  const cells = new Uint8Array(cols * rows);
+  const fill: number[] = [];
+  for (const n of nodesUV) {
+    const i = Math.floor((n.u - u0) / cell);
+    const j = Math.floor((n.v - v0) / cell);
+    if (i >= 0 && j >= 0 && i < cols && j < rows) fill.push(j * cols + i);
+  }
+  for (let h = 0; h < fill.length; h++) {
+    const k = fill[h];
+    if (cells[k] || !candidate[k]) continue;
+    cells[k] = 1;
+    const i = k % cols;
+    const j = (k - i) / cols;
+    if (i < cols - 1 && !stopRight[k]) fill.push(k + 1);
+    if (i > 0 && !stopRight[k - 1]) fill.push(k - 1);
+    if (j < rows - 1 && !stopDown[k]) fill.push(k + cols);
+    if (j > 0 && !stopDown[k - cols]) fill.push(k - cols);
+  }
+  const floorAt = (u: number, v: number) => {
+    const i = Math.floor((u - u0) / cell);
+    const j = Math.floor((v - v0) / cell);
+    return i >= 0 && j >= 0 && i < cols && j < rows && cells[j * cols + i] === 1;
+  };
+
+  // Walls with floor on neither side go.
+  const side = cell * 0.9;
+  for (const line of lines) {
+    const kept: [number, number][] = [];
+    for (const [lo, hi] of line.runs) {
+      let start: number | null = null;
+      const step = 0.1;
+      for (let s = lo; s <= hi + 1e-9; s += step) {
+        const at = Math.min(s, hi);
+        const has = line.along === "v" ? floorAt(at, line.c - side) || floorAt(at, line.c + side) : floorAt(line.c - side, at) || floorAt(line.c + side, at);
+        if (has && start === null) start = at;
+        if (!has && start !== null) {
+          kept.push([start, at]);
+          start = null;
+        }
+      }
+      if (start !== null) kept.push([start, hi]);
+    }
+    line.runs = union(kept, PLAN.closeM).filter(([s, e]) => e - s >= PLAN.minRunM);
+  }
+
+  const walls: PlanWall[] = [];
+  const doorways: PlanDoorway[] = [];
+  const toWorld = (line: { along: "u" | "v"; c: number }, at: number) => (line.along === "v" ? unrot(at, line.c, angle) : unrot(line.c, at, angle));
+  for (const line of lines) {
+    const runs = [...line.runs].sort((p, q) => p[0] - q[0]);
+    runs.forEach(([lo, hi], k) => {
+      walls.push({ a: toWorld(line, lo), b: toWorld(line, hi), boundary: false });
+      const next = runs[k + 1];
+      if (!next) return;
+      const width = next[0] - hi;
+      if (width >= 0.5 && width <= PLAN.doorwayMaxM) doorways.push({ a: toWorld(line, hi), b: toWorld(line, next[0]), width, lintel: width <= PLAN.lintelMaxM });
+    });
+  }
+
+  // Where the floor ends with no wall, a wall: what stops the player is drawn.
+  const covered = (along: "u" | "v", c: number, at: number) =>
+    lines.some((l) => l.along === along && Math.abs(l.c - c) <= 0.35 && l.runs.some(([lo, hi]) => at >= lo - 0.15 && at <= hi + 0.15));
+  let boundary = 0;
+  const edge = (along: "u" | "v", c: number, from: number, to: number) => {
+    const line = { along, c };
+    walls.push({ a: toWorld(line, from), b: toWorld(line, to), boundary: true });
+    boundary++;
+  };
+  const filled = (i: number, j: number) => i >= 0 && j >= 0 && i < cols && j < rows && cells[j * cols + i] === 1;
+  // Lines of constant v, between rows j - 1 and j.
+  for (let j = 0; j <= rows; j++) {
+    const v = v0 + j * cell;
+    let from: number | null = null;
+    for (let i = 0; i <= cols; i++) {
+      const on = i < cols && filled(i, j - 1) !== filled(i, j) && !covered("v", v, centreU(i));
+      if (on && from === null) from = u0 + i * cell;
+      if (!on && from !== null) {
+        edge("v", v, from, u0 + i * cell);
+        from = null;
+      }
+    }
+  }
+  for (let i = 0; i <= cols; i++) {
+    const u = u0 + i * cell;
+    let from: number | null = null;
+    for (let j = 0; j <= rows; j++) {
+      const on = j < rows && filled(i - 1, j) !== filled(i, j) && !covered("u", u, centreV(j));
+      if (on && from === null) from = v0 + j * cell;
+      if (!on && from !== null) {
+        edge("u", u, from, v0 + j * cell);
+        from = null;
+      }
+    }
+  }
+
+  // Each wall runs half its thickness past its ends, so walls that meet close the corner between them.
+  const over = PLAN.thickM / 2;
+  for (const wall of walls) {
+    const len = Math.hypot(wall.b.x - wall.a.x, wall.b.y - wall.a.y);
+    if (len < 1e-9) continue;
+    const dx = ((wall.b.x - wall.a.x) / len) * over;
+    const dy = ((wall.b.y - wall.a.y) / len) * over;
+    wall.a = { x: wall.a.x - dx, y: wall.a.y - dy };
+    wall.b = { x: wall.b.x + dx, y: wall.b.y + dy };
+  }
+
+  return {
+    angle,
+    floorY,
+    ceilingY,
+    walls,
+    doorways,
+    floor: { angle, u0, v0, cell, cols, rows, cells },
+    stats: { pieces: raw.length, lines: lines.filter((l) => l.runs.length > 0).length, cuts, boundary },
+  };
+}
+
+/** Whether (x, y) is on the plan's floor. */
+export function onPlanFloor(floor: PlanFloor, x: number, y: number): boolean {
+  const { u, v } = rot({ x, y }, floor.angle);
+  const i = Math.floor((u - floor.u0) / floor.cell);
+  const j = Math.floor((v - floor.v0) / floor.cell);
+  return i >= 0 && j >= 0 && i < floor.cols && j < floor.rows && floor.cells[j * floor.cols + i] === 1;
+}
+
+/** A cell's centre in plan (x, y). */
+export function cellCentre(floor: PlanFloor, i: number, j: number): Vec {
+  return unrot(floor.u0 + (i + 0.5) * floor.cell, floor.v0 + (j + 0.5) * floor.cell, floor.angle);
+}
+
+/** A point of the cell frame in plan (x, y). */
+export function fromCellFrame(floor: PlanFloor, u: number, v: number): Vec {
+  return unrot(u, v, floor.angle);
+}
+
+/**
+ * The plan as the `ScanSolid` the scan's ground walks on (scan-ground.ts), in
+ * place of the mesh: its floor is the plan's floor, flat at `floorY`; its
+ * walls are the plan's walls, full height, as thick as they are drawn. So
+ * the player is stopped by exactly the walls in the picture.
+ */
+export function planSolid(plan: ScanPlan): ScanSolid {
+  const half = PLAN.thickM / 2;
+  const walls = plan.walls;
+  const { floorY, ceilingY } = plan;
+  return {
+    floorBelow(x, fromY, z, depth) {
+      if (floorY > fromY + 1e-9 || floorY < fromY - depth) return null;
+      return onPlanFloor(plan.floor, x, z) ? floorY : null;
+    },
+    pushOut(x, _feetY, z, radius) {
+      const reach = radius + half;
+      let px = x;
+      let pz = z;
+      for (let pass = 0; pass < 4; pass++) {
+        let moved = false;
+        for (const { a, b } of walls) {
+          if (px < Math.min(a.x, b.x) - reach || px > Math.max(a.x, b.x) + reach) continue;
+          if (pz < Math.min(a.y, b.y) - reach || pz > Math.max(a.y, b.y) + reach) continue;
+          const dx = b.x - a.x;
+          const dz = b.y - a.y;
+          const len2 = dx * dx + dz * dz;
+          const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - a.x) * dx + (pz - a.y) * dz) / len2));
+          const ox = px - (a.x + t * dx);
+          const oz = pz - (a.y + t * dz);
+          const d = Math.hypot(ox, oz);
+          if (d >= reach) continue;
+          if (d < 1e-9) {
+            // On the line itself: out to the side the wall's normal points.
+            const l = Math.sqrt(len2) || 1;
+            px += (-dz / l) * reach;
+            pz += (dx / l) * reach;
+          } else {
+            px += (ox / d) * (reach - d);
+            pz += (oz / d) * (reach - d);
+          }
+          moved = true;
+        }
+        if (!moved) break;
+      }
+      return { x: px, z: pz };
+    },
+    hit(origin: Vec3, dir: Vec3, far: number) {
+      const [ox, oy, oz] = origin;
+      const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+      const flat = Math.hypot(dir[0], dir[2]) / len;
+      if (oy < floorY || oy > ceilingY || flat < 1e-6) return null;
+      const dx = dir[0] / len / flat;
+      const dz = dir[2] / len / flat;
+      let best: number | null = null;
+      for (const { a, b } of walls) {
+        const ex = b.x - a.x;
+        const ez = b.y - a.y;
+        const den = dx * ez - dz * ex;
+        if (Math.abs(den) < 1e-12) continue;
+        const wx = a.x - ox;
+        const wz = a.y - oz;
+        const t = (wx * ez - wz * ex) / den;
+        const s = (wx * dz - wz * dx) / den;
+        if (t < 0 || s < 0 || s > 1) continue;
+        // Along the flat ray; the distance along the full ray is longer by 1 / flat.
+        const d = t / flat;
+        if (d <= far && (best === null || d < best)) best = d;
+      }
+      return best;
+    },
+  };
+}
