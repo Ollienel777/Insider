@@ -288,7 +288,7 @@ describe("the Scout on a live aerial", () => {
     expect(kit).toContain('data-testid="entries-untagged"');
     expect(kit).toContain("No entries are tagged for this building");
     expect(kit).toContain("A level built for it offers the");
-    expect(kit).toContain("0 tagged");
+    expect(kit).toContain("0 by rule");
     const untagged = { ...live, entries: [] };
     for (const source of ["fixture", "costar"] as const) {
       expect(panelWith(source, untagged), source).not.toContain('data-testid="entries-untagged"');

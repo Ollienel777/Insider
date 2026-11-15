@@ -694,7 +694,7 @@ export function ScoutPanel({ building, load, selected, onPick, onRetry }: PanelP
           </h2>
           <span className="flex items-center gap-1.5 label-caps text-text-3">
             <LayerDot layer="vexcel" decorative />
-            {aerial ? `${aerial.entries.length} tagged` : load.status === "error" ? (load.missing ? "No aerial" : "Not loaded") : "Tagging"}
+            {aerial ? `${aerial.entries.length} ${aerial.derived ? "by rule" : "tagged"}` : load.status === "error" ? (load.missing ? "No aerial" : "Not loaded") : "Tagging"}
           </span>
         </div>
         {load.status === "loading" ? (

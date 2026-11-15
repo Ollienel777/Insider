@@ -53,6 +53,10 @@ export interface ShowcaseCast {
   buildingClass: BuildingClass;
   stories: number;
   layers: Layers;
+  /** Its largest floor on the market, or null when nothing is. */
+  vacantFloor: { floor: number; sf: number; suites: string[] } | null;
+  /** One line on what it is, from its CoStar fields, as a finalist's reason reads. */
+  description: string;
   /** One per casting filter of the mission, in the mission's order. */
   reasons: CastReason[];
   /** Where its level stands for the mission. */
@@ -102,6 +106,23 @@ export function castReasons(building: Building, propertyType: PropertyType | nul
 }
 
 /**
+ * The showcase card's line on the building, from its CoStar fields only:
+ * "The 1969 15-story Class B office with 23,640 SF of floor 14 on the market
+ * and a Matterport scan inside: the showcase building cast for this mission."
+ */
+export function showcaseDescription(building: Building, propertyType: PropertyType | null): string {
+  const floor = largestVacantFloor(building);
+  const what = [
+    `The ${building.yearBuilt} ${building.stories}-story Class ${building.buildingClass} ${propertyType ?? "building"}`,
+    floor ? `with ${SF.format(floor.sf)} SF of floor ${floor.floor} on the market` : null,
+    building.layers.matterport ? `${floor ? "and " : "with "}a Matterport scan inside` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return `${what}: the showcase building cast for this mission.`;
+}
+
+/**
  * Where a showcase level stands. A level built or building stands whatever
  * the model; otherwise no build can run while the model is on fixtures, in
  * the order the Dossier checks.
@@ -139,9 +160,12 @@ export async function showcaseCast(
       return null;
     }
     const { id, name, neighbourhood, city, yearBuilt, buildingClass, stories, layers } = building;
+    const propertyType = costar.propertyType?.(id) ?? null;
     return {
       ...{ id, name, neighbourhood, city, yearBuilt, buildingClass, stories, layers },
-      reasons: castReasons(building, costar.propertyType?.(id) ?? null, mission),
+      vacantFloor: largestVacantFloor(building),
+      description: showcaseDescription(building, propertyType),
+      reasons: castReasons(building, propertyType, mission),
       level: levelState(id, mission.id, options.modelForced ?? false, options.env ?? process.env),
     };
   } catch (error) {

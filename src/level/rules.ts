@@ -300,7 +300,8 @@ export function deriveSecurityProfile(building: Building, aerial: Aerial | null)
   });
 
   // Entries, from the aerial's tags: the dock and the roof first, then the rest as tagged.
-  const tags: readonly AerialEntry[] = aerial?.entries ?? [];
+  // A derived massing's pins are the rules' own offer, placed for Scout (issue 230), not tags: they are offered below.
+  const tags: readonly AerialEntry[] = aerial?.derived ? [] : (aerial?.entries ?? []);
   const rank = (kind: EntryKind): number => {
     const i = ALWAYS_OFFERED.indexOf(kind);
     return i === -1 ? ALWAYS_OFFERED.length : i;

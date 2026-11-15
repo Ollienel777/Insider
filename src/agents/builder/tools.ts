@@ -90,7 +90,7 @@ export function analystTools(run: BuildRun) {
         ...(aerial.derived
           ? {
               estimatedHeightM: aerial.heightM,
-              note: "imagery aimed from the building's CoStar facts: the height is estimated from its stories, not measured, and no entries are tagged",
+              note: "imagery aimed from the building's CoStar facts: the height is estimated from its stories, not measured, and no entries are tagged: the roof hatch and street lobby listed are placed by rule, not seen",
             }
           : { heightM: aerial.heightM }),
         entries: aerial.entries.map(({ id, kind, label, view, note }) => ({ id, kind, label, view, note })),
