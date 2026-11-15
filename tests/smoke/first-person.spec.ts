@@ -136,3 +136,146 @@ test("first person: holding E at a locked door picks it until the engine opens i
   await page.keyboard.up("e");
   await expect(view(page)).toHaveAttribute("data-node", "s1-sw");
 });
+
+// ---- the whole heist in first person (issue 115) -----------------------------------------------
+
+/** Plays the board's numbered neighbour `nodeId`, as the Run screen's number keys do. */
+async function boardTo(page: Page, nodeId: string) {
+  const key = await page.locator(`[data-testid="choice"][data-node="${nodeId}"]`).getAttribute("data-key");
+  expect(key, `${nodeId} is numbered`).toMatch(/^[1-9]$/);
+  await page.keyboard.press(key!);
+  await expect(page.getByTestId("player-piece")).toHaveAttribute("data-node", nodeId);
+}
+
+/** Pauses or resumes first person's clock with P, as the player does. */
+async function setPaused(page: Page, on: boolean) {
+  const paused = page.getByTestId("fp-paused");
+  if (((await paused.count()) > 0) !== on) await page.keyboard.press("p");
+  await expect(paused).toHaveCount(on ? 1 : 0);
+}
+
+/** The player's place and facing on the corner map, and the plan's route there, in the map's pixels. */
+async function onMap(page: Page) {
+  return page.evaluate(() => {
+    const t = document.querySelector('[data-testid="fp-minimap-player"]')?.getAttribute("transform") ?? "";
+    const m = /translate\(([-\d.]+),([-\d.]+)\) rotate\(([-\d.]+)\)/.exec(t);
+    const points = document.querySelector('[data-testid="fp-minimap-route"]')?.getAttribute("points")?.trim() ?? "";
+    const route = points ? points.split(/\s+/).map((p) => p.split(",").map(Number) as [number, number]) : [];
+    return m ? { x: Number(m[1]), y: Number(m[2]), yaw: (Number(m[3]) * Math.PI) / 180, route } : null;
+  });
+}
+
+/**
+ * Walks the corner map's route, as a player reading it would: turn towards its next point with the
+ * arrow keys, a short walk with W, read the map again. Stops when `arrived` says so.
+ */
+async function followMap(page: Page, arrived: () => Promise<boolean>, budget = 300) {
+  for (let i = 0; i < budget; i++) {
+    if (await arrived()) return;
+    const at = await onMap(page);
+    expect(at, "the map shows the player").not.toBeNull();
+    const { x, y, yaw, route } = at!;
+    const next = route.slice(1).find(([px, py]) => Math.hypot(px - x, py - y) > 3) ?? route[route.length - 1];
+    expect(next, "the map shows a route").toBeDefined();
+    const want = Math.atan2(next[1] - y, next[0] - x);
+    const turn = Math.atan2(Math.sin(want - yaw), Math.cos(want - yaw));
+    if (Math.abs(turn) > 0.12) {
+      const key = turn > 0 ? "ArrowRight" : "ArrowLeft";
+      await page.keyboard.down(key);
+      await page.waitForTimeout(Math.max(16, (Math.abs(turn) / 2.4) * 1000));
+      await page.keyboard.up(key);
+    }
+    await page.keyboard.down("w");
+    await page.waitForTimeout(Math.min(250, Math.max(30, Math.hypot(next[0] - x, next[1] - y) * 15)));
+    await page.keyboard.up("w");
+  }
+  expect(await arrived(), "arrived within the walk's budget").toBe(true);
+}
+
+test("first person, beat 6: the alarm, the guards on the map, and F opens the Why card on what is in view while the clock holds", async ({ page }) => {
+  test.setTimeout(90_000);
+  await open(page, "F1");
+  // Straight into C2's cover, on the board: the alarm goes to Alert.
+  await boardTo(page, "fl-lobby");
+  await boardTo(page, "dc-west");
+  if (!(await firstPerson(page))) return;
+  await setPaused(page, true);
+
+  // The alarm in first person: the view's edges, and the map's guards hunting.
+  await expect(view(page)).toHaveAttribute("data-alarm", /alert|lockdown/);
+  await expect(page.getByTestId("fp-alarm-tint")).toBeVisible();
+  const map = page.getByTestId("fp-minimap");
+  await expect(map).toHaveAttribute("data-room", "dock-corridor");
+  await expect(page.getByTestId("fp-minimap-room")).toHaveText("Dock Corridor");
+  await expect(map.locator('[data-chasing="true"]').first()).toBeAttached();
+  await expect(page.getByTestId("fp-minimap-player")).not.toHaveAttribute("visibility", "hidden");
+
+  // Turn until a watcher is under the crosshair; F opens its Why card, and the clock holds while it is open.
+  const aim = page.getByTestId("fp-aim");
+  for (let i = 0; i < 200 && (await aim.count()) === 0; i++) {
+    await page.keyboard.down("ArrowLeft");
+    await page.waitForTimeout(40);
+    await page.keyboard.up("ArrowLeft");
+  }
+  await expect(aim).toBeVisible();
+  const key = (await aim.getAttribute("data-why"))!;
+  expect(key).toMatch(/^(guard|cleaner|camera):/);
+  await page.keyboard.press("f");
+  const card = page.getByTestId("why-card");
+  await expect(card).toBeVisible();
+  await expect(card).toHaveAttribute("data-why", key);
+  await expect(card.getByTestId("why-row").first()).toBeVisible();
+  await setPaused(page, false);
+  const turn = await turnOf(page);
+  await page.waitForTimeout(1_500);
+  expect(await turnOf(page), "the clock holds while the card is open").toBe(turn);
+  await page.keyboard.press("Escape");
+  await expect(card).toHaveCount(0);
+
+  // Let the guards close in: the catch shows in the view, with the way to the Debrief.
+  await expect(page.getByTestId("fp-end")).toHaveAttribute("data-status", "caught", { timeout: 30_000 });
+  await expect(page.getByTestId("fp-over")).toContainText("Caught in the");
+  await page.getByTestId("fp-debrief").click();
+  await expect(page).toHaveURL(/\/b\/F1\/debrief/);
+});
+
+test("first person: take the files, then follow the map's route out to a clean exit", async ({ page }) => {
+  test.setTimeout(120_000);
+  await open(page, "F1");
+  // The quiet route on the board (run.spec.ts) as far as the files.
+  await boardTo(page, "fl-lobby");
+  await page.keyboard.press("w");
+  for (const nodeId of ["dc-west", "dc-mid", "dc-east"]) await boardTo(page, nodeId);
+  for (let i = 0; i < 2; i++) {
+    const key = await page.locator('[data-testid="choice"][data-kind="pick"]').getAttribute("data-key");
+    await page.keyboard.press(key!);
+  }
+  await boardTo(page, "rr-door");
+  await boardTo(page, "rr-files");
+  if (!(await firstPerson(page))) return;
+  await setPaused(page, true);
+
+  // At the files: the prompt says to hold E, the map marks them, and E takes them.
+  const prompt = page.getByTestId("fp-prompt");
+  await expect(prompt).toHaveAttribute("data-kind", "take");
+  await expect(prompt).toContainText("to take the files");
+  await expect(page.getByTestId("fp-minimap-objective")).toHaveCount(1);
+  await page.keyboard.down("e");
+  await expect(page.getByTestId("fp-minimap-objective")).toHaveCount(0);
+  await page.keyboard.up("e");
+  await expect(page.getByTestId("fp-minimap")).toHaveAttribute("data-waypoint", /^(fl-car|es-landing)$/);
+
+  // Out the way in, paused but for the quiet route's one wait at the corridor's east end.
+  const node = () => view(page).getAttribute("data-node");
+  await followMap(page, async () => (await node()) === "dc-east");
+  const turn = await turnOf(page);
+  await setPaused(page, false);
+  await expect.poll(() => turnOf(page)).toBeGreaterThan(turn);
+  await setPaused(page, true);
+  await followMap(page, async () => (await page.getByTestId("fp-end").count()) > 0);
+
+  await expect(page.getByTestId("fp-end")).toHaveAttribute("data-status", "won");
+  await expect(page.getByTestId("fp-over")).toHaveText("Out with the files.");
+  await page.getByTestId("fp-debrief").click();
+  await expect(page).toHaveURL(/\/b\/F1\/debrief/);
+});

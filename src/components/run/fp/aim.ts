@@ -16,19 +16,22 @@ export interface DrawnLabel {
   inSight: boolean;
 }
 
-/** How far from the middle of the view, in pixels, a label still counts as looked at. */
+/** How far either side of the middle of the view, in pixels, a label still counts as looked at. */
 export const AIM_RADIUS_PX = 90;
 
 const AIMABLE = new Set(["guard", "cleaner", "camera"]);
 
-/** The watcher's label nearest the middle of a `w` by `h` view, within `radius`; null if none is. */
+/**
+ * The watcher's label nearest the middle of a `w` by `h` view, side to side, within `radius`; null if
+ * none is. Only the side-to-side distance counts: a camera hangs at the ceiling and a near guard's
+ * label well above the crosshair, and the arrow keys turn the view but cannot tip it up.
+ */
 export function aimedAt(labels: readonly DrawnLabel[], w: number, h: number, radius: number = AIM_RADIUS_PX): DrawnLabel | null {
   let best: DrawnLabel | null = null;
   let bestD = radius;
   for (const label of labels) {
-    if (!label.inSight || !AIMABLE.has(label.tone)) continue;
-    // A label hangs over its piece: the piece itself is a little below it.
-    const d = Math.hypot(label.x - w / 2, label.y + 24 - h / 2);
+    if (!label.inSight || !AIMABLE.has(label.tone) || label.y < 0 || label.y > h) continue;
+    const d = Math.abs(label.x - w / 2);
     if (d <= bestD) {
       bestD = d;
       best = label;
