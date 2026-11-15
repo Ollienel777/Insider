@@ -13,8 +13,10 @@ import {
   orderGuard,
   plannedPath,
   setAlarm,
+  withPursuit,
   type Action,
   type Level,
+  type Pursuit,
   type RunState,
 } from "@/engine";
 
@@ -314,5 +316,142 @@ describe("applyChiefOrders", () => {
     const copy = structuredClone({ guards: run.guards, locked: run.locked });
     applyChiefOrders(run, orders({ orders: [{ guardId: "G1", intent: "sweep", zoneId: "quiet-2210" }], lockZones: ["objective"] }));
     expect({ guards: run.guards, locked: run.locked }).toEqual(copy);
+  });
+});
+
+describe("a pursuit: the guards' longer memory in real-time play (issue 219)", () => {
+  const pursuit: Pursuit = { hold: { suspicious: 8, alert: 10, lockdown: 12 }, searchHops: 2 };
+  const moves = (...ids: string[]): Action[] => ids.map((to) => ({ kind: "move", to }));
+  /** A 12-node line: a fixed camera on n5, and one guard posted at the far end, n11. */
+  const level = () =>
+    lineLevel(12, {
+      guards: [{ id: "G1", patrol: ["n11"] }],
+      cameras: [{ id: "C1", kind: "fixed-ip", cover: ["n5"] }],
+    });
+  /** Walks into the camera on n5 and straight back to n0: seen once, on turn 4. */
+  const seenThenGone = (run: RunState) => play(run, moves("n1", "n2", "n3", "n4", "n5", "n4", "n3", "n2", "n1", "n0"));
+  const guard = (run: RunState) => run.guards[0];
+
+  it("changes nothing without one: three quiet turns drop a step, and the guard stands on the last-seen node", () => {
+    let run = seenThenGone(createRun(level()));
+    // Seen on turn 4, then five turns walking away: Alert fell to Suspicious after three of them.
+    expect(run.alarm).toBe("suspicious");
+    expect(guard(run).target).toEqual({ zoneId: "west", nodes: ["n5"], intent: "converge", visit: 0 });
+    run = play(run, waits(1));
+    expect(run.alarm).toBe("calm");
+    expect(guard(run).target).toBeNull();
+  });
+
+  it("is the same run when set twice, and comes off with null", () => {
+    const run = withPursuit(createRun(level()), pursuit);
+    expect(withPursuit(run, pursuit)).toBe(run);
+    expect(withPursuit(run, null).pursuit).toBeNull();
+    const plain = createRun(level());
+    expect(withPursuit(plain, null)).toBe(plain);
+  });
+
+  it("holds Alert for the pursuit's turns, then Suspicious for its own, before the guards go back", () => {
+    let run = seenThenGone(withPursuit(createRun(level()), pursuit));
+    // Five quiet turns so far: still Alert, where the turn-based rules were at Suspicious.
+    expect(run.alarm).toBe("alert");
+    run = play(run, waits(4));
+    expect(run.alarm).toBe("alert");
+    run = play(run, waits(1));
+    expect(run.alarm).toBe("suspicious");
+    expect(guard(run).target).not.toBeNull();
+    run = play(run, waits(7));
+    expect(run.alarm).toBe("suspicious");
+    run = play(run, waits(1));
+    expect(run.alarm).toBe("calm");
+    expect(guard(run).target).toBeNull();
+    expect(run.status).toBe("playing");
+  });
+
+  it("lets Lockdown fall back to Alert, which the turn-based rules never do", () => {
+    const quiet = lineLevel(12, { guards: [{ id: "G1", patrol: ["n11"] }] });
+    let plain = setAlarm(createRun(quiet), "lockdown");
+    plain = play(plain, waits(30));
+    expect(plain.alarm).toBe("lockdown");
+    let run = setAlarm(withPursuit(createRun(quiet), pursuit), "lockdown");
+    run = play(run, waits(11));
+    expect(run.alarm).toBe("lockdown");
+    run = play(run, waits(1));
+    expect(run.alarm).toBe("alert");
+  });
+
+  it("sends a guard that reached the last-seen node round the nodes within its search, not further, and never standing", () => {
+    let run = seenThenGone(withPursuit(createRun(level()), pursuit));
+    // The guard walked n11 → n5 while the player left: it is on the last-seen node, about to search.
+    expect(guard(run).nodeId).toBe("n5");
+    expect(guard(run).target).toMatchObject({ intent: "converge", nodes: ["n5"], search: 2 });
+    const visited: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      run = play(run, waits(1));
+      visited.push(guard(run).nodeId);
+    }
+    expect(guard(run).target).toMatchObject({ intent: "sweep", search: 2 });
+    // Round n5, two hops each way: n3, n4, n6, n7.
+    expect(new Set(visited)).toEqual(new Set(["n3", "n4", "n5", "n6", "n7"]));
+    expect(visited.every((id, i) => i === 0 || id !== visited[i - 1])).toBe(true);
+    // The player, five hops off, was never found.
+    expect(run.status).toBe("playing");
+  });
+
+  it("finds a player hiding inside the search, where the turn-based guard would have stood and forgotten", () => {
+    const hide = (run: RunState) => {
+      let at = play(run, moves("n1", "n2", "n3", "n4", "n5", "n4", "n3"));
+      for (let i = 0; i < 20 && at.status === "playing"; i++) at = play(at, waits(1));
+      return at;
+    };
+    expect(hide(createRun(level())).status).toBe("playing");
+    const found = hide(withPursuit(createRun(level()), pursuit));
+    expect(found.status).toBe("caught");
+    expect(found.playerNode).toBe("n3");
+  });
+
+  it("pulls a searching guard onto a new sighting", () => {
+    // Cameras on n5 and n0, the player starting between them on n2.
+    const between = lineLevel(12, {
+      start: "n2",
+      exits: ["n2"],
+      guards: [{ id: "G1", patrol: ["n11"] }],
+      cameras: [
+        { id: "C1", kind: "fixed-ip", cover: ["n5"] },
+        { id: "C2", kind: "fixed-ip", cover: ["n0"] },
+      ],
+    });
+    // Seen on n5, back to n1, and a wait while the guard reaches n5 and starts its search.
+    let run = play(withPursuit(createRun(between), pursuit), [...moves("n3", "n4", "n5", "n4", "n3", "n2", "n1"), ...waits(3)]);
+    expect(run.alarm).toBe("alert");
+    expect(guard(run).target).toMatchObject({ intent: "sweep", search: 2 });
+    // Into the second camera: the searching guard is sent to that node, as a converging one would be.
+    run = play(run, moves("n0"));
+    expect(run.lastSeen?.nodeId).toBe("n0");
+    expect(guard(run).target).toMatchObject({ intent: "converge", nodes: ["n0"], search: 2 });
+  });
+
+  it("starts guards that arrive together at different points of the round", () => {
+    const two = lineLevel(12, {
+      guards: [
+        { id: "G1", patrol: ["n11"] },
+        { id: "G2", patrol: ["n11"] },
+      ],
+      cameras: [{ id: "C1", kind: "fixed-ip", cover: ["n5"] }],
+    });
+    let run = seenThenGone(withPursuit(createRun(two), pursuit));
+    run = play(run, waits(1));
+    const [a, b] = run.guards.map((g) => g.target);
+    expect(a?.intent).toBe("sweep");
+    expect(b?.intent).toBe("sweep");
+    expect(a!.nodes[a!.visit]).not.toBe(b!.nodes[b!.visit]);
+  });
+
+  it("gives a Chief's converge order the same search", () => {
+    const run = seenThenGone(withPursuit(createRun(level()), pursuit));
+    const ordered = orderGuard(run, "G1", "west", "converge");
+    expect(ordered.ok && ordered.run.guards[0].target).toMatchObject({ intent: "converge", search: 2 });
+    const plain = seenThenGone(createRun(level()));
+    const plainOrder = orderGuard(plain, "G1", "west", "converge");
+    expect(plainOrder.ok && plainOrder.run.guards[0].target).toEqual({ zoneId: "west", nodes: ["n5"], intent: "converge", visit: 0 });
   });
 });
