@@ -16,9 +16,11 @@ import {
   PlaneGeometry,
   SRGBColorSpace,
   type Material,
+  type Texture,
 } from "three";
 import type { Vec } from "./ground";
 import { distanceTo } from "./motion";
+import { SET_TEXTURES } from "./scan-textures";
 import { onPlanFloor, PLAN, type ScanPlan } from "./scan-plan";
 import { FP } from "./tuning";
 
@@ -27,7 +29,7 @@ const srgb = (r: number, g: number, b: number) => new Color().setRGB(r, g, b, SR
 
 /** The joinery's colours: a door's warm wood, and dark metal for frames. */
 export const DRESS = Object.freeze({
-  wood: srgb(0.478, 0.306, 0.18),
+  wood: srgb(0.95, 0.85, 0.78),
   metal: srgb(0.137, 0.137, 0.145),
   glass: srgb(0.737, 0.839, 0.89),
   /** A frame's face across the wall, and its depth beyond it. */
@@ -42,34 +44,9 @@ export const DRESS = Object.freeze({
   openingM: 1.8,
 });
 
-/** A door's veneer, drawn once: long streaks of grain, darker and lighter, over white (the leaf's colour tints it). */
-export function woodGrain(): CanvasTexture {
-  const w = 128;
-  const h = 512;
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const context = canvas.getContext("2d");
-  if (context) {
-    context.fillStyle = "white";
-    context.fillRect(0, 0, w, h);
-    let seed = 7;
-    const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    for (let k = 0; k < 90; k++) {
-      const x = random() * w;
-      const shade = 0.72 + random() * 0.4;
-      const v = Math.round(255 * Math.min(1, shade));
-      context.strokeStyle = `rgba(${v},${v},${v},${0.25 + random() * 0.35})`;
-      context.lineWidth = 0.5 + random() * 2.5;
-      context.beginPath();
-      context.moveTo(x, 0);
-      for (let y = 0; y <= h; y += 16) context.lineTo(x + Math.sin(y / (40 + random() * 60) + k) * (2 + random() * 3), y);
-      context.stroke();
-    }
-  }
-  const texture = new CanvasTexture(canvas);
-  texture.colorSpace = SRGBColorSpace;
-  return texture;
+/** A door's veneer: the wood texture (scan-textures.ts), tiled to a leaf. */
+export function woodGrain(): Texture {
+  return SET_TEXTURES.doorWood();
 }
 
 /** A soft diagonal sheen, drawn once: what tells a pane of glass from a hole. */

@@ -57,6 +57,7 @@ import { isAllowedAssetUrl } from "@/lib/scan-mesh/manifest";
 import { alignToCube, CUBE_LOOKUP_FLIP } from "@/lib/scan-mesh/skybox";
 import type { Vec } from "./ground";
 import { nearestOn } from "./motion";
+import { SET_TEXTURES } from "./scan-textures";
 import { bakeLightField, bakeOcclusion, LIGHT, setLights, trofferGroup, troffers, windowGroup, type Occlusion, type SetWindow } from "./scan-light";
 import { fromCellFrame, onPlanFloor, PLAN, type ScanPlan } from "./scan-plan";
 
@@ -293,6 +294,12 @@ export class PhotoSet {
         uAoOrigin: { value: new Vector3(this.occlusion.u0, this.occlusion.v0, 0) },
         uAoSize: { value: new Vector3(this.occlusion.width, this.occlusion.height, 0) },
         uExposure: { value: LIGHT.exposure },
+        uCarpet: { value: SET_TEXTURES.carpet() },
+        uCarpetNormal: { value: SET_TEXTURES.carpetNormal() },
+        uWood: { value: SET_TEXTURES.woodFloor() },
+        uTileTex: { value: SET_TEXTURES.tile() },
+        uCeiling: { value: SET_TEXTURES.ceiling() },
+        uPlaster: { value: SET_TEXTURES.plaster() },
       },
       vertexShader: /* glsl */ `
 attribute vec3 colour;
@@ -328,6 +335,12 @@ uniform sampler2D uLit;
 uniform vec3 uAoOrigin;
 uniform vec3 uAoSize;
 uniform float uExposure;
+uniform sampler2D uCarpet;
+uniform sampler2D uCarpetNormal;
+uniform sampler2D uWood;
+uniform sampler2D uTileTex;
+uniform sampler2D uCeiling;
+uniform sampler2D uPlaster;
 varying float vPattern;
 varying vec2 vUv;
 varying vec3 vColour;
@@ -343,6 +356,9 @@ float noise(vec2 p) {
 }
 vec2 inSquare(vec3 w, float c0, float s0) { return vec2(w.x * c0 + w.z * s0, -w.x * s0 + w.z * c0); }
 float field(sampler2D t, vec2 sq) { return texture2D(t, (sq - uAoOrigin.xy) / uAoSize.xy).r; }
+float lum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+// A texture's detail, as a factor about 1: its brightness over its own average (the top of its mipmaps).
+float detail(sampler2D t, vec2 uv) { return lum(texture2D(t, uv).rgb) / max(lum(textureLod(t, vec2(0.5), 12.0).rgb), 0.02); }
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 void main() {
   vec3 c = vColour;
@@ -367,42 +383,36 @@ void main() {
       float corner = clamp(field(uAo, inSquare(vWorld + vec3(n.x, 0.0, n.z) * 0.3, c0, s0)) / 0.86, 0.0, 1.0);
       c *= mix(1.0, corner, 0.65);
       // Matte paint: a very faint mottle.
-      c *= 1.0 + 0.012 * (noise(vec2(dot(vWorld.xz, vec2(n.z, -n.x)), vWorld.y) * 3.0) - 0.5);
+      c *= mix(1.0, detail(uPlaster, vec2(dot(vWorld.xz, vec2(n.z, -n.x)), vWorld.y) / 1.5), 0.06);
       c *= 1.0 + 0.35 * field(uLit, inSquare(vWorld + vec3(n.x, 0.0, n.z) * 0.6, c0, s0)) * smoothstep(uCeilY, uFloorY, vWorld.y);
     }
   } else if (vKind < 1.5) {
     // The floor: a carpet's grain, as varied as the photographs' carpet.
     if (vPattern > 1.5) {
-      // Tile: 45 cm squares, pale grout, a faint difference tile to tile.
-      vec2 t = floor(square / 0.45);
-      c *= 0.97 + 0.06 * hash(t + 3.0);
-      vec2 g = abs(fract(square / 0.45) - 0.5) * 0.45;
-      if (min(0.225 - g.x, 0.225 - g.y) < 0.003) c = mix(c, vec3(0.86), 0.6);
+      // Tile: the kitchen's, tinted to the room.
+      c *= mix(1.0, detail(uTileTex, square / 0.9), 0.85);
     } else if (vPattern > 0.5) {
-      // Wood: 15 cm boards, staggered 1.2 m lengths, each its own shade, a fine grain and dark joints.
-      float row = floor(square.y / 0.15);
-      float along = square.x + hash(vec2(row, 1.0)) * 1.2;
-      float board = floor(along / 1.2);
-      c *= 0.9 + 0.2 * hash(vec2(row, board));
-      c *= 0.96 + 0.08 * hash(vec2(floor(along / 0.01), row));
-      if (fract(square.y / 0.15) < 0.03 || fract(along / 1.2) < 0.004) c *= 0.7;
+      // Wood plank, about 20 cm boards, its own grain and shades, tinted to the room.
+      c *= mix(1.0, detail(uWood, square / 1.6), 0.9);
     } else {
-    // Loop pile: fine speckle, a coarser mottle, and the faint seams of 60 cm carpet tiles laid quarter-turned.
-    vec2 tile = floor(square / 0.6);
-    float turned = mod(tile.x + tile.y, 2.0);
-    vec2 pile = turned > 0.5 ? square.yx : square;
-    c *= 1.0 + uGrain * (2.0 * hash(floor(pile / 0.006)) - 1.0) * 0.8 + 0.5 * uGrain * (2.0 * hash(floor(pile / 0.03) + 7.0) - 1.0) + 0.25 * uGrain * (turned - 0.5);
-    vec2 seam = abs(fract(square / 0.6) - 0.5) * 0.6;
-    if (min(0.3 - seam.x, 0.3 - seam.y) < 0.003) c *= 0.94;
+      // Carpet tiles, 60 cm, laid quarter-turned; the loop pile's light and shade from its normal map.
+      vec2 tile = floor(square / 0.6);
+      float turned = mod(tile.x + tile.y, 2.0);
+      vec2 uv = square / 0.6;
+      uv = turned > 0.5 ? vec2(uv.y, -uv.x) : uv;
+      vec3 pileN = texture2D(uCarpetNormal, uv).rgb * 2.0 - 1.0;
+      float pile = 0.88 + 0.24 * clamp(dot(normalize(pileN), normalize(vec3(-0.4, 0.5, 0.75))), 0.0, 1.0);
+      c *= mix(1.0, detail(uCarpet, uv), 0.55) * pile;
+      vec2 seam = abs(fract(square / 0.6) - 0.5) * 0.6;
+      if (min(0.3 - seam.x, 0.3 - seam.y) < 0.003) c *= 0.93;
     }
     c *= field(uAo, square);
     c *= 1.0 + 0.6 * field(uLit, square);
   } else if (vKind < 2.5) {
-    // The ceiling: a drop ceiling's grid, the tiles' fissured face, its edges a touch shaded.
-    c *= 0.93 + 0.04 * noise(square * 40.0);
+    // The ceiling: acoustic tiles in their grid, 2 x 2 to a repeat of the texture.
+    c *= 0.95 * mix(1.0, detail(uCeiling, square / (2.0 * uTile)), 0.8);
     c *= mix(1.0, field(uAo, square), 0.5);
-    vec2 g = abs(fract(square / uTile) - 0.5) * uTile;
-    if (min(0.5 * uTile - g.x, 0.5 * uTile - g.y) < 0.012) c *= 0.82;
+
     shade = 1.0;
   }
   // Into light, exposed for the photographs' bright whites, through ACES, and back.
