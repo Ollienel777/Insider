@@ -1,7 +1,7 @@
 // The route against a stubbed Model API: no call leaves the test, and every
 // id, key and link is made up.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GET } from "./route";
+import { POST } from "./route";
 
 const CDN = "https://cdn-2.matterport.com/models/aaaa/assets";
 const MODEL = {
@@ -24,7 +24,15 @@ const MODEL = {
   ],
 };
 
-const get = (query: string) => GET(new Request(`http://localhost/api/scan-mesh${query}`));
+// The tests keep writing options as a query string; the route takes them as a JSON body.
+const get = (query: string) =>
+  POST(
+    new Request("http://localhost/api/scan-mesh", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(Object.fromEntries(new URLSearchParams(query.replace(/^\?/, "")))),
+    }),
+  );
 
 function live() {
   vi.stubEnv("NEXT_PUBLIC_MATTERPORT_MODE", "live");
@@ -48,7 +56,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("GET /api/scan-mesh", () => {
+describe("POST /api/scan-mesh", () => {
   it.each(["", "?m=", "?m=abc", "?m=abc/def12", "?m=" + "a".repeat(21), "?m=abc%22%29%7Bx%7D"])(
     "answers 400 to a bad model id (%s) without calling anything",
     async (query) => {

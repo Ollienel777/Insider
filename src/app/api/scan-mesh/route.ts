@@ -1,4 +1,5 @@
-// GET /api/scan-mesh?m=MODEL_ID[&mesh=50k|500k][&faces=low|high|2k|4k]: what
+// POST /api/scan-mesh with a JSON body {m: MODEL_ID, mesh?: 50k|500k,
+// faces?: low|high|2k|4k}: what
 // the free-walk sandbox needs to draw one scan (issue 118). It asks the
 // Matterport Model API with the secret key and relays a manifest: a
 // short-lived signed link to the mesh, and each panorama's position, rotation
@@ -6,7 +7,8 @@
 // and length (one byte of it is read here for that, and dropped). The browser fetches the assets itself, straight from the
 // scan CDN, so no scan byte passes through this server and nothing is cached
 // or written. Links are checked against an allow-list before they are relayed
-// (src/lib/scan-mesh/manifest.ts).
+// (src/lib/scan-mesh/manifest.ts). The model id travels in the body, not the
+// address, so it stays out of the server's request log.
 //
 // Without the key, or in fake mode (the gate and CI), it answers 503 with a
 // line the page shows, and calls nothing.
@@ -37,17 +39,18 @@ function refuse(error: keyof typeof MESSAGES, status: number): Response {
   return Response.json({ error, message: MESSAGES[error] }, { status, headers: NO_STORE });
 }
 
-function option<T extends string>(value: string | null, allowed: readonly T[], fallback: T): T | null {
-  if (value === null) return fallback;
+function option<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T | null {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value !== "string") return null;
   return (allowed as readonly string[]).includes(value) ? (value as T) : null;
 }
 
-export async function GET(request: Request): Promise<Response> {
-  const params = new URL(request.url).searchParams;
-  const modelId = params.get("m") ?? "";
+export async function POST(request: Request): Promise<Response> {
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const modelId = typeof body?.m === "string" ? body.m : "";
   if (!MODEL_ID.test(modelId)) return refuse("bad-model-id", 400);
-  const mesh = option<MeshResolution>(params.get("mesh"), MESH_RESOLUTIONS, "50k");
-  const faces = option<PanoResolution>(params.get("faces"), PANO_RESOLUTIONS, "2k");
+  const mesh = option<MeshResolution>(body?.mesh, MESH_RESOLUTIONS, "50k");
+  const faces = option<PanoResolution>(body?.faces, PANO_RESOLUTIONS, "2k");
   if (!mesh || !faces) return refuse("bad-option", 400);
 
   const refusal = modelApiRefusal(process.env);
@@ -58,7 +61,7 @@ export async function GET(request: Request): Promise<Response> {
     model = await fetchScanModel(modelId, faces, process.env);
   } catch (error) {
     // The status only: an API error can quote a link or the query.
-    console.error("GET /api/scan-mesh:", error instanceof ModelApiError ? error.message : "the Model API failed");
+    console.error("POST /api/scan-mesh:", error instanceof ModelApiError ? error.message : "the Model API failed");
     return refuse("api-failed", 502);
   }
   const manifest = buildManifest(model, { mesh, faces });
