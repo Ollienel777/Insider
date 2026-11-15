@@ -28,11 +28,14 @@ import {
   type Object3D,
 } from "three";
 import { act, type Action, type RunState } from "@/engine";
+import type { LockKind } from "@/domain/manifest";
 import type { PlacedLevel } from "@/level/placer";
 import { objectiveLabel, objectiveNoun } from "@/lib/objective-noun";
 import { cn } from "@/lib/utils";
 import { cameraMount, choices, roomName } from "../board";
 import { scanStageOf, type HeldAction, type ScanHandle, type ScanPreload } from "./run-view";
+import { actionLabel, announcement, inventoryOf, lockOf, lockWords } from "./action";
+import { ActionAnnouncer, ActionLabelView, InventoryChips, PickupToast } from "./action-hud";
 import { Actors, type Marks } from "./actors";
 import { Controller } from "./controller";
 import { endState } from "./end-state";
@@ -76,6 +79,8 @@ export interface FirstPersonViewProps {
   onWalking?: (walking: boolean) => void;
   /** What the end of the run offers next to its outcome (the Run screen's "See the debrief"). */
   endAction?: ReactNode;
+  /** The floor's lock kind (the rules table's era), for the words E's label says. */
+  lockKind?: LockKind | null;
 }
 
 /** What a scan's stage says while it loads: null once the player is let loose. */
@@ -146,7 +151,7 @@ function hasWebGL(): boolean {
   }
 }
 
-export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, scan = null, onReady, onWalking, endAction = null }: FirstPersonViewProps) {
+export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, scan = null, onReady, onWalking, endAction = null, lockKind = null }: FirstPersonViewProps) {
   const surface = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const labelLayer = useRef<HTMLDivElement>(null);
@@ -588,6 +593,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
   useEffect(() => {
     if (over && surface.current && document.pointerLockElement === surface.current) document.exitPointerLock();
   }, [over]);
+  // What E does, in words, and what the player carries (action.ts).
+  const wordsFor = (doorId: string) => lockWords(lockOf(placed, doorId, lockKind));
+  const action = over ? null : actionLabel(hud.prompt, hud.using, wordsFor, noun, moment?.kind === "door" ? moment : null);
+  const said = over ? null : announcement(moment?.kind === "door" ? { kind: "door", doorId: moment.doorId } : moment ? { kind: "take" } : null, wordsFor, noun);
   const tint = run.alarm === "calm" ? null : run.alarm === "suspicious" ? "var(--warning)" : "var(--danger)";
 
   return (
@@ -645,6 +654,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
       {/* The controls hint and the meter are for a run being played: both go when the end card comes up (issue 146). */}
       {ready && !end ? <SuspicionMeter notice={notice} /> : null}
+      {ready && action ? <ActionLabelView label={action} turnMs={FP.turnMs} still={paused} /> : null}
+      {ready && !over && moment?.kind === "take" ? <PickupToast title={`${noun.charAt(0).toUpperCase()}${noun.slice(1)} collected`} line={moment.text.split(". ").slice(1).join(". ") || "Get to the exit."} /> : null}
+      {ready && !end ? <InventoryChips items={inventoryOf(run, noun)} /> : null}
+      <ActionAnnouncer text={said} />
       {ready && !end ? <ControlsHint phase={hint.phase} ticks={hintTicks(hint.progress)} dragToLook={hud.refused} /> : null}
 
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-end px-6 py-3">
@@ -654,42 +667,14 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
               Paused. <Key>P</Key> to go on
             </p>
           ) : null}
-          {over ? null : hud.prompt ? (
+          {over ? null : hud.prompt && hud.prompt.kind !== "pick" && hud.prompt.kind !== "take" ? (
             <p
               data-testid="fp-prompt"
               data-kind={hud.prompt.kind}
               data-using={hud.using ? "true" : undefined}
               className={cn(PROMPT, hud.prompt.kind === "exit" && "border border-success")}
             >
-              {hud.prompt.kind === "far" ? (
-                "A locked door. Step up to it and hold E to pick it."
-              ) : hud.prompt.kind === "take" ? (
-                <>
-                  Hold <Key>E</Key> to take the {noun}
-                </>
-              ) : hud.prompt.kind === "exit" ? (
-                exitPrompt(placed, hud.prompt.nodeId, noun)
-              ) : hud.using ? (
-                <>
-                  Picking… hold <Key>E</Key>
-                  <span className="font-mono text-text-2">
-                    {hud.prompt.done} of {hud.prompt.of}
-                  </span>
-                </>
-              ) : hud.prompt.done > 0 ? (
-                <>
-                  Hold <Key>E</Key> to go on picking. Let go and the lock starts over.
-                </>
-              ) : (
-                <>
-                  Hold <Key>E</Key> to pick the lock
-                </>
-              )}
-            </p>
-          ) : moment?.kind === "door" ? (
-            // The picked door's prompt does not just vanish: it says the door is open, for the moment's turns (issue 188).
-            <p data-testid="fp-prompt" data-kind="open" className={cn(PROMPT, "border border-success")}>
-              Door open. Walk on through.
+              {hud.prompt.kind === "far" ? "A locked door. Step up to it and hold E to open it." : exitPrompt(placed, hud.prompt.nodeId, noun)}
             </p>
           ) : null}
           {over ? null : (
