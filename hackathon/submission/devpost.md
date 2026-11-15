@@ -3,20 +3,38 @@
 Paste each section into the Devpost field of the same name. Links are
 absolute, into `Ollienel777/Insider`, which is public. Everything below
 describes `main` at
-[`774457d`](https://github.com/Ollienel777/Insider/commit/774457d) (15 November,
-06:37 UTC). `TODO(team):` marks what only a person can supply.
+[`48387f2`](https://github.com/Ollienel777/Insider/commit/48387f2) (15 November,
+with #167 merged). `TODO(team):` marks what only a person can supply.
 
 **Notes for the team, not for Devpost.**
 
-- **The name.** The product is Hobbs (#183). On `main` the top bar's wordmark
-  and the page title still read "Heist Anywhere"
-  ([`top-bar.tsx`](https://github.com/Ollienel777/Insider/blob/main/src/components/shell/top-bar.tsx),
-  [`layout.tsx`](https://github.com/Ollienel777/Insider/blob/main/src/app/layout.tsx)),
-  and so do `hackathon/SPEC.md` and `hackathon/DESIGN.md`. #195 renames the
-  wordmark and title. Until it merges, a screenshot shows the old name.
-- **The README lags this write-up.** It still says CoStar, Vexcel and
-  Matterport have never run live, and it still leads with the fire drill. A
-  judge who follows the repo link reads that first.
+- **The name.** The product is Hobbs (#183), and since #167 the wordmark and
+  the page title say so. `hackathon/SPEC.md` still says "Heist Anywhere", and
+  every picture in `docs/screenshots/` predates the rename and the restyle.
+- **The README disagrees with this write-up**, and a judge who follows the
+  repo link reads it first. It is stale on:
+  - "never been run live" for CoStar, Vexcel and Matterport;
+  - leading with the fire drill, and the fire safety director as a user
+    (Drill is on hold);
+  - "Pick Halvorsen Tower" as the start (the start is the mission picker);
+  - Scout showing no aerial photos;
+  - only F1 having a level (F1, F2 and F3 do);
+  - one `deepagents` agent in its table (there are two);
+  - "What is next" items already on `main` (live data, aerials in Scout, a
+    Chief that learns);
+  - "no scan id or label reaches the Chief" (false since #173: it gets the
+    scan's room names);
+  - no mention of first person.
+- **The demo script (PR #154) says three things the code does not do.** The
+  casting search reads only the fixture inventory, and the team picks the
+  real building:
+  - beat 1, "Our agent finds one that's empty tonight";
+  - beat 2, "The agent searches CoStar's inventory for this heist", and its
+    note that an agent runs a real location search over CoStar's inventory;
+  - beat 7, "on CoStar's own availability".
+- **Merged PR #185's body names the real building**, with its staged floor
+  and its count of free suites. SPEC §4.5 bars property-identifiable data in
+  any PR. Its author can edit the body.
 - **Nothing here names the real building**, and no screenshot or video may
   show it, its record or its scan: SPEC §4.5 keeps "property-identifiable
   data" out of every issue, PR, README and video, Q10 keeps the scan out of
@@ -34,6 +52,9 @@ describes `main` at
 - `TODO(team):` check the hacker guide for a required AI-disclosure wording.
   `hackathon/EVENT.md` records no rule on AI use; the section below is written
   to be complete rather than to a template.
+- `TODO(team):` the link to `prizes.md` under "Tracks and prizes" points at
+  this PR's branch, because the file is not on `main` until the PR merges.
+  Switch it to `blob/main/` after the merge.
 
 ---
 
@@ -51,8 +72,8 @@ locks and cameras, the class sets the guards, the floor on the market is where
 it is staged. Vexcel shows the building from above, and its Matterport scan is
 the floor you walk, in first person. When a camera catches you, an AI security
 chief re-plans the guards and says why. Then Owner Mode points the same engine
-at a building's own security: an AI crew tries 50 break-ins, and the chief
-proposes the fix.
+at a building's own security: the engine plays 50 break-ins from strategies
+an AI crew writes, and the chief proposes the fix.
 
 ---
 
@@ -83,12 +104,13 @@ Hobbs is a stealth game in the browser, played in seven steps.
    the event, its date and a source; the fifth is fiction and says so. Every
    card says the building is a stage cast for its era and that the security
    shown is game fiction.
-2. **Cast.** The Casting Director, a `deepagents` agent, narrows an inventory
-   filter by filter, on screen, beside a map whose pins dim: era, class, a
-   floor on the market, a 3D scan, a way in on the aerial. On the fixture
-   inventory that is 61 buildings down to three finalists. In live mode a
-   card above them shows a real building from the CoStar kit, checked need by
-   need against its CoStar record. The team chose that building for the
+2. **Cast.** The Casting Director, a `deepagents` agent, replays how it
+   narrowed a fixture inventory, filter by filter, beside a map whose pins
+   dim: era, class, a floor on the market, a 3D scan, a way in on the aerial.
+   That is 61 invented buildings down to three finalists, and the screen
+   heads it "Scripted run". In live mode a card above them shows a real
+   building from the CoStar kit, checked need by need against its CoStar
+   record. The team chose that building for the
    mission; the agent did not find it, and the search does not read the kit
    yet.
 3. **Scout.** The building from above. On a kit building this is a live
@@ -114,8 +136,8 @@ Hobbs is a stealth game in the browser, played in seven steps.
    or lock for its **Why card**: the field that put it there.
 7. **Debrief.** A grade, how it ended and who saw you, a replay you can scrub
    turn by turn, and every decision the Chief made with its reason. Play the
-   same building again and the Chief has read your last run: it posts a guard
-   where you came in, and says so.
+   same building again and the level remembers your last run: a guard starts
+   posted where you came in, and the Chief, given your history, says why.
 
 **Owner Mode** opens from the Debrief. The same board becomes an editor:
 guards and their rounds, cameras, doors as key, badge or open, staffed desks.
@@ -136,7 +158,8 @@ or `LIVE`, and every model answer is tagged when no model wrote it
 (**Recorded**, **Rule-based**, **No crew reply**). With the event's keys, the
 path from Cast to Debrief has been played end to end on a real Los Angeles
 office building from the CoStar kit, with live Vexcel, its live Matterport
-scan as the floor, and Claude answering live.
+scan as the floor, and Claude answering live (the casting replay itself is
+still the recorded fixture run; the building comes from our showcase list).
 
 ## How we built it
 
@@ -167,32 +190,34 @@ handlers hold the keys, read the CoStar kit and call Vexcel and the model.
   floor does not have is dropped, and the screen says so. Guards move on the
   engine's own decision before any model answers, so a slow model never
   stalls a run. Crew and Chief calls are single structured calls with a 4 s
-  timeout and a fallback that is labelled as one.
+  default timeout and a fallback that is labelled as one.
 - **Every service sits behind an adapter with a fake.**
   [CoStar](https://github.com/Ollienel777/Insider/blob/main/src/adapters/costar/kit.ts)
-  is read from the event's data kit on disk, and only its property and
-  listing files, never its tenant files.
+  is read from the event's data kit on disk, and only its property, listing
+  and scan-link files, never its tenant files.
   [Vexcel](https://github.com/Ollienel777/Insider/blob/main/src/adapters/vexcel/live.ts)
   imagery is proxied at request time and never stored.
   [Matterport](https://github.com/Ollienel777/Insider/blob/main/src/adapters/matterport/live.ts)
   runs in the browser: the scan's positions and rooms become the board's
-  nodes, doors and sightlines, held in the tab's memory only.
+  nodes, doors and sightlines, held in the tab's memory only. For first
+  person, the server relays signed links to the scan's mesh and panoramas
+  and stores nothing; the browser fetches them itself.
 - **First person inside a scan.** The first-person view has one walker and
   one set of rules, and two grounds to stand on: a fixture floor built from
   room rectangles, or a live scan's own mesh
   ([`scan-ground.ts`](https://github.com/Ollienel777/Insider/blob/main/src/components/run/fp/scan-ground.ts)),
   where walls, sight and doors come from the mesh. The body and the engine's
   node are kept in step, so the log and the replay stay exact.
-- **The gate.** Lint, typecheck, 2,805 unit tests, a production build and 28
-  Playwright smoke specs, all in fake mode, on every pull request. One spec
+- **The gate.** Lint, typecheck, 2,843 unit tests, a production build and 28
+  Playwright smoke specs, all in fake mode, on every ready pull request. One spec
   walks the demo path from the mission picker to the Debrief.
 
 ## Challenges we ran into
 
-- **A real building is not a level.** On the real building the files sit at
-  the far end of a long corridor from the way in, and the cameras look down
-  it. Nobody on the team has won that run, and it cannot be won in a
-  two-minute demo. We did not bend the level to fake a win. In the demo the
+- **A real building is not a level.** A real floor was not laid out to be
+  fair: on the real building the way to the files is long and the cameras
+  cover it. Nobody on the team has won that run, and we don't expect a win in
+  two minutes. We did not bend the level to fake a win. In the demo the
   run on the real building is expected to end in a capture: you see which
   camera had you, the Chief's re-plan, and the Debrief's reasons. First person
   on a hand-built fixture floor is the rehearsed fallback.
@@ -204,9 +229,10 @@ handlers hold the keys, read the CoStar kit and call Vexcel and the model.
   failing it and says so, a loading line shows what is happening, and one
   scan is loaded per tab and kept across Plan and Run.
 - **Agents that speak about a floor they cannot see.** By our own rule the
-  model never receives the scan's coordinates or layout. So the Chief's first live
-  orders named "Area 2" on a board whose rooms were offices and a corridor.
-  It now gets the scan's room names and nothing else of the floor. The crew
+  model never receives the scan's coordinates or layout. So the Chief's first
+  live orders named "Area 2" on a board whose rooms had names of their own.
+  It now gets the scan's room names and which named area each guard is in,
+  never coordinates or layout. The crew
   still plans on the level's zones, so it can name a suite the scanned floor
   does not have; the board strikes that step out and says why. That one is
   open.
@@ -232,7 +258,7 @@ inventory even in live mode. At Lockdown in first person the radio mostly
 repeats the last sighting instead of reading the Chief's orders (#190); the
 orders still apply and the Debrief lists them. Live aerials tag no ways in
 on a kit building, so its level offers the roof hatch and the street lobby.
-Amazon Bedrock is wired in and has never been called.
+Amazon Bedrock is wired in and not used.
 
 ## Accomplishments that we're proud of
 
@@ -255,9 +281,8 @@ Amazon Bedrock is wired in and has never been called.
   can be traced.
 - Build the fakes first and label them. The whole product existed before the
   first key, and the labels made the switch to live honest.
-- Real data is harder than fixtures in ways fixtures cannot show: a long
-  thin floor, dozens of neighbours to one position, rooms with no names,
-  data that arrives late.
+- Real data is harder than fixtures in ways fixtures cannot show: dozens of
+  neighbours to one position, rooms with no names, data that arrives late.
 - Play it. The problems that mattered on the last night were found by
   walking the real building, not by a test.
 - Review prose like code. Reviewers kept finding claims in our own docs that
@@ -273,7 +298,7 @@ Amazon Bedrock is wired in and has never been called.
 - **Send the crew the placed board's zones**, so it never plans on a suite
   the scan does not have.
 - **Owner Mode on a real building**, unlocked only for its verified owner,
-  which CoStar's ownership records would allow. Today it is fixtures only.
+  which CoStar's ownership records could allow. Today it is fixtures only.
 - **More buildings and missions**: floors and levels for the two Houston
   fixtures, and for more of the kit.
 - **Ways in from the aerial** on real buildings, tagged from Vexcel imagery.
@@ -286,8 +311,8 @@ next.js, react, typescript, tailwindcss, three.js, langchain, deepagents,
 langgraph, zod, vitest, playwright, lucide, openstreetmap, costar, vexcel,
 matterport, anthropic, claude, claude-code
 
-Amazon Bedrock is in the code as an alternative model provider and has never
-been called, so it is not in the list.
+Amazon Bedrock is wired in as an alternative model provider and not used, so
+it is not in the list.
 
 ## Tracks and prizes
 
@@ -297,39 +322,48 @@ Main track: **Entertainment**. Special tracks: CoStar, LangChain, Amazon.
   a building cast for it, a briefing, the run in three views, and a debrief.
 - **CoStar "AI for the Built World":** the CoStar record builds the level,
   the Matterport scan is the floor, and Vexcel is the view from above; two
-  agents plan and act, and a third re-plans live. Owner Mode is the "switched
-  on Monday" answer for a building's security lead; casting, a location scout's search, runs
-  on fixture data only.
+  `deepagents` agents plan and act, and the Security Chief, a single model
+  call, re-plans live. Owner Mode is the "switched on Monday" answer for a
+  building's security lead; casting, a location scout's search, runs on
+  fixture data only.
 - **LangChain "Best use of deepagents":** two `createDeepAgent` agents, the
   Casting Director and the Level Builder, each with todos, subagents and
   tools, and both traces shown in the product.
 - **Amazon "Best Practical AI Innovation":** the Security Chief reasons,
-  re-plans and acts within a run, and adapts between runs from the player's
-  history. It runs on Claude through Anthropic's API, not on Bedrock.
+  re-plans and acts within a run; between runs it is given the player's
+  history and explains the changed posture. It runs on Claude through
+  Anthropic's API, not on Bedrock.
 
 Each requirement, its evidence and an honest status:
-[`prizes.md`](https://github.com/Ollienel777/Insider/blob/main/hackathon/submission/prizes.md).
+[`prizes.md`](https://github.com/Ollienel777/Insider/blob/docs/13-devpost-current/hackathon/submission/prizes.md).
+In short: Entertainment, LangChain and Owner Mode's rows are met in the repo;
+CoStar's real-data row is met only live, at the table; CoStar's "real person"
+row is partly met, because casting searches fixture data; Amazon's "adapt"
+row is met with no Amazon service used.
 
 **On the four judged criteria.** Creativity: a real building's record and
 scan as a game level. Utility: Owner Mode, a first pass at "how would someone
 get to the records room?" before a consultant's site visit; and casting, the
 search a location scout runs for an empty floor of a given era, shown on
-fixture data. Charity: this
-is a game first, and we do not claim more than this: three of the five
-missions put the player on the side of stopping a theft or a cover-up (one of
-them is playable today), and Owner Mode is for testing your own building's
-security, not someone else's. The public
-game never shows a real building's security, only fiction generated from its
-class and era, and no tenant appears anywhere. Avidity: the repo.
+fixture data. Charity: this is a game first, and we do not claim more than
+this: three of the five missions put the player on the side of stopping a
+theft or a cover-up (one of them is playable today), and Owner Mode is for
+testing your own building's security, not someone else's. The public game
+never shows a real building's security, only fiction generated from its class
+and era, and no tenant data is read or shown. Avidity: the repo.
 
 ## Use of AI
 
 AI wrote most of this project, and people directed it.
 
-**The idea.** Before the event, an autonomous Claude ideation loop in a
-separate repository generated, ranked and red-teamed candidate ideas into a
-shortlist. A person on the team chose from it. No product code was written
-before hacking started; the loop's tooling predates the event.
+**The idea.** The idea is ours: a one-pager the team wrote before the event.
+An autonomous Claude ideation loop in a separate repository scored and
+red-teamed it against its own candidates. It ranked ours last of twelve and
+proposed a repair; we kept our idea, and its critique became the risks the
+spec had to answer
+([`DECISION.md`](https://github.com/Ollienel777/Insider/blob/main/hackathon/DECISION.md)).
+No product code was written before hacking started; the loop's tooling
+predates the event.
 
 **The build.** Most of the code, tests and docs, this write-up included, were
 written by Claude coding agents:
@@ -339,18 +373,23 @@ written by Claude coding agents:
   had separate reviewer agents review them, fixed what they found, and merged
   on a green gate;
 - each teammate's own Claude Code sessions, building, reviewing and fixing
-  beside the loop.
+  beside the loop;
+- an AI review tool, CodeRabbit, on some pull requests.
 
-The four of us chose the idea, set the scope and the order of work, answered
-every decision the loop raised, obtained the keys and the sponsors' answers
-on data terms, reviewed and merged what the loop may not merge itself,
-play-tested the game live on the real building, and made the calls that
-followed, such as letting the real run end in a capture.
+The team's decisions, and who was working on what, were recorded and looked
+up through a shared tool, Skein, which the agents' sessions connect to.
 
-**In the product.** Anthropic's Claude is the model behind every agent: the
-Casting Director, the Level Builder, the crew and the Security Chief. In fake
-mode, and in CI, those agents answer from recordings or rules, and the screen
-says so.
+The four of us wrote the idea, set the scope and the order of work, answered
+every decision the loop raised, obtained the keys, asked the sponsors about
+data terms and made the calls they could not confirm (recorded in SPEC §4.5
+and §11), reviewed and merged what the loop may not merge itself, play-tested
+the game live on the real building, and made the calls that followed, such as
+letting the real run end in a capture.
+
+**In the product.** Anthropic's Claude is the model behind the Level Builder,
+the crew and the Security Chief. In fake mode, and in CI, they answer from
+recordings or rules, and the screen says so. The Casting Director's run shown
+on Cast is a recording in every mode, live included.
 
 ## How to run it
 
@@ -368,6 +407,8 @@ the primary button on each screen. The top bar shows `FIXTURES`. On the Run,
 **First person** switches the view; from the Debrief, **Owner mode** opens
 the editor and the 50 attempts.
 
-Live mode needs the event's keys and data kit, which are not public: copy
-`.env.example` to `.env.local` and fill in what you have. Each service goes
-live on its own, and the rest stay on fixtures.
+Live mode needs the event's keys and data kit, which are not public. Copy
+`.env.example` to `.env.local`, set `HEIST_MODE=live` (keys alone leave every
+service on fixtures), and fill in what you have. Each service goes live on
+its own, and the rest stay on fixtures. A real building also needs
+`COSTAR_KIT_DIR` and a `SHOWCASE_LEVELS` entry pairing it with a mission.
