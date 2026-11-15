@@ -72,18 +72,43 @@ export interface AskedAbout {
 }
 
 /**
- * Whether an alarm event is worth a Chief call. Every change of alarm level is.
- * A Lockdown re-sighting (`from` and `to` both "lockdown") is not when it is in
- * the zone last asked about, or when the last call at Lockdown went out under
- * `LOCKDOWN_REASK_MS` ago. The engine still records every event.
+ * When an alarm event is worth a Chief call: 0 for now, a number of ms to wait,
+ * or null for never. Every change of alarm level is asked about now. A Lockdown
+ * re-sighting (`from` and `to` both "lockdown") in the zone last asked about is
+ * never asked about; in a new zone, it waits until `LOCKDOWN_REASK_MS` after the
+ * last call at Lockdown, so the radio reads that re-plan in full. The wait is only
+ * for a run on the clock (`clocked`): on the turn-based board the panel reads an
+ * answer in a second or two, and a new zone is asked about at once. The engine
+ * still records every event.
  */
+export function askDelay(
+  event: { from: string; to: string; lastKnownZone: string | null },
+  last: AskedAbout | null,
+  now: number,
+  clocked = true,
+): number | null {
+  if (event.from !== "lockdown" || event.to !== "lockdown") return 0;
+  if (!last || last.to !== "lockdown") return 0;
+  if (event.lastKnownZone === last.zone) return null;
+  if (!clocked) return 0;
+  return Math.max(0, last.at + LOCKDOWN_REASK_MS - now);
+}
+
+/** Whether an alarm event is worth a Chief call now (`askDelay` is 0). */
 export function worthAsking(
   event: { from: string; to: string; lastKnownZone: string | null },
   last: AskedAbout | null,
   now: number,
+  clocked = true,
 ): boolean {
-  if (event.from !== "lockdown" || event.to !== "lockdown") return true;
-  if (!last || last.to !== "lockdown") return true;
-  if (event.lastKnownZone === last.zone) return false;
-  return now - last.at >= LOCKDOWN_REASK_MS;
+  return askDelay(event, last, now, clocked) === 0;
+}
+
+/**
+ * What is remembered as asked about once a call has failed: the call before it,
+ * so Retry, or the next re-sighting in that zone, asks again. Unchanged when a
+ * later call has gone out since (`asked` is no longer `current`).
+ */
+export function afterFailure(current: AskedAbout | null, asked: AskedAbout, before: AskedAbout | null): AskedAbout | null {
+  return current === asked ? before : current;
 }
