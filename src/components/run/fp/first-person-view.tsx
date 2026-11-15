@@ -518,7 +518,9 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         if (made) begin(made);
       });
     } else {
-      unavailable("This scan has no mesh to walk, so first person isn't offered on it. You're on the board.");
+      // The tab's scan is on its way to this screen (scan-hold.ts): it comes in as `scan`, and this runs
+      // again. A scan that can't load takes first person away before then (`firstPersonOffered`).
+      loading({ line: SCAN_PHASE.manifest, held: 0, total: 0 });
     }
 
     return () => {
