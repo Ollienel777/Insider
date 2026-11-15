@@ -1,6 +1,6 @@
 // Made-up poses and pixels.
 import { describe, expect, it } from "vitest";
-import { eyePose, poseVelocity, viewStats, type ScanPose } from "./pose";
+import { CAMERA_HEIGHT, eyePose, feetUnder, linksFresh, poseVelocity, sharpLayer, viewStats, yawFromHeading, type ScanPose } from "./pose";
 
 const at = (x: number, z: number): ScanPose => ({ x, y: 1.6, z, yaw: 0, pitch: 0 });
 
@@ -21,6 +21,55 @@ describe("poseVelocity", () => {
 describe("eyePose", () => {
   it("lifts the feet to the eye", () => {
     expect(eyePose([2, 0.1, -3], 0.5, -0.2, 1.6)).toEqual({ x: 2, y: 1.7000000000000002, z: -3, yaw: 0.5, pitch: -0.2 });
+  });
+});
+
+describe("yawFromHeading", () => {
+  /** Where a yaw looks on the ground, x and z: three.js's camera, rotation order YXZ. */
+  const looks = (yaw: number) => [-Math.sin(yaw), -Math.cos(yaw)];
+  it("looks the same way as the heading, all the way round", () => {
+    for (const heading of [0, 0.3, Math.PI / 2, 2, Math.PI, -1.2]) {
+      const [x, z] = looks(yawFromHeading(heading));
+      expect(x).toBeCloseTo(Math.cos(heading), 9);
+      expect(z).toBeCloseTo(Math.sin(heading), 9);
+    }
+  });
+});
+
+describe("feetUnder", () => {
+  it("takes the mesh's floor first, then the scan's floor spot, then a camera's height down", () => {
+    expect(feetUnder([1, 1.5, 2], 0.1, [1, 0.05, 2])).toEqual([1, 0.1, 2]);
+    expect(feetUnder([1, 1.5, 2], null, [1, 0.05, 2])).toEqual([1, 0.05, 2]);
+    expect(feetUnder([1, 1.5, 2], null, null)).toEqual([1, 1.5 - CAMERA_HEIGHT, 2]);
+  });
+
+  it("keeps a floor at height zero rather than falling through to the next guess", () => {
+    expect(feetUnder([0, 1.4, 0], 0, [0, -3, 0])[1]).toBe(0);
+    expect(feetUnder([0, 1.4, 0], null, [0, 0, 0])[1]).toBe(0);
+  });
+});
+
+describe("sharpLayer", () => {
+  it("keeps fewer cubes the sharper they are", () => {
+    expect(sharpLayer("4k")).toEqual({ capacity: 3, size: 4096 });
+    expect(sharpLayer("2k")).toEqual({ capacity: 6, size: 2048 });
+    expect(sharpLayer("high")).toEqual({ capacity: 8, size: 1024 });
+    expect(sharpLayer("low")).toEqual({ capacity: 8, size: 512 });
+  });
+});
+
+describe("linksFresh", () => {
+  const now = Date.parse("2026-01-01T00:00:00Z");
+  it("is true with no expiry, and while more than the margin is left", () => {
+    expect(linksFresh(null, now, 20_000)).toBe(true);
+    expect(linksFresh(undefined, now, 20_000)).toBe(true);
+    expect(linksFresh("2026-01-01T00:01:00Z", now, 20_000)).toBe(true);
+  });
+
+  it("is false inside the margin, after expiry, and for a date it can't read", () => {
+    expect(linksFresh("2026-01-01T00:00:10Z", now, 20_000)).toBe(false);
+    expect(linksFresh("2025-12-31T23:59:00Z", now, 20_000)).toBe(false);
+    expect(linksFresh("soon", now, 20_000)).toBe(false);
   });
 });
 
