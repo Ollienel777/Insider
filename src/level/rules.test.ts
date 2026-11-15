@@ -151,6 +151,11 @@ describe("staging floor and zones", () => {
     const untagged = { ...aerial("F1"), entries: [] };
     const d = deriveSecurityProfile({ ...building("F1"), id: "900001", source: "costar" }, untagged);
     expect(d.entries.map((e) => e.kind)).toEqual(["roof", "lobby"]);
+    // The provenance says the aerial answered and tagged none, not that no aerial answered.
+    const roof = d.provenance.find((p) => p.elementRole === "entry:roof")!;
+    expect(roof.rule).toMatch(/^The aerial tags no ways in on this building/);
+    const none = deriveSecurityProfile({ ...building("F1"), id: "900001", source: "costar" }, null);
+    expect(none.provenance.find((p) => p.elementRole === "entry:roof")!.rule).toMatch(/^No Vexcel aerial answered/);
   });
 
   it("still offers a fixture no entries when its aerial tags none, so a degraded build fails", () => {

@@ -1,19 +1,25 @@
 // A simple massing for a building with no hand-made one: a CoStar kit
 // building has coordinates and a size but no fixture footprint, so live
 // Vexcel would have nowhere to aim. The CoStar point is the centre, a
-// north-up square of the typical floor's area is the footprint, and the
-// stories give the height. Nothing in CoStar's data marks a dock or a door,
-// so the massing tags no entries. It is only ever an aim for live Vexcel:
-// the building is never drawn from it, so fake mode is unchanged.
+// north-up square wide enough for a slab of the typical floor's area is the
+// footprint, and the stories give the height. Nothing in CoStar's data marks
+// a dock or a door, so the massing tags no entries. It is only ever an aim
+// for live Vexcel, inside `massingFor`: live answers carry `source: "vexcel"`,
+// and a kit building with no imagery gets no aerial, so this massing (and its
+// `source: "fixture"`) never reaches a screen, and fake mode is unchanged.
 import { Aerial, type Building } from "@/domain";
+import { M_PER_DEG_LAT, mPerDegLng } from "./mapping";
 
 /** Square metres in a square foot. */
 const M2_PER_SF = 0.09290304;
 /** Metres per storey, floor to floor: a commercial building's typical 4 m. */
 export const M_PER_STOREY = 4;
-
-const M_PER_DEG_LAT = 111_132;
-const mPerDegLng = (lat: number) => 111_320 * Math.cos((lat * Math.PI) / 180);
+/**
+ * How much wider than the floor's own square the footprint is. CoStar gives
+ * no shape or heading, so the footprint spans the long side of a 3:1 slab of
+ * the floor's area, whichever way it runs; the ortho then frames all of it.
+ */
+export const SHAPE_SLACK = Math.sqrt(3);
 
 /** What the derivation reads, each possibly absent. */
 export type MassingFacts = {
@@ -26,8 +32,8 @@ const positive = (n: number | null | undefined): n is number => typeof n === "nu
  * The building's massing from its CoStar facts, or `null` when they cannot
  * place it: no coordinates, no stories, or no floor area. The footprint's
  * side is the square root of the typical floor's area (the building's area
- * over its stories when CoStar gives no typical floor), in metres; the
- * height is the stories at `M_PER_STOREY` each.
+ * over its stories when CoStar gives no typical floor), in metres, times
+ * `SHAPE_SLACK`; the height is the stories at `M_PER_STOREY` each.
  */
 export function deriveMassing(facts: MassingFacts): Aerial | null {
   const { lat, lng, stories, typicalFloorSf, rbaSf } = facts;
@@ -36,7 +42,7 @@ export function deriveMassing(facts: MassingFacts): Aerial | null {
   const floorSf = positive(typicalFloorSf) ? typicalFloorSf : positive(rbaSf) ? rbaSf / stories : null;
   if (!floorSf) return null;
 
-  const half = Math.sqrt(floorSf * M2_PER_SF) / 2;
+  const half = (Math.sqrt(floorSf * M2_PER_SF) * SHAPE_SLACK) / 2;
   const dLng = half / mPerDegLng(lat);
   const dLat = half / M_PER_DEG_LAT;
   return Aerial.parse({

@@ -331,7 +331,7 @@ export function deriveSecurityProfile(building: Building, aerial: Aerial | null)
         layer: "fiction",
         field: "entries.kind",
         value: entry.kind,
-        rule: `No Vexcel aerial answered with this building's ways in, so the rules offer its ${entry.label.toLowerCase()}: ${ENTRY_RULES[entry.kind]}`,
+        rule: `${aerial ? "The aerial tags no ways in on this building" : "No Vexcel aerial answered with this building's ways in"}, so the rules offer its ${entry.label.toLowerCase()}: ${ENTRY_RULES[entry.kind]}`,
       });
       entries.push({ ...entry });
     }

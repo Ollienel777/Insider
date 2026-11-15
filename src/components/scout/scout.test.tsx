@@ -289,6 +289,25 @@ describe("the Scout on a live aerial", () => {
     expect(panel("fixture")).not.toContain('data-testid="entries-untagged"');
     expect(panel("fixture")).toContain("The aerial tags no entries on this building.");
   });
+
+  it("shows a kit building's height as a CoStar estimate, and a fixture's as Vexcel's", () => {
+    const panel = (source: "costar" | "fixture") =>
+      renderToStaticMarkup(
+        <ScoutPanel
+          building={{ ...f1, id: "900001", source }}
+          load={{ status: "ready", aerial: live, live: true }}
+          selected={null}
+          onPick={() => {}}
+          onRetry={() => {}}
+        />,
+      );
+    const height = (html: string) => {
+      const [, layer, value] = /data-layer="(\w+)"[^>]*><\/span>Height<\/dt><dd[^>]*>([^<]*)<\/dd>/.exec(html)!;
+      return { layer, value };
+    };
+    expect(height(panel("costar"))).toEqual({ layer: "costar", value: `~${Math.round(live.heightM)} m` });
+    expect(height(panel("fixture"))).toEqual({ layer: "vexcel", value: `${Math.round(live.heightM)} m` });
+  });
 });
 
 describe("fetchAerial and the mode chip", () => {

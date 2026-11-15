@@ -2,7 +2,7 @@
 // at a kit building. Every building here is made up; no kit record is used.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Aerial, type Building, type LngLat } from "@/domain";
-import { deriveMassing, M_PER_STOREY } from "./derived-massing";
+import { deriveMassing, M_PER_STOREY, SHAPE_SLACK } from "./derived-massing";
 import { FIXTURE_AERIALS } from "./fake";
 import { massingFor, selectVexcel } from "./index";
 import { createLiveVexcel } from "./live";
@@ -25,8 +25,8 @@ const KIT: Building = {
   source: "costar",
 };
 
-/** The side of a 10,000 sf square, in metres. */
-const SIDE_M = Math.sqrt(10_000 * 0.09290304);
+/** The footprint's side for a 10,000 sf floor, in metres: the floor's square, widened for an unknown shape. */
+const SIDE_M = Math.sqrt(10_000 * 0.09290304) * SHAPE_SLACK;
 
 /** The footprint's width (east-west) and depth (north-south), in metres. */
 function sizeM(footprint: LngLat[]) {
@@ -40,7 +40,7 @@ function sizeM(footprint: LngLat[]) {
 }
 
 describe("deriveMassing", () => {
-  it("centres a square of the typical floor's area on the CoStar point", () => {
+  it("centres a square sized from the typical floor on the CoStar point", () => {
     const aerial = deriveMassing(KIT)!;
     expect(Aerial.safeParse(aerial).error).toBeUndefined();
     expect(aerial.footprint).toHaveLength(4);
@@ -64,6 +64,10 @@ describe("deriveMassing", () => {
       expect(width).toBeCloseTo(SIDE_M * Math.SQRT2, 1);
       expect(depth).toBeCloseTo(SIDE_M * Math.SQRT2, 1);
     }
+  });
+
+  it("spans the long side of a 3:1 slab of the floor, since CoStar gives no shape", () => {
+    expect(SHAPE_SLACK).toBeCloseTo(Math.sqrt(3), 9);
   });
 
   it("takes its height from the stories", () => {

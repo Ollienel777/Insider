@@ -585,7 +585,8 @@ export function ScoutPanel({ building, load, selected, onPick, onRetry }: PanelP
     {
       term: "Height",
       value: aerial ? (
-        `${Math.round(aerial.heightM)} m`
+        // A kit building's height is its stories at a typical storey, not measured from the imagery.
+        `${isFactsOnly(building.source) ? "~" : ""}${Math.round(aerial.heightM)} m`
       ) : load.status === "error" ? (
         <span data-testid="height-unavailable" className="text-text-3">
           <span aria-hidden>—</span>
@@ -594,7 +595,7 @@ export function ScoutPanel({ building, load, selected, onPick, onRetry }: PanelP
       ) : (
         <Skeleton data-testid="height-skeleton" className="mt-1 h-4 w-12" />
       ),
-      layer: "vexcel",
+      layer: isFactsOnly(building.source) ? "costar" : "vexcel",
     },
   ];
 
