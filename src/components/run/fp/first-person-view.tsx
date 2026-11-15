@@ -43,6 +43,7 @@ import { noticeOf } from "./notice";
 import { readPalette } from "./palette";
 import { joinRefusal, joinScan } from "./scan-join";
 import { scanGround } from "./scan-ground";
+import { CEILING_MAX_M, fillCeilingY, fillFloorY, nightSettings } from "./scan-night";
 import { meshSolid } from "./scan-solid";
 import { buildFloorGroup, disposeGroup, type RoomTone } from "./scene";
 import { SuspicionMeter } from "./suspicion-meter";
@@ -486,7 +487,17 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         unavailable(`${refusal} You're on the board.`);
         return null;
       }
-      const ground = scanGround(placed.level.floor, meshSolid(tree), join.heights);
+      const solid = meshSolid(tree);
+      const ground = scanGround(placed.level.floor, solid, join.heights);
+      // By night (scan-night.ts): a torch, so the scan's holes and its far picture are in the dark. Both heights are measured here, from the mesh.
+      const night = nightSettings();
+      if (night) {
+        view.setNight({
+          ...night,
+          floorY: fillFloorY([...ground.nodes.values()].map((node) => ground.feetAt(node))),
+          ceilingY: fillCeilingY(view.scanPoints().map((p) => ({ y: p.position[1], rise: solid.hit(p.position, [0, 1, 0], CEILING_MAX_M + 1) }))),
+        });
+      }
       const pieces = new Group();
       pieces.name = "run-pieces";
       // The scan's picture needs no light; the guards, cameras and doors do.
@@ -529,6 +540,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         },
         dispose() {
           pieces.removeFromParent();
+          view.setNight(null);
         },
       };
     };

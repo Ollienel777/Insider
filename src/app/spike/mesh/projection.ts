@@ -28,6 +28,7 @@
 import { BackSide, DoubleSide, Matrix3, ShaderMaterial, Vector3, type CubeTexture } from "three";
 import { ANGLE_FLOOR, HIDDEN, REACH_PENALTY } from "@/lib/scan-mesh/blend";
 import { AGREE_HIGH, AGREE_LOW, FILL_POWER, FILL_REACH, SEEN_FLOOR, SHARPEN } from "@/lib/scan-mesh/combine";
+import { NIGHT_GLSL, nightUniforms } from "./night";
 
 /** Panoramas blended at once. */
 export const SLOTS = 4;
@@ -67,6 +68,7 @@ uniform float uDebug;
 uniform float uAgree;
 uniform float uFill;
 varying vec3 vWorld;
+${NIGHT_GLSL}
 
 void sampleSlot(samplerCube pano, samplerCube low, float sharp, samplerCube depth, vec3 origin, mat3 toPano, float share, vec3 gain, vec3 normal, vec3 sight, out vec3 colour, out float base, out float seen, out float miss) {
   colour = vec3(0.0);
@@ -206,7 +208,8 @@ void main() {
   float shares = uPanoShare[0] + uPanoShare[1] + uPanoShare[2] + uPanoShare[3];
   float cover = baseSum > 0.0 ? uProjection * smoothstep(0.0, 0.2, shares) : 0.0;
   if (baseSum <= 0.0) projected = bare;
-  gl_FragColor = vec4(mix(bare, projected, cover), 1.0);
+  // The night look (night.ts): off, the colour as it is. The box behind the mesh is far past the torch, so by night a hole shows black.
+  gl_FragColor = vec4(nightLit(mix(bare, projected, cover), vWorld), 1.0);
 }
 `;
 
@@ -227,6 +230,7 @@ export function createScanMaterial(blank: CubeTexture, backdrop = false): Shader
     uDebug: { value: 0 },
     uAgree: { value: 1 },
     uFill: { value: 1 },
+    ...nightUniforms(),
   };
   for (let i = 0; i < SLOTS; i++) {
     uniforms[`uPano${i}`] = { value: blank };

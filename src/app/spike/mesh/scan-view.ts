@@ -40,6 +40,7 @@ import { MeshWorld } from "./collider";
 import type { DetailReply, DetailRequest } from "./detail-worker";
 import { matchExposure } from "./exposure-match";
 import { blankCube, PanoStore, type PanoCounts, type PanoUse } from "./panos";
+import { applyNight, createNightFill, type NightLook } from "./night";
 import { createScanMaterial } from "./projection";
 
 export type { ScanPose } from "@/lib/scan-mesh/pose";
@@ -124,6 +125,7 @@ export class ScanView {
   private detailGeometry: BufferGeometry | null = null;
   private detailWorker: Worker | null = null;
   private wire: Mesh | null = null;
+  private nightFill: ReturnType<typeof createNightFill> | null = null;
   private meshWorld: MeshWorld | null = null;
   private panos: PanoStore | null = null;
   private manifest: ScanManifest | null = null;
@@ -291,6 +293,17 @@ export class ScanView {
       if (fixes.agree !== undefined) material.uniforms.uAgree.value = fixes.agree ? 1 : 0;
       if (fixes.fill !== undefined) material.uniforms.uFill.value = fixes.fill ? 1 : 0;
     }
+  }
+
+  /**
+   * The night look (night.ts, issue 198): the scan by torchlight, with a plain
+   * floor and ceiling behind its own, or null for the picture as it is.
+   */
+  setNight(look: NightLook | null): void {
+    for (const material of [this.material, this.backdropMaterial]) applyNight(material, look);
+    this.nightFill?.dispose();
+    this.nightFill = look ? createNightFill(look) : null;
+    if (this.nightFill) this.scene.add(this.nightFill.group);
   }
 
   /** 0 the picture, 1 the coverage, 2 the doubles (projection.ts says what the colours mean). */
@@ -557,6 +570,7 @@ export class ScanView {
     this.detailWorker?.terminate();
     this.material.dispose();
     this.backdropMaterial.dispose();
+    this.nightFill?.dispose();
     this.backdrop.geometry.dispose();
     this.blank.dispose();
     this.renderer.dispose();
