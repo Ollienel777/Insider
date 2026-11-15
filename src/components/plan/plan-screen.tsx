@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { Building, LevelManifest } from "@/domain";
 import { createRun } from "@/engine";
 import { placeOrFixture } from "@/components/run/scan-fallback";
+import { ScanWait } from "@/components/run/scan-wait";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { validatePlan } from "@/level/validate-plan";
 import { askCrew, crewRequest, EXAMPLE_ORDER, type CrewAnswer } from "./crew-request";
@@ -59,6 +60,8 @@ export function PlanScreen({
   warmModel?: boolean;
 }) {
   const [loaded, setLoad] = useState<Load>({ status: "loading" });
+  /** Counts the loads: taking the stand-in floor plan (scan-wait.tsx) loads the floor again. */
+  const [attempt, setAttempt] = useState(0);
   const [order, setOrder] = useState("");
   const [ask, setAsk] = useState<Ask>({ status: "idle" });
   const [lens, toggleLens] = useLayerLens();
@@ -93,7 +96,7 @@ export function PlanScreen({
     return () => {
       live = false;
     };
-  }, [building, manifest, heistMode, missionId, source]);
+  }, [building, manifest, heistMode, missionId, source, attempt]);
 
   useEffect(() => warmModel(warm), [warm]);
 
@@ -164,7 +167,10 @@ export function PlanScreen({
           </div>
           <div className="relative min-h-0 flex-1">
             {load.status === "loading" ? (
-              <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
+              <>
+                <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
+                <ScanWait building={building} heistMode={heistMode} onStandIn={() => setAttempt((a) => a + 1)} />
+              </>
             ) : load.status === "no-floor" ? (
               <BoardMessage
                 testId="board-empty"

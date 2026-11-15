@@ -46,6 +46,7 @@ import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postur
 import { MuteToggle, useRunSound } from "./run-sound";
 import { RunStage } from "./run-stage";
 import { placeOrFixture } from "./scan-fallback";
+import { ScanWait } from "./scan-wait";
 import { FIRST_PERSON_PACE, FIRST_PERSON_TURN_MS, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, ViewSwitch, type HeldAction } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
@@ -508,7 +509,11 @@ export function RunScreen({
           <div className="relative min-h-0 flex-1">
             {run && placed ? <ViewSwitch state={runView} floor={placed.level.floor} /> : null}
             {load.status === "loading" ? (
-              <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
+              <>
+                <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
+                {/* On a live scan the skeleton says so, and in time offers the stand-in floor plan (issue 145). */}
+                <ScanWait building={building} heistMode={heistMode} onStandIn={() => setAttempt((a) => a + 1)} />
+              </>
             ) : load.status === "no-floor" ? (
               <BoardMessage
                 testId="board-empty"
