@@ -29,8 +29,9 @@ export type DetailRequest =
       bytes: number;
       /** Fetch the texture images too. */
       textures: boolean;
-      /** The size the small textures are decoded at, pixels square. */
+      /** The size the small textures are decoded at, pixels square, and the full-size ones near the eye (null: as stored). */
       small: number;
+      sharp: number | null;
     }
   /** Where the eye is now: the next textures fetched are the nearest. */
   | { kind: "eye"; eye: [number, number, number] }
@@ -44,14 +45,13 @@ export type DetailReply =
       uvs: Float32Array;
       index: Uint32Array;
       groups: TexturedGroup[];
-      /** Triangles closing the mesh's small holes, unindexed. */
-      fill: Float32Array;
-      holes: number;
       megabytes: number;
       seconds: number;
       /** Groups whose texture the archive holds. */
       textured: number;
     }
+  /** Triangles closing the mesh's small holes, unindexed: sent after the mesh, so the mesh shows first. */
+  | { kind: "fill"; fill: Float32Array; holes: number }
   | { kind: "texture"; group: number; sharp: boolean; image: ImageBitmap }
   /** Every texture fetched and sent small; `megabytes` fetched. */
   | { kind: "textures-done"; megabytes: number; seconds: number }
@@ -98,6 +98,7 @@ let eye: [number, number, number] = [0, 0, 0];
 let groups: TexturedGroup[] = [];
 const blobs = new Map<number, Blob>();
 let small = 512;
+let sharpSize: number | null = null;
 
 async function decode(blob: Blob, size: number | null): Promise<ImageBitmap> {
   const options: ImageBitmapOptions = { colorSpaceConversion: "none", premultiplyAlpha: "none" };
@@ -110,7 +111,7 @@ async function sendSharp(list: number[]): Promise<void> {
     const blob = blobs.get(group);
     if (!blob) continue;
     try {
-      const image = await decode(blob, null);
+      const image = await decode(blob, sharpSize);
       scope.postMessage({ kind: "texture", group, sharp: true, image }, [image]);
     } catch {
       // The small one stays.
@@ -161,6 +162,7 @@ async function load(request: Extract<DetailRequest, { kind: "load" }>): Promise<
   try {
     const { url, bytes: total } = request;
     small = request.small;
+    sharpSize = request.sharp;
     if (!isAllowedAssetUrl(url)) throw new Error("not a scan link");
     if (!Number.isSafeInteger(total) || total <= 0) throw new Error("no size");
     const tailStart = Math.max(0, total - END_SEARCH);
@@ -178,7 +180,6 @@ async function load(request: Extract<DetailRequest, { kind: "load" }>): Promise<
     const mesh = parseTexturedObj(await objBlob.text(), materials);
     if (mesh.index.length === 0) throw new Error("empty mesh");
     groups = mesh.groups;
-    const closed = closeHoles(mesh.vertices, mesh.welded);
     const textured = request.textures ? groups.filter((g) => g.image && parts.images.has(g.image)).length : 0;
     scope.postMessage(
       {
@@ -187,14 +188,14 @@ async function load(request: Extract<DetailRequest, { kind: "load" }>): Promise<
         uvs: mesh.uvs,
         index: mesh.index,
         groups,
-        fill: closed.triangles,
-        holes: closed.holes,
         megabytes: parts.obj.compressedSize / 1e6,
         seconds: (performance.now() - started) / 1000,
         textured,
       },
-      [mesh.positions.buffer, mesh.uvs.buffer, mesh.index.buffer, closed.triangles.buffer],
+      [mesh.positions.buffer, mesh.uvs.buffer, mesh.index.buffer],
     );
+    const closed = closeHoles(mesh.vertices, mesh.welded);
+    scope.postMessage({ kind: "fill", fill: closed.triangles, holes: closed.holes }, [closed.triangles.buffer]);
     if (textured > 0) await fetchTextures(url, total, parts.images);
   } catch (error) {
     scope.postMessage({ kind: "failed", failed: error instanceof Error ? error.message : "failed" });

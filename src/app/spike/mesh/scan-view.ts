@@ -136,10 +136,11 @@ const MEASURE_WIDTH = 160;
 const MEASURE_HEIGHT = 90;
 /** The textures are first decoded this many pixels square: all of them fit in GPU memory at once. */
 const SMALL_TEXTURE = 512;
-/** Textures of surfaces this close to the eye, metres, are shown at full size... */
-const SHARP_REACH = 4;
-/** ...this many at most (each about 22 MB of GPU memory at 2048 square)... */
-const SHARP_MAX = 14;
+/** Textures of surfaces this close to the eye, metres, are shown sharper, this many pixels square... */
+const SHARP_REACH = 6;
+const SHARP_TEXTURE = 1024;
+/** ...this many at most (each about 5.6 MB of GPU memory)... */
+const SHARP_MAX = 36;
 /** ...chosen again this often, seconds. */
 const SHARP_EVERY = 0.3;
 /** Textures put on the GPU in one frame at most: small ones, and full-size ones. */
@@ -594,6 +595,10 @@ export class ScanView {
           }
           return;
         }
+        if (reply.kind === "fill") {
+          this.useFill(reply.fill, reply.holes);
+          return;
+        }
         if (reply.kind === "texture") {
           this.arrived.push(reply);
           return;
@@ -603,7 +608,7 @@ export class ScanView {
         this.push();
       };
       worker.onerror = (event) => fail(`worker: ${event.message}`);
-      const request: DetailRequest = { kind: "load", url: detail.url, bytes: detail.bytes, textures: textured, small: SMALL_TEXTURE };
+      const request: DetailRequest = { kind: "load", url: detail.url, bytes: detail.bytes, textures: textured, small: SMALL_TEXTURE, sharp: SHARP_TEXTURE };
       worker.postMessage(request);
     } catch {
       release();
@@ -631,21 +636,23 @@ export class ScanView {
     }
     if (this.wire) this.wire.geometry = geometry;
     this.panos?.setGeometry(geometry);
-    if (this.fill && reply.fill.length > 0) {
-      const holes = new BufferGeometry();
-      holes.setAttribute("position", new BufferAttribute(reply.fill, 3));
-      holes.computeBoundingSphere();
-      this.addFill(new Mesh(holes, this.fillMaterial));
-    }
     Object.assign(this.state.detail, {
       state: "ready",
       triangles: reply.index.length / 3,
       megabytes: reply.megabytes,
       seconds: reply.seconds,
-      holes: reply.holes,
       textures: reply.textured > 0 ? { total: reply.textured, small: 0, sharp: 0, megabytes: 0, seconds: 0, done: false, gpuMegabytes: 0 } : undefined,
     });
     this.push();
+  }
+
+  private useFill(triangles: Float32Array, holes: number): void {
+    this.state.detail.holes = holes;
+    if (!this.fill || triangles.length === 0) return;
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(triangles, 3));
+    geometry.computeBoundingSphere();
+    this.addFill(new Mesh(geometry, this.fillMaterial));
   }
 
   private addFill(mesh: Mesh): void {
@@ -758,9 +765,10 @@ export class ScanView {
   private chooseSharp(): void {
     const eye: [number, number, number] = [this.pose.x, this.pose.y, this.pose.z];
     const near = this.groups
-      .map((g, i) => ({ i, d: distanceToGroup(g, eye) }))
+      .map((g, i) => ({ i, d: distanceToGroup(g, eye), c: Math.hypot(g.centre[0] - eye[0], g.centre[1] - eye[1], g.centre[2] - eye[2]) }))
       .filter(({ i, d }) => d <= SHARP_REACH && this.small[i] !== null)
-      .sort((a, b) => a.d - b.d)
+      // Nearest first; among the boxes the eye stands in, the one whose middle is nearest.
+      .sort((a, b) => a.d - b.d || a.c - b.c)
       .slice(0, SHARP_MAX)
       .map(({ i }) => i);
     const wanted = new Set(near);
