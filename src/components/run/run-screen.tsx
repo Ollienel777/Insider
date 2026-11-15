@@ -686,6 +686,7 @@ export function RunScreen({
                 placed={placed}
                 run={run}
                 objective={manifest.mission.objective}
+                lockKind={manifest.securityProfile.lockKind}
                 onAct={play}
                 onHeld={holdFp}
                 paused={clock.state === "paused"}
