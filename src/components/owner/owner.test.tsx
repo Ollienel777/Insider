@@ -474,7 +474,7 @@ describe("50 attempts, the fix, and the rerun", () => {
       />,
     );
     // Under the count, the floor plan's two numbers and what they mean; with windows open, no line on how the 17 got out.
-    expect(html).toContain("Open windows: 40 of 80 moments in the 10 nights the crew plays let a crew in and out unseen. A moment is a way in at any turn of a night; the attempts all start at turn 0.");
+    expect(html).toContain("Open windows: 40 of 80 moments in the 10 nights the crew plays let a crew in and out unseen by guards and cameras. A moment is a way in at any turn of a night; the attempts all start at turn 0.");
     expect(html).toContain('data-testid="owner-measure-note"');
     expect(html).not.toContain('data-testid="owner-measure-timing"');
     expect(html).toContain("47% watched · 40/80 open");

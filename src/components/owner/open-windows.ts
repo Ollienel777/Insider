@@ -68,12 +68,14 @@ export interface OpenWindow {
  * night's states are nodes × 2 nights' turns × carrying × locked-door
  * combinations. Each state holds its predecessors, so this bounds both the
  * time the editor waits and the memory. `measureNights` shares it out over
- * the nights it measures. Measured on a laptop at about 0.8 µs and 250 bytes a
- * state, so a full budget is about a second; it still fits F1 with its tempos
- * set so the night reaches the cap (30 nodes, 240 turns, 2 locked doors:
- * about 115,000 states a night).
+ * the nights it measures. A state costs about 0.6–2 µs and 250 bytes, so a
+ * full budget is 0.3–1 s of the editor's main thread; at 1,500,000 an edit
+ * could stall it 1–3 s (issue 168). The shipped setups take far less: the
+ * largest, F2 generated, is 28,800 over its 10 nights. F1 with its tempos set
+ * so every night reaches the cap (30 nodes, 240 turns, 2 locked doors: about
+ * 115,000 states a night) is over the budget and not measured.
  */
-export const STATE_BUDGET = 1_500_000;
+export const STATE_BUDGET = 500_000;
 
 /** The search states one night of `level` takes, without building anything (`STATE_BUDGET`). */
 export function searchStates(level: Level): number {
@@ -85,7 +87,7 @@ export function searchStates(level: Level): number {
 export interface OpenWindows {
   /** False when the night was too large to search (`STATE_BUDGET`): every count is then 0 and means nothing. */
   measured: boolean;
-  /** (way in, start turn) pairs with a way in and out unseen. */
+  /** (way in, start turn) pairs with a way in and out unseen by guards and cameras. */
   open: number;
   /** Ways in × turns in the night. */
   moments: number;

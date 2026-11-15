@@ -1,6 +1,6 @@
 // A setup measured from the floor plan alone (issue 120): how much of the
 // floor the cameras and guards watch over a night, and how many moments in
-// those nights still let a crew in and out unseen (`openWindows`). No crew, no batch and no model:
+// those nights still let a crew in and out unseen by guards and cameras (`openWindows`). No crew, no batch and no model:
 // the guards walk their rounds and the cameras sweep with no player present,
 // and what each sees is the engine's own answer (`visibleFrom`, `watched`,
 // `moveGuards`), the same the run board's cones draw and the same that catches
@@ -30,7 +30,7 @@ export interface SetupMeasure {
   coverage: number;
   /** Ways in (entries) on this floor. */
   entries: number;
-  /** The moments a crew could get in and out unseen and unheard (`openWindows`), added up over the nights the batch plays; not measured when any night is over its share of `STATE_BUDGET`. */
+  /** The moments a crew could get in and out unseen by guards and cameras and unheard (`openWindows`), added up over the nights the batch plays; not measured when any night is over its share of `STATE_BUDGET`. */
   windows: OpenWindows;
   /** The nights with at least one open window. */
   openNights: number;
@@ -166,7 +166,7 @@ const nightsPhrase = (m: SetupMeasure) => (m.nights === 1 ? "the one night the c
 
 /**
  * "Open windows: 7 of 80 moments in the 10 nights the crew plays let a crew in
- * and out unseen. A moment is a way in at any turn of a night; the attempts all
+ * and out unseen by guards and cameras. A moment is a way in at any turn of a night; the attempts all
  * start at turn 0." The second sentence keeps the count from being read
  * against the attempts': it counts every turn a crew could step in on, and the
  * batch's attempts all step in at turn 0 (issue 144 review). "Open windows:
@@ -176,7 +176,7 @@ export function windowsLine(m: SetupMeasure): string {
   if (m.entries === 0) return "Open windows: this floor has no way in to measure.";
   if (!m.windows.measured) return "Open windows: not measured on a floor this size.";
   const { open, moments } = m.windows;
-  return `Open windows: ${open} of ${moments} moments in ${nightsPhrase(m)} ${open === 1 ? "lets" : "let"} a crew in and out unseen. A moment is a way in at any turn of a night; the attempts all start at turn 0.`;
+  return `Open windows: ${open} of ${moments} moments in ${nightsPhrase(m)} ${open === 1 ? "lets" : "let"} a crew in and out unseen by guards and cameras. A moment is a way in at any turn of a night; the attempts all start at turn 0.`;
 }
 
 /**
@@ -196,14 +196,14 @@ export function firstWindowLine(m: SetupMeasure): string | null {
 /**
  * With no open window on any night, the attempts that got out were seen or
  * heard on the way: "No moment in the 10 nights the crew plays lets a crew in
- * and out unseen, so the 17 attempts that got out were seen or heard and not
+ * and out unseen by guards and cameras, so the 17 attempts that got out were seen or heard and not
  * caught." Null when none got out, any window is open, or the windows were not
  * measured.
  */
 export function timingLine(m: SetupMeasure, escaped: number): string | null {
   if (escaped <= 0 || !m.windows.measured || m.windows.open > 0 || m.entries === 0) return null;
   const who = escaped === 1 ? "the one attempt that got out was" : `the ${escaped} attempts that got out were`;
-  return `No moment in ${nightsPhrase(m)} lets a crew in and out unseen, so ${who} seen or heard and not caught.`;
+  return `No moment in ${nightsPhrase(m)} lets a crew in and out unseen by guards and cameras, so ${who} seen or heard and not caught.`;
 }
 
 /** "40 of 80", or "not measured". */

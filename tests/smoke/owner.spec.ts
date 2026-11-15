@@ -50,7 +50,7 @@ test("Debrief to Owner Mode: 50 attempts, the Chief's fix, before and after", as
   expect(escapedBy).toEqual({ "dock-patient": 9, "dock-fast": 6, "dock-in-roof-out": 2, "suite-detour": 0, "roof-quiet": 0 });
   await expect(page.getByTestId("owner-route")).toHaveAttribute("data-count", "14");
   await expect(page.getByTestId("owner-measure")).toHaveAttribute("data-coverage", "47");
-  // Half the moments let a crew in and out unseen, so no line on how the 17 got out; the note says what the numbers leave out.
+  // Half the moments let a crew in and out unseen by guards and cameras, so no line on how the 17 got out; the note says what the numbers leave out.
   await expect(page.getByTestId("owner-measure")).toHaveAttribute("data-windows", "40");
   await expect(page.getByTestId("owner-measure")).toHaveAttribute("data-moments", "80");
   await expect(page.getByTestId("owner-measure-timing")).toHaveCount(0);
@@ -144,7 +144,7 @@ test("the prepared pair: 7 of 50, C2 moved, 1 of 50, then the two side by side",
     "Coverage: 43% of the floor is watched at some point in every night the crew plays.",
   );
   await expect(page.getByTestId("owner-setup-measure-windows")).toHaveText(
-    "Open windows: 40 of 80 moments in the 10 nights the crew plays let a crew in and out unseen. A moment is a way in at any turn of a night; the attempts all start at turn 0.",
+    "Open windows: 40 of 80 moments in the 10 nights the crew plays let a crew in and out unseen by guards and cameras. A moment is a way in at any turn of a night; the attempts all start at turn 0.",
   );
   await expect(page.getByTestId("owner-setup-measure-first")).toHaveText(
     "The first opens on night 1, turn 0, when the attempts start: Freight Lift Lobby → Dock Corridor → Records Room → Dock Corridor → Freight Lift Lobby.",
@@ -188,7 +188,7 @@ test("the prepared pair: 7 of 50, C2 moved, 1 of 50, then the two side by side",
   await expect(page.getByTestId("owner-pair-b-route")).toHaveAttribute("data-count", "1");
   await expect(page.getByTestId("owner-pair-change")).toHaveText(["C2 moved from the Freight Lift Lobby to the Dock Corridor"]);
   await expect(page.getByTestId("owner-pair-delta")).toHaveText("7 → 1 of 50: 6 fewer got out.");
-  // The floor plan's view of the same move: C2 watches two more positions, and halves the moments a crew gets in and out unseen.
+  // The floor plan's view of the same move: C2 watches two more positions, and halves the moments a crew gets in and out unseen by guards and cameras.
   await expect(page.getByTestId("owner-pair-a-measure")).toHaveText("43% watched · 40/80 open");
   await expect(page.getByTestId("owner-pair-b-measure")).toHaveText("50% watched · 20/80 open");
   await expect(page.getByTestId("owner-pair-measure-change")).toHaveText("Coverage 43% → 50%, open windows 40 of 80 → 20 of 80.");
