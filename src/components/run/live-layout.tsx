@@ -210,7 +210,7 @@ export function RunLayout({
       visualTall={live}
       visual={
         // The stage is what Fullscreen fills the screen with (fp/fullscreen-toggle.tsx): the HUD, the board and the radio line.
-        <div {...{ [FULLSCREEN_ROOT]: "" }} className={cn(stageVisualClass(staged), "[&:fullscreen]:bg-surface-0")}>
+        <div className={stageVisualClass(staged)} {...{ [FULLSCREEN_ROOT]: "" }}>
           {live ? (
             <div
               key="hud"

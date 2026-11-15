@@ -422,3 +422,8 @@ body.playing [data-folder] { padding: 4px; }
   font-family: var(--font-display); font-size: 40px; font-weight: 400; line-height: 1;
   rotate: -8deg; mix-blend-mode: multiply;
 }
+
+/* The Run screen's stage in fullscreen (fp/fullscreen-toggle.tsx): the page's own backdrop, not the browser's black. */
+[data-fullscreen-root]:fullscreen {
+  background: var(--surface-0);
+}
