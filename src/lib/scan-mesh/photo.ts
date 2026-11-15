@@ -162,3 +162,38 @@ export function photoBlend(samples: readonly PhotoSample[]): PhotoBlend {
   const total = raw.reduce((a, b) => a + b, 0);
   return { weights: total > 0 ? raw.map((w) => w / total) : raw.map(() => 0), cover: Math.min(1, cover) };
 }
+
+/**
+ * The shares of the two panoramas the eye is between, for drawing the
+ * panoramas themselves (app/spike/mesh/sphere-material.ts) rather than
+ * painting a mesh: `ranked` is `rankPanos`'s answer, `costs` the same costs.
+ * The picture is the two blended all the way from one to the other: on a
+ * scan position it is that panorama alone, midway about half and half, each
+ * by how near it is. The second's share also falls to nothing as the third
+ * draws level with it, so when the third takes its place nothing jumps.
+ * Every other panorama has no share. The shares sum to 1.
+ */
+export function pairShares(costs: readonly number[], ranked: readonly number[]): number[] {
+  const out = new Array<number>(costs.length).fill(0);
+  if (ranked.length === 0) return out;
+  const [first, second, third] = ranked;
+  if (second === undefined) {
+    out[first] = 1;
+    return out;
+  }
+  // How far short of the third each is: 1 on a scan position, 0 level with the third.
+  const limit = third === undefined ? Infinity : Math.max(costs[third], 1e-6);
+  const inside = (i: number) => (limit === Infinity ? 1 : Math.max(0, 1 - costs[i] / limit));
+  const a = inside(first) ** 2 / (costs[first] + PAIR_FLOOR);
+  const b = inside(second) ** 2 / (costs[second] + PAIR_FLOOR);
+  if (a + b <= 0) {
+    out[first] = 1;
+    return out;
+  }
+  out[first] = a / (a + b);
+  out[second] = b / (a + b);
+  return out;
+}
+
+/** Metres added to a panorama's distance in `pairShares`: within about this of a scan position the picture is that panorama's. */
+export const PAIR_FLOOR = 0.03;

@@ -178,8 +178,8 @@ const UPLOADS_SMALL = 4;
 const UPLOADS_SHARP = 1;
 /** Full-size panorama cubes kept on the GPU beside the textures, at most (each 2k one is about 134 MB). */
 const SHARP_CUBES = 5;
-/** The same when the panoramas are drawn as spheres, one at a time: the one the eye is at, the one it is leaving, and the next. */
-const SPHERE_CUBES = 3;
+/** The same when the panoramas are drawn as spheres: the two the eye is between, and the two it is heading for. */
+const SPHERE_CUBES = 4;
 /** Squares along each edge of each of a sphere's six faces: about a degree each. */
 const SPHERE_CELLS = 96;
 /** Under this share the panorama the eye is leaving is no longer drawn. */
@@ -321,7 +321,8 @@ export class ScanView {
       this.spheres[1].onBeforeRender = (renderer) => renderer.clearDepth();
     }
     this.backdrop = new Mesh(new BoxGeometry(1000, 1000, 1000), this.backdropMaterial);
-    this.backdrop.renderOrder = -1;
+    // Behind everything, the spheres included: it has no depth of its own.
+    this.backdrop.renderOrder = -20;
     this.backdrop.frustumCulled = false;
     this.scene.add(this.backdrop);
     this.state = {
@@ -375,14 +376,17 @@ export class ScanView {
       lead.visible = show;
       otherDepth.visible = second;
       other.visible = second;
-      if (second) (other.material as ShaderMaterial).uniforms.uFade.value = this.used[1].share / (this.used[0].share + this.used[1].share);
+      // The lead leaves the other's share of each pixel in the frame's alpha; the far view behind leaves all of it.
+      (lead.material as ShaderMaterial).uniforms.uFade.value = second ? this.used[0].share / (this.used[0].share + this.used[1].share) : 1;
+      this.photo.uBackdropAlpha.value = show ? 0 : 1;
     }
     this.draw(null);
   }
 
   /** Renders the current view to `target` (null: the screen), filled where no surface covers it. */
   draw(target: WebGLRenderTarget | null): void {
-    if (this.fill) {
+    // The spheres paint every pixel themselves, and use the frame's alpha between them.
+    if (this.fill && this.shows === "mesh") {
       this.fill.render(this.scene, this.camera, target);
       return;
     }
@@ -401,6 +405,10 @@ export class ScanView {
     this.sphereShown = on;
     if (this.drawn) this.drawn.visible = !on;
     for (const mesh of this.fillMeshes) mesh.visible = !on;
+    if (!on) {
+      for (const mesh of this.spheres) mesh.visible = false;
+      this.photo.uBackdropAlpha.value = 1;
+    }
   }
 
   /** What is drawn: the panoramas as spheres, or the mesh. */
@@ -652,7 +660,7 @@ export class ScanView {
 
       const sharp = sharpLayer(this.faces);
       this.panos = new PanoStore(this.renderer, geometry, Math.min(sharp.capacity, this.sphereView ? SPHERE_CUBES : SHARP_CUBES), sharp.size);
-      this.panos.lone = this.sphereView;
+      this.panos.pair = this.sphereView;
       this.panos.onStale = () => void this.refreshLinks();
       const sight = new Ray();
       const world = this.meshWorld;
@@ -741,14 +749,15 @@ export class ScanView {
         if (reply.kind === "mesh") {
           this.useDetail(reply);
           release();
-          if (reply.textured === 0) {
-            worker.terminate();
-            this.detailWorker = null;
-          }
           return;
         }
         if (reply.kind === "repair") {
           this.useRepair(reply);
+          // With no textures to fetch or patches to texture, that was the worker's last word.
+          if (this.groups.length === 0) {
+            worker.terminate();
+            this.detailWorker = null;
+          }
           return;
         }
         if (reply.kind === "inpainted") {
@@ -1189,6 +1198,7 @@ export class ScanView {
     const repair = this.state.detail.repair;
     if (this.state.detail.state !== "ready" || !repair) return true;
     const eye = this.camera.position;
+    if (this.groups.length === 0) return repair.stats !== null;
     return repair.stats !== null && this.patches.every((p) => p.state === "done" || p.state === "none" || p.centre.distanceTo(eye) > PATCH_REACH);
   }
 
@@ -1202,7 +1212,7 @@ export class ScanView {
     if (this.state.detail.state === "loading" || (textures && (!textures.done || this.arrived.length > 0))) return false;
     const counts = this.panos?.counts();
     if (!this.panos || !counts) return true;
-    return counts.low + counts.failed >= counts.total && this.panos.depthsCurrent && counts.sharpLoading === 0 && counts.sharp >= Math.min(SLOTS, counts.total - counts.failed);
+    return counts.low + counts.failed >= counts.total && this.panos.depthsCurrent && counts.sharpLoading === 0 && counts.sharp >= Math.min(this.sphereView ? 1 : SLOTS, counts.total - counts.failed);
   }
 
   /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BLOCKED, DEPTH_SCALE, DEPTH_SLACK, DEPTH_SOFT, LEAD_MARGIN, PRIORITY, panoCosts, photoBlend, priorities, rankPanos, seenBy, standingOn } from "./photo";
+import { BLOCKED, DEPTH_SCALE, DEPTH_SLACK, DEPTH_SOFT, LEAD_MARGIN, PRIORITY, pairShares, panoCosts, photoBlend, priorities, rankPanos, seenBy, standingOn } from "./photo";
 
 describe("panoCosts", () => {
   it("is the distance, and more for a panorama behind a wall", () => {
@@ -147,3 +147,46 @@ describe("photoBlend", () => {
   });
 });
 
+
+describe("pairShares", () => {
+  it("is one panorama alone on its scan position", () => {
+    const shares = pairShares([0, 3, 5], [0, 1, 2]);
+    expect(shares[0]).toBeGreaterThan(0.99);
+    expect(shares[2]).toBe(0);
+  });
+
+  it("is half and half midway between two", () => {
+    const shares = pairShares([1.5, 1.5, 6], [0, 1, 2]);
+    expect(shares[0]).toBeCloseTo(0.5);
+    expect(shares[1]).toBeCloseTo(0.5);
+  });
+
+  it("changes steadily all the way from one to the other, never by a jump", () => {
+    let last = 1;
+    for (let step = 0; step <= 30; step++) {
+      const d = (step / 30) * 3;
+      // Walking from panorama 0 to panorama 1, three metres apart; a third six metres off to the side.
+      const costs = [d, 3 - d, 6];
+      const ranked = d <= 1.5 ? [0, 1, 2] : [1, 0, 2];
+      const share = pairShares(costs, ranked)[0];
+      expect(share).toBeLessThanOrEqual(last + 1e-9);
+      expect(last - share).toBeLessThan(0.2);
+      last = share;
+    }
+    expect(last).toBeLessThan(0.01);
+  });
+
+  it("lets the second go as the third draws level with it", () => {
+    const far = pairShares([1, 2.0, 4], [0, 1, 2])[1];
+    const near = pairShares([1, 2.0, 2.2], [0, 1, 2])[1];
+    const level = pairShares([1, 2.0, 2.0], [0, 1, 2])[1];
+    expect(far).toBeGreaterThan(near);
+    expect(level).toBe(0);
+  });
+
+  it("sums to one, and gives a lone panorama everything", () => {
+    expect(pairShares([2, 3, 4, 9], [1, 0, 2]).reduce((a, b) => a + b, 0)).toBeCloseTo(1);
+    expect(pairShares([2], [0])).toEqual([1]);
+    expect(pairShares([2, 3], [])).toEqual([0, 0]);
+  });
+});

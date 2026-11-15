@@ -42,7 +42,7 @@ import { conjugate, quatToMat3, type Vec3 } from "@/lib/scan-mesh/coords";
 import { isAllowedAssetUrl, type ScanPano } from "@/lib/scan-mesh/manifest";
 import { nearestFirst, planSharp, sharpOrder } from "@/lib/scan-mesh/pano-plan";
 import { slotFades, type BlendMode } from "@/lib/scan-mesh/blend";
-import { panoCosts, priorities, rankPanos, standingOn } from "@/lib/scan-mesh/photo";
+import { pairShares, panoCosts, priorities, rankPanos, standingOn } from "@/lib/scan-mesh/photo";
 import type { Rgb } from "@/lib/scan-mesh/exposure";
 import type { ExposureSource } from "./exposure-match";
 import { alignToCube, CUBE_LOOKUP_FLIP, panoDistance, panoWeights } from "@/lib/scan-mesh/skybox";
@@ -217,11 +217,11 @@ export class PanoStore {
   /** How the slots are weighted (lib/scan-mesh/blend.ts, and photo.ts for "photo"). */
   mode: BlendMode = "photo";
   /**
-   * Under the photo rule, whether the lead is in use alone: every other
-   * panorama's share goes to nothing, and only while the lead changes do two
-   * have a share at once. For drawing the panoramas as spheres, one at a time.
+   * Under the photo rule, whether only the two panoramas the eye is between
+   * are in use, sharing the picture by how near each is (photo.ts's
+   * `pairShares`). For drawing the panoramas themselves, as spheres.
    */
-  lone = false;
+  pair = false;
   /** Whether something stands between `eye` and a panorama at `origin`: the photo rule ranks such a panorama lower. */
   blocked: ((eye: Vec3, origin: Vec3) => boolean) | null = null;
   /** The photo rule's panoramas in use last frame, the lead first, as places in the list of those ready. */
@@ -473,7 +473,7 @@ export class PanoStore {
       const before = this.ranked.flatMap((e) => (at.has(e) ? [at.get(e) as number] : []));
       const now = rankPanos(costs, before, SLOTS);
       this.ranked = now.map((i) => ready[i]);
-      targets = priorities(ready.length, this.lone ? now.slice(0, 1) : now);
+      targets = this.pair ? pairShares(costs, now) : priorities(ready.length, now);
     } else targets = this.mode === "view" ? slotFades(distances, SLOTS) : panoWeights(distances, KEEP);
     const target = new Map<Entry, number>();
     ready.forEach((e, i) => target.set(e, targets[i]));

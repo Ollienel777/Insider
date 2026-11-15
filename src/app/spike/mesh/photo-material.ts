@@ -47,6 +47,8 @@ export function createPhotoUniforms(blank: CubeTexture): PhotoUniforms {
     uMode: { value: 0 },
     uProjection: { value: 1 },
     uDebug: { value: 0 },
+    // What the backdrop writes to the frame's alpha: 1 for painted; the sphere view has it 0, for "no sphere here".
+    uBackdropAlpha: { value: 1 },
   };
   for (let i = 0; i < SLOTS; i++) {
     uniforms[`uPano${i}`] = { value: blank };
@@ -95,6 +97,7 @@ uniform samplerCube uDepth2;
 uniform samplerCube uDepth3;
 uniform float uProjection;
 uniform float uDebug;
+uniform float uBackdropAlpha;
 #ifndef BACKDROP
 uniform sampler2D uMap;
 /** 1 when uMap is this surface's own texture; 0 for a stand-in with none. */
@@ -163,7 +166,7 @@ void main() {
   cover = min(1.0, cover) * uProjection;
 #ifdef BACKDROP
   vec3 sky = mix(vec3(0.027, 0.035, 0.047), vec3(0.067, 0.086, 0.114), smoothstep(-0.2, 0.6, sight.y));
-  gl_FragColor = vec4(mix(sky, photo, cover), 1.0);
+  gl_FragColor = vec4(mix(sky, photo, cover), uBackdropAlpha);
 #else
 #ifdef STANDIN
   // A page's texel: alpha 0 where nothing is written yet. Sampled small or at a
