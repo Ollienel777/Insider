@@ -546,6 +546,14 @@ export function RunScreen({
                 onAct={play}
                 onHeld={holdFp}
                 paused={clock.state === "paused"}
+                crewPlan={crewPlan?.plan ?? null}
+                endAction={
+                  over ? (
+                    <Link data-testid="fp-debrief" href={buildingHref(building.id, "debrief", missionId)} className={buttonVariants({ variant: "primary" })}>
+                      See the debrief
+                    </Link>
+                  ) : null
+                }
                 onUnavailable={() => {
                   runView.fail();
                   setStatus(FP_UNAVAILABLE);

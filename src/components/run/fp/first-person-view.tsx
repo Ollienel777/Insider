@@ -11,7 +11,7 @@
 //   walker.ts      free position → engine actions, over a `Ground`
 //   scene.ts       the floor's static geometry, one three.js group
 //   actors.ts      guards, cameras, sight, doors and markers, over a `Ground`
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AmbientLight, DirectionalLight, Fog, PerspectiveCamera, PointLight, Scene, Vector3, WebGLRenderer } from "three";
 import type { Action, RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
@@ -20,6 +20,10 @@ import { cn } from "@/lib/utils";
 import { cameraMount, choices, roomName } from "../board";
 import type { HeldAction } from "./run-view";
 import { Actors, type Marks } from "./actors";
+import { aimedAt, whyKeyOf, type DrawnLabel } from "./aim";
+import { Minimap, type Pose } from "./minimap";
+import { nextWaypoint } from "./waypoint";
+import { WhyOverlay } from "./why-overlay";
 import { Controller } from "./controller";
 import { readPalette } from "./palette";
 import { buildFloorGroup, disposeGroup, type RoomTone } from "./scene";
@@ -40,6 +44,10 @@ export interface FirstPersonViewProps {
   onHeld: (held: HeldAction | null) => void;
   /** The player paused the clock with P. */
   paused: boolean;
+  /** The plan briefed on the Plan screen, which the corner map routes by; the level's own without one. */
+  crewPlan?: { steps: readonly { zoneId: string; action: string }[] } | null;
+  /** What the end of the run offers in the view: the Debrief. */
+  endAction?: ReactNode;
 }
 
 interface Hud {
@@ -59,7 +67,11 @@ const LABEL_TONE: Record<string, string> = {
   objective: "border-n-100 bg-surface-1 text-text-1",
   exit: "border-border-strong bg-surface-1 text-text-2",
 };
-const LABEL_BASE = "absolute left-0 top-0 rounded-sm border px-1.5 py-0.5 font-mono text-xs whitespace-nowrap uppercase tracking-[0.06em] will-change-transform";
+const LABEL_BASE =
+  "absolute left-0 top-0 rounded-sm border px-1.5 py-0.5 font-mono text-xs whitespace-nowrap uppercase tracking-[0.06em] will-change-transform data-[aimed=true]:border-text-1 data-[aimed=true]:bg-surface-3 data-[aimed=true]:text-text-1";
+
+/** The labels a click opens the Why card on. */
+const WATCHER = new Set<string>(["guard", "cleaner", "camera"]);
 
 /** A label's height and the gap under it, in pixels: how far one is lifted clear of another. */
 const LABEL_PITCH = 26;
@@ -73,7 +85,7 @@ function hasWebGL(): boolean {
   }
 }
 
-export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused }: FirstPersonViewProps) {
+export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, crewPlan = null, endAction = null }: FirstPersonViewProps) {
   const surface = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const labelLayer = useRef<HTMLDivElement>(null);
@@ -82,6 +94,21 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
   const world = useMemo(() => buildWorld(placed.level.floor), [placed]);
   const ground = useMemo(() => groundOf(world), [world]);
+  // Where the player stands for the corner map, the watcher under the crosshair, and the Why card open on one.
+  const pose = useRef<Pose | null>(null);
+  const aim = useRef<DrawnLabel | null>(null);
+  const [aimed, setAimed] = useState<DrawnLabel | null>(null);
+  const [why, setWhy] = useState<string | null>(null);
+  const closeWhy = useCallback(() => setWhy(null), []);
+  const waypoint = useMemo(() => nextWaypoint(placed, run, crewPlan), [placed, run, crewPlan]);
+  const mounts = useMemo(
+    () =>
+      run.board.cameras.map((c) => {
+        const m = cameraMount(placed.level.floor, c.parts.flat());
+        return { id: c.id, mount: { x: m.x * ground.unitM, y: m.y * ground.unitM } };
+      }),
+    [run.board, placed, ground],
+  );
 
   // The loop reads the latest run and the latest `play` without being rebuilt for each turn. Updated in a
   // layout effect, before the browser paints, so no animation frame reads the run before last.
@@ -193,6 +220,38 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
     let hudKey = "";
     let areas = false;
     // The turn clock asks the view what a turn the player lets run out should be.
+    // The Why card (issue 115): F on the watcher under the crosshair, a click on it with the mouse locked,
+    // or a click on its label with the mouse free. The card frees the mouse so it can be read and closed.
+    const openWhy = (label: Pick<DrawnLabel, "key" | "tone"> | null) => {
+      const key = label ? whyKeyOf(label) : null;
+      if (!key) return false;
+      setWhy(key);
+      if (document.pointerLockElement === host) document.exitPointerLock();
+      return true;
+    };
+    const labelOf = (event: Event) => {
+      const el = (event.target as HTMLElement | null)?.closest?.<HTMLElement>("[data-label]");
+      return el && WATCHER.has(el.dataset.tone ?? "") ? { key: el.dataset.label!, tone: el.dataset.tone! } : null;
+    };
+    // Kept off the view: a press on a label neither starts a drag nor locks the mouse.
+    const onLabelDown = (event: PointerEvent) => {
+      if (labelOf(event)) event.stopPropagation();
+    };
+    const onLabelClick = (event: MouseEvent) => {
+      if (openWhy(labelOf(event))) event.stopPropagation();
+    };
+    const onAimClick = (event: MouseEvent) => {
+      if (document.pointerLockElement === host && openWhy(aim.current)) event.stopPropagation();
+    };
+    const onWhyKey = (event: KeyboardEvent) => {
+      if (event.code !== "KeyF" || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.defaultPrevented) return;
+      if ((event.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable=true]")) return;
+      if (openWhy(aim.current)) event.preventDefault();
+    };
+    labels.addEventListener("pointerdown", onLabelDown);
+    labels.addEventListener("click", onLabelClick);
+    host.addEventListener("click", onAimClick, true);
+    window.addEventListener("keydown", onWhyKey);
     latest.current.onHeld((state) => heldAction(walker, ground, state, { use: controller.using, yaw: controller.yaw }));
     let raf = 0;
     let drawn = false;
@@ -245,6 +304,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       );
       actors.update(now);
       renderer.render(scene, camera);
+      pose.current = { x: walker.pos.x, y: walker.pos.y, yaw: controller.yaw };
+      const drawnLabels: DrawnLabel[] = [];
 
       // Labels: each at its piece, hidden behind the view and behind walls (a beacon shows through).
       // Nearest first, and one that would cover another is drawn above it.
@@ -264,6 +325,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           el = document.createElement("span");
           el.className = `${LABEL_BASE} ${LABEL_TONE[label.tone]}`;
           el.dataset.label = label.key;
+          el.dataset.tone = label.tone;
           labels.appendChild(el);
           labelEls.set(label.key, el);
         }
@@ -275,7 +337,17 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         while (taken.some((t) => Math.abs(t.x - x) < t.half + half && Math.abs(t.y - y) < LABEL_PITCH)) y -= LABEL_PITCH;
         taken.push({ x, y, half });
         el.style.opacity = inSight ? "1" : "0.55";
+        drawnLabels.push({ key: label.key, tone: label.tone, x, y, inSight });
+        // A watcher's label opens its Why card on a click while the mouse is free (issue 115).
+        el.style.pointerEvents = WATCHER.has(label.tone) ? "auto" : "none";
         el.style.transform = `translate(-50%, -100%) translate(${x}px, ${y}px)`;
+      }
+      const looked = current.status === "playing" ? aimedAt(drawnLabels, w, h) : null;
+      if (looked?.key !== aim.current?.key) {
+        if (aim.current) labelEls.get(aim.current.key)?.removeAttribute("data-aimed");
+        if (looked) labelEls.get(looked.key)?.setAttribute("data-aimed", "true");
+        aim.current = looked;
+        setAimed(looked);
       }
       for (const [key, el] of labelEls) {
         if (live.has(key)) continue;
@@ -305,6 +377,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       observer?.disconnect();
       target.removeEventListener("webglcontextlost", onLost);
       latest.current.onHeld(null);
+      labels.removeEventListener("pointerdown", onLabelDown);
+      labels.removeEventListener("click", onLabelClick);
+      host.removeEventListener("click", onAimClick, true);
+      window.removeEventListener("keydown", onWhyKey);
       controller.dispose();
       for (const el of labelEls.values()) el.remove();
       actors.dispose();
@@ -315,6 +391,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
   const noun = objectiveNoun(placed.level.missionId);
   const over = run.status !== "playing";
+  // The run's end frees the mouse, so the Debrief is a click away.
+  useEffect(() => {
+    if (over && surface.current && document.pointerLockElement === surface.current) document.exitPointerLock();
+  }, [over]);
   const tint = run.alarm === "calm" ? null : run.alarm === "suspicious" ? "var(--warning)" : "var(--danger)";
 
   return (
@@ -350,9 +430,12 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-end px-6 py-3">
         <div className="flex flex-col items-center gap-2">
           {over ? (
-            <p data-testid="fp-over" className={cn("rounded-sm bg-surface-1 px-3 py-2 text-base shadow-e-1", run.status === "won" ? "text-success" : "text-danger")}>
-              {run.status === "won" ? `Out with the ${noun}.` : `Caught in the ${roomName(placed.level.floor, run.playerNode)}.`}
-            </p>
+            <div data-testid="fp-end" data-status={run.status} className="pointer-events-auto flex items-center gap-3">
+              <p data-testid="fp-over" className={cn("rounded-sm bg-surface-1 px-3 py-2 text-base shadow-e-1", run.status === "won" ? "text-success" : "text-danger")}>
+                {run.status === "won" ? `Out with the ${noun}.` : `Caught in the ${roomName(placed.level.floor, run.playerNode)}.`}
+              </p>
+              {endAction}
+            </div>
           ) : null}
           {!over && paused ? (
             <p data-testid="fp-paused" className="flex items-center gap-2 rounded-sm bg-surface-1 px-3 py-2 text-sm text-text-1 shadow-e-1">
@@ -428,6 +511,19 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
       {/* The middle of the view: what E acts on. */}
       <div aria-hidden className="pointer-events-none absolute top-1/2 left-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-text-2" />
+
+      {/* Issue 115: the corner map, what F explains, and the Why card it opens. */}
+      <Minimap world={world} ground={ground} run={run} cameras={mounts} waypoint={waypoint} pose={pose} className="absolute top-3 left-3" />
+      {aimed && !why && !over ? (
+        <p
+          data-testid="fp-aim"
+          data-why={whyKeyOf(aimed) ?? undefined}
+          className="pointer-events-none absolute top-1/2 left-1/2 ml-8 flex -translate-y-1/2 items-center gap-2 rounded-sm bg-surface-1 px-2 py-1 text-sm text-text-1 shadow-e-1"
+        >
+          <Key>F</Key> Why {aimed.tone === "camera" ? "this camera" : aimed.tone === "cleaner" ? "this cleaner" : "this guard"}
+        </p>
+      ) : null}
+      {why ? <WhyOverlay placed={placed} run={run} whyKey={why} onClose={closeWhy} /> : null}
     </div>
   );
 }
