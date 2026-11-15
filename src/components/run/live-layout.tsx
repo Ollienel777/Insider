@@ -113,6 +113,8 @@ export interface RunLayoutProps {
   onDetails: () => void;
   /** What the HUD shows; null while there is no run on the board. */
   hud: PlayHud | null;
+  /** A guard's bark, in first person (issue 146): it has the radio line while it lasts. `useBark` gives one only when the radio's own line lets it. */
+  bark?: { speaker: string; text: string; tone: RadioTone } | null;
   /** The board is still being set up: the HUD shows its skeleton. */
   loading: boolean;
   /** Takes the objective, from the objective line's own button. */
@@ -162,6 +164,7 @@ export function RunLayout({
   detailsKey = "D",
   onDetails,
   hud,
+  bark = null,
   loading,
   onTake,
   onRestart,
@@ -261,7 +264,7 @@ export function RunLayout({
           {live ? (
             <div key="radio" className="shrink-0 px-6 pt-2 pb-4 max-md:px-4">
               {hud ? (
-                <RadioLine line={voiced(hud.radio)} className="mx-auto max-w-3xl" />
+                <RadioLine line={bark ?? voiced(hud.radio)} className="mx-auto max-w-3xl" />
               ) : (
                 <Skeleton className="mx-auto h-16 max-w-3xl rounded-md max-md:h-20" />
               )}

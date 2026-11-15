@@ -48,7 +48,7 @@ import { MuteToggle, useRunSound } from "./run-sound";
 import { RunStage } from "./run-stage";
 import { placeOrFixture } from "./scan-fallback";
 import { ScanWait, useWaitsOnScan } from "./scan-wait";
-import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, useScanPreload, ViewSwitch, type HeldAction } from "./fp/run-view";
+import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useBark, useRunView, useScanPreload, ViewSwitch, type HeldAction } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -422,6 +422,8 @@ export function RunScreen({
     // First person is played in real time: the HUD says seconds and plain words, not hops and turns.
     pace,
   });
+  // In first person a guard that hears the player says so on the radio, where the radio's own line lets it (issue 146).
+  const bark = useBark(run, fpOn, hud?.radio ?? null);
 
   useEffect(() => {
     if (!run) return;
@@ -492,6 +494,7 @@ export function RunScreen({
       detailsKey={fpOn ? "I" : "D"}
       onDetails={toggleDetails}
       hud={hud}
+      bark={bark}
       loading={settingUp}
       onTake={() => play({ kind: "take" })}
       onRestart={restart}

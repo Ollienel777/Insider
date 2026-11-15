@@ -37,11 +37,15 @@ import { Actors, type Marks } from "./actors";
 import { Controller } from "./controller";
 import { endState } from "./end-state";
 import type { Ground, Vec } from "./ground";
+import { hintDone, hintPhase, hintTicks, NO_PROGRESS, type HintPhase, type HintProgress } from "./hint";
+import { ControlsHint } from "./hint-card";
+import { noticeOf } from "./notice";
 import { readPalette } from "./palette";
 import { joinRefusal, joinScan } from "./scan-join";
 import { scanGround } from "./scan-ground";
 import { meshSolid } from "./scan-solid";
 import { buildFloorGroup, disposeGroup, type RoomTone } from "./scene";
+import { SuspicionMeter } from "./suspicion-meter";
 import { FP } from "./tuning";
 import { createWalker, heldAction, promptFor, stepWalker, type Prompt } from "./walker";
 import { buildWorld, groundOf, type World } from "./world";
@@ -148,6 +152,9 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
   const [hud, setHud] = useState<Hud>({ locked: false, refused: false, prompt: null, using: false });
   const [ready, setReady] = useState(false);
   const [scanLoad, setScanLoad] = useState<ScanLoad>(null);
+  // The first-time controls hint, and being noticed: read from the run as it renders, so never a frame behind it (issue 146).
+  const [hint, setHint] = useState<{ phase: HintPhase; progress: HintProgress }>({ phase: "shown", progress: NO_PROGRESS });
+  const notice = useMemo(() => noticeOf(run), [run]);
 
   const onScan = placed.level.floor.source !== "fixture";
   const world = useMemo(() => (onScan ? null : buildWorld(placed.level.floor)), [placed, onScan]);
@@ -234,6 +241,11 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       const labelEls = new Map<string, HTMLSpanElement>();
       const point = new Vector3();
       let seen: RunState | null = null;
+      // What the player has tried, for the hint; when it was done, for its fade.
+      const progress: HintProgress = { ...NO_PROGRESS };
+      let doneAt: number | null = null;
+      let hintKey = "";
+      let looked = { yaw: controller.yaw, pitch: controller.pitch };
       let last = performance.now();
       let owed = 0;
       let use = false;
@@ -282,6 +294,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         use ||= controls.usePressed;
         owed += dt;
         const stood = walker.pos;
+        const walkedBefore = walker.walked;
+        if (controls.usePressed) progress.used = true;
         while (!waiting && owed >= FP.stepS) {
           owed -= FP.stepS;
           const out = stepWalker(walker, ground, current, { ...controls, usePressed: use });
@@ -289,6 +303,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           walker = out.walker;
           if (out.action) play(out.action);
         }
+        // Turned by the player since the last frame (the mouse, a drag, the arrow keys): before the view is put back on a hop below.
+        progress.lookedRad += Math.abs(controller.yaw - looked.yaw) + Math.abs(controller.pitch - looked.pitch);
         // Put back on the engine's node (a restart, a number key): look the way that hop went, or,
         // at the start, the first way on. A frame of walking never covers this much ground.
         if (Math.hypot(walker.pos.x - stood.x, walker.pos.y - stood.y) > 0.5) {
@@ -296,6 +312,9 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           controller.yaw = current.turn === 0 ? (wayOn(current, walker.pos) ?? hop) : hop;
           controller.pitch = 0;
         }
+        looked = { yaw: controller.yaw, pitch: controller.pitch };
+        progress.walkedM += walker.walked - walkedBefore;
+        if (controls.walk && walker.walked - walkedBefore > 0) progress.sneaked = true;
         if (controller.areas !== areas) {
           areas = controller.areas;
           actors.showAreas(areas, current.playerNode, current.locked);
@@ -354,6 +373,14 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         if (key !== hudKey) {
           hudKey = key;
           setHud((was) => ({ ...was, prompt, using }));
+        }
+        if (doneAt === null && hintDone(progress)) doneAt = now;
+        const phase = hintPhase(doneAt === null ? null : now - doneAt, still);
+        const ticks = hintTicks(progress);
+        const nextHint = `${phase}${ticks.move}${ticks.look}${ticks.sneak}${ticks.use}`;
+        if (nextHint !== hintKey) {
+          hintKey = nextHint;
+          setHint({ phase, progress: { ...progress } });
         }
         if (waiting) {
           const counts = on.counts();
@@ -612,6 +639,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           </p>
         </div>
       ) : null}
+
+      {/* The controls hint and the meter are for a run being played: both go when the end card comes up (issue 146). */}
+      {ready && !end ? <SuspicionMeter notice={notice} /> : null}
+      {ready && !end ? <ControlsHint phase={hint.phase} ticks={hintTicks(hint.progress)} dragToLook={hud.refused} /> : null}
 
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-end px-6 py-3">
         <div className="flex flex-col items-center gap-2">

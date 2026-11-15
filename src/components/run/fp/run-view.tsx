@@ -53,6 +53,9 @@ export function firstPersonPace(floor: FloorGraph, walking: boolean): Pace {
 /** The turn the clock plays for first person, which the view supplies: the next pick while E is held, or a wait. */
 export type HeldAction = (run: import("@/engine").RunState) => import("@/engine").Action;
 
+/** A guard's bark on the radio line, in first person (issue 146). */
+export { useBark, type Bark } from "./barks";
+
 export const FP_UNAVAILABLE = "First person needs WebGL, which this browser isn't giving it. You're on the board.";
 
 /**
