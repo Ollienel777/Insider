@@ -138,30 +138,40 @@ test("first person runs in real time, and walking into the next node's area play
 });
 
 test("first person: the controls hint is up for a first-time player, and fades once they have walked and looked", async ({ page }) => {
+  // As below: the software WebGL's start, on a slow machine.
+  test.setTimeout(90_000);
   await open(page, "F1");
   if (!(await firstPerson(page))) return;
 
-  // Issue 146: big, in the middle, every control named.
+  // Issue 146: at the left of the view, every control named, and the suspicion meter up with it.
   const hint = page.getByTestId("fp-controls-hint");
   await expect(hint).toBeVisible();
-  for (const words of ["move", "look around", "sneak", "pick the lock"]) await expect(hint).toContainText(words);
+  for (const words of ["move", "look around", "walk", "pick the lock"]) await expect(hint).toContainText(words);
   await expect(page.getByTestId("fp-notice")).toHaveAttribute("data-tone", /calm|warning|danger/);
 
-  // Looking alone does not clear it.
-  await page.keyboard.down("ArrowRight");
-  await page.waitForTimeout(400);
-  await page.keyboard.up("ArrowRight");
+  // Looking alone does not clear it. A drag turns the view by a set angle (0.004 rad a pixel), whatever
+  // the frame rate: 200 px is 0.8 rad, past the hint's 0.5. Each way in its own frame, so the view counts
+  // the turn; back again after, so the walk below heads into the lobby.
+  const drag = (from: number, to: number) =>
+    page.evaluate(
+      ([from, to]) => {
+        const surface = document.querySelector('[data-testid="fp-view"]')!;
+        const at = (type: string, x: number) => surface.dispatchEvent(new PointerEvent(type, { button: 0, clientX: x, clientY: 0, pointerId: 1, bubbles: true }));
+        at("pointerdown", from);
+        at("pointermove", to);
+        at("pointerup", to);
+      },
+      [from, to],
+    );
+  await drag(0, 200);
   await expect(hint.locator("li").nth(1)).toHaveAttribute("data-done", "true");
-  await expect(hint).toBeVisible();
+  await expect(hint).toHaveAttribute("data-phase", "shown");
+  await drag(200, 0);
   await expect(hint).toHaveAttribute("data-phase", "shown");
 
-  // Walking too: it fades and goes. Back the way it turned, so the walk heads into the lobby.
-  await page.keyboard.down("ArrowLeft");
-  await page.waitForTimeout(400);
-  await page.keyboard.up("ArrowLeft");
-  await page.keyboard.down("w");
+  // Walking too: W is held until the hint starts to fade, then it goes.
+  await holdUntil(page, { key: "w", code: "KeyW" }, '[data-testid="fp-controls-hint"][data-phase="fading"]', 30_000);
   await expect(hint).toHaveCount(0, { timeout: 10_000 });
-  await page.keyboard.up("w");
 });
 
 test("first person: holding E at a locked door picks it until the engine opens it", async ({ page }) => {

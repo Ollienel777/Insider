@@ -35,16 +35,15 @@ import { cameraMount, choices, roomName } from "../board";
 import { scanStageOf, type HeldAction, type ScanHandle, type ScanPreload } from "./run-view";
 import { Actors, type Marks } from "./actors";
 import { Controller } from "./controller";
-import { ControlsHint } from "./controls-hint";
 import type { Ground, Vec } from "./ground";
-import { hintDone, hintPhase, hintTicks, type HintPhase, type HintProgress } from "./hint";
-import { noticeOf, type Notice } from "./notice";
+import { hintDone, hintPhase, hintTicks, NO_PROGRESS, type HintPhase, type HintProgress } from "./hint";
+import { ControlsHint } from "./hint-card";
+import { noticeOf } from "./notice";
 import { readPalette } from "./palette";
 import { joinRefusal, joinScan } from "./scan-join";
 import { scanGround } from "./scan-ground";
 import { meshSolid } from "./scan-solid";
 import { buildFloorGroup, disposeGroup, type RoomTone } from "./scene";
-import { sightOf, type Sight } from "./sight";
 import { SuspicionMeter } from "./suspicion-meter";
 import { FP } from "./tuning";
 import { createWalker, heldAction, promptFor, stepWalker, type Prompt } from "./walker";
@@ -143,12 +142,9 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
   const [hud, setHud] = useState<Hud>({ locked: false, refused: false, prompt: null, using: false });
   const [ready, setReady] = useState(false);
   const [scanLoad, setScanLoad] = useState<ScanLoad>(null);
-  // The first-time controls hint and being noticed (issue 146).
-  const [hint, setHint] = useState<{ phase: HintPhase; progress: HintProgress }>({
-    phase: "shown",
-    progress: { walkedM: 0, lookedRad: 0, sneaked: false, used: false },
-  });
-  const [notice, setNotice] = useState<Notice | null>(null);
+  // The first-time controls hint, and being noticed: read from the run as it renders, so never a frame behind it (issue 146).
+  const [hint, setHint] = useState<{ phase: HintPhase; progress: HintProgress }>({ phase: "shown", progress: NO_PROGRESS });
+  const notice = useMemo(() => noticeOf(run), [run]);
 
   const onScan = placed.level.floor.source !== "fixture";
   const world = useMemo(() => (onScan ? null : buildWorld(placed.level.floor)), [placed, onScan]);
@@ -235,12 +231,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       const labelEls = new Map<string, HTMLSpanElement>();
       const point = new Vector3();
       let seen: RunState | null = null;
-      let sight: Sight[] = [];
       // What the player has tried, for the hint; when it was done, for its fade.
-      const progress: HintProgress = { walkedM: 0, lookedRad: 0, sneaked: false, used: false };
+      const progress: HintProgress = { ...NO_PROGRESS };
       let doneAt: number | null = null;
       let hintKey = "";
-      let noticedRun: RunState | null = null;
       let looked = { yaw: controller.yaw, pitch: controller.pitch };
       let last = performance.now();
       let owed = 0;
@@ -269,7 +263,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         if (current !== seen) {
           actors.sync(current, now);
           seen = current;
-          sight = sightOf(current, ground.unitM);
         }
 
         // The movement runs at a fixed step, however fast the screen draws.
@@ -371,11 +364,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         if (nextHint !== hintKey) {
           hintKey = nextHint;
           setHint({ phase, progress: { ...progress } });
-        }
-        // The meter changes only with the run: read once a new state has come in.
-        if (seen !== noticedRun) {
-          noticedRun = seen;
-          setNotice(noticeOf(current, sight));
         }
         if (waiting) {
           const counts = on.counts();
@@ -621,7 +609,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         </div>
       ) : null}
 
-      {notice && ready && !over ? <SuspicionMeter notice={notice} /> : null}
+      {ready && !over ? <SuspicionMeter notice={notice} /> : null}
       {over || !ready ? null : <ControlsHint phase={hint.phase} ticks={hintTicks(hint.progress)} dragToLook={hud.refused} />}
 
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-end px-6 py-3">

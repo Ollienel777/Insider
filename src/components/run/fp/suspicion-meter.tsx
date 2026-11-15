@@ -7,7 +7,7 @@
 // reduced motion it does not pulse; the levels still show.
 import { Ear, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { NOTICE_LEVEL, type Notice } from "./notice";
+import type { Notice } from "./notice";
 
 const TONE_VAR = { calm: "var(--n-500)", warning: "var(--warning)", danger: "var(--danger)" } as const;
 const SEGMENTS = 5;
@@ -20,8 +20,8 @@ const KEYFRAMES = `
 export function SuspicionMeter({ notice }: { notice: Notice }) {
   const colour = TONE_VAR[notice.tone];
   const seen = notice.seenBy.length > 0;
-  // Heard, or only within earshot: the ear. Anything to do with sight: the eye.
-  const Icon = notice.heardBy.length > 0 || (notice.level > 0 && notice.level <= NOTICE_LEVEL.earshot) ? Ear : Eye;
+  // The line's own sense: the ear when it is about noise, the eye otherwise.
+  const Icon = notice.cause === "heard" || notice.cause === "earshot" ? Ear : Eye;
   return (
     <>
       <style>{KEYFRAMES}</style>
@@ -29,6 +29,7 @@ export function SuspicionMeter({ notice }: { notice: Notice }) {
         data-testid="fp-notice"
         data-tone={notice.tone}
         data-level={notice.level}
+        data-cause={notice.cause}
         role="status"
         aria-live="polite"
         aria-label={`Suspicion: ${notice.reason}`}
