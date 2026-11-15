@@ -40,8 +40,12 @@ export async function archiveLength(url: string, fetchImpl: typeof fetch = fetch
       cache: "no-store",
       signal: AbortSignal.timeout(timeoutMs),
     });
+    // A server that ignores the range answers 200 with the whole archive: drop the body unread.
+    if (response.status !== 206) {
+      await response.body?.cancel();
+      return null;
+    }
     await response.arrayBuffer();
-    if (response.status !== 206) return null;
     const total = Number(response.headers.get("content-range")?.split("/")[1]);
     return Number.isSafeInteger(total) && total > 0 ? total : null;
   } catch {
