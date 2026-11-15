@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getMatterport, insideViewFor } from "@/adapters/matterport";
+import { getMatterport, insideViewFor, scanMeshModelFor } from "@/adapters/matterport";
 import { buildingHref } from "@/lib/building-href";
 import { useMissionId } from "@/lib/use-mission-id";
 import { LayerDot } from "@/components/shell/layer-dot";
@@ -38,6 +38,7 @@ import { panelsOpen, RunLayout, useDetails } from "./live-layout";
 import { endNote, usePlayHud } from "./play-hud";
 import { usePlayMode } from "./play-mode";
 import { useTurnClock } from "./turn-clock";
+import { FirstMoveHint } from "./fp/first-move-hint";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
 import { loadCrewPlan, PLAN_HEADING, planSourceOf, type StoredCrewPlan } from "./crew-plan-store";
@@ -46,7 +47,8 @@ import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postur
 import { MuteToggle, useRunSound } from "./run-sound";
 import { RunStage } from "./run-stage";
 import { placeOrFixture } from "./scan-fallback";
-import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, ViewSwitch, type HeldAction } from "./fp/run-view";
+import { ScanWait, useWaitsOnScan } from "./scan-wait";
+import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useRunView, useScanPreload, ViewSwitch, type HeldAction } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -185,8 +187,9 @@ export function RunScreen({
     // Until the board has its fresh run, there is no run on it: the last one's log goes now.
     clearRunLog(building.id, undefined, missionId);
     const matterport = getMatterport(heistMode);
+    const abandon = new AbortController();
     matterport.adapter
-      .loadFloor(building)
+      .loadFloor(building, abandon.signal)
       .then(
         async (floor) => {
           if (!live) return;
@@ -206,10 +209,15 @@ export function RunScreen({
       });
     return () => {
       live = false;
+      // Nobody is waiting for this load now (the screen closed, or the stand-in floor plan was taken): a scan stops loading.
+      abandon.abort();
     };
   }, [building, manifest, heistMode, attempt, placeAndStart, missionId]);
 
   const load: Load = manifest ? loaded : { status: "no-floor" };
+  // While the floor loads, the bar says "from fixtures" only once the browser knows no scan is loading:
+  // on a live scan the skeleton says what it waits for, and before the demo status is in, nobody knows.
+  const sourcePending = useWaitsOnScan(building, heistMode) !== false && load.status === "loading";
   const placed = load.status === "ready" ? load.placed : null;
   // The placement and the Chief's summary use `history`, read when the level was placed; the
   // Forget button uses `storedRuns`, which also counts a run that ended since.
@@ -221,6 +229,17 @@ export function RunScreen({
   // Runs that stay out of storage: on a live scan, and for a kit building on any floor (`boardOn`).
   const inMemory = load.status === "ready" && load.inMemory;
   const openInside = useMemo(() => (liveScan ? insideViewFor(building, heistMode) : null), [liveScan, building, heistMode]);
+  // First person on a live scan stands on the scan's own mesh (issue 118): the model id stays in this page's memory.
+  const scanModel = useMemo(() => (liveScan ? scanMeshModelFor(building, heistMode) : null), [liveScan, building, heistMode]);
+  // Its mesh starts loading as soon as the floor is the scan's, so it is in by the time first person is chosen.
+  const scan = useScanPreload(scanModel);
+  const scanFailure = scan?.failed ?? null;
+  useEffect(() => {
+    if (!scanFailure || runView.view !== "first-person") return;
+    // The status line says why the board is back, once the failure is in.
+    const timer = setTimeout(() => setStatus(scanFailure), 0);
+    return () => clearTimeout(timer);
+  }, [scanFailure, runView.view]);
 
   // The crew's plan from the Plan screen, read after mount (storage is the browser's).
   const [crewPlan, setCrewPlan] = useState<StoredCrewPlan | null>(null);
@@ -325,17 +344,22 @@ export function RunScreen({
   const [playMode, setPlayMode] = usePlayMode();
   // First person (issue 115) always runs on the clock, at its own pace, and its turn is the view's
   // to choose: the next pick while E is held at a door, otherwise a wait.
-  const fpOn = placed !== null && firstPersonOn(runView, placed.level.floor);
+  const fpOn = placed !== null && firstPersonOn(runView, placed.level.floor, scan);
   const fpHeld = useRef<HeldAction | null>(null);
   const holdFp = useCallback((held: HeldAction | null) => {
     fpHeld.current = held;
   }, []);
   const fpTurn = useCallback((current: RunState): Action => fpHeld.current?.(current) ?? { kind: "wait" }, []);
   const layoutMode = fpOn ? "live" : playMode;
+  // On a scan, the clock waits until first person lets the player loose (the picture around them is in).
+  const [fpReady, setFpReady] = useState(false);
   const clock = useTurnClock({
     live: layoutMode === "live",
+    hold: fpOn && liveScan && !fpReady,
     turnMs: fpOn ? FIRST_PERSON_TURN_MS : undefined,
     action: fpOn ? fpTurn : undefined,
+    // In first person the clock waits for the player's first move, so they can look around (issue 171).
+    startOnMove: fpOn,
     run,
     play: (action) => {
       play(action);
@@ -489,7 +513,7 @@ export function RunScreen({
               {/* A kit building's label (below) names its floor, so the line doesn't say it twice. */}
               {source === "costar" ? null : (
                 <span className="max-md:hidden">
-                  {load.status === "ready" && load.live ? " · floor plan from the scan" : " · floor plan from fixtures"}
+                  {load.status === "ready" && load.live ? " · floor plan from the scan" : sourcePending ? null : " · floor plan from fixtures"}
                 </span>
               )}
             </span>
@@ -519,9 +543,21 @@ export function RunScreen({
       }
       board={
           <div className="relative min-h-0 flex-1">
-            {run && placed ? <ViewSwitch state={runView} floor={placed.level.floor} /> : null}
+            {run && placed ? (
+              <ViewSwitch
+                state={runView}
+                floor={placed.level.floor}
+                scan={scan}
+                // On a live scan the stage's header is the switch's line: it stands under it, over the board's corner.
+                className={openInside && !fpOn ? "md:top-[60px] md:right-auto md:left-7" : undefined}
+              />
+            ) : null}
             {load.status === "loading" ? (
-              <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
+              <>
+                <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
+                {/* On a live scan the skeleton says so, and in time offers the stand-in floor plan (issue 145). */}
+                <ScanWait building={building} heistMode={heistMode} onStandIn={() => setAttempt((a) => a + 1)} />
+              </>
             ) : load.status === "no-floor" ? (
               <BoardMessage
                 testId="board-empty"
@@ -560,9 +596,11 @@ export function RunScreen({
                 onHeld={holdFp}
                 onWalking={setWalking}
                 paused={clock.state === "paused"}
-                onUnavailable={() => {
-                  runView.fail();
-                  setStatus(FP_UNAVAILABLE);
+                scan={scan}
+                onReady={setFpReady}
+                onUnavailable={(why) => {
+                  runView.fail(why);
+                  setStatus(why ?? FP_UNAVAILABLE);
                 }}
               />
             ) : run && placed ? (
@@ -582,6 +620,7 @@ export function RunScreen({
             {/* Only over a board with a run on it: not over the loading or error state. Below md the
                 Live mode switch takes the top-right corner, so the mute button sits under it there. */}
             {run ? <MuteToggle muted={muted} onToggle={toggleMute} className="absolute top-2 right-8 max-md:top-16 max-md:right-6" /> : null}
+            {fpOn && clock.awaitingMove ? <FirstMoveHint /> : null}
             {run && !fpOn ? <LiveControls mode={playMode} onChange={setPlayMode} clock={clock} /> : null}
           </div>
       }

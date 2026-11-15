@@ -34,6 +34,7 @@ import type { Building } from "@/domain";
 
 export type { MatterportAdapter } from "./types";
 export type { FramePoint, InsidePose, InsideView, ScanPoint } from "./live";
+export { visibleTimeout } from "./live";
 export { F1_DEMO } from "./fake";
 
 type Env = Record<string, string | undefined>;
@@ -84,7 +85,7 @@ export function selectMatterport(env: Env): MatterportSelection {
   }
   const live = createLiveMatterport({ sdkKey });
   const adapter: MatterportAdapter = {
-    loadFloor: (building) => live.loadFloor({ ...building, matterportModelId: scanModelId(building, env) }),
+    loadFloor: (building, signal) => live.loadFloor({ ...building, matterportModelId: scanModelId(building, env) }, signal),
   };
   return { adapter, mode: "live", reason: "Matterport: live" };
 }
@@ -139,23 +140,29 @@ export function fixtureFloor(building: Pick<Building, "id" | "matterportModelId"
  * of the connection, so the next load tries live again.
  * A building with no scan does not stop the next building trying live, and a
  * live floor tells `onLive`, so the chip goes back to live.
+ *
+ * A load its caller gave up on (`signal` aborted) rejects as `live` did: the
+ * caller is not waiting for a floor, and a load that was cut short says
+ * nothing about the connection, so it is neither a failure nor a fallback.
+ * `failed()` says whether loads now go to `fake`.
  */
 export function withFixtureFloor(
   live: MatterportAdapter,
   fake: MatterportAdapter,
   onFallback: (fallback: Fallback) => void,
   onLive: () => void = () => {},
-): MatterportAdapter {
+): MatterportAdapter & { failed(): boolean } {
   let failed: Fallback | null = null;
   return {
-    async loadFloor(building) {
+    failed: () => failed !== null,
+    async loadFloor(building, signal) {
       if (failed) return fake.loadFloor(building);
       if (!building.matterportModelId) {
         onFallback(noScanFallback(building.id));
         return fake.loadFloor(building);
       }
       try {
-        const floor = await live.loadFloor(building);
+        const floor = await live.loadFloor(building, signal);
         if (floor) {
           onLive();
           return floor;
@@ -163,6 +170,8 @@ export function withFixtureFloor(
         // A building that has a scan, but no floor came back: a failure, not "no scan".
         throw new Error("no floor came back for the building's scan");
       } catch (error) {
+        // The caller gave the load up (it took the stand-in floor plan, or left): not the scan's doing.
+        if (signal?.aborted) throw error;
         // The player didn't start (a hidden window, issue 156): the connection is not dead, so the next load tries live again.
         if (error instanceof MatterportNotStartedError) {
           console.warn(`Matterport: the fixture floor this time (${error.message})`);
@@ -185,6 +194,8 @@ export function matterportMode(heistMode?: string): ServiceMode {
 
 const fake = createFakeMatterport();
 let selected: MatterportSelection | undefined;
+/** Whether the page's live adapter has failed over to fixtures for good (`withFixtureFloor`). */
+let liveFailed: () => boolean = () => false;
 
 /**
  * The page's Matterport adapter: the mode is read once, on first use.
@@ -202,8 +213,9 @@ export function getMatterport(heistMode?: string): MatterportSelection {
       const guarded = withFixtureFloor(chosen.adapter, fake, reportFallback, () => reportLive("matterport"));
       // The override counts as the building's scan, so an overridden fixture building goes live.
       const adapter: MatterportAdapter = {
-        loadFloor: (building) => guarded.loadFloor({ ...building, matterportModelId: scanModelId(building, env) }),
+        loadFloor: (building, signal) => guarded.loadFloor({ ...building, matterportModelId: scanModelId(building, env) }, signal),
       };
+      liveFailed = guarded.failed;
       selected = { ...chosen, adapter };
     } else {
       selected = chosen;
@@ -211,6 +223,30 @@ export function getMatterport(heistMode?: string): MatterportSelection {
     console.info(selected.reason);
   }
   return selected;
+}
+
+/**
+ * The model id whose mesh and panoramas first person draws for `building`
+ * (issue 118), when this page plays on a live scan of it; null when
+ * Matterport is not live or the building has no scan. Like the board, it is
+ * held in browser memory only: the server route it is sent to asks the Model
+ * API and keeps nothing.
+ */
+export function scanMeshModelFor(building: Pick<Building, "id" | "matterportModelId">, heistMode?: string): string | null {
+  if (getMatterport(heistMode).mode !== "live") return null;
+  return scanModelId(building, matterportEnv()) ?? null;
+}
+
+/**
+ * Whether a load of `building`'s floor on this page goes to its live scan:
+ * Matterport is live and not forced to fixtures, no load has failed over for
+ * good, and the building has a scan. The adapter's own answer, for a screen
+ * that says what it is waiting for: a building with no scan, a scan the level
+ * couldn't be placed on, or a player that didn't start does not stop the next
+ * load going live, so neither counts here.
+ */
+export function willLoadLive(building: Pick<Building, "id" | "matterportModelId">, heistMode?: string): boolean {
+  return getMatterport(heistMode).mode === "live" && !liveFailed() && Boolean(scanModelId(building));
 }
 
 /**

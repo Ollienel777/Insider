@@ -10,7 +10,7 @@ import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.romaine-1974.json";
 import { choices } from "./board";
 import { RUN_SEED } from "./run-screen";
-import { clockAction, clockState, createTurnClock, LIVE_TURN_MS, sameTurn } from "./turn-clock";
+import { awaitingMove, clockAction, clockState, createTurnClock, followRun, LIVE_TURN_MS, NO_FIRST_MOVE, pressKey, sameTurn } from "./turn-clock";
 
 const manifest = LevelManifest.parse(structuredClone(cached));
 const placed = placeLevel(manifest, structuredClone(FIXTURE_FLOORS.F1), RUN_SEED);
@@ -300,5 +300,146 @@ describe("the clock on a run", () => {
     const turns = table.run().turn;
     vi.advanceTimersByTime(LIVE_TURN_MS * 10);
     expect(table.run().turn).toBe(turns);
+  });
+});
+
+/**
+ * First person's clock (issue 171), wired as `useTurnClock` wires it: the
+ * first move is one hold beside the caller's (`scanHold`, the hold first
+ * person on a scan adds while its picture comes in), and a key counts only
+ * once nothing else holds the clock.
+ */
+function firstPersonTable(from: RunState, { scanHold = false } = {}) {
+  let run = from;
+  let gate = followRun(NO_FIRST_MOVE, true, run);
+  let held = scanHold;
+  let paused = false;
+  const sync = () => {
+    gate = followRun(gate, true, run);
+    clock.hold(paused || held || awaitingMove(gate) || run.status !== "playing");
+  };
+  const turn = (action: Action) => {
+    const result = act(run, action);
+    if (!result.ok) throw new Error(`${JSON.stringify(action)} refused: ${result.reason}`);
+    run = result.run;
+    clock.restart();
+    sync();
+  };
+  const clock = createTurnClock(() => turn(clockAction(run)));
+  sync();
+  return {
+    run: () => run,
+    waiting: () => awaitingMove(gate),
+    act: turn,
+    key: (code: string) => {
+      gate = pressKey(gate, code, held);
+      sync();
+    },
+    hold: (on: boolean) => {
+      held = on;
+      sync();
+    },
+    pause: (on: boolean) => {
+      paused = on;
+      sync();
+    },
+    restart: () => {
+      run = from;
+      clock.restart();
+      sync();
+    },
+  };
+}
+
+describe("first person's clock, which starts on the first move", () => {
+  it("plays nothing while the player only looks, so the log holds no turns", () => {
+    const table = firstPersonTable(start());
+    expect(table.waiting()).toBe(true);
+    // The mouse and ← → turn the view: neither is a move.
+    table.key("ArrowLeft");
+    table.key("ArrowRight");
+    table.key("KeyP");
+    vi.advanceTimersByTime(LIVE_TURN_MS * 10);
+    expect(table.run().turn).toBe(0);
+    expect(table.run().turns).toEqual([]);
+    expect(table.waiting()).toBe(true);
+  });
+
+  it("ticks once the player moves, each turn the wait it would have been on the board", () => {
+    for (const code of ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "KeyE"]) {
+      const table = firstPersonTable(start());
+      vi.advanceTimersByTime(LIVE_TURN_MS * 3);
+      table.key(code);
+      expect(table.waiting(), code).toBe(false);
+      vi.advanceTimersByTime(LIVE_TURN_MS * 3);
+      expect(table.run().turn, code).toBeGreaterThanOrEqual(2);
+      expect(kinds(table.run()).every((k) => k === "wait"), code).toBe(true);
+    }
+  });
+
+  it("counts a turn the player plays while it waits (a number key, a walk into the next node) as the first move", () => {
+    const table = firstPersonTable(start());
+    table.act(move(F1_DEMO.freightLiftWait));
+    expect(table.waiting()).toBe(false);
+    vi.advanceTimersByTime(LIVE_TURN_MS);
+    expect(kinds(table.run())).toEqual(["move", "wait"]);
+  });
+
+  it("waits behind another hold: a key while that hold is on is not the first move, and the wait starts when it lifts", () => {
+    const table = firstPersonTable(start(), { scanHold: true });
+    table.key("KeyW");
+    expect(table.waiting()).toBe(true);
+    table.hold(false);
+    vi.advanceTimersByTime(LIVE_TURN_MS * 5);
+    expect(table.run().turn).toBe(0);
+    table.key("KeyW");
+    vi.advanceTimersByTime(LIVE_TURN_MS);
+    expect(table.run().turn).toBe(1);
+    // The other hold still holds the clock after the first move, and keeps the time left.
+    table.hold(true);
+    vi.advanceTimersByTime(LIVE_TURN_MS * 5);
+    expect(table.run().turn).toBe(1);
+    table.hold(false);
+    vi.advanceTimersByTime(LIVE_TURN_MS);
+    expect(table.run().turn).toBe(2);
+  });
+
+  it("still pauses: paused, plays nothing; resumed, runs on; a move while paused is the first move", () => {
+    const table = firstPersonTable(start());
+    table.pause(true);
+    table.key("KeyW");
+    vi.advanceTimersByTime(LIVE_TURN_MS * 5);
+    expect(table.run().turn).toBe(0);
+    table.pause(false);
+    vi.advanceTimersByTime(LIVE_TURN_MS);
+    expect(table.run().turn).toBe(1);
+    table.pause(true);
+    vi.advanceTimersByTime(LIVE_TURN_MS * 5);
+    expect(table.run().turn).toBe(1);
+    table.pause(false);
+    vi.advanceTimersByTime(LIVE_TURN_MS);
+    expect(table.run().turn).toBe(2);
+  });
+
+  it("waits again after a restart, and on entering first person again; off it, never waits", () => {
+    const table = firstPersonTable(start());
+    table.key("KeyW");
+    vi.advanceTimersByTime(LIVE_TURN_MS * 2);
+    expect(table.run().turn).toBe(2);
+    table.restart();
+    expect(table.waiting()).toBe(true);
+    vi.advanceTimersByTime(LIVE_TURN_MS * 5);
+    expect(table.run().turn).toBe(0);
+
+    const fresh = start();
+    const moved = pressKey(followRun(NO_FIRST_MOVE, true, fresh), "KeyW", false);
+    expect(awaitingMove(moved)).toBe(false);
+    const board = followRun(moved, false, fresh);
+    expect(awaitingMove(board)).toBe(false);
+    expect(awaitingMove(followRun(board, true, fresh))).toBe(true);
+    // Unchanged, the same object: the hook keeps it in state without a render loop.
+    expect(followRun(moved, true, fresh)).toBe(moved);
+    // A new run (a level placed again) waits again.
+    expect(awaitingMove(followRun(moved, true, start()))).toBe(true);
   });
 });

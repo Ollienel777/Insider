@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { Building, LevelManifest } from "@/domain";
 import { createRun } from "@/engine";
 import { placeOrFixture } from "@/components/run/scan-fallback";
+import { ScanWait, useWaitsOnScan } from "@/components/run/scan-wait";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { validatePlan } from "@/level/validate-plan";
 import { askCrewOrBoard, crewRequest, EXAMPLE_ORDER, type CrewAnswer } from "./crew-request";
@@ -59,6 +60,8 @@ export function PlanScreen({
   warmModel?: boolean;
 }) {
   const [loaded, setLoad] = useState<Load>({ status: "loading" });
+  /** Counts the loads: taking the stand-in floor plan (scan-wait.tsx) loads the floor again. */
+  const [attempt, setAttempt] = useState(0);
   const [order, setOrder] = useState("");
   const [ask, setAsk] = useState<Ask>({ status: "idle" });
   const [lens, toggleLens] = useLayerLens();
@@ -70,11 +73,12 @@ export function PlanScreen({
     if (!manifest) return;
     let live = true;
     const matterport = getMatterport(heistMode);
+    const abandon = new AbortController();
     const fail = (error: unknown) => {
       if (live) setLoad({ status: "error", message: error instanceof Error ? error.message : String(error) });
     };
     matterport.adapter
-      .loadFloor(building)
+      .loadFloor(building, abandon.signal)
       .then(async (floor) => {
         if (!live) return;
         if (!floor) return setLoad({ status: "no-floor" });
@@ -92,8 +96,10 @@ export function PlanScreen({
       .catch(fail);
     return () => {
       live = false;
+      // Nobody is waiting for this load now (the screen closed, or the stand-in floor plan was taken): a scan stops loading.
+      abandon.abort();
     };
-  }, [building, manifest, heistMode, missionId, source]);
+  }, [building, manifest, heistMode, missionId, source, attempt]);
 
   useEffect(() => warmModel(warm), [warm]);
 
@@ -108,6 +114,9 @@ export function PlanScreen({
   }, [ask]);
 
   const load: Load = manifest ? loaded : { status: "no-floor" };
+  // While the floor loads, the bar says "from fixtures" only once the browser knows no scan is loading:
+  // on a live scan the skeleton says what it waits for, and before the demo status is in, nobody knows.
+  const sourcePending = useWaitsOnScan(building, heistMode) !== false && load.status === "loading";
   const placed = load.status === "ready" ? load.placed : null;
   const run = useMemo(() => (placed ? createRun(placed.level) : null), [placed]);
   const answer = ask.status === "answered" ? ask.answer : null;
@@ -155,7 +164,7 @@ export function PlanScreen({
               <LayerDot layer="matterport" decorative />
               Matterport
               <span className="max-md:hidden">
-                {load.status === "ready" && load.live ? " · floor plan from the scan" : " · floor plan from fixtures"}
+                {load.status === "ready" && load.live ? " · floor plan from the scan" : sourcePending ? null : " · floor plan from fixtures"}
               </span>
             </span>
             <span aria-hidden className="h-4 w-px bg-border" />
@@ -166,7 +175,10 @@ export function PlanScreen({
           </div>
           <div className="relative min-h-0 flex-1">
             {load.status === "loading" ? (
-              <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
+              <>
+                <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
+                <ScanWait building={building} heistMode={heistMode} onStandIn={() => setAttempt((a) => a + 1)} />
+              </>
             ) : load.status === "no-floor" ? (
               <BoardMessage
                 testId="board-empty"
