@@ -24,6 +24,11 @@
 // - The engine is the truth. When its player node is not the one this view
 //   expected (a restart, a number key, a refused move), the body goes back to
 //   where it last stood in the engine's node's area, or onto the node.
+// - A door the engine shuts with the body in the doorway, on the near side of
+//   the bar but still in the far node's area (issue 118's scans, where a bar
+//   need not stand at an edge's middle), cuts the body off from the engine's
+//   node: the body goes onto that node, as for a refusal. It never plays the
+//   moves round to the area it now stands in, which it did not walk.
 //
 // Pure: no DOM, no renderer, no clock but the `dt` it is given. It reads the
 // floor only through `Ground` (ground.ts).
@@ -104,6 +109,23 @@ export function reconcile(walker: Walker, ground: Ground, run: RunState): Walker
   if (!at) return { ...next, queue: [] };
   const pos = { x: at.x, y: at.y };
   return { ...next, pos, home: pos, region: run.playerNode, vel: { x: 0, y: 0 }, queue: [] };
+}
+
+/**
+ * A body standing still in another node's area than the engine's, with the
+ * engine's node now behind a shut door though the mesh leaves the line clear:
+ * the door was locked with the body between the edge's middle and the bar.
+ * The engine is the truth, so the body goes onto its node.
+ */
+function cutOff(walker: Walker, ground: Ground, run: RunState): Walker {
+  if (walker.pending || walker.queue.length > 0 || run.locked.length === 0) return walker;
+  const at = ground.nodes.get(walker.node);
+  if (!at) return walker;
+  const here = ground.regionOf(walker.pos, run.locked);
+  if (here === null || here === walker.node) return walker;
+  if (ground.clear(walker.pos, at, run.locked) || !ground.clear(walker.pos, at, [])) return walker;
+  const pos = { x: at.x, y: at.y };
+  return { ...walker, pos, home: pos, region: walker.node, vel: { x: 0, y: 0 } };
 }
 
 /**
@@ -243,6 +265,8 @@ export function stepWalker(
 ): { walker: Walker; action: Action | null } {
   let walker = reconcile(before, ground, run);
   const playing = run.status === "playing";
+  // A door shut under the body, cutting it off from the engine's node: onto the node, before anything else.
+  if (playing) walker = cutOff(walker, ground, run);
 
   // Move. A run that is over stops the body where it stands.
   const wish = playing ? wishVelocity(controls, controls.yaw) : { x: 0, y: 0 };
