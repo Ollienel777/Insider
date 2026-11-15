@@ -3,6 +3,7 @@
 // path on the board.
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { SMOKE_KIT_BUILDING } from "@/adapters/costar/test-kit";
 import { FIXTURE_FLOORS } from "@/adapters/matterport/fake";
 import { BoardView } from "@/components/run/board-view";
 import { RUN_SEED } from "@/components/run/run-screen";
@@ -49,8 +50,8 @@ describe("the crew request", () => {
 
   it("says when the crew has no reply to give at all, so the Plan screen can work one out (issue 140)", async () => {
     const none = (async () =>
-      Response.json({ error: 'no recorded crew replies for "247386"', code: "no-recording" }, { status: 503 })) as unknown as typeof fetch;
-    await expect(askCrew(crewRequest("247386", "Go"), { fetch: none })).rejects.toBeInstanceOf(NoCrewReplyError);
+      Response.json({ error: `no recorded crew replies for "${SMOKE_KIT_BUILDING}"`, code: "no-recording" }, { status: 503 })) as unknown as typeof fetch;
+    await expect(askCrew(crewRequest(SMOKE_KIT_BUILDING, "Go"), { fetch: none })).rejects.toBeInstanceOf(NoCrewReplyError);
     const broken = (async () => Response.json({ error: "the crew could not answer" }, { status: 500 })) as unknown as typeof fetch;
     await expect(askCrew(crewRequest("F1", "Go"), { fetch: broken })).rejects.not.toBeInstanceOf(NoCrewReplyError);
   });
@@ -58,9 +59,9 @@ describe("the crew request", () => {
   it("treats a 503 that isn't the crew's own no-recording answer as an outage, not as no reply", async () => {
     // A proxy or the host: no JSON body, or a body without the crew's code.
     const proxy = (async () => new Response("Service Unavailable", { status: 503 })) as unknown as typeof fetch;
-    await expect(askCrew(crewRequest("247386", "Go"), { fetch: proxy })).rejects.not.toBeInstanceOf(NoCrewReplyError);
+    await expect(askCrew(crewRequest(SMOKE_KIT_BUILDING, "Go"), { fetch: proxy })).rejects.not.toBeInstanceOf(NoCrewReplyError);
     const other = (async () => Response.json({ error: "overloaded" }, { status: 503 })) as unknown as typeof fetch;
-    await expect(askCrew(crewRequest("247386", "Go"), { fetch: other })).rejects.not.toBeInstanceOf(NoCrewReplyError);
+    await expect(askCrew(crewRequest(SMOKE_KIT_BUILDING, "Go"), { fetch: other })).rejects.not.toBeInstanceOf(NoCrewReplyError);
   });
 });
 
