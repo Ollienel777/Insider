@@ -17,7 +17,7 @@ export function ControlsHint({ phase, ticks, dragToLook }: { phase: HintPhase; t
       data-phase={phase}
       aria-label="Controls"
       className={cn(
-        "pointer-events-none absolute top-[22%] left-1/2 w-max -translate-x-1/2 rounded-md border border-border bg-surface-1/92 px-6 py-5 shadow-e-2",
+        "pointer-events-none absolute top-1/2 left-6 w-max -translate-y-1/2 rounded-md border border-border bg-surface-1/92 px-6 py-5 shadow-e-2",
         "transition-opacity ease-out",
         phase === "fading" ? "opacity-0" : "opacity-100",
       )}

@@ -238,8 +238,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         noise = noiseCue(current);
         actors.showHeard(earshot(current));
       }
-      // Turned by the player since the last frame: before the view is put back on a hop below.
-      progress.lookedRad += Math.abs(controller.yaw - looked.yaw) + Math.abs(controller.pitch - looked.pitch);
 
       // The movement runs at a fixed step, however fast the screen draws.
       controller.frame(dt);
@@ -256,6 +254,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         walker = out.walker;
         if (out.action) act(out.action);
       }
+      // Turned by the player since the last frame (the mouse, a drag, the arrow keys): before the view is put back on a hop below.
+      progress.lookedRad += Math.abs(controller.yaw - looked.yaw) + Math.abs(controller.pitch - looked.pitch);
       // Put back on the engine's node (a restart, a number key): look the way that hop went, or,
       // at the start, the first way on. A frame of walking never covers this much ground.
       if (Math.hypot(walker.pos.x - stood.x, walker.pos.y - stood.y) > 0.5) {
@@ -340,7 +340,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         hintKey = nextHint;
         setHint({ phase, progress: { ...progress } });
       }
-      const noticed = noticeOf(current, sight, walker.pos, ground.nodes);
+      const noticed = noticeOf(current, sight, walker.pos, ground.nodes, (a, b) => ground.clear(a, b, current.locked));
       const nextNotice = JSON.stringify([noticed.level, noticed.tone, noticed.reason, noise, current.turn]);
       if (nextNotice !== noticeKey) {
         noticeKey = nextNotice;

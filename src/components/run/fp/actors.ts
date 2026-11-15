@@ -392,7 +392,7 @@ export class Actors {
     this.seeing = new Set(sightOf(run, this.ground.unitM).filter((s) => s.nodes.includes(run.playerNode)).map((s) => s.id));
     for (const [id, cone] of this.cameraCones) {
       (cone.material.uniforms.colour.value as Color).copy(this.seeing.has(id) ? this.palette.danger : this.palette.n300);
-      cone.material.uniforms.opacity.value = this.seeing.has(id) ? 0.4 : 0.16;
+      cone.material.uniforms.opacity.value = this.seeing.has(id) ? 0.3 : 0.16;
     }
     for (const [id, pawn] of this.pawns) {
       const on = this.seeing.has(id);

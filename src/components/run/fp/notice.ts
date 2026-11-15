@@ -84,7 +84,14 @@ export function earshot(run: RunState): Set<string> {
  * How near the player stands to being noticed this turn. `pos` is the body
  * on the floor in metres; `nodes` every node's place in metres.
  */
-export function noticeOf(run: RunState, sight: readonly Sight[], pos: Vec, nodes: ReadonlyMap<string, Vec>): Notice {
+export function noticeOf(
+  run: RunState,
+  sight: readonly Sight[],
+  pos: Vec,
+  nodes: ReadonlyMap<string, Vec>,
+  /** Whether nothing solid stands between two points: a watched node behind a wall is not close. */
+  clear: (a: Vec, b: Vec) => boolean = () => true,
+): Notice {
   const kinds = new Map(sight.map((s) => [s.id, s.kind]));
   const name = (id: string) => `${KIND_WORD[kinds.get(id) ?? "guard"]} ${id}`;
   const tripped = run.status === "playing" || run.status === "caught" ? trippedBy(run) : null;
@@ -101,7 +108,7 @@ export function noticeOf(run: RunState, sight: readonly Sight[], pos: Vec, nodes
       if (!at) continue;
       const gap = Math.max(0, dist(pos, at) - FP.watchedM);
       const k = Math.max(0, 1 - gap / NOTICE_NEAR_M) * NOTICE_CLOSE_MAX;
-      if (k > close) {
+      if (k > close && clear(pos, at)) {
         close = k;
         closeTo = seen.by[0] ?? null;
       }
@@ -124,8 +131,8 @@ export function noticeOf(run: RunState, sight: readonly Sight[], pos: Vec, nodes
         ? `${name(tripped)} saw you`
         : heardBy.length > 0
           ? `${heardBy.join(", ")} heard you`
-          : closeTo && close >= 0.25
-            ? `Close to ${name(closeTo)}'s sight`
+          : closeTo && close > 0
+            ? `Near ${name(closeTo)}'s sight`
             : null;
   return { level: Math.round(level * 20) / 20, tone, seenBy, closeTo: close > 0 ? closeTo : null, heardBy, tripped, reason };
 }
