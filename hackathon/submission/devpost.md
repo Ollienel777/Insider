@@ -21,7 +21,8 @@ it is staged. Vexcel shows the building from above, and its Matterport scan is
 the floor you walk, in first person. When a camera catches you, an AI security
 chief re-plans the guards and says why. Then Owner Mode points the same engine
 at a building's own security: the engine plays 50 break-ins from strategies
-an AI crew writes, and the chief proposes the fix.
+an AI crew writes, and the chief proposes the fix. Our demo building is
+Century Park, a 1969 Class B office tower in Los Angeles.
 
 ---
 
@@ -56,8 +57,9 @@ Hobbs is a stealth game in the browser, played in seven steps.
    narrowed a fixture inventory, filter by filter, beside a map whose pins
    dim: era, class, a floor on the market, a 3D scan, a way in on the aerial.
    That is 61 invented buildings down to three finalists, and the screen
-   heads it "Scripted run". In live mode a card above them shows a real
-   building from the CoStar kit, checked need by need against its CoStar
+   heads it "Scripted run". In live mode a card above them shows Century
+   Park, a real Los Angeles office building from the CoStar kit (built 1969,
+   Class B, 15 stories), checked need by need against its CoStar
    record. The team chose that building for the
    mission; the agent did not find it, and the search does not read the kit
    yet.
@@ -96,7 +98,10 @@ result is a count, the way out the crew used most, the guard or camera that
 noticed them first most often, how much of the floor is watched, and the
 "open windows" when a crew gets in and out unseen. **Ask the Chief for a fix**
 proposes one change; **Apply and rerun** puts before and after side by side.
-On fixture F1's prepared demo pair, played on recorded strategies, moving one
+On Century Park's prepared demo pair, played on the crew's rule-based
+strategies, turning one camera (C2, south to north) takes 50 of 50 escapes to
+19 of 50, the floor watched from 21% to 31%, and the open windows from 40 of
+40 to 24 of 40. On fixture F1's pair, on recorded strategies, moving one
 camera takes 7 of 50 escapes to 1 of 50. Owner Mode runs on the fixture
 buildings, with "Made-up setup on a fixture building" on screen, and live on
 the real building from the CoStar kit, on its scan, with "A made-up setup for
@@ -110,8 +115,8 @@ invented buildings, three of them with a floor and a level, a 61-building
 inventory, and recorded model turns. The chip in the top bar reads `FIXTURES`
 or `LIVE`, and every model answer is tagged when no model wrote it
 (**Recorded**, **Rule-based**, **No crew reply**). With the event's keys, the
-path from Cast to Debrief has been played end to end on a real Los Angeles
-office building from the CoStar kit, with live Vexcel, its live Matterport
+path from Cast to Debrief has been played end to end on Century Park, a real
+Los Angeles office building from the CoStar kit, with live Vexcel, its live Matterport
 scan as the floor, and Claude answering live (the casting replay itself is
 still the recorded fixture run; the building comes from our showcase list).
 

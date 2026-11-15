@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, RotateCcw, SkipForward } from "lucide-react";
+import { RotateCcw, SkipForward } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useReducedMotion } from "@/components/drill/use-reduced-motion";
@@ -38,7 +38,8 @@ export interface CastScreenProps {
   thumbnails?: Record<string, MassingView>;
   /**
    * The showcase kit building the mission is cast onto (issue 103), live only:
-   * shown over the finalists and picked for "Scout it" until another is.
+   * one of the three cards, in the second finalist's slot (issue 228), and
+   * picked for "Scout it" until another is.
    */
   showcase?: ShowcaseCast | null;
   /** Start with everything shown, as Skip does. For tests. */
@@ -139,8 +140,18 @@ export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, 
     </Button>
   );
 
-  const finalistIds = new Set(finalists.map((c) => c.id));
-  const selected = cardsShown ? (finalists.find((c) => c.id === selectedId) ?? null) : null;
+  // The three cards: with a showcase building, it takes the second finalist's slot (issue 228).
+  const slots: ({ kind: "finalist"; candidate: (typeof finalists)[number] } | { kind: "showcase" })[] = finalists.map((c) => ({
+    kind: "finalist" as const,
+    candidate: c,
+  }));
+  if (showcase) {
+    if (slots.length > 1) slots[1] = { kind: "showcase" };
+    else slots.push({ kind: "showcase" });
+  }
+  const shownFinalists = slots.flatMap((s) => (s.kind === "finalist" ? [s.candidate] : []));
+  const finalistIds = new Set(shownFinalists.map((c) => c.id));
+  const selected = cardsShown ? (shownFinalists.find((c) => c.id === selectedId) ?? null) : null;
   const showcasePicked = cardsShown && showcase !== null && selectedId === showcase.id;
   // What "Scout it" acts on: the showcase building or a finalist, and whether it has pages to scout.
   const picked = showcasePicked ? showcase : selected;
@@ -150,7 +161,7 @@ export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, 
   const left = inCity.filter((p) => states.get(p.id) === "in");
   // Every finalist in this city is on the map: the view widens past the
   // basemap when one stands beyond it. Only other properties can be off it.
-  const mapView = fitView(BASEMAPS[city].bounds, finalists.filter((c) => c.city === city));
+  const mapView = fitView(BASEMAPS[city].bounds, shownFinalists.filter((c) => c.city === city));
   const offMap = left.filter((p) => {
     if (finalistIds.has(p.id)) return false;
     const { x, y } = project(mapView, p.lat, p.lng);
@@ -166,21 +177,29 @@ export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, 
 
   const finalistList = (
     <ol className="mt-3 grid gap-4 md:grid-cols-3">
-      {finalists.map((c, i) => (
-        <li key={c.id} className="min-w-0">
-          <Reveal shown={cardsShown} className="h-full">
-            <FinalistCard
-              candidate={c}
-              rank={i + 1}
-              selected={c.id === selected?.id}
-              scoutable={scoutable.includes(c.id)}
-              reasonLabel={reasonLabel(trace.model)}
-              thumbnail={thumbnails[c.id]}
-              onSelect={setSelectedId}
-            />
-          </Reveal>
-        </li>
-      ))}
+      {slots.map((slot, i) =>
+        slot.kind === "showcase" && showcase ? (
+          <li key={`showcase-${showcase.id}`} data-testid="showcase" className="min-w-0">
+            <Reveal shown={cardsShown} className="h-full">
+              <ShowcaseCard showcase={showcase} missionId={mission.id} selected={showcasePicked} onSelect={setSelectedId} />
+            </Reveal>
+          </li>
+        ) : slot.kind === "finalist" ? (
+          <li key={slot.candidate.id} className="min-w-0">
+            <Reveal shown={cardsShown} className="h-full">
+              <FinalistCard
+                candidate={slot.candidate}
+                rank={i + 1}
+                selected={slot.candidate.id === selected?.id}
+                scoutable={scoutable.includes(slot.candidate.id)}
+                reasonLabel={reasonLabel(trace.model)}
+                thumbnail={thumbnails[slot.candidate.id]}
+                onSelect={setSelectedId}
+              />
+            </Reveal>
+          </li>
+        ) : null,
+      )}
     </ol>
   );
 
@@ -236,46 +255,16 @@ export function CastScreen({ mission, result, pins, scoutable, thumbnails = {}, 
           </div>
         </section>
 
-        {showcase ? (
-          <section
-            aria-labelledby="showcase-title"
-            data-testid="showcase"
-            className="shrink-0 border-t border-border bg-surface-1 px-4 pt-3 pb-4 md:px-6"
-          >
-            <h2 id="showcase-title" className="label-caps text-text-3">
-              Cast · this mission&apos;s showcase building
-            </h2>
-            <Reveal shown={cardsShown} className="mt-3">
-              <ShowcaseCard showcase={showcase} missionId={mission.id} selected={showcasePicked} onSelect={setSelectedId} />
-            </Reveal>
-          </section>
-        ) : null}
-
         <section
           aria-labelledby="finalists-title"
           data-testid="finalists"
           data-shown={cardsShown}
           className="shrink-0 border-t border-border bg-surface-1 px-4 pt-3 pb-4 md:px-6"
         >
-          {showcase ? (
-            // The showcase is the cast, so the funnel's finalists fold away under it and the map keeps its height.
-            <details data-testid="finalists-fold" className="group/finalists">
-              <summary className="inline-flex h-10 cursor-pointer list-none items-center gap-1 rounded-sm text-text-3 hover:text-text-1 [&::-webkit-details-marker]:hidden">
-                <ChevronRight aria-hidden className="size-4 stroke-[1.5] transition-transform duration-fast group-open/finalists:rotate-90" />
-                <h2 id="finalists-title" className="label-caps">
-                  Or one of the funnel&apos;s three finalists
-                </h2>
-              </summary>
-              {finalistList}
-            </details>
-          ) : (
-            <>
-              <h2 id="finalists-title" className="label-caps text-text-3">
-                Three finalists · pick one to scout
-              </h2>
-              {finalistList}
-            </>
-          )}
+          <h2 id="finalists-title" className="label-caps text-text-3">
+            Three finalists · pick one to scout
+          </h2>
+          {finalistList}
           {/* SPEC §1, taste rules: the reasons speak of locks and cameras, so the mission cards' line stands here too. */}
           <p data-testid="cast-disclaimer" className="mt-3 text-sm text-text-2">
             {MISSION_DISCLAIMER}

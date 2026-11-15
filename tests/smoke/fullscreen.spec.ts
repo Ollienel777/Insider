@@ -69,6 +69,6 @@ test("Live: Fullscreen takes the stage and the toasts with it, and Details, Tact
   await expect(button(page)).toHaveAttribute("aria-pressed", "true");
   await page.getByTestId("play-mode-tactical").click();
   await expect(button(page)).toHaveCount(0);
-  // Leaving fullscreen is asynchronous: wait for the document to say so.
+  // Leaving fullscreen is the browser's to finish: the button goes at once, the page follows.
   await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
 });

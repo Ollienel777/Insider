@@ -10,7 +10,7 @@ import { LayerDot } from "@/components/shell/layer-dot";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Building, FloorGraph, LateChief, LevelManifest } from "@/domain";
-import { act, applyChiefOrders, createRun, type Action, type RunState } from "@/engine";
+import { act, applyChiefOrders, createRun, withPursuit, type Action, type Pursuit, type RunState } from "@/engine";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { objectiveNoun } from "@/lib/objective-noun";
 import { floorLabel, placedFloor, RECORD_LABEL, recordLabel } from "@/lib/record-label";
@@ -37,7 +37,8 @@ import { LiveControls } from "./live-controls";
 import { panelsOpen, RunLayout, useDetails } from "./live-layout";
 import { endNote, usePlayHud } from "./play-hud";
 import { usePlayMode } from "./play-mode";
-import { useTurnClock } from "./turn-clock";
+import { LIVE_TURN_MS, useTurnClock } from "./turn-clock";
+import { realTimePursuit } from "./pursuit";
 import { FirstMoveHint } from "./fp/first-move-hint";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
@@ -149,6 +150,8 @@ export function RunScreen({
   const deferredChief = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Whether the turns run on the clock (Live, or first person): only then does a re-plan wait for the radio. */
   const clocked = useRef(false);
+  /** Real-time play's longer memory for the guards (pursuit.ts): null on the turn-based board. */
+  const pursuit = useRef<Pursuit | null>(null);
   /** Turn number → where the Chief's orders logged on that turn came from, for the Debrief. */
   const chiefSources = useRef(new Map<number, ChiefAnswer["source"]>());
   /** The Chief's answer that landed after the run ended, if one did. */
@@ -433,7 +436,8 @@ export function RunScreen({
   const play = useCallback(
     (action: Action) => {
       if (!placed || !run) return;
-      const result = act(run, action);
+      // In real-time play the guards keep after the player for seconds, not three short turns (pursuit.ts).
+      const result = act(withPursuit(run, pursuit.current), action);
       if (!result.ok) {
         setStatus(`Not possible: ${result.reason}.`);
         return;
@@ -477,6 +481,7 @@ export function RunScreen({
   const layoutMode = fpOn ? "live" : playMode;
   useEffect(() => {
     clocked.current = layoutMode === "live";
+    pursuit.current = layoutMode === "live" ? realTimePursuit(fpOn ? FIRST_PERSON_TURN_MS : LIVE_TURN_MS) : null;
   }, [layoutMode]);
   // On a scan, the clock waits until first person lets the player loose (the picture around them is in).
   const [fpReady, setFpReady] = useState(false);

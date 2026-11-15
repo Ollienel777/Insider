@@ -272,7 +272,8 @@ describe("CastScreen with a showcase building", () => {
       />,
     );
   const end = screen(true);
-  const card = end.slice(end.indexOf('data-testid="showcase-card"'), end.indexOf('data-testid="finalists"'));
+  const at = end.indexOf('data-testid="showcase-card"');
+  const card = end.slice(at, end.indexOf('data-testid="finalist-card"', at));
 
   it("links to the building's Scout, Dossier, Plan and Run on the cast mission", () => {
     const steps = card.slice(card.indexOf('data-testid="showcase-steps"'));
@@ -316,12 +317,16 @@ describe("CastScreen with a showcase building", () => {
     expect(start).toMatch(/invisible opacity-0"><article data-testid="showcase-card"/);
   });
 
-  it("keeps the three finalists under it, folded away, with the disclaimer still shown", () => {
-    expect(end).toMatch(/<details data-testid="finalists-fold"(?![^>]*open)/);
-    expect(end.indexOf('data-testid="finalists-fold"')).toBeLessThan(end.indexOf('data-testid="finalist-card"'));
-    expect(end.indexOf('data-testid="cast-disclaimer"')).toBeGreaterThan(end.indexOf("</details>"));
-    expect([...end.matchAll(/data-testid="finalist-card" data-building="(\w+)"/g)].map((m) => m[1])).toEqual(["F1", "L01", "L02"]);
-    expect(end.indexOf('data-testid="showcase-card"')).toBeLessThan(end.indexOf('data-testid="finalist-card"'));
+  // Issue 228: one of the three cards, not a card over them.
+  it("takes the second finalist's slot among the three cards, with the disclaimer still shown", () => {
+    const cards = [...end.matchAll(/data-testid="(finalist|showcase)-card" data-building="(\w+)"/g)].map((m) => m[2]);
+    expect(cards).toEqual(["F1", "900001", "L02"]);
+    expect(end).not.toContain('data-testid="finalists-fold"');
+    expect(end).not.toContain("<details data-testid");
+    expect(textOf(end)).toContain("Three finalists · pick one to scout");
+    expect(end.indexOf('data-testid="cast-disclaimer"')).toBeGreaterThan(end.indexOf('data-testid="showcase-card"'));
+    // The finalist it stands in for is neither a card nor labelled on the map.
+    expect(end).not.toMatch(/data-testid="cast-pin" data-building="L01" data-state="in" data-finalist/);
   });
 });
 

@@ -111,6 +111,26 @@ export interface GuardTarget extends ZoneTarget {
   intent: GuardIntent;
   /** For a sweep: the index into `nodes` of the node it is walking to. 0 otherwise. */
   visit: number;
+  /**
+   * Set only under a run's `pursuit`: how many hops round the last-seen node
+   * the guard searches once it has reached it and found nobody (guards.ts).
+   * On a `converge` it is the search still to come; on a `sweep` it marks the
+   * search itself, which a new sighting pulls back onto the player.
+   */
+  search?: number;
+}
+
+/**
+ * How long the guards keep after the player in real-time play, where a turn
+ * is under a second (first person, Live). Absent, the run plays by the
+ * turn-based rules: `HOLD`'s three turns, and a guard that reaches the
+ * last-seen node stays on it.
+ */
+export interface Pursuit {
+  /** Turns in a row with nothing holding the alarm before it drops a step, by level. A level left out keeps its turn-based rule. */
+  hold: Readonly<Partial<Record<AlarmState, number>>>;
+  /** How many hops round the last-seen node a guard searches after reaching it. 0: it stays there. */
+  searchHops: number;
 }
 
 /** Where and when the player was last detected. */
@@ -189,6 +209,8 @@ export interface RunState {
   cleaners: readonly GuardState[];
   status: RunStatus;
   turns: readonly RunTurn[];
+  /** Real-time play's longer memory (`withPursuit`); absent or null for the turn-based rules. */
+  pursuit?: Pursuit | null;
 }
 
 /** A level the engine cannot run; the message says what is wrong. */
@@ -355,9 +377,18 @@ export function zoneTarget(board: Board, zoneId: string): ZoneTarget | null {
   return nodes.length > 0 ? { zoneId, nodes } : null;
 }
 
-/** A converge order onto the node the player was seen on, in the zone that holds it. */
-export function convergeOn(zoneId: string, seen: Sighted): GuardTarget {
-  return { zoneId, nodes: [seen.nodeId], intent: "converge", visit: 0 };
+/**
+ * A converge order onto the node the player was seen on, in the zone that
+ * holds it. With `search` (a run's pursuit), the guard searches that many
+ * hops round the node once it has reached it.
+ */
+export function convergeOn(zoneId: string, seen: Sighted, search = 0): GuardTarget {
+  return { zoneId, nodes: [seen.nodeId], intent: "converge", visit: 0, ...(search > 0 && { search }) };
+}
+
+/** The run under `pursuit` (real-time play), or back under the turn-based rules with `null`. Applies from the next turn. */
+export function withPursuit(run: RunState, pursuit: Pursuit | null): RunState {
+  return (run.pursuit ?? null) === pursuit ? run : { ...run, pursuit };
 }
 
 /** Whether the alarm is high enough that sharing a node with a guard is capture. */

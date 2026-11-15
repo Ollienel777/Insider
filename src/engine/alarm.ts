@@ -20,6 +20,12 @@
 //   to the node the player was seen on, so they close on the player instead
 //   of stopping at the edge of a zone.
 //
+// Real-time play (first person, Live) sets a `pursuit` on the run (state.ts),
+// since three turns there are two seconds: the holds are longer, Lockdown
+// decays too, and a guard that reaches the last-seen node searches round it
+// (guards.ts); a later sighting pulls the searching guards onto it as well.
+// Without one, every rule above stands as written.
+//
 // Every transition appends one `AlarmEvent`; the Chief (#20) re-plans on them.
 // Lockdown cannot rise, so a sighting there that finds the player somewhere
 // new (another zone, or after at least one turn unseen) appends an event too,
@@ -93,8 +99,9 @@ export function detect(run: RunState, detection: Detection, turn: number, marks:
   if (detection.strength !== "sighting" || !isAlert(run.alarm)) return seen;
 
   // Already at Alert or Lockdown: the converging guards close on the new sighting.
-  const target = convergeOn(lastKnown.zoneId, lastSeen);
-  const guards = run.guards.map((g) => (g.target?.intent === "converge" ? { ...g, target } : g));
+  const target = convergeOn(lastKnown.zoneId, lastSeen, run.pursuit?.searchHops);
+  // A guard searching round the last sighting (`search`, under a pursuit) closes on the new one too.
+  const guards = run.guards.map((g) => (g.target?.intent === "converge" || g.target?.search ? { ...g, target } : g));
   const elsewhere =
     run.lastKnown?.zoneId !== lastKnown.zoneId || (run.lastSeen !== null && turn - run.lastSeen.turn > 1);
   if (run.alarm !== "lockdown" || !elsewhere) return { ...seen, guards };
@@ -106,7 +113,7 @@ export function detect(run: RunState, detection: Detection, turn: number, marks:
 export function settle(run: RunState, turn: number, marks: TurnMarks): RunState {
   if (marks.held) return { ...run, alarmQuiet: 0 };
   const alarmQuiet = run.alarmQuiet + 1;
-  const hold = HOLD[run.alarm];
+  const hold = run.pursuit?.hold[run.alarm] ?? HOLD[run.alarm];
   if (hold === undefined || alarmQuiet < hold) return { ...run, alarmQuiet };
   return transition(run, LEVELS[rank(run.alarm) - 1], turn, { kind: "decay" });
 }
@@ -131,7 +138,7 @@ function transition(run: RunState, to: AlarmState, turn: number, cause: AlarmCau
   let { guards, locked, chiefLocks } = run;
   const { lastKnown, lastSeen } = run;
   if (rank(to) > rank(run.alarm) && isAlert(to) && lastKnown && lastSeen) {
-    const target = convergeOn(lastKnown.zoneId, lastSeen);
+    const target = convergeOn(lastKnown.zoneId, lastSeen, run.pursuit?.searchHops);
     guards = guards.map((g) => ({ ...g, target }));
   } else if (to === "calm") {
     guards = guards.map((g) => ({ ...g, target: null }));
