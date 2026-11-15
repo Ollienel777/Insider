@@ -86,7 +86,25 @@ test("first person runs in real time, and walking into the next node's area play
   await expect(page.getByTestId("run-board")).toHaveCount(0);
   await expect(view(page)).toHaveAttribute("data-node", "fl-car");
   await expect(page.getByTestId("fp-hint")).toContainText("hold");
-  // The clock runs on its own: turns pass while the player stands still, and they stay put.
+  // The clock waits for the first move (issue 171): looking around plays no turn. A drag there and
+  // back turns the view by a set angle each way, so it faces the lobby again after.
+  await expect(page.getByTestId("fp-first-move")).toContainText("The clock starts when you move");
+  await page.evaluate(() => {
+    const surface = document.querySelector('[data-testid="fp-view"]')!;
+    const at = (type: string, x: number) => surface.dispatchEvent(new PointerEvent(type, { button: 0, clientX: x, clientY: 0, pointerId: 1, bubbles: true }));
+    at("pointerdown", 0);
+    at("pointermove", 200);
+    at("pointermove", 0);
+    at("pointerup", 0);
+  });
+  // Several of first person's 700 ms turns: none is played while the player only looks.
+  await page.waitForTimeout(3_000);
+  expect(await turnOf(page)).toBe(0);
+  await expect(page.getByTestId("fp-first-move")).toBeVisible();
+  // A tap of W is the first move: from then on the clock runs on its own, turns passing while the
+  // player stands still, and they stay put.
+  await page.keyboard.press("w");
+  await expect(page.getByTestId("fp-first-move")).toHaveCount(0);
   const start = await turnOf(page);
   await expect.poll(() => turnOf(page), { timeout: 10_000 }).toBeGreaterThan(start + 1);
   await expect(view(page)).toHaveAttribute("data-node", "fl-car");
