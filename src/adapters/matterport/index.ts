@@ -28,7 +28,7 @@ import { isForced, reportFallback, reportLive } from "@/lib/demo-status";
 import { fallbackMessage, newFallback, type Fallback } from "@/lib/fallback";
 import { missingForLive, serviceModes, type ServiceMode } from "@/lib/mode";
 import { createFakeMatterport } from "./fake";
-import { connectInsideView, createLiveMatterport, type InsideView } from "./live";
+import { connectInsideView, createLiveMatterport, MatterportNotStartedError, type InsideView } from "./live";
 import type { MatterportAdapter } from "./types";
 import type { Building } from "@/domain";
 
@@ -134,7 +134,9 @@ export function fixtureFloor(building: Pick<Building, "id" | "matterportModelId"
  * answered by `fake`'s fixture floor, and `onFallback` hears of it; a
  * building with no scan (no `matterportModelId`) is too, with its own
  * once-per-building fallback (`noScanFallback`). After a failure every load
- * goes to `fake`, so a dead connection costs one timeout, not one per screen.
+ * goes to `fake`, so a dead connection costs one timeout, not one per screen;
+ * a player that didn't start (`MatterportNotStartedError`) is not a failure
+ * of the connection, so the next load tries live again.
  * A building with no scan does not stop the next building trying live, and a
  * live floor tells `onLive`, so the chip goes back to live.
  */
@@ -161,6 +163,12 @@ export function withFixtureFloor(
         // A building that has a scan, but no floor came back: a failure, not "no scan".
         throw new Error("no floor came back for the building's scan");
       } catch (error) {
+        // The player didn't start (a hidden window, issue 156): the connection is not dead, so the next load tries live again.
+        if (error instanceof MatterportNotStartedError) {
+          console.warn(`Matterport: the fixture floor this time (${error.message})`);
+          onFallback(newFallback("matterport", error.hidden ? "not-started-hidden" : "not-started"));
+          return fake.loadFloor(building);
+        }
         failed = newFallback("matterport", (error as { name?: string } | null)?.name === "TimeoutError" ? "timeout" : "failed");
         console.warn(`Matterport: fixtures from now on (live load failed: ${(error as Error)?.message ?? String(error)})`);
         onFallback(failed);
