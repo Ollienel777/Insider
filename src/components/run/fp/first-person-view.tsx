@@ -46,12 +46,7 @@ export interface FirstPersonViewProps {
   scan?: ScanHandle | null;
   /** The scan could not be walked (no mesh, or the board would not fit onto it): the Run screen goes back to the board. */
   onScanFailed?: (message: string) => void;
-  /** The player is let loose (true), or the view is gone (false): the Run screen holds the clock until then on a scan. */
-  onReady?: (ready: boolean) => void;
 }
-
-/** The longest the player waits for a scan's picture before being let loose on what has arrived. */
-const SETTLE_MS = 12_000;
 
 const SCAN_UNFITTED = "First person couldn't place this board in its scan. You're on the board.";
 
@@ -59,7 +54,7 @@ const SCAN_PHASE: Record<string, string> = {
   manifest: "Asking for the scan",
   mesh: "Downloading the scan's mesh",
   building: "Building the walls and floor",
-  ready: "Loading the picture around you",
+  ready: "Stepping in",
 };
 
 interface Hud {
@@ -93,7 +88,7 @@ function hasWebGL(): boolean {
   }
 }
 
-export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, scan = null, onScanFailed, onReady }: FirstPersonViewProps) {
+export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, scan = null, onScanFailed }: FirstPersonViewProps) {
   const surface = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const labelLayer = useRef<HTMLDivElement>(null);
@@ -109,10 +104,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
   // The loop reads the latest run and the latest `play` without being rebuilt for each turn. Updated in a
   // layout effect, before the browser paints, so no animation frame reads the run before last.
-  const latest = useRef({ run, onAct, onUnavailable, onHeld, onScanFailed, onReady });
+  const latest = useRef({ run, onAct, onUnavailable, onHeld, onScanFailed });
   useLayoutEffect(() => {
-    latest.current = { run, onAct, onUnavailable, onHeld, onScanFailed, onReady };
-  }, [run, onAct, onUnavailable, onHeld, onScanFailed, onReady]);
+    latest.current = { run, onAct, onUnavailable, onHeld, onScanFailed };
+  }, [run, onAct, onUnavailable, onHeld, onScanFailed]);
 
   useEffect(() => {
     const host = surface.current;
@@ -186,8 +181,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       latest.current.onHeld((state) => heldAction(walker, ground, state, { use: controller.using, yaw: controller.yaw }));
       let raf = 0;
       let drawn = false;
-      // A scan's picture arrives after its mesh: the player is let loose once it has around them, or after a while.
-      const loose = performance.now() + SETTLE_MS;
 
       const frame = (now: number) => {
         raf = requestAnimationFrame(frame);
@@ -201,13 +194,11 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
         // The movement runs at a fixed step, however fast the screen draws.
         controller.frame(dt);
-        const waiting = !drawn && now < loose && !stage.settled(walker.pos);
-        if (waiting) owed = 0;
         const controls = controller.controls();
         use ||= controls.usePressed;
         owed += dt;
         const stood = walker.pos;
-        while (!waiting && owed >= FP.stepS) {
+        while (owed >= FP.stepS) {
           owed -= FP.stepS;
           const out = stepWalker(walker, ground, current, { ...controls, usePressed: use });
           use = false;
@@ -280,10 +271,9 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           hudKey = key;
           setHud((was) => ({ ...was, prompt, using }));
         }
-        if (!drawn && !waiting) {
+        if (!drawn) {
           drawn = true;
           setReady(true);
-          latest.current.onReady?.(true);
         }
       };
       raf = requestAnimationFrame(frame);
@@ -292,7 +282,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         cancelAnimationFrame(raf);
         observer?.disconnect();
         latest.current.onHeld(null);
-        latest.current.onReady?.(false);
         controller.dispose();
         for (const el of labelEls.values()) el.remove();
         scene.remove(actors.group);
