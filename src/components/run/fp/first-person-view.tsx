@@ -253,6 +253,9 @@ async function loadOverrides(modelId: string): Promise<PlanOverrides | null> {
   }
 }
 
+/** Whether a scan's other stage is built behind the one showing: only with `NEXT_PUBLIC_SCAN_PREBUILD=1`, fixed at build time. */
+const PREBUILD = process.env.NEXT_PUBLIC_SCAN_PREBUILD === "1";
+
 /** The longest the set waits for the scan's detailed mesh (its furniture) before standing without it, ms. */
 const DETAIL_WAIT_MS = 10_000;
 
@@ -595,7 +598,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       ground: Stage["ground"],
       floorY: number,
       extra: Partial<Pick<Stage, "cameraMount" | "settled" | "counts" | "doorColour">> & {
-        fov?: number; tick?: (renderer: WebGLRenderer) => void; idle?: (renderer: WebGLRenderer) => boolean; dispose?: () => void } = {},
+        fov?: number; tick?: (renderer: WebGLRenderer) => void; idle?: (renderer: WebGLRenderer) => boolean; dispose?: () => void; onHiddenLost?: () => void } = {},
     ): Stage | null => {
       if (!hasWebGL()) return null;
       let renderer: WebGLRenderer;
@@ -604,7 +607,15 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       } catch {
         return null;
       }
-      target.addEventListener("webglcontextlost", onLost);
+      // Lost while this stage shows, first person can't go on. Lost while it is hidden behind the scan's
+      // other stage, only this stage goes: the one showing plays on.
+      let shown = true;
+      const lost = (event: Event) => {
+        if (shown || !extra.onHiddenLost) return onLost(event);
+        event.preventDefault();
+        extra.onHiddenLost();
+      };
+      target.addEventListener("webglcontextlost", lost);
       const scene = new Scene();
       scene.background = palette.n950;
       scene.fog = new Fog(palette.n950, 4, 36);
@@ -639,7 +650,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
           renderer.setSize(w, h, false);
           camera.aspect = w / h;
-          camera.fov = fovFor(w / h, extra.fov ?? FOV_DEGREES);
+          // A fixture floor (and the blockout) keeps its 72 degrees at any shape; the cap across is the set's.
+          camera.fov = extra.fov ? fovFor(w / h, extra.fov) : FOV_DEGREES;
           camera.updateProjectionMatrix();
         },
         draw(walker, lift, yaw, pitch) {
@@ -656,6 +668,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           return camera;
         },
         show(on) {
+          shown = on;
           target.style.visibility = on ? "" : "hidden";
         },
         idle: extra.idle ? () => extra.idle!(renderer) : undefined,
@@ -670,7 +683,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         memory: () => gpuBytes(scene),
         dispose() {
           target.style.visibility = "";
-          target.removeEventListener("webglcontextlost", onLost);
+          target.removeEventListener("webglcontextlost", lost);
           extra.dispose?.();
           disposeGroup(floorGroup);
           renderer.dispose();
@@ -858,7 +871,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       if (!dressed) {
         // The glass stops the player here too, so it is drawn here too.
         blockout.add(buildDress(plan, ground.doors.map((d) => d.centre)));
-        return finishPlan(ourStage(blockout, ground, floorY, { cameraMount: scanCameraMount(ground) }), plan, tree);
+        return finishPlan(ourStage(blockout, ground, floorY, { cameraMount: scanCameraMount(ground), onHiddenLost: () => dropHidden("blockout") }), plan, tree);
       }
       // The set: the blockout until the photographs are in hand, then the photographs, painted as they arrive.
       const set = new Group();
@@ -899,6 +912,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           cameraMount: scanCameraMount(ground),
           doorColour: DRESS.wood,
           fov: SET_FOV_DEGREES,
+          onHiddenLost: () => dropHidden("set"),
           tick: paint,
           // Hidden behind first person, the painting goes on a piece at a time: the "N of 75" is not started again on a switch.
           idle(renderer) {
@@ -991,6 +1005,22 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       };
     };
 
+    /**
+     * A hidden stage lost its graphics context: it is let go, and the stage showing plays on. Asked for
+     * later, it is not there to show, and first person says so then.
+     */
+    const dropHidden = (look: Look) => {
+      const stage = stages.get(look);
+      if (gone || !stage || active === look) return;
+      stages.delete(look);
+      builds.set(look, Promise.resolve(null));
+      warmed.delete(look);
+      // Whatever was being built or painted behind the stage showing stops.
+      pumping++;
+      stage.dispose();
+      console.info(`First person let the ${look === "photo" ? "photo view" : "3D model"} go: its graphics context was lost while it was hidden`);
+    };
+
     /** Shows `made`, built for `look`: the stage showing is hidden (kept, not disposed), and the player carries on where they stood. */
     const swap = (look: Look | "fixture", made: Stage) => {
       if (gone || active === look) return;
@@ -1030,7 +1060,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         const ok = await scan.ready;
         if (gone || !ok) return null;
         // The set's furniture is found in the scan's detailed mesh (fetched in a worker from the start): wait for it a while. Its corrections, meanwhile.
-        const [, overrides] = await Promise.all([look === "set" ? detailIn(scan, DETAIL_WAIT_MS) : Promise.resolve(), loadOverrides(scan.modelId)]);
+        const [, overrides] = await Promise.all([look === "set" ? detailIn(scan, DETAIL_WAIT_MS) : Promise.resolve(), look === "photo" ? Promise.resolve(null) : loadOverrides(scan.modelId)]);
         if (gone) return null;
         const stage = look === "photo" ? scanStage(scan) : await planStage(scan, look === "set", overrides);
         if (!stage) return null;
@@ -1073,14 +1103,25 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
     // The looks a switch moves between; with `?scanlook=` in development, only the one asked for.
     const forced = scanLook("photo") !== "photo" || scanLook("set") !== "set";
-    /** Once the stage showing has drawn, the scan's other stage is built behind it. */
+    /**
+     * Once the stage showing has drawn, the scan's other stage is built behind it, where that is asked for
+     * (`NEXT_PUBLIC_SCAN_PREBUILD=1`). Off by default: a second graphics context, the scan's panoramas and
+     * the plan's working-out are not spent on a view nobody has chosen, and a stage is built when it is first picked.
+     */
     const prebuild = (shown: Look | "fixture") => {
-      if (!scan || forced || shown === "fixture" || shown === "blockout") return;
+      if (!PREBUILD || !scan || forced || shown === "fixture" || shown === "blockout") return;
       const other: Look = shown === "photo" ? "set" : "photo";
       if (builds.has(other)) return;
       void build(other).then((stage) => {
         if (stage && active !== other) pump(other, stage);
       });
+    };
+
+    /** The scan's own canvas lost its context: first person ends if the photo view shows (or nothing does yet); hidden, only it goes. */
+    const scanLost = (event: Event) => {
+      if (active === "photo" || active === null) return onLost(event);
+      event.preventDefault();
+      dropHidden("photo");
     };
 
     /** Shows `look`: at once when its stage is built; else the build goes on (or starts), saying so, and shows it when done. */
@@ -1119,7 +1160,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
     } else if (choice?.kind === "refuse") {
       unavailable(choice.line);
     } else if (scan) {
-      scan.canvas.addEventListener("webglcontextlost", onLost);
+      scan.canvas.addEventListener("webglcontextlost", scanLost);
       const phase = () => {
         const status = scan.status().phase;
         if (status !== "ready" && active === null) loading({ line: SCAN_PHASE[status] ?? "Loading the building", held: 0, total: 0 });
@@ -1143,7 +1184,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         delete debug.__fpMemory;
       }
       if (scan) {
-        scan.canvas.removeEventListener("webglcontextlost", onLost);
+        scan.canvas.removeEventListener("webglcontextlost", scanLost);
         scan.canvas.remove();
       }
     };
@@ -1188,7 +1229,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
     >
       <canvas ref={canvas} data-testid="fp-canvas" className="absolute inset-0 block h-full w-full" />
       {/* On a scan's set, a lens's soft vignette: the photographs' own falloff. */}
-      {onScan ? <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(0,0,0,0.22)_100%)]" /> : null}
+      {onScan && chosenLook === "set" ? <div aria-hidden data-testid="fp-vignette" className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(0,0,0,0.22)_100%)]" /> : null}
       <div ref={labelLayer} aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden" />
 
       {/* The alarm on the edges of the view, in the banner's colours. No transition: the trip shows on the next frame. */}
