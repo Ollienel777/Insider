@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { RotateCcw } from "lucide-react";
+import { Maximize2, Minimize2, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getMatterport, insideViewFor, scanMeshModelFor } from "@/adapters/matterport";
 import { buildingHref } from "@/lib/building-href";
@@ -202,6 +202,38 @@ export function RunScreen({
     document.body.classList.add("playing");
     return () => document.body.classList.remove("playing");
   }, []);
+
+  // Full window, for the demo: the Run screen takes the whole window, with no top bar, no tabs and no
+  // folder edge, and a tighter HUD (globals.css). Off until switched on; the browser remembers the choice.
+  // The end card and the end action still lead to the Debrief; the switch brings the tabs back.
+  const [fullWindow, setFullWindow] = useState(false);
+  // Read after mount, as the run view is (view-store.ts), so the server's render and the browser's first agree.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        setFullWindow(localStorage.getItem(FULL_WINDOW_KEY) === "on");
+      } catch {
+        // No storage: the switch still works for this page.
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+  const toggleFullWindow = useCallback(() => {
+    setFullWindow((on) => {
+      try {
+        if (on) localStorage.removeItem(FULL_WINDOW_KEY);
+        else localStorage.setItem(FULL_WINDOW_KEY, "on");
+      } catch {
+        // No storage: the choice lasts for this page.
+      }
+      return !on;
+    });
+  }, []);
+  useEffect(() => {
+    if (!fullWindow) return;
+    document.body.classList.add("run-full");
+    return () => document.body.classList.remove("run-full");
+  }, [fullWindow]);
 
   useEffect(() => {
     if (!manifest) return;
@@ -598,6 +630,7 @@ export function RunScreen({
       // On a live scan the board shares its area with the scan (issue 117), and the visual grows with them where they stack.
       staged={Boolean(openInside && run && placed)}
       record={record}
+      windowToggle={<FullWindowToggle on={fullWindow} onToggle={toggleFullWindow} />}
       bar={
           <div className="flex h-14 shrink-0 items-center gap-3 px-6">
             <span className="flex min-w-0 items-center gap-2 label-caps whitespace-nowrap text-text-2">
@@ -627,6 +660,7 @@ export function RunScreen({
                   Forget {storedRuns === 1 ? "1 earlier run" : `${storedRuns} earlier runs`}
                 </Button>
               ) : null}
+              <FullWindowToggle on={fullWindow} onToggle={toggleFullWindow} />
               <LensToggle on={lens} onToggle={toggleLens} disabled={!run} />
               <Button variant="ghost" onClick={restart} disabled={!run || run.turn === 0}>
                 <RotateCcw aria-hidden />
@@ -775,6 +809,28 @@ export function RunScreen({
         ) : null
       }
     />
+  );
+}
+
+/** Where the tab remembers the full-window switch; `demo:reset` clears it with every `heist:` key. */
+const FULL_WINDOW_KEY = "heist:run-full-window";
+
+/** Full window on and off: the top bar, the tabs and the folder's edge go on the Run screen. */
+function FullWindowToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <Button
+      variant="ghost"
+      aria-pressed={on}
+      data-testid="full-window"
+      onClick={(event) => {
+        event.currentTarget.blur();
+        onToggle();
+      }}
+      className="max-md:hidden"
+    >
+      {on ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
+      <span data-full-label>{on ? "Exit full window" : "Full window"}</span>
+    </Button>
   );
 }
 
