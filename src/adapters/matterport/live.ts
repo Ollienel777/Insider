@@ -119,14 +119,23 @@ export class MatterportNotConfiguredError extends Error {
   }
 }
 
-/** How long the rooms may trail the sweeps: a model with no rooms sends none. */
-const ROOM_GRACE_MS = 2_000;
+/**
+ * How long the rooms may trail the sweeps. Measured on localhost (SDK 26.11,
+ * issue 141): they came 0 to 6 s after the sweeps on a fast connection, and
+ * about 20 s after at 2 Mbit/s with nothing cached, where the connection
+ * itself took 14 s of its 20: a link too slow for this wait misses that
+ * deadline first. The wait ends when the rooms arrive, so only a model that
+ * sends none waits it out, and its board is one room either way.
+ */
+export const ROOMS_WAIT_MS = 30_000;
 
 /**
- * The first non-empty snapshot of the sweeps, with the rooms as they stand
- * then (or up to `ROOM_GRACE_MS` later). The player can call back with an
- * empty collection before it is playing, so an empty sweep list is not an
- * answer; an empty room list can be.
+ * The sweeps and the rooms, once both are in: the latest non-empty copy of
+ * each. The player can call back with an empty collection before it is
+ * playing, so an empty sweep list is not an answer, and the sweeps have
+ * `timeoutMs` to arrive. The rooms then have `ROOMS_WAIT_MS`. Running out of
+ * that is not a failure: the answer then has no rooms, as for a model that
+ * has none.
  */
 function snapshots(
   sweepData: ObservableCollection<unknown>,
@@ -137,20 +146,18 @@ function snapshots(
     let sweeps: Record<string, unknown> | null = null;
     let rooms: Record<string, unknown> = {};
     let done = false;
-    let grace: ReturnType<typeof setTimeout> | undefined;
+    let roomsWait: ReturnType<typeof setTimeout> | undefined;
     const subscriptions: { cancel(): void }[] = [];
     const finish = () => {
       if (done || !sweeps) return;
       done = true;
-      clearTimeout(timer);
-      clearTimeout(grace);
+      clearTimeout(roomsWait);
       // The SDK may call back before `subscribe` returns.
       queueMicrotask(() => subscriptions.forEach((s) => s.cancel()));
       resolve([sweeps, rooms]);
     };
-    const timer = setTimeout(() => {
+    const sweepsDeadline = setTimeout(() => {
       done = true;
-      clearTimeout(grace);
       subscriptions.forEach((s) => s.cancel());
       reject(new MatterportTimeoutError("Sweep.data", timeoutMs));
     }, timeoutMs);
@@ -166,8 +173,10 @@ function snapshots(
         onCollectionUpdated(items) {
           if (done || Object.keys(items).length === 0) return;
           sweeps = { ...items };
+          // The sweeps are in, so their deadline is met: from here only the rooms are waited for.
+          clearTimeout(sweepsDeadline);
           if (Object.keys(rooms).length > 0) finish();
-          else grace ??= setTimeout(finish, ROOM_GRACE_MS);
+          else roomsWait ??= setTimeout(finish, ROOMS_WAIT_MS);
         },
       }),
     );

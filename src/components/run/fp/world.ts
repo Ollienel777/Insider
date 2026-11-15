@@ -281,7 +281,7 @@ export function groundOf(world: World): Ground {
   return {
     unitM: FP.unitM,
     nodes: world.nodes,
-    doors: world.openings.flatMap((o) => (o.doorId === null ? [] : [{ doorId: o.doorId, centre: o.centre, bar: o.bar }])),
+    doors: world.openings.flatMap((o) => (o.doorId === null ? [] : [{ doorId: o.doorId, centre: o.centre, bar: o.bar, a: o.a, b: o.b }])),
     collide(pos, vel, dt, locked) {
       const moved = slide(pos, { x: vel.x * dt, y: vel.y * dt }, solids(world, locked));
       // Never off the floor: a step that would leave it is not taken.
@@ -294,5 +294,47 @@ export function groundOf(world: World): Ground {
     },
     clear: (p, q, locked) => !blocked(solids(world, locked), p, q),
     path: (a, b) => edgePath(world, a, b),
+    regionOf: (pos) => regionAt(world, pos),
   };
+}
+
+const roomNodesCache = new WeakMap<World, Map<string, WorldNode[]>>();
+
+/**
+ * The node whose area `p` is in (`Ground.regionOf`). Each room is cut between
+ * its own nodes, nearest node wins (ties to the floor's node order), so an
+ * area never reaches through a wall and is in one piece: a nearest-node cell
+ * of a rectangle is convex. A doorway belongs to the room on its near side,
+ * as the point of that room's floor it leads to. Null off the floor.
+ */
+export function regionAt(world: World, p: Vec): string | null {
+  let byRoom = roomNodesCache.get(world);
+  if (!byRoom) {
+    byRoom = new Map(world.rooms.map((r) => [r.id, [] as WorldNode[]]));
+    for (const node of world.nodes.values()) byRoom.get(node.roomId)?.push(node);
+    roomNodesCache.set(world, byRoom);
+  }
+  let room = roomAt(world, p);
+  let at = p;
+  if (!room) {
+    const opening = world.openings.find((o) => within(o.passage, p, 1e-6));
+    if (!opening) return null;
+    const nearA = Math.hypot(p.x - opening.sideA.x, p.y - opening.sideA.y) <= Math.hypot(p.x - opening.sideB.x, p.y - opening.sideB.y);
+    room = world.rooms.find((r) => r.id === (nearA ? opening.roomA : opening.roomB)) ?? null;
+    if (!room) return null;
+    const r = room.inner;
+    at = { x: clamp(p.x, r.x, r.x + r.w), y: clamp(p.y, r.y, r.y + r.h) };
+  }
+  const own = byRoom.get(room.id) ?? [];
+  const candidates = own.length > 0 ? own : [...world.nodes.values()];
+  let best: string | null = null;
+  let bestD = Infinity;
+  for (const node of candidates) {
+    const d = Math.hypot(node.x - at.x, node.y - at.y);
+    if (d < bestD) {
+      best = node.id;
+      bestD = d;
+    }
+  }
+  return best;
 }

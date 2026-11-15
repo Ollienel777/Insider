@@ -181,6 +181,8 @@ export function useTurnClock({
   run,
   play,
   hold = false,
+  turnMs = LIVE_TURN_MS,
+  action,
 }: {
   live: boolean;
   /** The run on the board; null while there is none. */
@@ -192,6 +194,10 @@ export function useTurnClock({
    * view that needs the turn to wait for it, as the scan view's camera does while it travels.
    */
   hold?: boolean;
+  /** The turn's length: `LIVE_TURN_MS` unless a view needs its own (first person's is shorter). */
+  turnMs?: number;
+  /** The turn the clock plays when one runs out, in place of `clockAction`: first person picks only while E is held. */
+  action?: (run: RunState) => Action;
 }): LiveClock {
   const [paused, setPaused] = useState(false);
   // Leaving Live drops the pause, so choosing Live again starts the clock.
@@ -214,13 +220,13 @@ export function useTurnClock({
   // One clock for as long as the screen is mounted. Stopped on unmount, so a second mount (React's
   // strict mode in development) leaves one countdown, not two.
   useEffect(() => {
-    const created = createTurnClock(() => setDue((was) => ({ run: timed.current, laps: was.laps + 1 })));
+    const created = createTurnClock(() => setDue((was) => ({ run: timed.current, laps: was.laps + 1 })), turnMs);
     clock.current = created;
     return () => {
       created.stop();
       clock.current = null;
     };
-  }, []);
+  }, [turnMs]);
 
   const tracked = live ? run : null;
   useEffect(() => {
@@ -228,16 +234,17 @@ export function useTurnClock({
     timed.current = tracked;
   }, [tracked]);
 
+  // A new turn length makes a new clock, which starts held: release it here too.
   useEffect(() => {
     clock.current?.hold(state !== "running");
-  }, [state]);
+  }, [state, turnMs]);
 
   // The clock's turn is played from an effect on the render that follows the timeout, not from the
   // timer's own callback. That render holds every update queued before it (the Chief's orders, the
   // player's own key), so `run` and `play` here are the latest: the turn is never played on a
   // state the screen has already left. A timeout for a turn the player ended first is dropped.
   const playDue = useEffectEvent((dueOn: RunState | null) => {
-    if (state === "running" && run && sameTurn(dueOn, run)) play(clockAction(run));
+    if (state === "running" && run && sameTurn(dueOn, run)) play((action ?? clockAction)(run));
   });
   useLayoutEffect(() => {
     if (due.laps > 0) playDue(due.run);

@@ -297,7 +297,13 @@ export interface PlanStep {
  * yet done is next. The crew's own numbered
  * plan (#19) replaces these once it exists.
  */
-export function planSteps(placed: PlacedLevel, run: RunState, objective: string): PlanStep[] {
+export function planSteps(
+  placed: PlacedLevel,
+  run: RunState,
+  objective: string,
+  /** First person, played in real time: the lock's step says how, not how many turns. */
+  realTime = false,
+): PlanStep[] {
   const { level } = placed;
   const lock = placed.locks.find((l) => l.zoneId === placed.objective.zoneId);
   const objectiveName = zoneName(placed, placed.objective.zoneId);
@@ -307,7 +313,9 @@ export function planSteps(placed: PlacedLevel, run: RunState, objective: string)
   ];
   if (lock) {
     steps.push({
-      label: `Pick the ${objectiveName.toLowerCase()} door, ${picksToOpen(level, lock.doorId)} turns`,
+      label: realTime
+        ? `Pick the ${objectiveName.toLowerCase()} door: hold E at it`
+        : `Pick the ${objectiveName.toLowerCase()} door, ${picksToOpen(level, lock.doorId)} turns`,
       done: !run.locked.includes(lock.doorId) || run.carrying,
     });
   }
