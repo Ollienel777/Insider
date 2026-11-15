@@ -48,7 +48,7 @@ export function fallbackMessage(service: Service, cause: FallbackCause = "failed
 
 /**
  * The model's toast when a live call left no reply on a building with no recording (issue 140):
- * the crew's plan is worked out from the board, not a recording.
+ * the plan is worked out from the board, not a recording.
  */
 export function boardStandsIn(cause: "timeout" | "failed"): string {
   return `The model didn't answer${cause === "timeout" ? " in time" : ""}, so the plan is worked out from the board.`;

@@ -113,6 +113,9 @@ describe("the Plan screen's brief on a building with no recording (issue 140)", 
     expect(getStatus().toasts).toEqual([]);
     const other = (async () => new Response("Not Found", { status: 404 })) as unknown as typeof fetch;
     await expect(askCrewOrBoard(crewRequest(SMOKE_KIT_BUILDING, "Go"), placed, { fetch: other })).rejects.not.toBeInstanceOf(NoCrewReplyError);
+    // A JSON 404 without the route's code (a fixture building's missing level) is an error too.
+    const unmarked = (async () => Response.json({ error: "no cached level" }, { status: 404 })) as unknown as typeof fetch;
+    await expect(askCrewOrBoard(crewRequest("F1", "Go"), placed, { fetch: unmarked })).rejects.not.toBeInstanceOf(NoCrewReplyError);
   });
 
   it("keeps the board's mark on the plan handed to the Run, in memory and in storage (issue 142)", async () => {

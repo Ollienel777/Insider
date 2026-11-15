@@ -62,4 +62,15 @@ describe("POST /api/crew on a kit building with no recording", () => {
     expect(response.status).toBe(404);
     expect(await response.json()).toMatchObject({ code: "no-level" });
   });
+
+  it("marks a 404 no-level only for a kit building: a fixture building's missing level stays an error", async () => {
+    const post = (buildingId: string, missionId: string) =>
+      POST(new Request("http://localhost/api/crew", { method: "POST", body: JSON.stringify({ buildingId, order: "Go", missionId }) }));
+    const lost = await post("900003", "romaine-1974");
+    expect(lost.status).toBe(404);
+    expect(await lost.json()).toMatchObject({ code: "no-level" });
+    const fixture = await post("F1", "no-such-mission");
+    expect(fixture.status).toBe(404);
+    expect(((await fixture.json()) as { code?: string }).code).toBeUndefined();
+  });
 });

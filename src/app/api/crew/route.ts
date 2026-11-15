@@ -2,6 +2,7 @@
 // `{buildingId, order}`, plus the `missionId` whose level to read (issue 119), and nothing else: the server reads the zones and the
 // guard roster from its own cached manifest, so no floor data can arrive
 // here or travel on to a model (SPEC §4.5). Answers `CrewAnswer`.
+import { FIXTURE_BUILDINGS } from "@/adapters/costar/fake";
 import { forcedChatModelSelection, safeErrorMessage } from "@/adapters/llm";
 import { briefCrew, CrewRequestError, NoRecordingError } from "@/agents/crew";
 import { boardStandsIn, newFallback, withLlmFallback } from "@/lib/fallback";
@@ -28,9 +29,13 @@ export async function POST(request: Request): Promise<Response> {
       ...(missionId && { missionId }),
       ...(forced && { selection: forcedChatModelSelection() }),
     });
-    // `code`: the server holds no level for this building. A kit level lives in one server's memory, so a
-    // restart or another instance loses it while the browser still holds the board (issue 142).
-    if (!answer) return Response.json({ error: `no cached level for building "${buildingId}"`, code: "no-level" }, { status: 404 });
+    // `code`: the server holds no level for this kit building. A kit level lives in one server's memory, so a
+    // restart or another instance loses it while the browser still holds the board (issue 142). A fixture
+    // building's level is on disk, so its 404 (a mission it doesn't stage, say) stays an error.
+    if (!answer) {
+      const kit = !FIXTURE_BUILDINGS.some((b) => b.id === buildingId);
+      return Response.json({ error: `no cached level for building "${buildingId}"`, ...(kit && { code: "no-level" }) }, { status: 404 });
+    }
     return Response.json(withLlmFallback(answer));
   } catch (error) {
     if (error instanceof CrewRequestError) return Response.json({ error: error.message }, { status: 400 });
