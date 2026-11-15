@@ -179,9 +179,16 @@ empty, and names any broken round before it lets you run.
 
 The F1 results above are asserted by
 [`tests/smoke/owner.spec.ts`](tests/smoke/owner.spec.ts). Owner Mode runs on
-fixture buildings only, with "Made-up setup on a fixture building. Real
-setups stay on this device." always on screen
-([`owner-screen.tsx`](src/components/owner/owner-screen.tsx)).
+fixture buildings, with "Made-up setup on a fixture building. Real setups
+stay on this device." always on screen, and on the demo's showcase building
+(a CoStar kit building, on its live Matterport scan) with "A made-up setup
+for the demo, not this building's real security." beside the scan's
+game-fiction line. There a setup stays in the tab's memory, never in
+`localStorage`, and the prepared pair is worked out in the browser from the
+placed level: the generated security, and the same with one camera moved or
+turned by a rule. Nothing of the building is written down
+([`owner-screen.tsx`](src/components/owner/owner-screen.tsx),
+[`derived-demo.ts`](src/components/owner/derived-demo.ts)).
 
 **Who it is for.**
 

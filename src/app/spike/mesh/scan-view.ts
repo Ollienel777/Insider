@@ -293,6 +293,16 @@ export class ScanView {
     }
   }
 
+  /**
+   * How much less a panorama counts for the floor under its own tripod, 0 to
+   * 1 (issue 198). The photograph is blurred there, so with this on that
+   * patch is painted by a panorama that saw it from the side, where one did.
+   * 0, the default, leaves the blend as it was.
+   */
+  setNadirFade(amount: number): void {
+    (this.material.uniforms.uNadir.value as { z: number }).z = Math.min(1, Math.max(0, amount));
+  }
+
   /** 0 the picture, 1 the coverage, 2 the doubles (projection.ts says what the colours mean). */
   setDebugView(mode: number): void {
     this.material.uniforms.uDebug.value = mode;
