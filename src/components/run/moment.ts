@@ -60,7 +60,12 @@ function doorRoom(placed: PlacedLevel, run: RunState, doorId: string, from: stri
 export function momentOf(placed: PlacedLevel, before: RunState, after: RunState): Moment | null {
   if (after.status !== "playing") return null;
   if (!before.carrying && after.carrying) return { kind: "take", text: takeLine(placed, nearestExit(after)) };
-  const doorId = before.locked.find((d) => !after.locked.includes(d));
+  // Only a door the player's own pick opened: the engine also clears every Chief lock when the alarm falls to Calm.
+  // The turn log keeps the pick's kind, not its door, so the door must be on an edge out of the player's node.
+  if (after.turns.at(-1)?.player.kind !== "pick") return null;
+  const doorId = before.locked.find(
+    (d) => !after.locked.includes(d) && !before.chiefLocks.includes(d) && (after.board.adjacency.get(after.playerNode) ?? []).some((e) => e.doorId === d),
+  );
   if (!doorId) return null;
   const room = doorRoom(placed, after, doorId, after.playerNode);
   return { kind: "door", doorId, text: room ? `Door open: the ${room}.` : "Door open." };

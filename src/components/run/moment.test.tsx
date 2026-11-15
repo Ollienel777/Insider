@@ -53,6 +53,28 @@ describe("the moment", () => {
     expect(moment?.text).toMatch(/^Door open: the .+\.$/);
   });
 
+  /** `run` with `doorId` locked by the Chief, and the next turn's state with the lock cleared, as the alarm's fall to Calm does (engine alarm.ts). */
+  function chiefLockClears(run: RunState, doorId: string, action: Action): [RunState, RunState] {
+    const before: RunState = { ...run, locked: [...run.locked, doorId].sort(), chiefLocks: [doorId] };
+    const played = play(before, [action]);
+    return [before, { ...played, locked: played.locked.filter((d) => d !== doorId), chiefLocks: [] }];
+  }
+
+  it("is no door when the alarm's fall to Calm clears a Chief lock (review of issue 188)", () => {
+    const [before, after] = chiefLockClears(play(start(), [move("fl-lobby")]), "d-server-closet", wait);
+    expect(momentOf(placed, before, after)).toBeNull();
+  });
+
+  it("is no door when a Chief lock clears beside the player while they pick another door", () => {
+    const [before, after] = chiefLockClears(play(start(), TO_THE_DOOR), "d-2210-north", PICK);
+    expect(after.locked).toContain("d-records-room");
+    expect(momentOf(placed, before, after)).toBeNull();
+  });
+
+  it("is still the door when the player's own pick opens it", () => {
+    expect(momentOf(placed, atDoor(), opened())).toMatchObject({ kind: "door", doorId: "d-records-room" });
+  });
+
   it("is nothing on a turn that took nothing and opened nothing, or once the run is over", () => {
     expect(momentOf(placed, start(), play(start(), [move("fl-lobby")]))).toBeNull();
     // A pick that leaves the door part-picked is not the door opening.
