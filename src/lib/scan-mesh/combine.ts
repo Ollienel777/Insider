@@ -20,6 +20,13 @@
 //   which reads as a grey smudge. It now takes the panorama that came
 //   closest to seeing it (the smallest distance between where its view
 //   stopped and the point), as long as no panorama saw it at all.
+// - The disc under a tripod (issue 198). Each photograph is blurred straight
+//   down, so a panorama can give up its say for the patch under its own
+//   tripod. It gives it up only as far as another panorama saw the point, and
+//   only among the panoramas that saw it: what was seen, and the filling of
+//   what nobody saw, are worked out as before. A neighbour whose view a wall
+//   or door frame blocked never paints that blocker over floor the panorama
+//   saw itself; there the blurred disc stays.
 import { HIDDEN } from "./blend";
 import type { Rgb } from "./exposure";
 
@@ -32,6 +39,8 @@ export interface PanoSample {
   seen: number;
   /** Metres between where its view stopped and the point; 0 when it saw the point. */
   miss: number;
+  /** How much of its say it gives up because the point is in the blurred patch under its own tripod, 0 (absent) to 1: the fade times how deep in the patch. */
+  nadir?: number;
 }
 
 export interface CombineOptions {
@@ -94,16 +103,21 @@ export function combineSamples(samples: readonly PanoSample[], options: CombineO
   if (baseTotal <= 0) return { weights: samples.map(() => 0), colour: null, seenFraction: 0, spread: 0, ghost: 0 };
   const seenWeights = samples.map((s) => Math.max(0, s.base) * s.seen);
   const seenFraction = seenWeights.reduce((a, b) => a + b, 0) / baseTotal;
+  // Under its own tripod a panorama gives up its say only as far as another one saw the point.
+  const kept = samples.map((s, i) => {
+    const cover = samples.reduce((most, o, j) => (j !== i && o.base > 0 ? Math.max(most, o.seen) : most), 0);
+    return 1 - (s.nadir ?? 0) * cover;
+  });
 
   let weights: number[];
   if (!options.fill) {
-    weights = normalise(samples.map((s) => Math.max(0, s.base) * (s.seen + HIDDEN)));
+    weights = normalise(samples.map((s, i) => Math.max(0, s.base) * (s.seen * kept[i] + HIDDEN)));
   } else {
     // In logs, so a panorama metres short of the point doesn't underflow to nothing.
     const scores = samples.map((s) => (s.base > 0 ? Math.log(s.base) - s.miss / FILL_REACH : -Infinity));
     const best = Math.max(...scores);
     const fill = normalise(scores.map((score) => (score === -Infinity ? 0 : Math.exp(FILL_POWER * (score - best)))));
-    const seen = normalise(seenWeights);
+    const seen = normalise(seenWeights.map((w, i) => w * kept[i]));
     const t = smoothstep(0, SEEN_FLOOR, seenFraction);
     weights = fill.map((f, i) => f + (seen[i] - f) * t);
   }

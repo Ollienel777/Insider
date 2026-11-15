@@ -82,3 +82,58 @@ describe("combineSamples, a point nobody saw", () => {
     expect(Number.isFinite(out.weights[1])).toBe(true);
   });
 });
+
+describe("combineSamples, the floor under a panorama's own tripod (issue 198)", () => {
+  // The panorama standing over the point has a blurred grey picture of it; the floor is carpet, the door frame dark.
+  const BLUR: Rgb = [0.5, 0.5, 0.5];
+  const CARPET: Rgb = [0.55, 0.4, 0.3];
+  const under = (seen = 1) => ({ ...sample(BLUR, 2, seen), nadir: 0.9999 });
+
+  it("leaves the floor to a neighbour that saw it, though the panorama overhead has more say", () => {
+    for (const options of [BOTH, NEITHER]) {
+      const out = combineSamples([under(), sample(CARPET, 0.5)], options);
+      expect(out.weights[1]).toBeGreaterThan(0.99);
+      expect(colourGap(out.colour!, CARPET)).toBeLessThan(0.01);
+    }
+  });
+
+  it("keeps floor the panorama overhead saw when the neighbour's view of it was blocked by a door frame", () => {
+    for (const options of [BOTH, NEITHER]) {
+      for (const miss of [0.3, 1, 3]) {
+        const out = combineSamples([under(), sample(DARK, 2, 0, miss)], options);
+        expect(out.weights[0]).toBeGreaterThan(0.99);
+        expect(colourGap(out.colour!, BLUR)).toBeLessThan(0.01);
+      }
+    }
+  });
+
+  it("keeps it too when the neighbour only just saw past the door frame, at the soft edge of its view", () => {
+    for (const seen of [0.02, 0.05, 0.1]) {
+      const out = combineSamples([under(), sample(DARK, 2, seen)], BOTH);
+      expect(out.weights[0]).toBeGreaterThan(0.85);
+    }
+  });
+
+  it("gives up only as far as the neighbour saw the point: more of it, more of the say", () => {
+    let last = 1;
+    for (let seen = 0; seen <= 1 + 1e-9; seen += 0.05) {
+      const own = combineSamples([under(), sample(CARPET, 2, seen)], { agree: false, fill: true }).weights[0];
+      expect(own).toBeLessThanOrEqual(last + 1e-12);
+      last = own;
+    }
+    expect(last).toBeLessThan(0.01);
+  });
+
+  it("changes nothing for a point nobody saw: that is filled as before", () => {
+    const plain = [sample(BLUR, 2, 0, 0.4), sample(DARK, 1, 0, 0.1)];
+    const faded = [{ ...plain[0], nadir: 0.9999 }, plain[1]];
+    expect(combineSamples(faded, BOTH).weights).toEqual(combineSamples(plain, BOTH).weights);
+  });
+
+  it("is the blend as it was when no panorama is in its own patch", () => {
+    const samples = [sample(WHITE, 3, 1), sample(DARK, 1, 0.4, 0.05), sample(BLUR, 2, 0, 1)];
+    for (const options of [BOTH, NEITHER]) {
+      expect(combineSamples(samples.map((s) => ({ ...s, nadir: 0 })), options)).toEqual(combineSamples(samples, options));
+    }
+  });
+});
