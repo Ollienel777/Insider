@@ -13,6 +13,8 @@
 import { ScanView, type ScanViewStatus } from "@/app/spike/mesh/scan-view";
 
 export interface ScanHandle {
+  /** The scan's model id: kept in this tab's memory only, for asking the scan's photos again. */
+  modelId: string;
   view: ScanView;
   canvas: HTMLCanvasElement;
   /** True once the mesh is in and the scan can be walked; false if it can't be. */
@@ -33,6 +35,7 @@ export function openScan(modelId: string): ScanHandle {
   canvas.height = window.innerHeight;
   const view = new ScanView(canvas, { modelId, onChange: () => listeners.forEach((listener) => listener()) });
   return {
+    modelId,
     view,
     canvas,
     ready: view.ready,

@@ -6,7 +6,7 @@
 // here and nowhere else under fp/.
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
-import { Footprints, Grid3x3, type LucideIcon } from "lucide-react";
+import { Box, Footprints, Grid3x3, type LucideIcon } from "lucide-react";
 import type { FloorGraph } from "@/domain";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -69,9 +69,23 @@ export function firstPersonOffered(floor: FloorGraph, scan: ScanPreload | null =
   return floor.source === "fixture" || (floor.source === "matterport" && scan !== null && scan.failed === null);
 }
 
-/** Whether the Run screen shows first person: it was chosen, it can be drawn, and it is offered on this floor. */
+/**
+ * Whether the Run screen shows first person: it was chosen, or the 3D model
+ * was (first person in the scan rebuilt as rooms), it can be drawn, and it is
+ * offered on this floor.
+ */
 export function firstPersonOn(state: RunViewState, floor: FloorGraph, scan: ScanPreload | null = null): boolean {
-  return state.view === "first-person" && firstPersonOffered(floor, scan);
+  return (state.view === "first-person" || state.view === "model") && firstPersonOffered(floor, scan);
+}
+
+/** Whether the 3D model is offered: only on a scanned building (a fixture floor's first person already is one). */
+export function modelOffered(floor: FloorGraph, scan: ScanPreload | null = null): boolean {
+  return floor.source === "matterport" && firstPersonOffered(floor, scan);
+}
+
+/** How first person draws a scan: its own photographed mesh, or, with the 3D model chosen, the scan rebuilt as rooms. */
+export function scanLookOf(state: RunViewState): "photo" | "set" {
+  return state.view === "model" ? "set" : "photo";
 }
 
 export const SCAN_FAILED = "First person couldn't load this scan's mesh. You're on the board.";
@@ -161,6 +175,7 @@ export function useScanPreload(
 const VIEWS: readonly { view: RunView; label: string; hint: string; icon: LucideIcon }[] = [
   { view: "board", label: "Board", hint: "Board: the floor from above, played by number keys", icon: Grid3x3 },
   { view: "first-person", label: "First person", hint: "First person: walk the floor with W, A, S, D and the mouse", icon: Footprints },
+  { view: "model", label: "3D model", hint: "3D model: walk the scanned building rebuilt as rooms, with W, A, S, D and the mouse", icon: Box },
 ];
 
 /**
@@ -185,6 +200,8 @@ export function ViewSwitch({
   className?: string;
 }) {
   if (!firstPersonOffered(floor, scan)) return null;
+  const model = modelOffered(floor, scan);
+  const shown = VIEWS.filter(({ view }) => view !== "model" || model);
   return (
     <div
       role="group"
@@ -198,9 +215,10 @@ export function ViewSwitch({
         className,
       )}
     >
-      {VIEWS.map(({ view, label, hint, icon: Icon }, i) => {
-        const on = view === state.view;
-        const off = view === "first-person" && state.unavailable;
+      {shown.map(({ view, label, hint, icon: Icon }, i) => {
+        // A fixture floor has no 3D model of its own: a browser that chose one sees it as first person there.
+        const on = view === state.view || (view === "first-person" && state.view === "model" && !model);
+        const off = (view === "first-person" || view === "model") && state.unavailable;
         return (
           <button
             key={view}
@@ -218,7 +236,8 @@ export function ViewSwitch({
               "relative inline-flex h-10 items-center justify-center gap-2 border px-3 text-sm font-medium select-none",
               "transition-colors duration-fast ease-out focus-visible:z-10 disabled:cursor-not-allowed disabled:text-text-3",
               "[&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:stroke-[1.5]",
-              i === 0 ? "rounded-l-sm" : "-ml-px rounded-r-sm",
+              i === 0 ? "rounded-l-sm" : "-ml-px",
+              i === shown.length - 1 ? "rounded-r-sm" : null,
               on
                 ? "z-[1] border-border-strong bg-surface-3 text-text-1"
                 : "border-border text-text-2 hover:bg-surface-3 hover:text-text-1",

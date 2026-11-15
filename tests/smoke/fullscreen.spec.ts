@@ -30,7 +30,8 @@ test("Tactical has no Fullscreen: its alarm and its Chief are in the side panel,
   await open(page);
   await expect(button(page)).toHaveCount(0);
   await page.keyboard.press("f");
-  expect(await page.evaluate(() => document.fullscreenElement)).toBeNull();
+  // Leaving fullscreen is asynchronous: wait for the browser to finish it.
+  await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
 });
 
 test("Live: Fullscreen takes the stage and the toasts with it, and Details, Tactical and the demo settings each bring the page back", async ({ page }) => {

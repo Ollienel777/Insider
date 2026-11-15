@@ -51,7 +51,7 @@ import { RunStage } from "./run-stage";
 import { placeOrFixture } from "./scan-fallback";
 import { ScanWait, useWaitsOnScan } from "./scan-wait";
 import { fullscreenStep } from "./fp/fullscreen";
-import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, FullscreenToggle, useBark, useStageFullscreen, useRunView, useScanPreload, ViewSwitch, type HeldAction } from "./fp/run-view";
+import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, FullscreenToggle, scanLookOf, useBark, useStageFullscreen, useRunView, useScanPreload, ViewSwitch, type HeldAction } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -294,7 +294,7 @@ export function RunScreen({
   const scan = useScanPreload(scanModel);
   const scanFailure = scan?.failed ?? null;
   useEffect(() => {
-    if (!scanFailure || runView.view !== "first-person") return;
+    if (!scanFailure || runView.view === "board") return;
     // The status line says why the board is back, once the failure is in.
     const timer = setTimeout(() => setStatus(scanFailure), 0);
     return () => clearTimeout(timer);
@@ -733,6 +733,7 @@ export function RunScreen({
               />
             ) : run && placed && manifest && fpOn ? (
               <FirstPersonView
+                look={scanLookOf(runView)}
                 placed={placed}
                 run={run}
                 objective={manifest.mission.objective}

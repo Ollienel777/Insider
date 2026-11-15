@@ -2,7 +2,7 @@
 // first person was chosen, and never an error when storage is blocked.
 import { describe, expect, it } from "vitest";
 import type { FloorGraph } from "@/domain";
-import { firstPersonOffered, firstPersonOn, SCAN_NO_MESH, scanStageOf, type ScanHandle, type ScanPreload } from "./run-view";
+import { firstPersonOffered, firstPersonOn, modelOffered, SCAN_NO_MESH, scanLookOf, scanStageOf, type ScanHandle, type ScanPreload } from "./run-view";
 import { DEFAULT_RUN_VIEW, loadRunView, RUN_VIEW_KEY, saveRunView, type RunViewState } from "./view-store";
 
 function memory(): Storage & { map: Map<string, string> } {
@@ -59,6 +59,12 @@ describe("the Run screen's view choice", () => {
     expect(loadRunView(blocked)).toBe("first-person");
     expect(() => saveRunView("first-person", blocked)).not.toThrow();
   });
+
+  it("remembers the 3D model (issue 118)", () => {
+    const storage = memory();
+    saveRunView("model", storage);
+    expect(loadRunView(storage)).toBe("model");
+  });
 });
 
 describe("whether the Run screen shows first person", () => {
@@ -78,6 +84,16 @@ describe("whether the Run screen shows first person", () => {
     expect(firstPersonOn(state("first-person"), floor("matterport"), loading)).toBe(true);
     expect(firstPersonOn(state("first-person"), floor("matterport"), failed)).toBe(false);
     expect(firstPersonOn(state("board"), floor("matterport"), loading)).toBe(false);
+  });
+
+  it("walks the 3D model in first person, offered only on a scan with a mesh on its way, and drawn from its rebuilt rooms", () => {
+    expect(firstPersonOn(state("model"), floor("matterport"), loading)).toBe(true);
+    expect(firstPersonOn(state("model"), floor("fixture"))).toBe(true);
+    expect(modelOffered(floor("matterport"), loading)).toBe(true);
+    expect(modelOffered(floor("matterport"), failed)).toBe(false);
+    expect(modelOffered(floor("fixture"))).toBe(false);
+    expect(scanLookOf(state("model"))).toBe("set");
+    expect(scanLookOf(state("first-person"))).toBe("photo");
   });
 
   it("offers it on a fixture floor always, and on a scan only with a mesh on its way", () => {
