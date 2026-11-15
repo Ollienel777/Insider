@@ -1,30 +1,28 @@
 "use client";
 
-// The Run screen in first person (issue 115): the room the player is
-// standing in, on a fixture floor drawn by our own renderer, or on a live
-// scan drawn by the scan view from its mesh (issue 118), walked freely with
+// The Run screen in first person (issue 115), on a fixture floor: the room
+// the player is standing in, drawn by our own renderer, walked freely with
 // the keys and the mouse. The engine is untouched and still decides
 // everything: this view hands its actions to `onAct`, which is the Run
 // screen's own `play`, and draws whatever run state comes back.
 //
-// Five parts, each replaceable:
+// Four parts, each replaceable (issue 118 swaps the floor for a scan's mesh):
 //   controller.ts  keys and mouse → what the player asks for
 //   walker.ts      free position → engine actions, over a `Ground`
 //   scene.ts       the floor's static geometry, one three.js group
 //   actors.ts      guards, cameras, sight, doors and markers, over a `Ground`
-//   stages.ts      the floor drawn and stood on: a fixture's, or a scan's
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Vector3 } from "three";
+import { AmbientLight, DirectionalLight, Fog, PerspectiveCamera, PointLight, Scene, Vector3, WebGLRenderer } from "three";
 import type { Action, RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
 import { objectiveLabel, objectiveNoun } from "@/lib/objective-noun";
 import { cn } from "@/lib/utils";
-import { choices, roomName } from "../board";
-import type { HeldAction, ScanHandle } from "./run-view";
+import { cameraMount, choices, roomName } from "../board";
+import type { HeldAction } from "./run-view";
 import { Actors, type Marks } from "./actors";
 import { Controller } from "./controller";
 import { readPalette } from "./palette";
-import { fixtureStage, scanStage, type Stage } from "./stages";
+import { buildFloorGroup, disposeGroup, type RoomTone } from "./scene";
 import { FP } from "./tuning";
 import { createWalker, heldAction, promptFor, stepWalker, type Prompt } from "./walker";
 import { buildWorld, groundOf } from "./world";
@@ -42,20 +40,7 @@ export interface FirstPersonViewProps {
   onHeld: (held: HeldAction | null) => void;
   /** The player paused the clock with P. */
   paused: boolean;
-  /** On a live-scan floor: the scan, loading since the Run screen opened. Null while its module loads. */
-  scan?: ScanHandle | null;
-  /** The scan could not be walked (no mesh, or the board would not fit onto it): the Run screen goes back to the board. */
-  onScanFailed?: (message: string) => void;
 }
-
-const SCAN_UNFITTED = "First person couldn't place this board in its scan. You're on the board.";
-
-const SCAN_PHASE: Record<string, string> = {
-  manifest: "Asking for the scan",
-  mesh: "Downloading the scan's mesh",
-  building: "Building the walls and floor",
-  ready: "Stepping in",
-};
 
 interface Hud {
   locked: boolean;
@@ -88,244 +73,245 @@ function hasWebGL(): boolean {
   }
 }
 
-export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, scan = null, onScanFailed }: FirstPersonViewProps) {
+export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused }: FirstPersonViewProps) {
   const surface = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const labelLayer = useRef<HTMLDivElement>(null);
   const [hud, setHud] = useState<Hud>({ locked: false, refused: false, prompt: null, using: false });
   const [ready, setReady] = useState(false);
-  const [scanPhase, setScanPhase] = useState<string | null>(null);
-  const [fitRms, setFitRms] = useState<number | null>(null);
 
-  // A live scan's floor is its mesh (stages.ts); a fixture's is built from its rooms.
-  const live = placed.level.floor.source !== "fixture";
-  const world = useMemo(() => (live ? null : buildWorld(placed.level.floor)), [placed, live]);
-  const ground = useMemo(() => (world ? groundOf(world) : null), [world]);
+  const world = useMemo(() => buildWorld(placed.level.floor), [placed]);
+  const ground = useMemo(() => groundOf(world), [world]);
 
   // The loop reads the latest run and the latest `play` without being rebuilt for each turn. Updated in a
   // layout effect, before the browser paints, so no animation frame reads the run before last.
-  const latest = useRef({ run, onAct, onUnavailable, onHeld, onScanFailed });
+  const latest = useRef({ run, onAct, onUnavailable, onHeld });
   useLayoutEffect(() => {
-    latest.current = { run, onAct, onUnavailable, onHeld, onScanFailed };
-  }, [run, onAct, onUnavailable, onHeld, onScanFailed]);
+    latest.current = { run, onAct, onUnavailable, onHeld };
+  }, [run, onAct, onUnavailable, onHeld]);
 
   useEffect(() => {
     const host = surface.current;
     const target = canvas.current;
     const labels = labelLayer.current;
     if (!host || !target || !labels) return;
-    // A live scan's handle comes once its module is in: until then, the loading line.
-    if (live && !scan) return;
     if (!hasWebGL()) {
       latest.current.onUnavailable();
       return;
     }
+    let renderer: WebGLRenderer;
+    try {
+      renderer = new WebGLRenderer({ canvas: target, antialias: true, powerPreference: "high-performance" });
+    } catch {
+      latest.current.onUnavailable();
+      return;
+    }
+    const onLost = (event: Event) => {
+      event.preventDefault();
+      latest.current.onUnavailable();
+    };
+    target.addEventListener("webglcontextlost", onLost);
 
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const palette = readPalette(document.documentElement);
     const { level } = placed;
-    let gone = false;
-    let stop: (() => void) | null = null;
-    let unsubscribe: (() => void) | null = null;
+    const first = latest.current.run;
 
-    /** The loop, over whichever floor it stands on. */
-    const play = (stage: Stage) => {
-      const { scene, camera, ground } = stage;
-      const first = latest.current.run;
-      const marks: Marks = {
-        objective: { nodeId: level.objective, label: objectiveLabel(level.missionId) },
-        exits: level.exits.map((nodeId) => ({
-          nodeId,
-          label: `Exit · ${placed.entries.find((e) => e.nodeId === nodeId)?.label ?? roomName(level.floor, nodeId)}`,
-        })),
-        cameras: stage.cameras(first),
-      };
-      const tempo = (id: string) => level.guardTempo?.[id] ?? level.patrolTempo;
-      const actors = new Actors(ground, palette, marks, still, FP.turnMs, tempo);
-      actors.group.position.y = stage.baseY;
-      scene.add(actors.group);
+    const scene = new Scene();
+    scene.background = palette.n950;
+    scene.fog = new Fog(palette.n950, 4, 36);
+    const camera = new PerspectiveCamera(72, 1, 0.05, 80);
+    // An even night light, a slanted one so walls that meet at a corner differ in shade, and a
+    // little carried by the player so what is near reads before what is far.
+    scene.add(new AmbientLight(palette.n100, 2));
+    const slant = new DirectionalLight(palette.n100, 1.5);
+    slant.position.set(-0.55, 1, -0.3);
+    scene.add(slant);
+    // A slow falloff: a wall the player is pressed against must not burn out.
+    const torch = new PointLight(palette.n100, 0.9, 14, 0.6);
+    camera.add(torch);
+    scene.add(camera);
 
-      // Facing the first way on from where the engine has the player.
-      let walker = createWalker(ground, first);
-      const wayOn = (state: RunState, from: { x: number; y: number }): number | null => {
-        const ahead = choices(state)[0];
-        const towards = ahead ? ground.path(state.playerNode, ahead.nodeId)[1] : null;
-        return towards ? Math.atan2(towards.y - from.y, towards.x - from.x) : null;
-      };
-      const controller = new Controller(
-        host,
-        wayOn(first, walker.pos) ?? 0,
-        (locked) => setHud((h) => (h.locked === locked ? h : { ...h, locked, refused: locked ? false : h.refused })),
-        () => setHud((h) => (h.refused ? h : { ...h, refused: true })),
-      );
-
-      const resize = () => {
-        const { clientWidth: w, clientHeight: h } = host;
-        if (w === 0 || h === 0) return;
-        stage.resize(w, h);
-      };
-      resize();
-      const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resize);
-      observer?.observe(host);
-
-      const labelEls = new Map<string, HTMLSpanElement>();
-      const point = new Vector3();
-      let seen: RunState | null = null;
-      let last = performance.now();
-      let owed = 0;
-      let use = false;
-      let bob = 0;
-      let hudKey = "";
-      let areas = false;
-      // The turn clock asks the view what a turn the player lets run out should be.
-      latest.current.onHeld((state) => heldAction(walker, ground, state, { use: controller.using, yaw: controller.yaw }));
-      let raf = 0;
-      let drawn = false;
-
-      const frame = (now: number) => {
-        raf = requestAnimationFrame(frame);
-        const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
-        last = now;
-        const { run: current, onAct: act } = latest.current;
-        if (current !== seen) {
-          actors.sync(current, now);
-          seen = current;
-        }
-
-        // The movement runs at a fixed step, however fast the screen draws.
-        controller.frame(dt);
-        const controls = controller.controls();
-        use ||= controls.usePressed;
-        owed += dt;
-        const stood = walker.pos;
-        while (owed >= FP.stepS) {
-          owed -= FP.stepS;
-          const out = stepWalker(walker, ground, current, { ...controls, usePressed: use });
-          use = false;
-          walker = out.walker;
-          if (out.action) act(out.action);
-        }
-        // Put back on the engine's node (a restart, a number key): look the way that hop went, or,
-        // at the start, the first way on. A frame of walking never covers this much ground.
-        if (Math.hypot(walker.pos.x - stood.x, walker.pos.y - stood.y) > 0.5) {
-          const hop = Math.atan2(walker.pos.y - stood.y, walker.pos.x - stood.x);
-          controller.yaw = current.turn === 0 ? (wayOn(current, walker.pos) ?? hop) : hop;
-          controller.pitch = 0;
-        }
-        if (controller.areas !== areas) {
-          areas = controller.areas;
-          actors.showAreas(areas, current.playerNode);
-        }
-
-        // The view: at eye height, with a small bob tied to the ground covered.
-        const speed = Math.hypot(walker.vel.x, walker.vel.y);
-        bob += ((still ? 0 : Math.min(1, speed / FP.runMps)) - bob) * Math.min(1, dt * 12);
-        const lift = Math.sin((walker.walked / FP.strideM) * Math.PI * 4) * FP.bobM * bob;
-        actors.update(now);
-        stage.draw(walker, lift, controller.yaw, controller.pitch, dt);
-
-        // Labels: each at its piece, hidden behind the view and behind walls (a beacon shows through).
-        // Nearest first, and one that would cover another is drawn above it.
-        const w = host.clientWidth;
-        const h = host.clientHeight;
-        const shown = new Set<string>();
-        const taken: { x: number; y: number; half: number }[] = [];
-        const far = (at: { x: number; y: number }) => Math.hypot(at.x - walker.pos.x, at.y - walker.pos.y);
-        for (const label of actors.labels(current).sort((p, q) => far(p.at) - far(q.at))) {
-          point.set(label.x, label.y + stage.baseY, label.z).project(camera);
-          const away = far(label.at);
-          const inSight = ground.clear(walker.pos, label.at, current.locked);
-          if (point.z > 1 || point.z < -1 || (!label.beacon && (!inSight || away > 30))) continue;
-          shown.add(label.key);
-          let el = labelEls.get(label.key);
-          if (!el) {
-            el = document.createElement("span");
-            el.className = `${LABEL_BASE} ${LABEL_TONE[label.tone]}`;
-            el.dataset.label = label.key;
-            labels.appendChild(el);
-            labelEls.set(label.key, el);
-          }
-          const text = label.beacon ? `${label.text} · ${Math.max(1, Math.round(away))} m` : label.text;
-          if (el.textContent !== text) el.textContent = text;
-          const x = ((point.x + 1) / 2) * w;
-          let y = ((1 - point.y) / 2) * h;
-          const half = text.length * 4 + 10;
-          while (taken.some((t) => Math.abs(t.x - x) < t.half + half && Math.abs(t.y - y) < LABEL_PITCH)) y -= LABEL_PITCH;
-          taken.push({ x, y, half });
-          el.style.opacity = inSight ? "1" : "0.55";
-          el.style.transform = `translate(-50%, -100%) translate(${x}px, ${y}px)`;
-        }
-        for (const [key, el] of labelEls) {
-          if (shown.has(key)) continue;
-          el.remove();
-          labelEls.delete(key);
-        }
-
-        // The HUD's words change rarely: React hears of it only when they do. The door being picked
-        // carries the engine's own count on a ring on its face.
-        const prompt = promptFor(walker, ground, current, controller.yaw);
-        const using = controller.using;
-        actors.showPick(prompt?.kind === "pick" && (using || prompt.done > 0) ? prompt : null);
-        const key = JSON.stringify([prompt, using]);
-        if (key !== hudKey) {
-          hudKey = key;
-          setHud((was) => ({ ...was, prompt, using }));
-        }
-        if (!drawn) {
-          drawn = true;
-          setReady(true);
-        }
-      };
-      raf = requestAnimationFrame(frame);
-
-      return () => {
-        cancelAnimationFrame(raf);
-        observer?.disconnect();
-        latest.current.onHeld(null);
-        controller.dispose();
-        for (const el of labelEls.values()) el.remove();
-        scene.remove(actors.group);
-        actors.dispose();
-        stage.dispose();
-      };
+    const tone = (roomId: string): RoomTone => {
+      const zone = placed.zones.find((z) => z.roomIds.includes(roomId));
+      return zone?.role === "crowded" ? "lit" : zone?.role === "quiet" ? "dark" : "plain";
     };
+    const floorGroup = buildFloorGroup(world, palette, tone);
+    scene.add(floorGroup);
 
-    if (!live) {
-      const stage = fixtureStage(target, placed, world!, ground!, palette, () => latest.current.onUnavailable());
-      if (!stage) {
-        latest.current.onUnavailable();
-        return;
+    const metres = (p: { x: number; y: number }) => ({ x: p.x * ground.unitM, y: p.y * ground.unitM });
+    const marks: Marks = {
+      objective: { nodeId: level.objective, label: objectiveLabel(level.missionId) },
+      exits: level.exits.map((nodeId) => ({
+        nodeId,
+        label: `Exit · ${placed.entries.find((e) => e.nodeId === nodeId)?.label ?? roomName(level.floor, nodeId)}`,
+      })),
+      cameras: first.board.cameras.map((c) => {
+        const cover = c.parts.flat();
+        const seen = cover.map((id) => first.board.nodes.get(id)!);
+        const middle = { x: seen.reduce((s, n) => s + n.x, 0) / seen.length, y: seen.reduce((s, n) => s + n.y, 0) / seen.length };
+        return { id: c.id, mount: metres(cameraMount(level.floor, cover)), looksAt: metres(middle) };
+      }),
+    };
+    const tempo = (id: string) => level.guardTempo?.[id] ?? level.patrolTempo;
+    const actors = new Actors(ground, palette, marks, still, FP.turnMs, tempo);
+    scene.add(actors.group);
+
+    // Facing the first way on from where the engine has the player.
+    let walker = createWalker(ground, first);
+    const wayOn = (state: RunState, from: { x: number; y: number }): number | null => {
+      const ahead = choices(state)[0];
+      const towards = ahead ? ground.path(state.playerNode, ahead.nodeId)[1] : null;
+      return towards ? Math.atan2(towards.y - from.y, towards.x - from.x) : null;
+    };
+    const controller = new Controller(
+      host,
+      wayOn(first, walker.pos) ?? 0,
+      (locked) => setHud((h) => (h.locked === locked ? h : { ...h, locked, refused: locked ? false : h.refused })),
+      () => setHud((h) => (h.refused ? h : { ...h, refused: true })),
+    );
+
+    const resize = () => {
+      const { clientWidth: w, clientHeight: h } = host;
+      if (w === 0 || h === 0) return;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    };
+    resize();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resize);
+    observer?.observe(host);
+
+    const labelEls = new Map<string, HTMLSpanElement>();
+    const point = new Vector3();
+    let seen: RunState | null = null;
+    let last = performance.now();
+    let owed = 0;
+    let use = false;
+    let bob = 0;
+    let hudKey = "";
+    let areas = false;
+    // The turn clock asks the view what a turn the player lets run out should be.
+    latest.current.onHeld((state) => heldAction(walker, ground, state, { use: controller.using, yaw: controller.yaw }));
+    let raf = 0;
+    let drawn = false;
+
+    const frame = (now: number) => {
+      raf = requestAnimationFrame(frame);
+      const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
+      last = now;
+      const { run: current, onAct: act } = latest.current;
+      if (current !== seen) {
+        actors.sync(current, now);
+        seen = current;
       }
-      stop = play(stage);
-    } else if (scan) {
-      // The scan's own canvas, loading since the Run screen opened, in place of ours while this shows.
-      host.insertBefore(scan.canvas, target);
-      target.hidden = true;
-      const phase = () => setScanPhase(scan.status().phase);
-      phase();
-      unsubscribe = scan.subscribe(phase);
-      void scan.ready.then((ok) => {
-        if (gone) return;
-        const stage = ok ? scanStage(scan.view, placed, latest.current.run) : null;
-        if (!stage) {
-          latest.current.onScanFailed?.(ok ? SCAN_UNFITTED : (scan.status().message ?? SCAN_UNFITTED));
-          return;
+
+      // The movement runs at a fixed step, however fast the screen draws.
+      controller.frame(dt);
+      const controls = controller.controls();
+      use ||= controls.usePressed;
+      owed += dt;
+      const stood = walker.pos;
+      while (owed >= FP.stepS) {
+        owed -= FP.stepS;
+        const out = stepWalker(walker, ground, current, { ...controls, usePressed: use });
+        use = false;
+        walker = out.walker;
+        if (out.action) act(out.action);
+      }
+      // Put back on the engine's node (a restart, a number key): look the way that hop went, or,
+      // at the start, the first way on. A frame of walking never covers this much ground.
+      if (Math.hypot(walker.pos.x - stood.x, walker.pos.y - stood.y) > 0.5) {
+        const hop = Math.atan2(walker.pos.y - stood.y, walker.pos.x - stood.x);
+        controller.yaw = current.turn === 0 ? (wayOn(current, walker.pos) ?? hop) : hop;
+        controller.pitch = 0;
+      }
+      if (controller.areas !== areas) {
+        areas = controller.areas;
+        actors.showAreas(areas, current.playerNode);
+      }
+
+      // The view: at eye height, with a small bob tied to the ground covered.
+      const speed = Math.hypot(walker.vel.x, walker.vel.y);
+      bob += ((still ? 0 : Math.min(1, speed / FP.runMps)) - bob) * Math.min(1, dt * 12);
+      const lift = Math.sin((walker.walked / FP.strideM) * Math.PI * 4) * FP.bobM * bob;
+      camera.position.set(walker.pos.x, FP.eyeM + lift, walker.pos.y);
+      const flat = Math.cos(controller.pitch);
+      camera.lookAt(
+        walker.pos.x + Math.cos(controller.yaw) * flat,
+        FP.eyeM + lift + Math.sin(controller.pitch),
+        walker.pos.y + Math.sin(controller.yaw) * flat,
+      );
+      actors.update(now);
+      renderer.render(scene, camera);
+
+      // Labels: each at its piece, hidden behind the view and behind walls (a beacon shows through).
+      // Nearest first, and one that would cover another is drawn above it.
+      const w = host.clientWidth;
+      const h = host.clientHeight;
+      const live = new Set<string>();
+      const taken: { x: number; y: number; half: number }[] = [];
+      const far = (at: { x: number; y: number }) => Math.hypot(at.x - walker.pos.x, at.y - walker.pos.y);
+      for (const label of actors.labels(current).sort((p, q) => far(p.at) - far(q.at))) {
+        point.set(label.x, label.y, label.z).project(camera);
+        const away = far(label.at);
+        const inSight = ground.clear(walker.pos, label.at, current.locked);
+        if (point.z > 1 || point.z < -1 || (!label.beacon && (!inSight || away > 30))) continue;
+        live.add(label.key);
+        let el = labelEls.get(label.key);
+        if (!el) {
+          el = document.createElement("span");
+          el.className = `${LABEL_BASE} ${LABEL_TONE[label.tone]}`;
+          el.dataset.label = label.key;
+          labels.appendChild(el);
+          labelEls.set(label.key, el);
         }
-        setFitRms(stage.rms);
-        stop = play(stage);
-      });
-    }
+        const text = label.beacon ? `${label.text} · ${Math.max(1, Math.round(away))} m` : label.text;
+        if (el.textContent !== text) el.textContent = text;
+        const x = ((point.x + 1) / 2) * w;
+        let y = ((1 - point.y) / 2) * h;
+        const half = text.length * 4 + 10;
+        while (taken.some((t) => Math.abs(t.x - x) < t.half + half && Math.abs(t.y - y) < LABEL_PITCH)) y -= LABEL_PITCH;
+        taken.push({ x, y, half });
+        el.style.opacity = inSight ? "1" : "0.55";
+        el.style.transform = `translate(-50%, -100%) translate(${x}px, ${y}px)`;
+      }
+      for (const [key, el] of labelEls) {
+        if (live.has(key)) continue;
+        el.remove();
+        labelEls.delete(key);
+      }
+
+      // The HUD's words change rarely: React hears of it only when they do. The door being picked
+      // carries the engine's own count on a ring on its face.
+      const prompt = promptFor(walker, ground, current, controller.yaw);
+      const using = controller.using;
+      actors.showPick(prompt?.kind === "pick" && (using || prompt.done > 0) ? prompt : null);
+      const key = JSON.stringify([prompt, using]);
+      if (key !== hudKey) {
+        hudKey = key;
+        setHud((was) => ({ ...was, prompt, using }));
+      }
+      if (!drawn) {
+        drawn = true;
+        setReady(true);
+      }
+    };
+    raf = requestAnimationFrame(frame);
 
     return () => {
-      gone = true;
-      stop?.();
-      unsubscribe?.();
-      if (scan) {
-        scan.canvas.remove();
-        target.hidden = false;
-      }
+      cancelAnimationFrame(raf);
+      observer?.disconnect();
+      target.removeEventListener("webglcontextlost", onLost);
+      latest.current.onHeld(null);
+      controller.dispose();
+      for (const el of labelEls.values()) el.remove();
+      actors.dispose();
+      disposeGroup(floorGroup);
+      renderer.dispose();
     };
-  }, [world, ground, placed, live, scan]);
+  }, [world, ground, placed]);
 
   const noun = objectiveNoun(placed.level.missionId);
   const over = run.status !== "playing";
@@ -336,8 +322,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       ref={surface}
       data-testid="fp-view"
       data-ready={ready ? "true" : undefined}
-      data-floor={live ? "scan" : "fixture"}
-      data-fit-rms={fitRms === null ? undefined : fitRms.toFixed(2)}
       data-node={run.playerNode}
       data-turn={run.turn}
       data-locked={run.locked.join(" ")}
@@ -349,17 +333,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       className={cn("absolute inset-0 overflow-hidden bg-surface-0 select-none", hud.locked ? "cursor-none" : "cursor-pointer")}
     >
       <canvas ref={canvas} data-testid="fp-canvas" className="absolute inset-0 block h-full w-full" />
-      {/* After hours on a scan: its daylight panoramas dimmed and cooled, under the labels. */}
-      {live ? <div aria-hidden data-testid="fp-after-hours" className="pointer-events-none absolute inset-0 bg-n-950/45 mix-blend-multiply" /> : null}
       <div ref={labelLayer} aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden" />
-      {live && !ready ? (
-        <div className="pointer-events-none absolute inset-0 grid place-items-center">
-          <p data-testid="fp-scan-loading" role="status" className="flex items-center gap-2 rounded-sm bg-surface-1 px-4 py-3 text-sm text-text-2 shadow-e-1">
-            <span aria-hidden className="size-2 animate-pulse rounded-full bg-accent" />
-            {SCAN_PHASE[scanPhase ?? "manifest"] ?? SCAN_PHASE.manifest}…
-          </p>
-        </div>
-      ) : null}
 
       {/* The alarm on the edges of the view, in the banner's colours. No transition: the trip shows on the next frame. */}
       {tint ? (

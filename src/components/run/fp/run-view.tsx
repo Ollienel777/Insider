@@ -5,16 +5,12 @@
 // the board's page does not carry the renderer. The Run screen imports from
 // here and nowhere else under fp/.
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
 import { Footprints, Grid3x3, type LucideIcon } from "lucide-react";
 import type { FloorGraph } from "@/domain";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { FP } from "./tuning";
-import type { ScanHandle } from "./scan-preload";
 import type { RunView, RunViewState } from "./view-store";
-
-export type { ScanHandle } from "./scan-preload";
 
 export { useRunView } from "./view-store";
 
@@ -38,62 +34,11 @@ export const FP_UNAVAILABLE = "First person needs WebGL, which this browser isn'
 
 /**
  * Whether the Run screen shows first person: it was chosen, it can be drawn,
- * and the floor is a fixture floor, or a live scan whose mesh is loading or
- * in (issue 118). A live scan without one has no walls to walk.
+ * and the floor is a fixture floor. A floor from a live scan has no room
+ * rectangles of ours to build walls from (and its own Inside view).
  */
-export function firstPersonOn(state: RunViewState, floor: FloorGraph, scan: ScanPreload | null = null): boolean {
-  return state.view === "first-person" && firstPersonOffered(floor, scan);
-}
-
-/** Whether first person is offered on `floor` at all. */
-export function firstPersonOffered(floor: FloorGraph, scan: ScanPreload | null = null): boolean {
-  return floor.source === "fixture" || (scan !== null && scan.failed === null);
-}
-
-export const SCAN_FAILED = "First person couldn't load this scan's mesh. You're on the board.";
-
-/** A live scan's mesh loading behind the Run screen, for first person (scan-preload.ts). */
-export interface ScanPreload {
-  handle: ScanHandle | null;
-  /** A line for the status bar when the scan can't be walked; null while it loads or once it is in. */
-  failed: string | null;
-  ready: boolean;
-}
-
-const LOADING: ScanPreload = Object.freeze({ handle: null, failed: null, ready: false });
-
-/**
- * Starts loading the scan for first person as soon as there is a model id,
- * and keeps it while the Run screen stays open. Null with no model id.
- */
-export function useScanPreload(modelId: string | null): ScanPreload | null {
-  const [state, setState] = useState<{ modelId: string; preload: ScanPreload } | null>(null);
-  useEffect(() => {
-    if (!modelId) return;
-    let gone = false;
-    let handle: ScanHandle | null = null;
-    const set = (preload: ScanPreload) => {
-      if (!gone) setState({ modelId, preload });
-    };
-    import("./scan-preload")
-      .then(({ openScan }) => {
-        if (gone) return;
-        const opened = openScan(modelId);
-        handle = opened;
-        set({ handle: opened, failed: null, ready: false });
-        void opened.ready.then((ok) => {
-          const message = opened.status().message;
-          set(ok ? { handle: opened, failed: null, ready: true } : { handle: null, failed: message ? `${message} You're on the board.` : SCAN_FAILED, ready: false });
-        });
-      })
-      .catch(() => set({ handle: null, failed: FP_UNAVAILABLE, ready: false }));
-    return () => {
-      gone = true;
-      handle?.dispose();
-    };
-  }, [modelId]);
-  if (!modelId) return null;
-  return state?.modelId === modelId ? state.preload : LOADING;
+export function firstPersonOn(state: RunViewState, floor: FloorGraph): boolean {
+  return state.view === "first-person" && floor.source === "fixture";
 }
 
 const VIEWS: readonly { view: RunView; label: string; hint: string; icon: LucideIcon }[] = [
@@ -110,8 +55,8 @@ const VIEWS: readonly { view: RunView; label: string; hint: string; icon: Lucide
  * right edge, on the mute button's line. Nothing shows on a floor from a live
  * scan, or on a phone showing the board: first person needs a keyboard.
  */
-export function ViewSwitch({ state, floor, scan = null, className }: { state: RunViewState; floor: FloorGraph; scan?: ScanPreload | null; className?: string }) {
-  if (!firstPersonOffered(floor, scan)) return null;
+export function ViewSwitch({ state, floor, className }: { state: RunViewState; floor: FloorGraph; className?: string }) {
+  if (floor.source !== "fixture") return null;
   return (
     <div
       role="group"

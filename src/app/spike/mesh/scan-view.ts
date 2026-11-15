@@ -223,11 +223,6 @@ export class ScanView {
     return (this.manifest?.panos ?? []).map((p) => p.position);
   }
 
-  /** The scan positions with their ids and floor spots, for fitting a board built from the scan's sweeps onto them. */
-  scanPoints(): { id: string; anchor: string | null; position: Vec3 }[] {
-    return (this.manifest?.panos ?? []).map((p) => ({ id: p.id, anchor: p.anchor, position: p.position }));
-  }
-
   /** Where the feet stand under scan position `index`, or null. */
   feetAt(index: number): Vec3 | null {
     const pano = this.manifest?.panos[index];
