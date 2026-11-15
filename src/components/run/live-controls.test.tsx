@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { CLOCK_LABEL, LiveControls, PlayModeSwitch, TurnTimer } from "./live-controls";
 import { LIVE_TURN_MS, type LiveClock, type TurnClockState } from "./turn-clock";
 
-const clock = (state: TurnClockState, lap = "0:0"): LiveClock => ({ state, lap, togglePause: () => {} });
+const clock = (state: TurnClockState, lap = "0:0"): LiveClock => ({ state, awaitingMove: false, lap, togglePause: () => {} });
 
 /** The opening tag of the element with `testId`. */
 function tag(html: string, testId: string): string {

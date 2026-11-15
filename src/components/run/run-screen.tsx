@@ -38,6 +38,7 @@ import { panelsOpen, RunLayout, useDetails } from "./live-layout";
 import { endNote, usePlayHud } from "./play-hud";
 import { usePlayMode } from "./play-mode";
 import { useTurnClock } from "./turn-clock";
+import { FirstMoveHint } from "./fp/first-move-hint";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
 import { loadCrewPlan, PLAN_HEADING, planSourceOf, type StoredCrewPlan } from "./crew-plan-store";
@@ -330,6 +331,8 @@ export function RunScreen({
     live: layoutMode === "live",
     turnMs: fpOn ? FIRST_PERSON_TURN_MS : undefined,
     action: fpOn ? fpTurn : undefined,
+    // In first person the clock waits for the player's first move, so they can look around (issue 171).
+    startOnMove: fpOn,
     run,
     play: (action) => {
       play(action);
@@ -576,6 +579,7 @@ export function RunScreen({
             {/* Only over a board with a run on it: not over the loading or error state. Below md the
                 Live mode switch takes the top-right corner, so the mute button sits under it there. */}
             {run ? <MuteToggle muted={muted} onToggle={toggleMute} className="absolute top-2 right-8 max-md:top-16 max-md:right-6" /> : null}
+            {fpOn && clock.awaitingMove ? <FirstMoveHint /> : null}
             {run && !fpOn ? <LiveControls mode={playMode} onChange={setPlayMode} clock={clock} /> : null}
           </div>
       }
