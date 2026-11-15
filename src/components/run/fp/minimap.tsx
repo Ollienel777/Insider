@@ -48,6 +48,16 @@ export function routePoints(ground: Ground, route: readonly string[]): Vec[] {
   return out;
 }
 
+/** The map in words: the room, the guards and how many hunt, and where the plan heads next. */
+function mapLabel(run: RunState, waypoint: Waypoint | null, hunting: boolean): string {
+  const { floor } = run.board.level;
+  const chasing = run.guards.filter((g) => g.target !== null || hunting).length;
+  const guards = `${run.guards.length} ${run.guards.length === 1 ? "guard" : "guards"}${chasing > 0 ? `, ${chasing} hunting you` : ""}`;
+  const goal = waypoint ? waypoint.route[waypoint.route.length - 1] : null;
+  const next = !goal ? "" : waypoint!.kind === "exit" ? ` The plan heads for the exit in the ${roomName(floor, goal)}.` : waypoint!.kind === "objective" ? ` The plan heads for the objective in the ${roomName(floor, goal)}.` : ` The plan's next step is in the ${roomName(floor, goal)}.`;
+  return `Map: you're in the ${roomName(floor, run.playerNode)}. ${guards}.${next}`;
+}
+
 export function Minimap({
   world,
   ground,
@@ -115,7 +125,7 @@ export function Minimap({
       data-testid="fp-minimap"
       data-room={hereRoom}
       data-waypoint={waypoint ? waypoint.route[waypoint.route.length - 1] : undefined}
-      aria-label={`Map: you're in the ${roomName(run.board.level.floor, run.playerNode)}`}
+      aria-label={mapLabel(run, waypoint, hunting)}
       role="img"
       className={cn("pointer-events-none flex flex-col gap-1 rounded-sm bg-surface-1/90 p-2 shadow-e-1", className)}
     >

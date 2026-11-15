@@ -290,11 +290,18 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         const el = (event.target as HTMLElement | null)?.closest?.<HTMLElement>("[data-label]");
         return el && WATCHER.has(el.dataset.tone ?? "") ? { key: el.dataset.label!, tone: el.dataset.tone! } : null;
       };
-      // Kept off the view: a press on a label neither starts a drag nor locks the mouse.
+      // Kept off the view: a press on a label neither starts a drag nor locks the mouse. A press that moves
+      // (a drag to look that set off on a walking guard's label) is not a click on it.
+      let pressedAt: { x: number; y: number } | null = null;
       const onLabelDown = (event: PointerEvent) => {
-        if (labelOf(event)) event.stopPropagation();
+        if (!labelOf(event)) return;
+        event.stopPropagation();
+        pressedAt = { x: event.clientX, y: event.clientY };
       };
       const onLabelClick = (event: MouseEvent) => {
+        const from = pressedAt;
+        pressedAt = null;
+        if (from && Math.hypot(event.clientX - from.x, event.clientY - from.y) > 4) return;
         if (openWhy(labelOf(event))) event.stopPropagation();
       };
       const onAimClick = (event: MouseEvent) => {
@@ -302,7 +309,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       };
       const onWhyKey = (event: KeyboardEvent) => {
         if (event.code !== "KeyF" || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.defaultPrevented) return;
-        if ((event.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable=true]")) return;
+        if ((event.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable=true], [contenteditable='']")) return;
         if (openWhy(aim.current)) event.preventDefault();
       };
       labels.addEventListener("pointerdown", onLabelDown);

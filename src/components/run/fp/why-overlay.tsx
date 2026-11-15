@@ -15,6 +15,11 @@ import { WhyCard } from "../why-card";
 export function WhyOverlay({ placed, run, whyKey, onClose }: { placed: PlacedLevel; run: RunState; whyKey: string; onClose: () => void }) {
   const target = whyTarget(placed, whyKey);
 
+  // Nothing to explain (no target for the key): shut at once, so no empty card holds the clock or F.
+  useEffect(() => {
+    if (!target) onClose();
+  }, [target, onClose]);
+
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
