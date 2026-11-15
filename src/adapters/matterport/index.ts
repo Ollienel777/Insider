@@ -28,6 +28,10 @@ import { isForced, reportFallback, reportLive } from "@/lib/demo-status";
 import { fallbackMessage, newFallback, type Fallback } from "@/lib/fallback";
 import { missingForLive, serviceModes, type ServiceMode } from "@/lib/mode";
 import { createFakeMatterport } from "./fake";
+import { holdFloor } from "./floor-hold";
+
+/** Lets go of the scan board this tab holds (floor-hold.ts), and stops its read: when the stand-in floor plan is taken. */
+export { releaseFloor as releaseScanFloor } from "./floor-hold";
 import { connectInsideView, createLiveMatterport, MatterportNotStartedError, type InsideView } from "./live";
 import type { MatterportAdapter } from "./types";
 import type { Building } from "@/domain";
@@ -85,7 +89,13 @@ export function selectMatterport(env: Env): MatterportSelection {
   }
   const live = createLiveMatterport({ sdkKey });
   const adapter: MatterportAdapter = {
-    loadFloor: (building, signal) => live.loadFloor({ ...building, matterportModelId: scanModelId(building, env) }, signal),
+    loadFloor: (building, signal) => {
+      const modelId = scanModelId(building, env);
+      const read = (stop?: AbortSignal) => live.loadFloor({ ...building, matterportModelId: modelId }, stop);
+      // A scan's board is read once per tab and kept in memory (floor-hold.ts): Plan reads it, Run takes it.
+      // The caller's signal ends its wait; the read itself is the holder's.
+      return modelId ? holdFloor(modelId, read, signal) : read(signal);
+    },
   };
   return { adapter, mode: "live", reason: "Matterport: live" };
 }

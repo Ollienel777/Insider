@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import { getMatterport } from "@/adapters/matterport";
+import { getMatterport, scanMeshModelFor } from "@/adapters/matterport";
+import { useScanPreload } from "@/components/run/fp/run-view";
 import { BoardView } from "@/components/run/board-view";
 import { saveCrewPlan, storedPlanOf } from "@/components/run/crew-plan-store";
 import { LensLegend, LensToggle, useLayerLens } from "@/components/run/layer-lens";
@@ -114,6 +115,12 @@ export function PlanScreen({
   }, [ask]);
 
   const load: Load = manifest ? loaded : { status: "no-floor" };
+  // On a live scan, first person's scan starts loading here (issue 157), so the Run screen finds it in or
+  // on its way; the tab keeps it across screens (fp/scan-hold.ts). Nothing on fixtures.
+  const liveScan = load.status === "ready" && load.live;
+  const scanModel = useMemo(() => (liveScan ? scanMeshModelFor(building, heistMode) : null), [liveScan, building, heistMode]);
+  // Its picture around the run's start is drawn, unseen, as well, so first person opens on it.
+  useScanPreload(scanModel, undefined, load.status === "ready" ? load.placed.level.start : null);
   // While the floor loads, the bar says "from fixtures" only once the browser knows no scan is loading:
   // on a live scan the skeleton says what it waits for, and before the demo status is in, nobody knows.
   const sourcePending = useWaitsOnScan(building, heistMode) !== false && load.status === "loading";
