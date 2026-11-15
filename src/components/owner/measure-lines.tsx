@@ -27,8 +27,8 @@ export function MeasureLines({
     <div
       data-testid={testId}
       data-coverage={measure.coverage}
-      data-windows={measure.windows.open}
-      data-moments={measure.windows.moments}
+      data-windows={measure.windows.measured ? measure.windows.open : undefined}
+      data-moments={measure.windows.measured ? measure.windows.moments : undefined}
       data-entries={measure.entries}
       className={cn("flex flex-col gap-1 text-sm text-text-2", className)}
     >
@@ -51,23 +51,23 @@ export function MeasureLines({
   );
 }
 
-/** One side's two numbers, short, for a card: "43% watched · 7/80 open". */
+/** One side's two numbers, short, for a card: "43% watched · 7/80 open", or "43% watched · windows not measured". */
 export function MeasureChips({ measure, testId }: { measure: SetupMeasure; testId: string }) {
   return (
     <p
       data-testid={testId}
       data-coverage={measure.coverage}
-      data-windows={measure.windows.open}
-      data-moments={measure.windows.moments}
+      data-windows={measure.windows.measured ? measure.windows.open : undefined}
+      data-moments={measure.windows.measured ? measure.windows.moments : undefined}
       title={`${coverageLine(measure)} ${windowsLine(measure)}`}
       className="font-mono text-xs text-text-2 tabular-nums"
     >
-      {measure.coverage}% watched · {measure.windows.open}/{measure.windows.moments} open
+      {measure.coverage}% watched · {measure.windows.measured ? `${measure.windows.open}/${measure.windows.moments} open` : "windows not measured"}
     </p>
   );
 }
 
-/** "Coverage 43% → 50%, open windows 7 → 1.", with what each means under it. */
+/** "Coverage 43% → 50%, open windows 40 of 80 → 20 of 80.", with what each means under it. */
 export function MeasureChange({ from, to, testId }: { from: SetupMeasure; to: SetupMeasure; testId: string }) {
   return (
     <div className="flex flex-col gap-1">
@@ -75,8 +75,8 @@ export function MeasureChange({ from, to, testId }: { from: SetupMeasure; to: Se
         data-testid={testId}
         data-coverage-from={from.coverage}
         data-coverage-to={to.coverage}
-        data-windows-from={from.windows.open}
-        data-windows-to={to.windows.open}
+        data-windows-from={from.windows.measured ? from.windows.open : undefined}
+        data-windows-to={to.windows.measured ? to.windows.open : undefined}
         className="font-mono text-sm text-text-1 tabular-nums"
       >
         {measureChange(from, to)}.

@@ -35,11 +35,20 @@
 // raises only Suspicious. A window here is a clean night, never seen by a guard
 // or camera and never heard; a crew seen and still out is not counted. Night
 // cleaners are left out, as in coverage: their sighting never catches. When
-// the night is cut at `CYCLE_CAP`, turns past it are read as repeating it.
+// the night is cut at `CYCLE_CAP`, it is still read as repeating (below).
+//
+// Turn 0 is not part of the loop that repeats: a guard starts facing its first
+// hop and, a round later, stands on the same node facing the way it came. So
+// the search walks absolute turns: the first night (0…C-1) from the real
+// start, then the night that repeats (C…2C-1), looped. A start turn t is the
+// engine's turn t; a route that runs past the end of the night meets the
+// guards as they are on turn C on, not as they were on turn 0.
 //
 // Every start turn is answered at once: a backward search from "out with the
-// objective" over (node, turn of the night, carrying, doors picked).
-import { AUTOPLAY_MAX_TURNS, createRun, hearingRange, moveGuards, picksToOpen, visibleFrom, watched, withinHops } from "@/engine";
+// objective" over (node, turn, carrying, doors picked). Its states are counted
+// before anything is built; above `STATE_BUDGET` the night is not measured
+// rather than holding up the editor (issue 144 review).
+import { AUTOPLAY_MAX_TURNS, compileBoard, createRun, hearingRange, moveGuards, picksToOpen, visibleFrom, watched, withinHops } from "@/engine";
 import type { Action, Level } from "@/engine";
 import { cycleLength } from "./night";
 
@@ -54,7 +63,28 @@ export interface OpenWindow {
   actions: Action[];
 }
 
+/**
+ * The most search states one measure may take, all its nights together; a
+ * night's states are nodes × 2 nights' turns × carrying × locked-door
+ * combinations. Each state holds its predecessors, so this bounds both the
+ * time the editor waits and the memory. `measureNights` shares it out over
+ * the nights it measures. Measured on a laptop at about 0.8 µs and 250 bytes a
+ * state, so a full budget is about a second; it still fits F1 with its tempos
+ * set so the night reaches the cap (30 nodes, 240 turns, 2 locked doors:
+ * about 115,000 states a night).
+ */
+export const STATE_BUDGET = 1_500_000;
+
+/** The search states one night of `level` takes, without building anything (`STATE_BUDGET`). */
+export function searchStates(level: Level): number {
+  const board = compileBoard(level);
+  // 2 ** doors stays exact where 1 << doors would overflow past 30 doors.
+  return level.floor.nodes.length * 2 * cycleLength(board) * 2 * 2 ** new Set(level.lockedDoors).size;
+}
+
 export interface OpenWindows {
+  /** False when the night was too large to search (`STATE_BUDGET`): every count is then 0 and means nothing. */
+  measured: boolean;
   /** (way in, start turn) pairs with a way in and out unseen. */
   open: number;
   /** Ways in × turns in the night. */
@@ -77,8 +107,20 @@ interface Step {
 
 const WIN = -1;
 
-/** The open windows on a placed level, for its ways in (deduplicated, in order). */
-export function openWindows(level: Level, entries: readonly string[], maxTurns: number = AUTOPLAY_MAX_TURNS): OpenWindows {
+/** Nothing searched: the night is over the budget. */
+export const NOT_MEASURED: OpenWindows = Object.freeze({ measured: false, open: 0, moments: 0, share: 0, first: null });
+
+/**
+ * The open windows on a placed level, for its ways in (deduplicated, in order).
+ * Over `budget` search states it searches nothing and returns `NOT_MEASURED`.
+ */
+export function openWindows(
+  level: Level,
+  entries: readonly string[],
+  maxTurns: number = AUTOPLAY_MAX_TURNS,
+  budget: number = STATE_BUDGET,
+): OpenWindows {
+  if (searchStates(level) > budget) return NOT_MEASURED;
   const run = createRun(level);
   const { board } = run;
   const C = cycleLength(board);
@@ -86,22 +128,27 @@ export function openWindows(level: Level, entries: readonly string[], maxTurns: 
   const N = ids.length;
   const index = new Map(ids.map((id, i) => [id, i]));
   const doors = [...new Set(level.lockedDoors)];
+  const ways = [...new Set(entries)].filter((id) => index.has(id));
+  // Two nights of turns: the first from the real start, then the one that repeats.
+  const T = 2 * C;
   const doorBit = new Map(doors.map((d, i) => [d, 1 << i]));
   const masks = 1 << doors.length;
   const exits = new Set(level.exits.map((id) => index.get(id)!));
   const objective = index.get(level.objective)!;
 
-  // The night: guards at each turn 0…C (turn C closes the loop for the look after turn C-1).
+  // Guards at each turn 0…2C (turn 2C is where turn C's night comes round again, for the look after turn 2C-1).
   const guardsAt = [run.guards];
-  for (let t = 0; t < C; t++) guardsAt.push(moveGuards(board, guardsAt[t]));
+  for (let t = 0; t < T; t++) guardsAt.push(moveGuards(board, guardsAt[t]));
+  /** The turn after t: the next, until the second night ends and loops back to its start. */
+  const after = (t: number) => (t + 1 < T ? t + 1 : C);
   const sight = (t: number) => {
     const seen = new Uint8Array(N);
     for (const g of guardsAt[t]) for (const id of visibleFrom(board, g)) seen[index.get(id)!] = 1;
     return seen;
   };
-  const guardSight = Array.from({ length: C + 1 }, (_, t) => sight(t));
+  const guardSight = Array.from({ length: T + 1 }, (_, t) => sight(t));
   /** Seen in the crew's half of turn t: cameras and the guards where they stand. */
-  const seenNow = Array.from({ length: C }, (_, t) => {
+  const seenNow = Array.from({ length: T }, (_, t) => {
     const seen = Uint8Array.from(guardSight[t]);
     for (const camera of board.cameras) for (const id of watched(camera, t)) seen[index.get(id)!] = 1;
     return seen;
@@ -110,7 +157,7 @@ export function openWindows(level: Level, entries: readonly string[], maxTurns: 
   const seenAfter = (t: number) => guardSight[t + 1];
   const earshot = ids.map((id) => [...withinHops(board, id, hearingRange(board, id))].map((n) => index.get(n)!));
   /** Heard making noise on node n at turn t. */
-  const heard = Array.from({ length: C }, (_, t) => {
+  const heard = Array.from({ length: T }, (_, t) => {
     const at = new Set(guardsAt[t].map((g) => index.get(g.nodeId)!));
     return Uint8Array.from(earshot, (near) => (near.some((n) => at.has(n)) ? 1 : 0));
   });
@@ -118,15 +165,15 @@ export function openWindows(level: Level, entries: readonly string[], maxTurns: 
     (board.adjacency.get(id) ?? []).map((e) => ({ to: index.get(e.to)!, door: e.doorId !== undefined ? (doorBit.get(e.doorId) ?? 0) : 0, doorId: e.doorId })),
   );
 
-  const stateOf = (n: number, t: number, carrying: number, mask: number) => ((mask * 2 + carrying) * C + t) * N + n;
-  const S = N * C * 2 * masks;
+  const stateOf = (n: number, t: number, carrying: number, mask: number) => ((mask * 2 + carrying) * T + t) * N + n;
+  const S = N * T * 2 * masks;
 
   function steps(s: number): Step[] {
     const n = s % N;
-    const t = Math.floor(s / N) % C;
-    const carrying = Math.floor(s / (N * C)) % 2;
-    const mask = Math.floor(s / (N * C * 2));
-    const next = (t + 1) % C;
+    const t = Math.floor(s / N) % T;
+    const carrying = Math.floor(s / (N * T)) % 2;
+    const mask = Math.floor(s / (N * T * 2));
+    const next = after(t);
     const out: Step[] = [];
     const open = (door: number) => door === 0 || (mask & door) !== 0;
     /** Ends a one-turn action standing on m: out if carrying onto an exit, else the look after the guards move. */
@@ -161,12 +208,13 @@ export function openWindows(level: Level, entries: readonly string[], maxTurns: 
       if (e.door === 0 || (mask & e.door) !== 0) continue;
       const k = picksToOpen(level, e.doorId!);
       let ok = true;
+      let u = t;
       for (let i = 0; i < k && ok; i++) {
-        const u = (t + i) % C;
         ok = !seenNow[u][n] && !heard[u][n] && !guardSight[u + 1][n];
+        u = after(u);
       }
       const actions = Array.from({ length: k }, (): Action => ({ kind: "pick", doorId: e.doorId! }));
-      if (ok) out.push({ cost: k, to: stateOf(n, (t + k) % C, carrying, mask | e.door), path: [], actions });
+      if (ok) out.push({ cost: k, to: stateOf(n, u, carrying, mask | e.door), path: [], actions });
     }
     return out;
   }
@@ -196,7 +244,6 @@ export function openWindows(level: Level, entries: readonly string[], maxTurns: 
     }
   }
 
-  const ways = [...new Set(entries)].filter((id) => index.has(id));
   let open = 0;
   let first: OpenWindow | null = null;
   for (let t = 0; t < C; t++) {
@@ -224,5 +271,5 @@ export function openWindows(level: Level, entries: readonly string[], maxTurns: 
   }
 
   const moments = ways.length * C;
-  return { open, moments, share: moments === 0 ? 0 : Math.round((100 * open) / moments), first };
+  return { measured: true, open, moments, share: moments === 0 ? 0 : Math.round((100 * open) / moments), first };
 }

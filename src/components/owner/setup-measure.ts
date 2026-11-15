@@ -17,7 +17,7 @@ import type { OwnerSetup } from "@/domain/owner-setup";
 import { applyOwnerSetup } from "@/level/owner-setup";
 import { objectiveNoun } from "@/lib/objective-noun";
 import { cycleLength } from "./night";
-import { openWindows, type OpenWindows } from "./open-windows";
+import { NOT_MEASURED, openWindows, searchStates, STATE_BUDGET, type OpenWindows } from "./open-windows";
 
 export { CYCLE_CAP, cycleLength } from "./night";
 
@@ -30,7 +30,7 @@ export interface SetupMeasure {
   coverage: number;
   /** Ways in (entries) on this floor. */
   entries: number;
-  /** The moments a crew could get in and out unseen and unheard (`openWindows`), added up over the nights the batch plays. */
+  /** The moments a crew could get in and out unseen and unheard (`openWindows`), added up over the nights the batch plays; not measured when any night is over its share of `STATE_BUDGET`. */
   windows: OpenWindows;
   /** The nights with at least one open window. */
   openNights: number;
@@ -107,7 +107,9 @@ function percent(part: number, whole: number): number {
  * Coverage and open windows over a set of nights. Coverage is read as the
  * owner's worst case so that its line holds on every night: it counts only the
  * positions watched at some point in every night. Open windows are counted on
- * each night, with that night's guards and cameras, and added up.
+ * each night, with that night's guards and cameras, and added up; each night
+ * gets an equal share of `STATE_BUDGET`, and if any night is over its share
+ * none is searched, so the editor never waits on a floor too large to measure.
  */
 export function measureNights(nights: readonly MeasureNight[]): SetupMeasure {
   if (nights.length === 0) throw new Error("measureNights needs at least one night");
@@ -117,7 +119,9 @@ export function measureNights(nights: readonly MeasureNight[]): SetupMeasure {
   const positions = level.floor.nodes.length;
   const watchedCount = level.floor.nodes.filter((n) => every.has(n.id)).length;
   const ways = [...new Set(nights.flatMap((n) => n.entries.map((e) => e.nodeId)))];
-  const perNight = nights.map((n) => openWindows(n.level, n.entries.map((e) => e.nodeId)));
+  const budget = STATE_BUDGET / nights.length;
+  const fits = nights.every((n) => searchStates(n.level) <= budget);
+  const perNight = fits ? nights.map((n) => openWindows(n.level, n.entries.map((e) => e.nodeId), AUTOPLAY_MAX_TURNS, budget)) : [];
   const open = perNight.reduce((sum, w) => sum + w.open, 0);
   const moments = perNight.reduce((sum, w) => sum + w.moments, 0);
   const at = perNight.findIndex((w) => w.first);
@@ -131,7 +135,7 @@ export function measureNights(nights: readonly MeasureNight[]): SetupMeasure {
     watched: watchedCount,
     coverage: percent(watchedCount, positions),
     entries: ways.length,
-    windows: { open, moments, share: moments === 0 ? 0 : Math.round((100 * open) / moments), first },
+    windows: fits ? { measured: true, open, moments, share: moments === 0 ? 0 : Math.round((100 * open) / moments), first } : NOT_MEASURED,
     openNights: perNight.filter((w) => w.open > 0).length,
     nights: nights.length,
     noun: objectiveNoun(level.missionId),
@@ -160,37 +164,56 @@ export function coverageLine(m: SetupMeasure): string {
 /** "the 10 nights the crew plays", or "the one night" when there is one. */
 const nightsPhrase = (m: SetupMeasure) => (m.nights === 1 ? "the one night the crew plays" : `the ${m.nights} nights the crew plays`);
 
-/** "Open windows: 7 of 80 moments in the 10 nights the crew plays let a crew in and out unseen." */
+/**
+ * "Open windows: 7 of 80 moments in the 10 nights the crew plays let a crew in
+ * and out unseen. A moment is a way in at any turn of a night; the attempts all
+ * start at turn 0." The second sentence keeps the count from being read
+ * against the attempts': it counts every turn a crew could step in on, and the
+ * batch's attempts all step in at turn 0 (issue 144 review). "Open windows:
+ * not measured on a floor this size." when the nights were over `STATE_BUDGET`.
+ */
 export function windowsLine(m: SetupMeasure): string {
   if (m.entries === 0) return "Open windows: this floor has no way in to measure.";
+  if (!m.windows.measured) return "Open windows: not measured on a floor this size.";
   const { open, moments } = m.windows;
-  return `Open windows: ${open} of ${moments} moments in ${nightsPhrase(m)} ${open === 1 ? "lets" : "let"} a crew in and out unseen.`;
+  return `Open windows: ${open} of ${moments} moments in ${nightsPhrase(m)} ${open === 1 ? "lets" : "let"} a crew in and out unseen. A moment is a way in at any turn of a night; the attempts all start at turn 0.`;
 }
 
 /**
- * Which way and when: "The first opens on night 1, turn 0: Freight Lift Lobby →
- * Dock Corridor → Records Room → Dock Corridor → Freight Lift Lobby." Null when
- * none is open.
+ * Which way and when, and whether an attempt could use it: "The first opens on
+ * night 1, turn 0, when the attempts start: Freight Lift Lobby → Dock Corridor
+ * → Records Room → Dock Corridor → Freight Lift Lobby." or "… turn 1, a turn no
+ * attempt starts on: …". Null when none is open.
  */
 export function firstWindowLine(m: SetupMeasure): string | null {
   if (!m.windows.first || !m.firstRooms) return null;
-  const when = m.nights === 1 ? `turn ${m.windows.first.turn}` : `night ${m.firstNight}, turn ${m.windows.first.turn}`;
-  return `The first opens on ${when}: ${m.firstRooms.join(" → ")}.`;
+  const { turn } = m.windows.first;
+  const when = m.nights === 1 ? `turn ${turn}` : `night ${m.firstNight}, turn ${turn}`;
+  const use = turn === 0 ? "when the attempts start" : "a turn no attempt starts on";
+  return `The first opens on ${when}, ${use}: ${m.firstRooms.join(" → ")}.`;
 }
 
 /**
  * With no open window on any night, the attempts that got out were seen or
  * heard on the way: "No moment in the 10 nights the crew plays lets a crew in
  * and out unseen, so the 17 attempts that got out were seen or heard and not
- * caught." Null when none got out or any window is open.
+ * caught." Null when none got out, any window is open, or the windows were not
+ * measured.
  */
 export function timingLine(m: SetupMeasure, escaped: number): string | null {
-  if (escaped <= 0 || m.windows.open > 0 || m.entries === 0) return null;
+  if (escaped <= 0 || !m.windows.measured || m.windows.open > 0 || m.entries === 0) return null;
   const who = escaped === 1 ? "the one attempt that got out was" : `the ${escaped} attempts that got out were`;
   return `No moment in ${nightsPhrase(m)} lets a crew in and out unseen, so ${who} seen or heard and not caught.`;
 }
 
-/** "Coverage 43% → 50%, open windows 7 → 1". */
+/** "40 of 80", or "not measured". */
+const windowsOf = (m: SetupMeasure) => (m.windows.measured ? `${m.windows.open} of ${m.windows.moments}` : "not measured");
+
+/**
+ * "Coverage 43% → 50%, open windows 40 of 80 → 20 of 80". Each side keeps its
+ * own total, so a change in the number of moments (a slower guard makes a
+ * longer night) never reads as a change in how open the floor is.
+ */
 export function measureChange(a: SetupMeasure, b: SetupMeasure): string {
-  return `Coverage ${a.coverage}% → ${b.coverage}%, open windows ${a.windows.open} → ${b.windows.open}`;
+  return `Coverage ${a.coverage}% → ${b.coverage}%, open windows ${windowsOf(a)} → ${windowsOf(b)}`;
 }
