@@ -43,9 +43,9 @@ export const LIGHT = Object.freeze({
   panelSpacingM: 2.44,
   panelLongM: 1.22,
   panelShortM: 0.61,
-  panelWallM: 0.7,
+  panelWallM: 0.45,
   /** Exposure before the ACES curve: the photographs' walls come out near white. */
-  exposure: 1.05,
+  exposure: 1.18,
 });
 
 /** A light the shader reads: where (plan x, y), its height, its reach and strength. */
@@ -128,17 +128,23 @@ export function bakeOcclusion(plan: ScanPlan): Occlusion {
 export function troffers(plan: ScanPlan): { centre: Vec; along: Vec }[] {
   const { floor } = plan;
   const step = LIGHT.panelSpacingM;
+  const tile = 0.61;
   const out: { centre: Vec; along: Vec }[] = [];
   const uB = floor.u0 + floor.cols * floor.cell;
   const vB = floor.v0 + floor.rows * floor.cell;
   const along = fromCellFrame(floor, 1, 0);
   const origin = fromCellFrame(floor, 0, 0);
   const dir = { x: along.x - origin.x, y: along.y - origin.y };
-  for (let u = Math.ceil(floor.u0 / step) * step + step / 2; u < uB; u += step) {
-    for (let v = Math.ceil(floor.v0 / step) * step + step / 2; v < vB; v += step) {
+  // Candidates on the ceiling's tile grid; taken greedily, each at least a panel spacing from the last, so a
+  // corridor gets its row down the middle as a room gets its grid.
+  const taken: Vec[] = [];
+  for (let v = Math.ceil(floor.v0 / tile) * tile + tile / 2; v < vB; v += tile) {
+    for (let u = Math.ceil(floor.u0 / tile) * tile; u < uB; u += tile) {
       const p = fromCellFrame(floor, u, v);
       if (!onPlanFloor(floor, p.x, p.y)) continue;
+      if (taken.some((q) => Math.abs(q.x - p.x) < step && Math.abs(q.y - p.y) < step && Math.hypot(q.x - p.x, q.y - p.y) < step * 0.92)) continue;
       if (plan.walls.some((w) => distanceTo(w, p) < LIGHT.panelWallM) || plan.glass.some((g) => distanceTo(g, p) < LIGHT.panelWallM)) continue;
+      taken.push(p);
       out.push({ centre: p, along: dir });
     }
   }
@@ -184,7 +190,7 @@ void main() {
   vec2 cells = abs(fract(vUv * vec2(6.0, 3.0)) - 0.5);
   float louvre = 0.93 + 0.07 * smoothstep(0.35, 0.5, max(cells.x, cells.y));
   float edge = smoothstep(0.0, 0.04, min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y)));
-  gl_FragColor = vec4(mix(vec3(0.82), vec3(1.0, 0.995, 0.97) * louvre, edge), 1.0);
+  gl_FragColor = vec4(mix(vec3(0.55), vec3(1.0, 1.0, 0.98) * louvre, edge), 1.0);
 }`,
       side: DoubleSide,
     }),
@@ -197,7 +203,7 @@ void main() {
       fragmentShader: `varying vec2 vUv;
 void main() {
   vec2 d = (vUv - 0.5) * 2.0;
-  float glow = pow(max(0.0, 1.0 - length(d * vec2(1.0, 1.0))), 2.0) * 0.22;
+  float glow = pow(max(0.0, 1.0 - length(d * vec2(1.0, 1.0))), 2.0) * 0.35;
   gl_FragColor = vec4(vec3(1.0, 0.98, 0.94) * glow, 1.0);
 }`,
       transparent: true,

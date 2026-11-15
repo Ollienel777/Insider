@@ -399,7 +399,7 @@ void main() {
     c *= 1.0 + 0.6 * field(uLit, square);
   } else if (vKind < 2.5) {
     // The ceiling: a drop ceiling's grid, the tiles' fissured face, its edges a touch shaded.
-    c *= 0.97 + 0.04 * noise(square * 40.0);
+    c *= 0.93 + 0.04 * noise(square * 40.0);
     c *= mix(1.0, field(uAo, square), 0.5);
     vec2 g = abs(fract(square / uTile) - 0.5) * uTile;
     if (min(0.5 * uTile - g.x, 0.5 * uTile - g.y) < 0.012) c *= 0.82;
@@ -407,7 +407,12 @@ void main() {
   }
   // Into light, exposed for the photographs' bright whites, through ACES, and back.
   vec3 linear = pow(max(c * shade, 0.0), vec3(2.2)) * uExposure;
-  gl_FragColor = vec4(pow(aces(linear), vec3(1.0 / 2.2)), 1.0);
+  vec3 graded = pow(aces(linear), vec3(1.0 / 2.2));
+  // The photographs' look: a little more contrast and colour, whites lifted.
+  float l = dot(graded, vec3(0.299, 0.587, 0.114));
+  graded = mix(vec3(l), graded, 1.18);
+  graded = clamp((graded - 0.5) * 1.12 + 0.53, 0.0, 1.0);
+  gl_FragColor = vec4(graded, 1.0);
 }`,
       side: DoubleSide,
     });
@@ -1172,17 +1177,23 @@ void main() {
       memo.set(values, found);
       return found;
     };
+    let percentile = 0.75;
     const middle = (values: Rgb[]): Rgb => {
       // By brightness, so the colour is one texel's own and not a mix of three.
       const sorted = [...values].sort((p, q) => p[0] + p[1] + p[2] - (q[0] + q[1] + q[2]));
       // A little over the middle: what the photographs show of a wall in shade is the same wall, lit.
-      return sorted[Math.floor(sorted.length * 0.75)];
+      return sorted[Math.floor(sorted.length * percentile)];
     };
     const wallAll = median(allWalls, FALLBACK.wall);
     const floorAll = median(allFloors, FALLBACK.floor);
     const pieceAll = median(allPieces, FALLBACK.furniture);
     const colour = this.drawn.geometry.getAttribute("colour") as BufferAttribute;
-    const set = (start: number, count: number, c: Rgb) => {
+    // White balance: the walls are white paint, so their cast in the photographs is the camera's, taken out of every colour.
+    const grey = (wallAll[0] + wallAll[1] + wallAll[2]) / 3;
+    const gain: Rgb = [grey / Math.max(wallAll[0], 1e-3), grey / Math.max(wallAll[1], 1e-3), grey / Math.max(wallAll[2], 1e-3)];
+    const balance = (c: Rgb): Rgb => [Math.min(1, c[0] * gain[0]), Math.min(1, c[1] * gain[1]), Math.min(1, c[2] * gain[2])];
+    const set = (start: number, count: number, raw: Rgb) => {
+      const c = balance(raw);
       for (let v = start; v < start + count; v++) colour.setXYZ(v, c[0], c[1], c[2]);
     };
     const ceilingColour = median(ceiling, FALLBACK.ceiling);
@@ -1208,18 +1219,27 @@ void main() {
     const material = (c: Rgb) => {
       const sum = c[0] + c[1] + c[2];
       const spread = Math.max(...c) - Math.min(...c);
-      return c[0] - c[2] > 0.2 && sum < 1.95 && sum > 0.6 ? 1 : sum > 2.3 && spread < 0.05 ? 2 : 0;
+      return c[0] - c[2] > 0.13 && sum < 1.95 && sum > 0.6 ? 1 : sum > 2.3 && spread < 0.05 ? 2 : 0;
     };
+    // A floor's colour from its middling texels: a polished floor's glare is not its colour.
+    percentile = 0.4;
+    memo.clear();
+    const floorMid = median(allFloors, FALLBACK.floor);
     for (const run of this.floorRuns) {
-      const c = median(floorsBy.get(run.room), floorAll);
+      const raw = median(floorsBy.get(run.room), floorMid);
+      const kind = material(balance(raw));
+      // Carpet is the office's grey-blue loop pile, as light as the photographs show it.
+      const l = (raw[0] + raw[1] + raw[2]) / 3;
+      const c: Rgb = kind === 0 ? [l * 0.92, l * 0.96, l * 1.04] : raw;
       set(run.start, run.count, c);
-      for (let v = run.start; v < run.start + run.count; v++) pattern.setX(v, material(c));
+      for (let v = run.start; v < run.start + run.count; v++) pattern.setX(v, kind);
     }
     pattern.needsUpdate = true;
     set(this.floorStart, 6, floorAll);
     colour.needsUpdate = true;
     const b = median(base, [0.24, 0.23, 0.22]);
-    (this.drawMaterial.uniforms.uBase.value as Vector3).set(b[0], b[1], b[2]);
+    const bb = balance(b);
+    (this.drawMaterial.uniforms.uBase.value as Vector3).set(bb[0], bb[1], bb[2]);
     // The carpet's grain: as much as its colour varies, within reason.
     if (grains.length > 16) {
       const mean = grains.reduce((sum, g) => sum + g, 0) / grains.length;
