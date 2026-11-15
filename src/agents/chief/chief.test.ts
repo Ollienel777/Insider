@@ -8,6 +8,7 @@ import { CHIEF_RATIONALE_MAX, LevelManifest } from "@/domain";
 import cached from "../../../data/levels/F1.romaine-1974.json";
 import { POST } from "../../app/api/chief/route";
 import { CHIEF_PROMPT_HEAD, chiefMessages, chiefTemplate, ChiefRequest, loadChiefRecording, matchTurn, replanChief } from "./index";
+import { placeName } from "./template";
 
 const manifest = LevelManifest.parse(structuredClone(cached));
 
@@ -87,6 +88,17 @@ describe("the template", () => {
     expect(orders.rationale).toBe(
       "G1 has eyes on them in the Main Corridor. G1 and G2 converge on it. G3 blocks the Loading dock. G4 holds the Records room. Lock the Records room.",
     );
+  });
+
+  it("speaks a suite by its number, without the board's (vacant) tag, as on a kit building's floor (issue 140)", () => {
+    const orders = chiefTemplate(manifest, trip({ lastKnownZone: "quiet-2210" }));
+    expect(orders.rationale).toMatch(/^C2 has them in Suite 2210\. /);
+    expect(orders.rationale).not.toMatch(/\(vacant\)|the Suite/);
+    // Names that aren't a numbered suite keep their article.
+    expect(orders.rationale).toContain("blocks the Loading dock.");
+    // Only the board's "(vacant)" tag comes off; any other bracket is part of the name.
+    expect(placeName("Lobby (north)")).toBe("the Lobby (north)");
+    expect(placeName("Suite 2210 (Vacant)")).toBe("Suite 2210");
   });
 
   it("sweeps where they were lost on the way down, stands down at Calm, and stays within the rationale's length", () => {

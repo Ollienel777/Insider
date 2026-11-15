@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { getMatterport } from "@/adapters/matterport";
 import { BoardView } from "@/components/run/board-view";
-import { saveCrewPlan } from "@/components/run/crew-plan-store";
+import { saveCrewPlan, storedPlanOf } from "@/components/run/crew-plan-store";
 import { LensLegend, LensToggle, useLayerLens } from "@/components/run/layer-lens";
 import { loadRunHistory, postureOf } from "@/components/run/run-history";
 import { RUN_SEED, type RunBuilding } from "@/components/run/run-screen";
@@ -20,7 +20,7 @@ import { placeOrFixture } from "@/components/run/scan-fallback";
 import { ScanWait, useWaitsOnScan } from "@/components/run/scan-wait";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { validatePlan } from "@/level/validate-plan";
-import { askCrew, crewRequest, EXAMPLE_ORDER, type CrewAnswer } from "./crew-request";
+import { askCrewOrBoard, crewRequest, EXAMPLE_ORDER, type CrewAnswer } from "./crew-request";
 import { CrewReply, ghostOf } from "./crew-reply";
 import { warmModel } from "./warm-request";
 
@@ -127,12 +127,14 @@ export function PlanScreen({
     pending.current = controller;
     setAsk({ status: "planning" });
     try {
-      const reply = await askCrew(crewRequest(building.id, text, missionId), { signal: controller.signal });
+      // No reply and no recording (a kit building, issue 140): the plan is worked out from the board.
+      const reply = await askCrewOrBoard(crewRequest(building.id, text, missionId), placed, { signal: controller.signal });
       if (!controller.signal.aborted) {
         setAsk({ status: "answered", answer: reply });
         // The run follows the briefed plan (beat 4 into beat 5). A kit building's is derived from its
         // real record, so it is held in memory, not stored (#95).
-        saveCrewPlan(building.id, { plan: reply.plan, recorded: reply.recorded }, undefined, missionId, source === "costar");
+        // Still marked when the board worked it out, so the Run heads it as the board's (issue 142).
+        saveCrewPlan(building.id, storedPlanOf(reply), undefined, missionId, source === "costar");
       }
     } catch (error) {
       if (!controller.signal.aborted) setAsk({ status: "error", message: error instanceof Error ? error.message : String(error) });
@@ -211,7 +213,7 @@ export function PlanScreen({
           <div className="flex h-16 shrink-0 items-center gap-6 px-6 text-sm text-text-2">
             {checked ? (
               <>
-                <Legend swatch={<span className="h-1 w-6 rounded-sm bg-accent opacity-50" />}>The crew&apos;s plan</Legend>
+                <Legend swatch={<span className="h-1 w-6 rounded-sm bg-accent opacity-50" />}>{answer?.source === "board" ? "The board's plan" : "The crew's plan"}</Legend>
                 {checked.warnings.some((w) => w.by) ? (
                   <Legend swatch={<span className="size-3 rounded-full border-2 border-warning" />}>Where it&apos;s seen</Legend>
                 ) : null}
