@@ -18,7 +18,7 @@ interface Props {
   /** Which of the mesh's repairs to make (scan-view.ts). */
   repair: "all" | "none" | "shards" | "planes";
   /** What is drawn: the panoramas as spheres, or the mesh. */
-  view: "spheres" | "mesh" | "photo";
+  view: "spheres" | "mesh" | "photo" | "demo";
   /** In the photo view: how far the picture follows the eye, metres; null for the default. */
   reach: number | null;
   debug: boolean;
@@ -157,7 +157,9 @@ export function ScanWalkScreen({ faces, mesh, detail, textured, fill, repair, vi
           <Row label="Speed">{hud ? `${hud.speed.toFixed(1)} m/s · ${Math.round(hud.fps)} fps` : "…"}</Row>
           <Row label="Mouse">{hud ? `${hud.sensitivity.toFixed(2)}× sensitivity` : "…"}</Row>
           <Row label="View">
-            {hud?.shows === "spheres" && hud.reach !== null
+            {hud?.shows === "spheres" && view === "demo"
+              ? `Nearest photo (${hud.faces}), as taken; zooms with the walk`
+              : hud?.shows === "spheres" && hud.reach !== null
               ? `Nearest photo (${hud.faces}), follows the eye ${hud.reach.toFixed(2)} m`
               : hud?.shows === "spheres"
               ? `Panoramas as spheres (${hud.faces}), each at its own depth`

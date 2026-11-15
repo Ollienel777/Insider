@@ -230,6 +230,8 @@ export class PanoStore {
   /** In the "photo" blend: the panorama ranked first (kept until another is clearly nearer), by index in the scan's list, or -1. */
   /** Whether the ranked lead's full cube is loaded before any other (the photo view). */
   leadFirst = false;
+  /** Panoramas (by index in the scan's list) whose full cubes come before any other, in order; empty: the ranked lead and the next. */
+  prefer: number[] = [];
 
   get leadIndex(): number {
     return this.ranked[0]?.index ?? -1;
@@ -711,7 +713,7 @@ export class PanoStore {
     let order = sharpOrder({ positions: this.positions, eye, velocity, neighbours, horizon: HORIZON });
     if (this.leadFirst) {
       // The photo view shows the lead alone: its full cube comes before any other, then the next in line.
-      const first = this.ranked.slice(0, 2).map((e) => shown.indexOf(e)).filter((at) => at >= 0);
+      const first = (this.prefer.length > 0 ? this.prefer.map((index) => shown.findIndex((e) => e.index === index)) : this.ranked.slice(0, 2).map((e) => shown.indexOf(e))).filter((at) => at >= 0);
       order = [...first, ...order.filter((at) => !first.includes(at))];
     }
     const have = new Set<number>();

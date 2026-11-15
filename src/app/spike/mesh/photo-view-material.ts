@@ -40,6 +40,8 @@ uniform vec3 uShift;
 /** The mesh's fitted planes near the panorama (normal, offset: normal · p = offset), and how many are set. */
 uniform vec4 uPlanes[${PLANES}];
 uniform int uPlaneCount;
+/** 1: the demo view. Nothing is displaced: the sphere is a plain skybox round the camera, exactly the photograph. */
+uniform float uFlat;
 varying vec3 vDirection;
 /** Where the panorama looks just past this vertex's edge, on its far side: what a stretched triangle is painted with. */
 varying vec3 vBack;
@@ -75,6 +77,12 @@ vec2 ring(vec3 direction, vec3 across, vec3 up, float radius, float own) {
 void main() {
   vec3 direction = normalize(position);
   vDirection = direction;
+  if (uFlat > 0.5) {
+    vBack = direction;
+    vConfidence = 1.0;
+    gl_Position = projectionMatrix * viewMatrix * vec4(cameraPosition + direction * 10.0, 1.0);
+    return;
+  }
   vec3 across = normalize(cross(direction, abs(direction.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
   vec3 up = cross(direction, across);
   float s[9];
@@ -174,6 +182,7 @@ uniform samplerCube uLow${slot};
 uniform float uPixel;
 /** 1 shows each pixel's confidence in red (debug). */
 uniform float uShowConfidence;
+uniform float uFlat;
 varying vec3 vDirection;
 varying vec3 vBack;
 varying float vConfidence;
@@ -182,7 +191,7 @@ void main() {
   // A triangle stretched across a jump in depth spans far more of the screen than of the panorama:
   // paint it from the far side of the edge (what the step uncovers), not the edge itself drawn out.
   float stretch = length(fwidth(vDirection)) / uPixel;
-  vec3 direction = normalize(mix(vBack, vDirection, smoothstep(0.2, 0.45, stretch)));
+  vec3 direction = uFlat > 0.5 ? vDirection : normalize(mix(vBack, vDirection, smoothstep(0.2, 0.45, stretch)));
   vec3 lookup = uPanoInv[${slot}] * direction;
   float sharp = uPanoSharp[${slot}];
   vec3 colour = sharp >= 1.0 ? textureCube(uPano${slot}, lookup).rgb
@@ -196,7 +205,7 @@ void main() {
 
 /** The material for the panorama in the store's slot `slot`, drawn alone and whole. `uShift` is set each frame. */
 export function createPhotoViewMaterial(panos: PhotoUniforms, slot: number): ShaderMaterial {
-  const uniforms: Record<string, IUniform> = { ...panos, uShift: { value: new Vector3() }, uPlanes: { value: Array.from({ length: PLANES }, () => new Vector4()) }, uPlaneCount: { value: 0 }, uShowConfidence: { value: 0 }, uPixel: { value: 0.001 } };
+  const uniforms: Record<string, IUniform> = { ...panos, uShift: { value: new Vector3() }, uPlanes: { value: Array.from({ length: PLANES }, () => new Vector4()) }, uPlaneCount: { value: 0 }, uFlat: { value: 0 }, uShowConfidence: { value: 0 }, uPixel: { value: 0.001 } };
   return new ShaderMaterial({
     uniforms,
     vertexShader: vertex(slot),

@@ -18,6 +18,7 @@ import {
   DoubleSide,
   LinearFilter,
   LinearMipmapLinearFilter,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   OrthographicCamera,
@@ -95,8 +96,12 @@ export interface ScanViewOptions {
    * mesh alone, painted from the panoramas and its textures. "photo" (the
    * default): the nearest panorama alone, warped a little by its depth
    * (photo-view-material.ts), dissolving into the next when it changes.
+   * "demo" (the default): the nearest panorama in sight as a plain skybox,
+   * never displaced, with a zoom toward the walk for the feel of moving
+   * forward, dissolving into the next (the street-view walk); the game's
+   * own things drawn over it, hidden behind the mesh's walls.
    */
-  view?: "spheres" | "mesh" | "photo";
+  view?: "spheres" | "mesh" | "photo" | "demo";
   /** In the photo view: how far from its scan position the picture follows the eye, metres (photo-view-material.ts's REACH by default). */
   reach?: number;
   /** Vertical field of view, degrees. */
@@ -198,6 +203,14 @@ const LEAD_TAKES = 0.56;
 const LEAD_IN = 0.14;
 /** In the photo view: seconds one panorama takes to dissolve into the next. */
 const PHOTO_FADE = 0.25;
+/** The demo view: seconds a dissolve takes; how much a panorama's distance counts down for each metre it lies ahead of the walk (up to 2); how much better another must be to take over, metres; how far the one shown may be, metres, while the next one's full cube is awaited. */
+const DEMO_FADE = 0.38;
+const DEMO_AHEAD = 0.35;
+const DEMO_HOLD = 0.3;
+const DEMO_SHARP_HOLD = 3;
+/** The demo view's zoom: this much narrower a picture for each whole span walked past its panorama, and the span when no next one is found, metres. */
+const DEMO_ZOOM = 0.28;
+const DEMO_SPAN = 1.8;
 /** A patch's picture is this fine, metres a pixel, and at most this many pixels a side. */
 const PATCH_TEXEL = 0.012;
 const PATCH_PIXELS = 256;
@@ -282,6 +295,13 @@ export class ScanView {
   private readonly sphereView: boolean;
   /** The photo view: the nearest panorama alone, one mesh per store slot, in a scene of their own. */
   private readonly photoView: boolean;
+  /** The demo view (the photo view's machinery, drawn flat): see `ScanViewOptions.view`. */
+  private readonly demoView: boolean;
+  /** The demo view: the last direction walked (x, z, unit), and the mesh again for hiding the game's things behind walls. */
+  private travel: [number, number] | null = null;
+  private readonly occluderScene = new Scene();
+  private occluder: Mesh | null = null;
+  private readonly owned = new Set<object>();
   private readonly photoScene = new Scene();
   private photoMeshes: Mesh[] = [];
   /** The panorama shown, the one it is dissolving from (-1: none), and how far the dissolve has come (0 to 1). */
@@ -345,7 +365,8 @@ export class ScanView {
     this.fillMaterial = createPhotoMaterial(this.photo, "stand-in");
     this.fanMaterial = createPhotoMaterial(this.photo, "stand-in", null, 2);
     this.sphereView = options.view === "spheres";
-    this.photoView = options.view === undefined || options.view === "photo";
+    this.demoView = options.view === undefined || options.view === "demo";
+    this.photoView = options.view === "photo" || this.demoView;
     this.reachShown = options.reach ?? REACH;
     if (this.photoView) {
       const { directions, index } = cubeSphere(SPHERE_CELLS);
@@ -353,7 +374,14 @@ export class ScanView {
       sphere.setAttribute("position", new BufferAttribute(directions, 3));
       sphere.setIndex(new BufferAttribute(index, 1));
       this.photoMeshes = Array.from({ length: SLOTS }, (_, slot) => {
-        const mesh = new Mesh(sphere, createPhotoViewMaterial(this.photo, slot));
+        const material = createPhotoViewMaterial(this.photo, slot);
+        if (this.demoView) {
+          // A skybox: nothing of it is in front of anything.
+          material.uniforms.uFlat.value = 1;
+          material.depthTest = false;
+          material.depthWrite = false;
+        }
+        const mesh = new Mesh(sphere, material);
         mesh.frustumCulled = false;
         mesh.visible = false;
         this.photoScene.add(mesh);
@@ -376,6 +404,7 @@ export class ScanView {
         mesh.renderOrder = -10 + slot;
         mesh.visible = false;
         this.scene.add(mesh);
+        this.owned.add(mesh);
         return mesh;
       });
       // The mesh is drawn first and is only ever behind: the spheres start from a clean depth, over it.
@@ -386,6 +415,7 @@ export class ScanView {
     this.backdrop.renderOrder = -40;
     this.backdrop.frustumCulled = false;
     this.scene.add(this.backdrop);
+    this.owned.add(this.backdrop);
     this.state = {
       phase: "manifest",
       message: null,
@@ -415,6 +445,8 @@ export class ScanView {
     this.camera.rotation.set(pitch, yaw, 0);
     this.backdrop.position.copy(this.camera.position);
     const velocity = this.velocity ?? poseVelocity(this.lastPose, this.pose, dt);
+    const pace = Math.hypot(velocity[0], velocity[1]);
+    if (pace > 0.2) this.travel = [velocity[0] / pace, velocity[1] / pace];
     this.lastPose = { ...this.pose };
     this.velocity = null;
     this.showTextures(dt);
@@ -455,7 +487,8 @@ export class ScanView {
         uniforms.uSolid.value = front ? this.leadIn : 1;
       });
     }
-    if (this.photoView) this.choosePhoto(dt);
+    if (this.demoView) this.chooseDemo(dt);
+    else if (this.photoView) this.choosePhoto(dt);
     this.draw(null);
   }
 
@@ -475,8 +508,97 @@ export class ScanView {
     if (this.photoFade >= 1 || !inUse(this.photoFrom)) this.photoFrom = -1;
   }
 
+  /**
+   * The demo view's lead: the nearest panorama the eye can see (none behind
+   * a wall), helped toward the ones ahead while walking so the dissolves
+   * lead forward, and held until another is clearly better. A new one whose
+   * full cube is not in yet waits, while the one shown is sharp and not far,
+   * rather than show the small cube. The two ahead are fetched first.
+   */
+  private chooseDemo(dt: number): void {
+    const panos = this.panos;
+    if (!panos) return;
+    const { x, y, z } = this.pose;
+    const eye: Vec3 = [x, y, z];
+    const travel = this.travel;
+    const slotOf = (index: number) => this.used.findIndex((u) => u.index === index);
+    const sharp = (index: number) => ((this.photo.uPanoSharp.value as number[])[slotOf(index)] ?? 0) >= 0.99;
+    const ahead = (o: Vec3) => (travel ? (o[0] - x) * travel[0] + (o[2] - z) * travel[1] : 0);
+    const cost = (u: PanoUse) => {
+      const reach = Math.hypot(u.origin[0] - x, u.origin[1] - y, u.origin[2] - z);
+      if (reach > 0.3 && panos.blocked?.(eye, u.origin)) return Infinity;
+      return reach - DEMO_AHEAD * Math.min(2, Math.max(0, ahead(u.origin)));
+    };
+    let best: PanoUse | null = null;
+    let bestCost = Infinity;
+    for (const u of this.used) {
+      const c = cost(u);
+      if (c < bestCost) {
+        best = u;
+        bestCost = c;
+      }
+    }
+    const held = this.used.find((u) => u.index === this.photoLead);
+    if (!best) best = held ?? this.used[0] ?? null;
+    if (best && best.index !== this.photoLead) {
+      const heldCost = held ? cost(held) : Infinity;
+      const heldReach = held ? Math.hypot(held.origin[0] - x, held.origin[1] - y, held.origin[2] - z) : Infinity;
+      const better = !held || bestCost < heldCost - DEMO_HOLD;
+      const waitSharp = held !== undefined && heldCost < Infinity && !sharp(best.index) && sharp(held.index) && heldReach < DEMO_SHARP_HOLD;
+      if (better && !waitSharp) {
+        this.photoFrom = held ? held.index : -1;
+        this.photoFade = held ? 0 : 1;
+        this.photoLead = best.index;
+      }
+    }
+    this.photoFade = Math.min(1, this.photoFade + dt / DEMO_FADE);
+    if (this.photoFade >= 1 || slotOf(this.photoFrom) < 0) this.photoFrom = -1;
+    // The lead's full cube first, then the two nearest ahead of the walk.
+    const positions = this.scanPositions();
+    const next = travel
+      ? positions
+          .map((o, index) => ({ index, along: ahead(o), reach: Math.hypot(o[0] - x, o[2] - z) }))
+          .filter((c) => c.along > 0.3 && c.index !== this.photoLead)
+          .sort((a, b) => a.reach - b.reach)
+          .slice(0, 2)
+          .map((c) => c.index)
+      : [];
+    panos.prefer = this.photoLead >= 0 ? [this.photoLead, ...next] : next;
+  }
+
+  /**
+   * The demo view's zoom for the panorama at `origin`: how far the eye has
+   * come past it along the walk, as a part of the way to the next, makes the
+   * picture narrower (forward) or, behind it, wider; less as the view turns
+   * from the walk. Returns the factor and the screen point it is centred on
+   * (the walk's direction, in normalised device coordinates).
+   */
+  private demoZoom(origin: Vector3): { factor: number; x: number; y: number } {
+    const travel = this.travel;
+    if (!travel) return { factor: 1, x: 0, y: 0 };
+    const eye = this.camera.position;
+    const along = (eye.x - origin.x) * travel[0] + (eye.z - origin.z) * travel[1];
+    // The span to the next panorama ahead of this one, or a typical one.
+    let span = DEMO_SPAN;
+    for (const o of this.scanPositions()) {
+      const ahead = (o[0] - origin.x) * travel[0] + (o[2] - origin.z) * travel[1];
+      const reach = Math.hypot(o[0] - origin.x, o[2] - origin.z);
+      if (ahead > 0.5 && reach < 4 && reach < span) span = reach;
+    }
+    const progress = Math.min(0.75, Math.max(-0.6, along / span));
+    const point = new Vector3(eye.x + travel[0] * 10, eye.y, eye.z + travel[1] * 10).project(this.camera);
+    const look = this.camera.getWorldDirection(new Vector3());
+    const facing = Math.max(0, look.x * travel[0] + look.z * travel[1]);
+    const inFront = point.z < 1;
+    return {
+      factor: 1 + DEMO_ZOOM * progress * facing,
+      x: inFront ? Math.min(0.85, Math.max(-0.85, point.x)) : 0,
+      y: inFront ? Math.min(0.85, Math.max(-0.85, point.y)) : 0,
+    };
+  }
+
   /** Draws the photo view's panorama in store slot `slot` alone, to `target`, from the camera, warped for its clamped offset. */
-  private drawPhotoSlot(slot: number, target: WebGLRenderTarget | null): void {
+  private drawPhotoSlot(slot: number, target: WebGLRenderTarget | null, extraZoom = 1): void {
     const origin = (this.photo.uPanoPos.value as Vector3[])[slot];
     const eye = this.camera.position;
     const shift = photoShift([eye.x, eye.y, eye.z], [origin.x, origin.y, origin.z], this.reachShown);
@@ -488,7 +610,47 @@ export class ScanView {
     const height = target ? target.height : this.renderer.getDrawingBufferSize(new Vector2()).y;
     uniforms.uPixel.value = (this.camera.fov * Math.PI) / 180 / Math.max(1, height);
     this.renderer.setRenderTarget(target);
+    if (!this.demoView) {
+      this.renderer.render(this.photoScene, this.camera);
+      return;
+    }
+    // The zoom, in screen space after the projection: a scale about a screen point keeps every line straight.
+    const zoom = this.demoZoom(origin);
+    const k = zoom.factor * extraZoom;
+    const projection = this.camera.projectionMatrix.clone();
+    const inverse = this.camera.projectionMatrixInverse.clone();
+    const scale = new Matrix4().set(k, 0, 0, zoom.x * (1 - k), 0, k, 0, zoom.y * (1 - k), 0, 0, 1, 0, 0, 0, 0, 1);
+    this.camera.projectionMatrix.premultiply(scale);
+    this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
     this.renderer.render(this.photoScene, this.camera);
+    this.camera.projectionMatrix.copy(projection);
+    this.camera.projectionMatrixInverse.copy(inverse);
+  }
+
+  /** The demo view: the game's own things over the photograph, at their places, hidden where the mesh's walls stand in front of them. */
+  private drawActors(target: WebGLRenderTarget | null): void {
+    const mine: { object: { visible: boolean }; visible: boolean }[] = [];
+    let any = false;
+    for (const child of this.scene.children) {
+      if (this.owned.has(child)) {
+        mine.push({ object: child, visible: child.visible });
+        child.visible = false;
+      } else if (child.visible) any = true;
+    }
+    if (any) {
+      if (!this.occluder && this.geometry) {
+        this.occluder = new Mesh(this.geometry, new MeshBasicMaterial({ colorWrite: false, side: DoubleSide }));
+        this.occluderScene.add(this.occluder);
+      }
+      const clear = this.renderer.autoClear;
+      this.renderer.autoClear = false;
+      this.renderer.setRenderTarget(target);
+      this.renderer.clearDepth();
+      this.renderer.render(this.occluderScene, this.camera);
+      this.renderer.render(this.scene, this.camera);
+      this.renderer.autoClear = clear;
+    }
+    for (const { object, visible } of mine) object.visible = visible;
   }
 
   /** Hands slot `slot`'s sphere the planes that matter to the panorama at `origin`, when they have changed. */
@@ -515,9 +677,10 @@ export class ScanView {
         this.fadeTarget?.dispose();
         this.fadeTarget = new WebGLRenderTarget(size.x, size.y, { samples: 4 });
       }
-      this.drawPhotoSlot(from, this.fadeTarget);
-      this.drawPhotoSlot(lead, target);
+      // The old picture keeps zooming in toward the new spot; the new one comes in from a little wider.
       const t = this.photoFade;
+      this.drawPhotoSlot(from, this.fadeTarget, this.demoView ? 1 + 0.08 * t : 1);
+      this.drawPhotoSlot(lead, target, this.demoView ? 1 - 0.06 * (1 - t) : 1);
       this.fadeMaterial.uniforms.tMap.value = this.fadeTarget.texture;
       this.fadeMaterial.uniforms.uAlpha.value = 1 - t * t * (3 - 2 * t);
       const clear = this.renderer.autoClear;
@@ -525,6 +688,7 @@ export class ScanView {
       this.renderer.render(this.fadeScene, this.fadeCamera);
       this.renderer.autoClear = clear;
     } else this.drawPhotoSlot(lead, target);
+    if (this.demoView) this.drawActors(target);
     this.renderer.setRenderTarget(before);
     return true;
   }
@@ -707,6 +871,7 @@ export class ScanView {
     });
     this.wire = new Mesh(this.drawn?.geometry ?? this.geometry, material);
     this.scene.add(this.wire);
+    this.owned.add(this.wire);
   }
 
   /** The current view's coverage and doubles, from a small copy rendered in the debug looks (lib/scan-mesh/pose.ts's `viewStats`). */
@@ -820,6 +985,7 @@ export class ScanView {
       // Under the spheres too, drawn before them: whatever they leave out shows the mesh, painted from the panoramas, never nothing.
       this.drawn.renderOrder = -30;
       this.scene.add(this.drawn);
+      this.owned.add(this.drawn);
 
       const sharp = sharpLayer(this.faces);
       this.panos = new PanoStore(this.renderer, geometry, Math.min(sharp.capacity, this.sphereView || this.photoView ? SPHERE_CUBES : SHARP_CUBES), sharp.size);
@@ -1025,6 +1191,7 @@ export class ScanView {
     mesh.visible = this.shows === "mesh";
     this.fillMeshes.push(mesh);
     this.scene.add(mesh);
+    this.owned.add(mesh);
   }
 
   /**

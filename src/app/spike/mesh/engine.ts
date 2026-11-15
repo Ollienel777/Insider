@@ -85,7 +85,7 @@ export interface WalkOptions {
   textured?: boolean;
   repair?: "all" | "none" | "shards" | "planes";
   /** What is drawn: the panoramas as spheres (the default), or the mesh. */
-  view?: "spheres" | "mesh" | "photo";
+  view?: "spheres" | "mesh" | "photo" | "demo";
   /** In the photo view: how far the picture follows the eye from its scan position, metres. */
   reach?: number;
   fill?: boolean;
@@ -567,7 +567,7 @@ export class ScanWalk {
     this.hud.timings = status.timings;
     this.hud.blend = this.view.blend;
     this.hud.shows = this.view.shows;
-    this.hud.reach = this.options.view === "photo" || this.options.view === undefined ? this.view.reach : null;
+    this.hud.reach = this.options.view === "photo" ? this.view.reach : null;
     const counts = this.view.counts();
     this.hud.panos = this.view.inUse();
     this.hud.panosReady = counts?.sharp ?? 0;

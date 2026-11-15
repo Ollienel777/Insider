@@ -10,8 +10,9 @@
 // (leave holes open), `repair=0` (the mesh as scanned: shards in, no planes
 // carried across gaps; `shards` or `planes` for one of the two), `view=mesh`
 // (draw the mesh, painted from the panoramas and its textures), `view=spheres`
-// (the panoramas as depth spheres over the mesh), or by default `view=photo`
-// (the nearest panorama alone, warped a little; V shows the mesh), `reach=0.38`
+// (the panoramas as depth spheres over the mesh), `view=photo` (the nearest
+// panorama alone, warped a little), or by default `view=demo` (the nearest
+// panorama as a plain skybox, zooming toward the walk; V shows the mesh), `reach=0.38`
 // (how far the photo view's picture follows the eye, metres; [ and ] change it), `debug=1`.
 import type { Metadata } from "next";
 import { MESH_RESOLUTIONS, PANO_RESOLUTIONS, type MeshResolution, type PanoResolution } from "@/lib/scan-mesh/manifest";
@@ -50,7 +51,7 @@ export default async function ScanMeshPage({ searchParams }: { searchParams: Pro
       textured={one(search.textured) !== "0"}
       fill={one(search.fill) !== "0"}
       repair={one(search.repair) === "0" ? "none" : pick(one(search.repair), ["all", "shards", "planes"] as const, "all")}
-      view={one(search.view) === "mesh" ? "mesh" : one(search.view) === "spheres" ? "spheres" : "photo"}
+      view={pick(one(search.view), ["mesh", "spheres", "photo", "demo"] as const, "demo")}
       reach={reachOf(one(search.reach))}
       debug={one(search.debug) === "1"}
     />
