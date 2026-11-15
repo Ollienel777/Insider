@@ -1,13 +1,13 @@
 # The demo script (2 minutes)
 
 Tonight's plan. The demo plays `romaine-1974` on its showcase building, a real
-building from the kit. The team decides at 02:00 UTC on 15 November (21:00 ET
-on the 14th) where the run beat plays:
+building from the kit.
 
-- **Go:** in first person inside the building's own Matterport scan.
-- **No-go:** on F1, the fixture building.
-
-Owner Mode gets 15 seconds after the Debrief (Q9, status issue #1).
+- **Beat 6 is decided: go.** The run plays in first person inside the
+  building's own Matterport scan. First person on F1, the fixture building, is
+  the marked fallback. The final call is a full rehearsal at about 05:00 UTC
+  on 15 November (00:00 ET).
+- **Owner Mode** gets 15 seconds after the Debrief (Q9, status issue #1).
 
 Written against `main` at c08ae94, at 00:48 UTC on 15 November. Every F1 step
 was walked on that tree in fake mode: a production build with every service
@@ -44,7 +44,7 @@ walked here**.
 | 3 | Scout | 0:30–0:33 | 3 s | Scout |
 | 4 | Dossier | 0:33–0:47 | 14 s | Dossier |
 | 5 | Plan | 0:47–1:00 | 13 s | Plan |
-| 6 | Run, go or no-go | 1:00–1:28 | 28 s | Run |
+| 6 | Run, in the real scan | 1:00–1:28 | 28 s | Run |
 | 7 | Debrief | 1:28–1:43 | 15 s | Debrief |
 | 8 | Owner Mode | 1:43–1:58 | 15 s | the Owner tab |
 
@@ -184,9 +184,10 @@ doesn't have, and the board struck that step out (Open items, 4).
    opens. Say: **"Every guard, camera and lock says which data put it
    there."** Press **Esc**.
 3. The crew's plan appears, checked on the board. A live reply carries no
-   tag. Say: **"The crew answers in plain English, and the board checks its
-   plan."**
-4. Click **Start the run**.
+   tag. Click **Start the run** at once, in this same window, and say the
+   Plan line while the Run opens. The scan starts loading when Run opens, so
+   this gives it the narration's seconds before beat 6. Say: **"The crew
+   answers in plain English, and the board checks its plan."**
 
 Fallbacks:
 
@@ -209,51 +210,83 @@ Walked here:
 
 Live only, not walked here: this order to the live crew.
 
-## Beat 6 · 1:00–1:28 · Run
+## Beat 6 · 1:00–1:28 · Run, in the real scan
 
-The team decides at 02:00 UTC whether the run plays in the scan (SPEC §14,
-T7). Play one version.
+**Decided: go.** Nelson called it at the go/no-go. The run plays in first
+person inside the showcase building's own scan. First person on F1 is the
+marked fallback below, not a second version. The final call is a full
+rehearsal at about 05:00 UTC.
 
-### Go: first person inside the real scan
+**This needs PR #157 (`feat/118-scan-join`) on `main`.** #157 was in review at
+01:47 UTC. Until it merges, `main` offers **First person** only on fixture
+floors.
 
-**Needs `feat/118-scan-join` merged into `main`.** It had not merged at 00:58
-UTC. PR #122, the scan renderer it builds on, merged at 00:52 UTC, but it
-doesn't reach the Run screen: on `main`, **First person** still shows only on
-fixture floors.
+The beat below is written as it plays with the fixes due before the 05:00
+rehearsal (Open items, 2). Each fix has a one-line fallback for if it isn't
+in, or fails on stage.
 
 Live only, not walked here.
 
-Screen: the Run, labelled **Real CoStar record · real Matterport scan**.
+Screen: the Run, labelled **Real CoStar record · real Matterport scan**. The
+scan started loading when Run opened, during beat 5. The player waits until
+the picture around them is in: at most 12 s once the mesh is in.
 
 1. Check that the label says **real Matterport scan**.
 2. If the Run didn't open in first person, click **First person** (top right,
    under the scan stage's header). Wait for "Loading the building around you"
    to clear.
 3. Hand the judge the keyboard and mouse. Say: **"You're in the real building,
-   its own scan. W to walk, the mouse to look, Q to sprint. Get the files."**
-4. Camera C1 looks down the corridor from the way in. First person plays a
-   turn every 0.7 s, so by about turn 4 to 7 the alarm goes to **Alert**, then
-   **Lockdown**. The Chief's re-plan streams onto the radio line at the
-   bottom. Say: **"C1 has you. The AI security chief re-plans, live, and the
-   guards follow it."**
-5. The guards close in. The run usually ends in a capture, and the capture is
-   the beat. Say: **"Caught. The debrief shows how."**
-6. Click **See the debrief**.
+   its own scan. W to walk, the mouse to look. The files are deep inside; see
+   how far you get."** Don't promise a win. The HUD shows how far away the
+   files are.
+4. The judge walks from the entry into the first corridor.
+   - Steer them away from the corridor door where the picture tears (Esun4's
+     walk report on #157; Open items, 3).
+   - The cameras are drawn in the scan, sweeping slowly. As one finds them,
+     the suspicion meter fills ("Camera C1 has you in view").
+5. They're seen in the first corridor. The alarm goes to **Alert**, then
+   **Lockdown**, and the Chief's re-plan streams onto the radio line, naming
+   the rooms it sends the guards to. Say: **"C1 has you. The AI security chief
+   re-plans, live, and you can read why. The guards follow its orders."**
+6. The guards close in, and the run ends in a capture. The capture is the
+   beat: the alarm and the Chief's re-plan are the wow. The view says the run
+   is over and shows **See the debrief**. Say: **"Caught. The debrief shows
+   how."**
+7. Click **See the debrief**.
 
-Nobody has won this level on the scan yet. If the judge gets out, say: **"You
-beat the Chief. The debrief shows how."**
+Nobody has won this level on the scan. If the judge gets out, say: **"You beat
+the Chief. The debrief shows how."**
 
-Fallbacks:
+Fallbacks, one per fix and one per known rough edge:
 
-- The label says **stand-in floor plan**, or the scan hasn't loaded in 10 s:
-  the page fell back to the fixture floor, and first person still plays on it.
+- **The cameras don't show in the scan, or sweep too fast to read.** Point at
+  the HUD's alarm. Say: **"The cameras are game fiction too. The alarm says
+  when one has you."**
+- **The suspicion meter isn't there.** Read the HUD's alarm instead (Calm →
+  Alert).
+- **The Chief's live reply doesn't arrive.** A recorded reply stands in, with
+  the toast "The model didn't answer in time, so a recorded reply stands in."
+  Say: **"The model was slow, so a recorded reply stands in. The guards never
+  wait for it."**
+- **The Chief's lines still say "Area 1".** Don't read the room names out.
+  Say only that it re-plans.
+- **The run ends and nothing says so,** with the controls bar still up and the
+  mouse locked. Press **Esc** to free the mouse, then click **See the
+  debrief** in the HUD.
+- **The judge tries one of the scan's own doors.** Say: **"Those are the
+  scan's real doors. The mission's one door is at the files."**
+- **The picture tears.** Say: **"That's where two panoramas meet."** Keep
+  walking.
+- **The label says stand-in floor plan, or the scan hasn't loaded in 10 s.**
+  The page fell back to the fixture floor, and first person still plays on it.
   Say: **"The scan didn't load, so this is the stand-in floor plan."**
-- First person fails: the view drops to the board with a line saying why. Play
-  the board with its number keys. Say: **"Same run, from above."**
-- The Chief's line is tagged **Rule-based**. Say: **"The model was slow, so
-  the Chief's rules answered. The guards never wait for it."**
+- **First person is refused, or the beat can't run at all.** Use the F1
+  fallback below.
 
-### No-go: first person on F1, or the Tactical board
+### Fallback: first person on F1, or the Tactical board
+
+Use this when the scan beat can't run: #157 isn't merged, the 05:00
+rehearsal says so, or first person on the scan fails on stage.
 
 On `main` (PRs #119 and #138). Walked here. The run moves to Halvorsen Tower
 (F1), the fixture building, open in its own tab (checklist).
@@ -360,7 +393,7 @@ because fake mode locks that switch.
 
 Use this when the cast card is missing or its level isn't built. Everything
 is on F1, Halvorsen Tower, and every step was walked here. Beats 1, 7 and 8
-are unchanged, and beat 6 is the no-go version, played in this tab.
+are unchanged, and beat 6 is its F1 fallback, played in this tab.
 
 Say once: **"Our fixture building, shaped like a CoStar record."**
 
@@ -409,12 +442,12 @@ in the server's memory.
     `BEDROCK_ENABLED`, `AWS_REGION` and `BEDROCK_MODEL_ID`;
   - CoStar: `COSTAR_KIT_DIR`;
   - Matterport: `NEXT_PUBLIC_MATTERPORT_SDK_KEY`, plus `MATTERPORT_API_KEY`
-    and `MATTERPORT_API_TOKEN` for the scan's mesh and panoramas (go only);
+    and `MATTERPORT_API_TOKEN` for the scan's mesh and panoramas;
   - Vexcel: `VEXCEL_API_KEY`;
   - `SHOWCASE_LEVELS`, pairing the showcase building with `romaine-1974`.
 - [ ] **Build after setting them.** `NEXT_PUBLIC_*` is fixed at build time:
-      `npm ci`, then `npm run build`, then `npm start`. For go, build a
-      `main` that has `feat/118-scan-join` merged.
+      `npm ci`, then `npm run build`, then `npm start`. Build a `main` that
+      has #157 (`feat/118-scan-join`) merged.
 - [ ] **Start the server at least 3 minutes before the pitch.** The showcase
       level builds when the server starts, which takes about 154 s. When it
       is done, the cast card's level line says it's built.
@@ -425,7 +458,7 @@ in the server's memory.
 
 - [ ] `npm run demo:reset`, then reload the browser on `/`. The reset needs
       that reload, so it comes first.
-- [ ] **Go: open the showcase building's Run once.** The scan is about 233 MB,
+- [ ] **Open the showcase building's Run once.** The scan is about 233 MB,
       and this puts it in memory before the pitch.
   1. From the cast card's **Run** link, click **First person**.
   2. Wait until you can walk, then click **Restart**.
@@ -434,8 +467,13 @@ in the server's memory.
 
   If the Run opens mid-run on stage, click **Restart**.
 
+  On stage, the Run opens again during beat 5 (its step 3), in the same
+  visible window. The scan starts loading when Run opens, and the player then
+  waits up to 12 s for the picture around them once the mesh is in. Opening
+  Run while narrating Plan has the scan in by beat 6.
+
   Live only, not walked here.
-- [ ] **No-go: open the F1 Run tab.** In a second tab, open
+- [ ] **Open the F1 fallback tab.** In a second tab, open
       `/b/F1/run?m=romaine-1974` on the board. F1 has no scan, so a
       background tab is fine.
 - [ ] **Open the Owner tab as the last tab.** It is
@@ -461,8 +499,8 @@ the last-minutes list again.
 Q10, decided on status issue #1 at 23:10 UTC on 14 November: **the public demo
 video doesn't show the scan.**
 
-- It shows the run on F1, which is the no-go version of beat 6, in first
-  person or on the board.
+- It shows the run on F1, which is beat 6's F1 fallback, in first person or
+  on the board.
 - Where this script plays the scan, the voice-over describes it instead.
 
 That holds unless the CoStar crew says yes. Nothing from a scan or the kit goes
@@ -470,13 +508,24 @@ in the repo or the video's files.
 
 ## Open items
 
-1. **Go needs `feat/118-scan-join` on `main`.** Until it merges, `main` offers
-   first person only on fixture floors. #122's merge at 00:52 UTC added the
-   scan renderer, not the join.
-2. **#142, the crew's board fallback, is open.** Until it merges, beat 5's
-   slow-model fallback on the showcase building is **Start the run** with the
-   level's own plan.
-3. **#144, open windows, is open.** Beat 8 leaves its number out.
+1. **Beat 6 needs #157 (`feat/118-scan-join`) on `main`.** It was in review
+   at 01:47 UTC. Until it merges, `main` offers first person only on fixture
+   floors. #122's merge at 00:52 UTC added the scan renderer, not the join.
+2. **Fixes due before the 05:00 UTC rehearsal.** Beat 6 is written as it plays
+   with them, and each has its one-line fallback there.
+   - the cameras drawn in the scan, with a slower sweep (camera cones in first
+     person are #153);
+   - a clear end of the run, with the way to the Debrief (#152 does this on
+     F1);
+   - the Chief's timeout in real time, and real room names instead of
+     "Area 1";
+   - the suspicion meter (#150).
+
+   Rewalk beat 6 at the rehearsal, and change its lines where the screen
+   says otherwise.
+3. **The walk route.** Esun4's walk report on #157 says the picture tears at
+   one corridor door, but doesn't say which. Pin the route at the rehearsal,
+   and write here the door to steer the judge away from.
 4. **The crew's floor isn't the scan's floor.**
    - The level is staged on the floor that CoStar lists as vacant, and the scan
      is of a suite on another floor.
@@ -486,15 +535,23 @@ in the repo or the video's files.
    - Beat 5's order asks for no wait, which avoided it on the walk.
    - The fix is #142's review finding M4: send the placed zones with the crew
      request. It has no ticket yet.
-5. **Scout has no aerial on the showcase building.** Vexcel has no imagery for
+5. **#142, the crew's board fallback, is open.** Until it merges, beat 5's
+   slow-model fallback on the showcase building is **Start the run** with the
+   level's own plan.
+6. **#144, open windows, is open.** Beat 8 leaves its number out.
+7. **Scout has no aerial on the showcase building.** Vexcel has no imagery for
    kit buildings, so the ways in come from rules.
-6. **The showcase path was not walked for this script.** That covers the cast
-   card, the real record, the scan, the live crew and the Chief. Esun4 walked
-   it live three times before this was written. It plays end to end, and the
-   run is lost by about turn 7.
-7. **Not walked: forcing the Model in the demo settings, to prepare the Owner
+8. **The showcase path was not walked for this script.** That covers the cast
+   card, the real record, the scan, the live crew and the Chief.
+   - Esun4 walked it live, three times before this was written, then about
+     five more runs at #157's 2ac0c80.
+   - The run places on the real scan and runs at 60 fps.
+   - Every run was caught in the first corridor.
+   - The files are far from the entry, past a locked door. Nobody has
+     reached them.
+9. **Not walked: forcing the Model in the demo settings, to prepare the Owner
    tab.** Fake mode locks the switch. Expect the result to stay on screen when
    you switch it back, since the page re-renders without a reload. The
    checklist checks it.
-8. **Whether a reload keeps the warmed scan is not known.** So the checklist
-   warms it after the reset's reload, and nothing reloads after that.
+10. **Whether a reload keeps the warmed scan is not known.** So the checklist
+    warms it after the reset's reload, and nothing reloads after that.
