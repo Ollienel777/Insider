@@ -1,17 +1,20 @@
-# The demo script (2 minutes)
+# Hobbs: the demo script (2 minutes)
 
-Tonight's plan. The demo plays `romaine-1974` on its showcase building, a real
-building from the kit.
+The product is **Hobbs**; #183 renamed it from Heist Anywhere. The demo plays
+`romaine-1974` on its showcase building, a real building from the kit.
 
-- **Beat 6 is decided: go.** The run plays in first person inside the
-  building's own Matterport scan. First person on F1, the fixture building, is
-  the marked fallback. Whether the scan path runs at all is decided at the
-  checklist, by [the go / no-go rule](#go--no-go-decided-before-the-pitch),
-  never on stage.
+- **Beat 6 is a GO.** The run plays in first person inside the building's own
+  Matterport scan. The full rehearsal confirmed it, at about 05:00 UTC on 15
+  November, on `main`, all live, in a production build with the demo env. Its
+  findings are written into beats 3 to 7. First person on F1, the fixture
+  building, is the marked fallback. On the night, the checklist's
+  [go / no-go rule](#go--no-go-decided-before-the-pitch) still checks this
+  machine, never on stage.
 - **Owner Mode** gets 15 seconds after the Debrief (Q9, decided on status
   issue #1).
 
-Written against `main` at d9be7fc, at about 05:15 UTC on 15 November.
+Written against `main` at d9be7fc, at about 05:15 UTC on 15 November, with the
+rehearsal's findings added at about 05:40 UTC.
 
 - **What was walked:** on c08ae94, in fake mode (a production build with every
   service on `fake`, at 1440×900):
@@ -105,7 +108,15 @@ The machine's waits, measured on the fake walk:
 | Owner Mode's Compare | 0.4 s |
 
 Live waits were not measured here: the crew's reply, the Chief's re-plan, the
-scan's load, and first person since it went real time (#150).
+scan's load, and first person since it went real time (#150). The rehearsal
+measured the run beat, live:
+
+| from **Start the run** | time |
+|---|---|
+| Run playable | 1.2–2.3 s |
+| the first camera's label in sight | about 2 s |
+| the alarm | 3–6 s |
+| a capture, walking on towards the guards | about 14 s after the alarm |
 
 ## What the judge should notice
 
@@ -133,8 +144,8 @@ it.
 
 Screen: **Pick a mission**, five mission cards.
 
-1. Say: **"Every heist in history needed a building. Our agent finds one
-   that's empty tonight. Pick a heist."**
+1. Say: **"This is Hobbs. Every heist in history needed a building. Our agent
+   finds one that's empty tonight. Pick a heist."**
 2. The judge clicks **The Romaine Street Papers** (the Summa Corporation
    burglary, 1974). Point at it if they hesitate.
 
@@ -153,10 +164,11 @@ finalists, which fold into a closed list under it. The card shows:
 
 - the building's CoStar facts;
 - "Picked from the showcase list · fits N of 7 of the mission's needs";
-- one row per need, such as `Class B · needs Class A`;
+- one row per need, the building's value beside what the mission needs;
 - a line saying where its level stands.
 
-This card is the real building the run uses.
+This card is the real building the run uses. Don't read out the record id it
+shows: that text is being reworded in code (Open items, 4).
 
 1. While the funnel narrows, say: **"The agent searches CoStar's inventory
    for this heist: the right era and class, a floor on the market tonight, a
@@ -182,44 +194,47 @@ replay (61 → 3 on the fixture inventory), **Finalist 1 · F1 Halvorsen Tower**
 
 ## Beat 3 · 0:30–0:33 · Scout
 
-Screen: one of two, depending on Vexcel. Since #178, a kit building can have
-a live aerial, aimed from its CoStar facts; its height shows with a `~`, as an
-estimate. Under **Ways in**, that aerial tags no entries: "No entries are
-tagged for this building: nothing in its CoStar facts marks a dock or a door.
-A level built for it offers the roof hatch and the street lobby, which every
-office building has." Where Vexcel has no imagery, a **No aerial** card shows
-instead: "Vexcel has no imagery for this building yet."
+Screen: a live Vexcel aerial of the building (#178), aimed from its CoStar
+facts; its height shows with a `~`, as an estimate. The rehearsal showed it.
+Under **Ways in**, the aerial tags no entries: "No entries are tagged for this
+building: nothing in its CoStar facts marks a dock or a door. A level built
+for it offers the roof hatch and the street lobby, which every office
+building has."
 
-1. Say, if the aerial shows: **"The building from above, from Vexcel."** If
-   **No aerial** shows: **"No aerial for this one yet."** Click **Plan the
-   job**.
+1. Say: **"The building from above, from Vexcel."** Click **Plan the job**.
 
-Fallback: if Scout hangs, click **Dossier** in the step rail.
+Fallbacks:
+
+- **A No aerial card shows instead**, "Vexcel has no imagery for this
+  building yet.". Say: **"No aerial for this one yet."** Click **Plan the
+  job**.
+- **Scout hangs.** Click **Dossier** in the step rail.
 
 Walked here on the fictional test building: the **No aerial** card only. The
-live aerial is live only, not walked here; check at the rehearsal which of the
-two the showcase building gets.
+live aerial is live only, not walked here.
 
 ## Beat 4 · 0:33–0:47 · Dossier
 
 Screen: the label **Real CoStar record** (PR #111). Beside it, the Level
-Builder's run replays (about 6 s) and fills the **Data → Level** table. A kit
-building has four rows:
+Builder's run replays (about 6 s) and fills the **Data → Level** table. On the
+showcase building it has three rows, as the rehearsal found:
 
 | CoStar field | what it sets |
 |---|---|
-| year built | the era |
-| class | the guard force |
-| the vacant floor | where the level is staged, and its quiet suites |
-| typical floor size | the crowded zone |
+| year built | the era: "Analog era: key locks, sweeping CCTV" |
+| building class | the guard force: "[N] guards, tight rounds" |
+| available space | the floor the level is staged on |
 
 The mission briefing follows.
 
-1. As the rows fill, read them off the table. Say: **"Its real CoStar record.
-   A deep agent built the level from it: built [year], so [key locks and
-   sweeping cameras]. Class [X]: [N] guards. Its vacant floor is the stage.
-   The security is game fiction."**
+1. As the rows fill, read the three off the table. Say: **"Its real CoStar
+   record. A deep agent built the level from it: built [year], so key locks
+   and sweeping cameras. Class [X]: [N] guards. Its vacant floor is the
+   stage. The security is game fiction."**
 2. Click **Brief the crew**.
+
+Don't read out the space row's raw id: that text is being reworded in code
+(Open items, 4).
 
 Fallbacks:
 
@@ -227,8 +242,9 @@ Fallbacks:
 - The Dossier offers to build the level: don't. A build takes minutes. Go to
   [the F1 path](#if-the-showcase-building-is-out-the-f1-path).
 
-Walked here on the fictional test building: the label and the four rows. The
-showcase building's own values are live only.
+Walked here on the fictional test building: the label and its rows (it also
+has a fourth row, for the crowded zone). The showcase building's three rows
+are live only, as the rehearsal found them.
 
 ## Beat 5 · 0:47–1:00 · Plan
 
@@ -236,11 +252,13 @@ Screen: the Plan board and the order box, **Your order**. The board is
 already drawn: the checklist loaded this page before the pitch. The order is
 on the clipboard (checklist):
 
-`In through the street lobby, straight to the files, and out the way we came.`
+`Go in by the roof hatch, straight to the files, and out the way we came.`
 
-It names the way in and the objective, and asks for no wait, so the crew
-should have no reason to stop in a suite. That is untested live (Open items,
-2).
+The run starts at the roof hatch, so the order names it, and the crew's plan
+and the run agree. At the rehearsal, an order naming the street lobby got a
+plan beginning "Enter through the street lobby", for a run that started at
+the roof hatch. The order also asks for no wait, so the crew should have no
+reason to stop in a suite. That is untested live (Open items, 2).
 
 1. Click the **Your order** box, paste, and press **Enter**.
 2. While the crew answers, click camera **C1** on the board. Its Why card
@@ -250,7 +268,7 @@ should have no reason to stop in a suite. That is untested live (Open items,
    board. A live reply carries no tag. Say: **"The crew answers in plain
    English, and the board checks its plan."** Click **Start the run** at once,
    in this same tab. Plan has already started the scan, and Run takes it
-   (#181), so Run should open quickly.
+   (#181). At the rehearsal, Run was playable 1.2–2.3 s later.
 
 Fallbacks:
 
@@ -285,21 +303,24 @@ Not walked here:
 
 ## Beat 6 · 1:00–1:28 · Run, in the real scan
 
-**Decided: go**, if the checklist's go / no-go passed. The run plays in first
-person inside the showcase building's own scan. First person on F1 is the
-marked fallback below, not a second version.
+**A GO** at the rehearsal, and on the night if the checklist's go / no-go
+passed. The run plays in first person inside the showcase building's own scan.
+First person on F1 is the marked fallback below, not a second version.
 
 On `main` (#157, #174, #181, #179, #150, #173). Live only, not walked here.
+The timings below are the rehearsal's.
 
 Screen: the Run, labelled **Real CoStar record · real Matterport scan**. In
 first person, a note top left says "The building is the real scan. Security
 shown is game fiction."
 
 1. Check that the label says **real Matterport scan**.
-2. The Run opens on the board. Click **First person**: the right button of
-   the **Board** / **First person** pair, at the top left of the board, under
-   the scan stage's header. If a
-   loading line shows, wait for it to clear. It runs, in order: "Asking for
+2. The Run opens in first person, playable 1.2–2.3 s after **Start the run**.
+   The checklist chose first person once on this browser, and the browser
+   remembers it. If it opens on the board, click **First person**: the right
+   button of the **Board** / **First person** pair, at the top left of the
+   board, under the scan stage's header. If a loading line shows, wait for it
+   to clear. It runs, in order: "Asking for
    the scan", "Downloading the building", "Building the walls and floor",
    then "Loading the picture around you".
 3. Click the view once: mouse look starts only after that click. The pill
@@ -314,19 +335,31 @@ shown is game fiction."
    at the files to take them; **P** pauses; **Esc** frees the mouse. The same
    keys are on the line at the bottom of the view.
 6. The cameras are visible: each has a light cone to the floor it watches.
-   A camera sees the judge. The suspicion meter fills, the alarm goes to
-   **Alert**, then **Lockdown**, and the Chief's re-plan streams onto the
-   radio line. Say: **"That camera has you. The AI security chief re-plans,
-   live, and you can read why. The guards follow its orders."**
+   At the rehearsal, the first camera's label was in sight about 2 s in.
+   - A camera sees the judge. The suspicion meter reads "Next to [camera]'s
+     sight", then "[camera] has you in view", then "[camera] saw you".
+   - The alarm comes 3–6 s in: **Alert**, then **Lockdown**.
+   - The Chief's re-plan streams onto the radio line, naming real rooms
+     (#173).
 
-   Check at the rehearsal which camera has the player and which door tears,
-   and keep the answers out of the repo.
-7. The guards close in, and the run ends in a capture. The capture is the
+   Say: **"That camera has you. The AI security chief re-plans, live, and
+   you can read why. The guards follow its orders."**
+
+   The team knows from the rehearsal which camera this is, and which door
+   tears. Those answers stay out of the repo.
+7. **Steer, because the capture isn't certain within the beat.** As soon as
+   the camera fires, say: **"Keep going down the corridor."** That sends the
+   judge towards the guards. At the rehearsal:
+   - a walk that kept heading for the guards was caught about 14 s after the
+     alarm;
+   - two walks that stopped after the alarm weren't caught in 54 turns,
+     because the alarm calmed down.
+8. The guards close in, and the run ends in a capture. The capture is the
    beat: the alarm and the Chief's re-plan are the wow. The view stops taking
    input and frees the mouse. A card says **Run over**, "Caught in the
    [room].", who saw the player and who reached them, and **See the debrief**.
    Say: **"Caught. The debrief shows how."**
-8. Click **See the debrief** on the card.
+9. Click **See the debrief** on the card.
 
 Nobody has won this level on the scan. If the judge gets out, the card says
 "Out with the files.". Say: **"You beat the Chief. The debrief shows how."**
@@ -336,13 +369,19 @@ Fallbacks:
 - **Run is slow to open.** Fill it: **"Every guard, camera and lock in there
   comes from a rule on its CoStar record."** If the board still shows "Loading
   the scan", switch to the F1 tab.
+- **The judge stops after the alarm,** and the alarm starts to calm. Say:
+  **"Keep moving. The guards are coming."** If there's still no capture at
+  1:25, say **"The Chief is still hunting you. Here's the replay."** and click
+  **Debrief** in the step rail. The Debrief shows a run still in progress
+  (`main` handles a playing run; not walked here).
 - **The judge can't pick the lock or take the files.** Say: **"Hold E right at
   it."** If it still won't go, steer them into a camera's light: the capture
   ends the run, and its card has **See the debrief**.
-- **The Chief's live reply doesn't arrive.** A recorded or rule-based reply
-  stands in, with the toast "The model didn't answer in time, so a recorded
-  reply stands in." Say: **"The model was slow, so a stand-in reply takes
-  over. The guards never wait for it."**
+- **The Chief's first line is late.** #173 lets a Chief call finish; before
+  it, the first line took 1.2–14 s at the rehearsal. If a recorded or
+  rule-based reply stands in, the toast says "The model didn't answer in time,
+  so a recorded reply stands in." Say: **"The model was slow, so a stand-in
+  reply takes over. The guards never wait for it."**
 - **The judge tries one of the scan's own doors.** Say: **"Those are the
   scan's real doors. The mission's one door is at the files."**
 - **The picture tears.** Say: **"That's where two panoramas meet."** Keep
@@ -407,9 +446,9 @@ Screen:
 - the replay, with its **Turn** slider;
 - the Chief's decisions as a timeline, each with its reason.
 
-1. Drag the **Turn** slider back to the start, then forward. Say: **"The
-   debrief replays every move, and each of the Chief's decisions with its
-   reason."**
+1. Drag the **Turn** slider back to the start, then forward. It steps through
+   every turn of the run. Say: **"The debrief replays every move, and each of
+   the Chief's decisions with its reason."**
 2. The Monday line: **"And that search, era, class, a floor on the market
    tonight, is the one a location scout runs on Monday, on CoStar's own
    availability."**
@@ -425,7 +464,7 @@ Then the Monday line.
 
 Walked here on F1: grade D, "Caught in the Dock Corridor", two Chief
 decisions, the slider. Live only, not walked here: the showcase building's
-Debrief.
+Debrief. At the rehearsal, it scrubbed through every turn.
 
 ## Beat 8 · 1:43–1:58 · Owner Mode
 
@@ -571,20 +610,26 @@ in the server's memory.
       last, because switching tabs hides the window and pauses a scan's load
       (#159).
   1. Check that the chip reads `LIVE`.
-  2. In this window, in front, open the showcase building's **Plan** from the
-     cast card's **Plan** link. Plan starts the scan and its board, and Run
-     takes them from it (#181).
-  3. Leave it there, with the window in front, until the board is drawn.
-  4. **Decide [go / no-go](#go--no-go-decided-before-the-pitch) now, with
+  2. **Set first person once.** In this window, in front, open the showcase
+     building's **Run** from the cast card's **Run** link, and click **First
+     person**.
+     - The browser remembers the view choice. A fresh browser opens Run on
+       the board, and so does this one after `demo:reset`.
+     - Don't move: the clock waits for the first move (#174), so no turn is
+       played.
+  3. Click **Plan** in the step rail. Plan starts the scan and its board, and
+     Run takes them from it (#181).
+  4. Leave it there, with the window in front, until the board is drawn.
+  5. **Decide [go / no-go](#go--no-go-decided-before-the-pitch) now, with
      this Plan on screen.**
-  5. **Put that path's order on the clipboard.** The board is drawn, so
+  6. **Put that path's order on the clipboard.** The board is drawn, so
      leaving the window now is safe. Come back to it after.
-     - Go: `In through the street lobby, straight to the files, and out the way we came.`
+     - Go: `Go in by the roof hatch, straight to the files, and out the way we came.`
      - F1 path: `Go in through the dock, wait for the 2 am round to pass, take the records room.`
-  6. To start beat 1, go to `/` with the wordmark top left. That isn't a
+  7. To start beat 1, go to `/` with the wordmark top left. That isn't a
      reload, so the scan survives it. A reload lets the scan go.
 
-  Check at the rehearsal: time a cold load from Plan, so you know how early
+  Time a cold load from Plan once on the demo machine, so you know how early
   to open it.
 
   Live only, not walked here.
@@ -627,10 +672,11 @@ in the repo or the video's files.
 
 ## Open items
 
-1. **Beat 6 on the scan is not walked here.** Rewalk it at the rehearsal,
-   with #181, #179, #150 and #173 in, and change its lines where the screen
-   says otherwise. Check which camera has the player and which door tears;
-   keep the answers out of the repo.
+1. **Beat 6 on the scan was rehearsed, not walked here.** The team's live
+   rehearsal on `main`, at about 05:00 UTC with #181, #179, #150 and #173 in,
+   called it a GO. Its timings, and the steer towards the guards, are in beat
+   6. The team knows which camera has the player and which door tears. Those
+   answers stay out of the repo.
 2. **The live crew can name a zone the board doesn't have.** It plans on the
    manifest's zones, not the placed board's, and the board strikes such a
    step out.
@@ -638,15 +684,20 @@ in the repo or the video's files.
      live.
    - The fix is #142's review finding M4: send the placed zones with the crew
      request. It has no ticket yet.
-3. **Beat 3 on the showcase building.** Since #178 it may show a live aerial
-   or the **No aerial** card. Check which at the rehearsal.
-4. **The showcase path was not walked for this script.** That covers the cast
-   card, the real record, the scan, the live crew and the Chief, because no
-   keys were used here. Esun4's live walks are reported on #157.
+3. **The showcase path was not walked for this script.** That covers the cast
+   card, the real record, the aerial, the scan, the live crew and the Chief,
+   because no keys were used here. The team's live rehearsal ran them, and
+   Esun4's earlier walks are reported on #157.
+4. **Three screen texts are being reworded in code**, so the script doesn't
+   quote them:
+   - the Dossier's raw space id;
+   - the cast card's record id;
+   - first person's start line, the one ending "Pick a number to move."
 5. **Not walked: forcing the Model in the demo settings, to prepare the Owner
    tab.** Fake mode locks the switch. Expect the result to stay on screen when
    you switch it back, since the page re-renders without a reload. The
    checklist checks it.
-6. **Still open on GitHub, not in this script:** the visual restyle (#167),
-   which will change how screens look, and the SPEC change for Q2 and Q10
-   (#180).
+6. **Still open on GitHub, not in this script:**
+   - the visual restyle (#167), which will change how screens look, and
+     renames the wordmark and page title to Hobbs;
+   - the SPEC change for Q2 and Q10 (#180).
