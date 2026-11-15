@@ -45,7 +45,7 @@ import { noticeOf } from "./notice";
 import { readPalette } from "./palette";
 import { joinRefusal, joinScan } from "./scan-join";
 import { nodeFloors, scanGround } from "./scan-ground";
-import { addFurniture, derivePlan, FURNITURE, PLAN, planSolid, type ScanPlan } from "./scan-plan";
+import { addFurniture, derivePlan, FURNITURE, PLAN, planSolid, roomLabels, type ScanPlan } from "./scan-plan";
 import { buildDress, DRESS } from "./scan-dress";
 import { fetchPhotoPanos, PhotoSet } from "./scan-photo";
 import { buildPlanGroup } from "./scan-plan-scene";
@@ -627,6 +627,11 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       const ground = scanGround(floor, planSolid(plan), join.heights, { leashM: PLAN.leashM + 1 });
       const nodeRoom = new Map(floor.nodes.map((n) => [n.id, n.roomId]));
       const all = [...ground.nodes.values()];
+      // The room a point is in: flooded from the scan positions, never through a wall.
+      const roomOfPoint = roomLabels(
+        plan,
+        floor.nodes.map((n) => ({ x: n.x, y: n.y, room: n.roomId })),
+      );
       const tone = (p: Vec): RoomTone => {
         let best = all[0];
         let bestD = Infinity;
@@ -658,11 +663,11 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
             photosFailed = true;
             return;
           }
-          photos = new PhotoSet(plan, panos, startNode ?? { x: 0, y: 0 });
+          photos = new PhotoSet(plan, panos, startNode ?? { x: 0, y: 0 }, roomOfPoint);
           blockout.visible = false;
           set.add(photos.group);
           // Counts only.
-          console.info(`First person paints the set from ${panos.length} panoramas at ${(photos.texelM * 100).toFixed(1)} cm a texel`);
+          console.info(`First person colours the set from ${panos.length} panoramas`);
         })
         .catch(() => {
           photosFailed = true;

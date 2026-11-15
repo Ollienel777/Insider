@@ -13,6 +13,7 @@ import {
   BoxGeometry,
   BufferGeometry,
   Color,
+  SRGBColorSpace,
   ConeGeometry,
   CylinderGeometry,
   DoubleSide,
@@ -244,8 +245,8 @@ export class Actors {
       panel.position.y = FP.doorHeightM / 2;
       leaf.add(panel);
       if (leafW < width - 0.05) {
-        const pane = keep(new MeshBasicMaterial({ color: 0xbcd6e3, transparent: true, opacity: 0.18, depthWrite: false, side: DoubleSide }));
-        const metal = keep(new MeshBasicMaterial({ color: 0x232325 }));
+        const pane = keep(new MeshBasicMaterial({ color: new Color().setRGB(0.737, 0.839, 0.89, SRGBColorSpace), transparent: true, opacity: 0.18, depthWrite: false, side: DoubleSide }));
+        const metal = keep(new MeshBasicMaterial({ color: new Color().setRGB(0.137, 0.137, 0.145, SRGBColorSpace) }));
         for (const side of [-1, 1]) {
           const w = (width - leafW) / 2;
           const x = side * (leafW / 2 + w / 2);

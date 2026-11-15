@@ -32,8 +32,8 @@ const FP_DOOR_M = 2.1;
 
 /** Every number the plan is worked out by. Metres. */
 export const PLAN = Object.freeze({
-  /** The slice over door height, above the floor, that tells a doorway (wall over it) from glass (none). */
-  headM: 2.3,
+  /** The slice just under the ceiling, over any door, that tells a doorway (wall over it) from glass (none). */
+  headUnderM: 0.12,
   /** The slices' heights above the floor: over the desks, under the ceiling. */
   sliceM: [1.1, 1.5, 1.9] as readonly number[],
   /** A triangle this flat (|normal y|) is a floor, a desk top or a ceiling, not a wall. */
@@ -68,8 +68,10 @@ export const PLAN = Object.freeze({
   holeM: 1.5,
   /** A walked gap between two walls on a line up to this wide is a doorway, framed; wider is open floor. */
   doorwayMaxM: 2.6,
-  /** A gap no one walked through this wide or wider is a pane of glass; narrower, a hole in the scan, closed. Wider than the most is open. */
-  glassMinM: 1.0,
+  /** A gap no one walked through this wide or wider is a pane of glass; narrower than a door, a hole in the scan, closed. Wider than the most is open. */
+  glassMinM: 1.25,
+  /** A gap no one walked through, a door's width (to `glassMinM`): a doorway, its door shut. */
+  doorMinM: 0.6,
   glassMaxM: 8,
   /** A doorway up to this wide has a lintel over it, as a fixture floor's doors do. */
   lintelMaxM: 1.8,
@@ -380,7 +382,7 @@ export function derivePlan(input: PlanInput): ScanPlan {
   const heights = PLAN.sliceM.filter((h) => h < top).map((h) => floorY + h);
   if (heights.length === 0) heights.push(floorY + Math.min(1.1, Math.max(0.5, top)));
   // One more slice over door height, if the ceiling allows: a doorway has wall over it, glass none.
-  const headY = Math.min(PLAN.headM, ceilingY - floorY - 0.25);
+  const headY = ceilingY - floorY - PLAN.headUnderM;
   const sliced = headY > FP_DOOR_M + 0.05 ? [...heights, floorY + headY] : heights;
   const raw = slicePieces(input, sliced);
   const angle = squareOf(raw.filter((p) => p.level < heights.length));
@@ -575,7 +577,7 @@ export function derivePlan(input: PlanInput): ScanPlan {
       if (walked(lo, hi)) {
         if (width <= PLAN.doorwayMaxM) doorways.push({ a: toWorld(line, lo), b: toWorld(line, hi), width, lintel: width <= PLAN.lintelMaxM, shut: false });
         kept.push([run[0], run[1]]);
-      } else if (headOver(line, lo, hi) >= 0.6 && width <= PLAN.doorwayMaxM && width >= 0.5) {
+      } else if ((headOver(line, lo, hi) >= 0.6 && width <= PLAN.doorwayMaxM && width >= 0.5) || (width >= PLAN.doorMinM && width < PLAN.glassMinM)) {
         // Wall over it: a doorway no one went through. Its door stands shut, a wall to walk into.
         doorways.push({ a: toWorld(line, lo), b: toWorld(line, hi), width, lintel: width <= PLAN.lintelMaxM, shut: true });
         walls.push({ a: toWorld(line, lo), b: toWorld(line, hi), boundary: false, door: true });
@@ -912,4 +914,84 @@ export function addFurniture(
     }
   }
   plan.furniture = boxes;
+}
+
+/**
+ * Which room each floor cell is in: a flood from every scan position at once,
+ * across the floor and never through a wall, a shut door or glass, so a cell
+ * takes the room of the position it is reached from first. `roomAt` answers a
+ * point, falling back on the nearest position off the floor.
+ */
+export function roomLabels(plan: ScanPlan, nodes: readonly (Vec & { room: string })[]): (p: Vec) => string {
+  const { floor } = plan;
+  const { cols, rows, cell } = floor;
+  const label = new Int32Array(cols * rows).fill(-1);
+  const rooms = nodes.map((n) => n.room);
+  // The walls, bucketed by 2 m squares of the plan, to test the step between two cells against.
+  const BUCKET = 2;
+  const buckets = new Map<string, Seg[]>();
+  const solid = [...plan.walls, ...plan.glass];
+  for (const w of solid) {
+    const [x0, x1] = [Math.min(w.a.x, w.b.x), Math.max(w.a.x, w.b.x)];
+    const [y0, y1] = [Math.min(w.a.y, w.b.y), Math.max(w.a.y, w.b.y)];
+    for (let bx = Math.floor(x0 / BUCKET); bx <= Math.floor(x1 / BUCKET); bx++) {
+      for (let by = Math.floor(y0 / BUCKET); by <= Math.floor(y1 / BUCKET); by++) {
+        const key = `${bx}:${by}`;
+        const list = buckets.get(key);
+        if (list) list.push(w);
+        else buckets.set(key, [w]);
+      }
+    }
+  }
+  const side = (u: Vec, v: Vec, w: Vec) => (v.x - u.x) * (w.y - u.y) - (v.y - u.y) * (w.x - u.x);
+  const crosses = (p: Vec, q: Vec) => {
+    const keys = new Set([`${Math.floor(p.x / BUCKET)}:${Math.floor(p.y / BUCKET)}`, `${Math.floor(q.x / BUCKET)}:${Math.floor(q.y / BUCKET)}`]);
+    for (const key of keys) {
+      for (const w of buckets.get(key) ?? []) {
+        if (side(p, q, w.a) * side(p, q, w.b) <= 0 && side(w.a, w.b, p) * side(w.a, w.b, q) < 0) return true;
+      }
+    }
+    return false;
+  };
+  const centre = (k: number) => cellCentre(floor, k % cols, Math.floor(k / cols));
+  const queue: number[] = [];
+  nodes.forEach((n, index) => {
+    const { u, v } = rot(n, floor.angle);
+    const i = Math.floor((u - floor.u0) / cell);
+    const j = Math.floor((v - floor.v0) / cell);
+    if (i < 0 || j < 0 || i >= cols || j >= rows) return;
+    const k = j * cols + i;
+    if (label[k] < 0) {
+      label[k] = index;
+      queue.push(k);
+    }
+  });
+  for (let h = 0; h < queue.length; h++) {
+    const k = queue[h];
+    const i = k % cols;
+    const j = (k - i) / cols;
+    const from = centre(k);
+    for (const n of [i > 0 ? k - 1 : -1, i < cols - 1 ? k + 1 : -1, j > 0 ? k - cols : -1, j < rows - 1 ? k + cols : -1]) {
+      if (n < 0 || label[n] >= 0 || floor.cells[n] !== 1) continue;
+      if (crosses(from, centre(n))) continue;
+      label[n] = label[k];
+      queue.push(n);
+    }
+  }
+  return (p: Vec) => {
+    const { u, v } = rot(p, floor.angle);
+    const i = Math.floor((u - floor.u0) / cell);
+    const j = Math.floor((v - floor.v0) / cell);
+    if (i >= 0 && j >= 0 && i < cols && j < rows && label[j * cols + i] >= 0) return rooms[label[j * cols + i]];
+    let best = 0;
+    let bestD = Infinity;
+    nodes.forEach((n, index) => {
+      const d = (n.x - p.x) ** 2 + (n.y - p.y) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = index;
+      }
+    });
+    return rooms[best] ?? "";
+  };
 }

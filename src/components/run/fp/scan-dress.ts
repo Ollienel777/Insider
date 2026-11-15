@@ -14,17 +14,21 @@ import {
   Mesh,
   MeshBasicMaterial,
   PlaneGeometry,
+  SRGBColorSpace,
   type Material,
 } from "three";
 import type { Vec } from "./ground";
 import { onPlanFloor, PLAN, type ScanPlan } from "./scan-plan";
 import { FP } from "./tuning";
 
+/** A colour given as the screen shows it (sRGB), not in three's working space. */
+const srgb = (r: number, g: number, b: number) => new Color().setRGB(r, g, b, SRGBColorSpace);
+
 /** The joinery's colours: a door's warm wood, and dark metal for frames. */
 export const DRESS = Object.freeze({
-  wood: new Color("#7a4e2e"),
-  metal: new Color("#232325"),
-  glass: new Color("#bcd6e3"),
+  wood: srgb(0.478, 0.306, 0.18),
+  metal: srgb(0.137, 0.137, 0.145),
+  glass: srgb(0.737, 0.839, 0.89),
   /** A frame's face across the wall, and its depth beyond it. */
   frameM: 0.06,
   /** A glass wall's mullions are at most this far apart. */
@@ -79,7 +83,7 @@ export function buildDress(plan: ScanPlan, gameDoors: readonly Vec[]): Group {
   // Unlit, as the photographs are: the scene's lights are the fixture floors' night, not this building's day.
   const metal = keep(new MeshBasicMaterial({ color: DRESS.metal }));
   const wood = keep(new MeshBasicMaterial({ color: DRESS.wood }));
-  const handle = keep(new MeshBasicMaterial({ color: new Color("#c8c8c2") }));
+  const handle = keep(new MeshBasicMaterial({ color: srgb(0.784, 0.784, 0.761) }));
   const { floorY: y0, ceilingY: y1, floor } = plan;
   const doorTop = Math.min(y0 + FP.doorHeightM, y1 - 0.1);
   const thick = PLAN.thickM;
