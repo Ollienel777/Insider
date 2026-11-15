@@ -1,6 +1,6 @@
 // What E is doing, in words (the play-tester's "say 'picking lock'"): the
-// verb under the crosshair while E is aimed or held, the line when it lands,
-// and what the player carries. Pure: read off the walker's prompt, the
+// verb under the crosshair while E is aimed or held, and the line when it
+// lands. What the player carries is the objective line's (#192). Pure: read off the walker's prompt, the
 // placed level and the engine's run state, so it is the same on a fixture
 // floor and on a scan.
 //
@@ -11,7 +11,6 @@
 // The engine itself only counts picks, so the kind is the level's, not the
 // engine's.
 import type { LockKind } from "@/domain/manifest";
-import type { RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
 import type { Prompt } from "./walker";
 
@@ -96,21 +95,6 @@ export function ringFill(label: ActionLabel, still: boolean): { now: number; tow
   const now = label.of > 0 ? Math.min(1, label.done / label.of) : 0;
   if (label.phase !== "hold" || still) return { now, towards: now };
   return { now, towards: label.of > 0 ? Math.min(1, (label.done + 1) / label.of) : 1 };
-}
-
-/** One thing the player has on them, for the HUD's inventory. */
-export interface Carried {
-  id: string;
-  label: string;
-}
-
-/**
- * What the player carries: the objective once taken, for the rest of the
- * run. The engine has no other pickup (no key or card is ever carried: a
- * lock is opened in place), so that is the whole inventory.
- */
-export function inventoryOf(run: Pick<RunState, "carrying">, noun: string): Carried[] {
-  return run.carrying ? [{ id: "objective", label: capital(noun) }] : [];
 }
 
 /** What the live region says the turn something lands; null for nothing. */

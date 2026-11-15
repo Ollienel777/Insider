@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionLabel, announcement, inventoryOf, lockOf, lockWords, ringFill, takeWords } from "./action";
+import { actionLabel, announcement, lockOf, lockWords, ringFill, takeWords } from "./action";
 
 const words = (doorId: string) => lockWords(lockOf({ locks: [] }, doorId, "key"));
 
@@ -62,13 +62,6 @@ describe("ringFill", () => {
   });
   it("never runs past full", () => {
     expect(ringFill(label("hold", 4), false)).toEqual({ now: 1, towards: 1 });
-  });
-});
-
-describe("inventoryOf", () => {
-  it("is empty until the objective is taken, then holds it", () => {
-    expect(inventoryOf({ carrying: false }, "files")).toEqual([]);
-    expect(inventoryOf({ carrying: true }, "files")).toEqual([{ id: "objective", label: "Files" }]);
   });
 });
 

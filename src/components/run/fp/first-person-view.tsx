@@ -34,8 +34,8 @@ import { objectiveLabel, objectiveNoun } from "@/lib/objective-noun";
 import { cn } from "@/lib/utils";
 import { cameraMount, choices, roomName } from "../board";
 import { scanStageOf, type HeldAction, type ScanHandle, type ScanPreload } from "./run-view";
-import { actionLabel, announcement, inventoryOf, lockOf, lockWords } from "./action";
-import { ActionAnnouncer, ActionLabelView, InventoryChips, PickupToast } from "./action-hud";
+import { actionLabel, announcement, lockOf, lockWords } from "./action";
+import { ActionAnnouncer, ActionLabelView, PickupToast } from "./action-hud";
 import { Actors, type Marks } from "./actors";
 import { Controller } from "./controller";
 import { endState } from "./end-state";
@@ -593,7 +593,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
   useEffect(() => {
     if (over && surface.current && document.pointerLockElement === surface.current) document.exitPointerLock();
   }, [over]);
-  // What E does, in words, and what the player carries (action.ts).
+  // What E does, in words (action.ts). Carrying is the objective line's chip (#192); the toast marks the take.
   const wordsFor = (doorId: string) => lockWords(lockOf(placed, doorId, lockKind));
   const action = over ? null : actionLabel(hud.prompt, hud.using, wordsFor, noun, moment?.kind === "door" ? moment : null);
   const said = over ? null : announcement(moment?.kind === "door" ? { kind: "door", doorId: moment.doorId } : moment ? { kind: "take" } : null, wordsFor, noun);
@@ -656,7 +656,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       {ready && !end ? <SuspicionMeter notice={notice} /> : null}
       {ready && action ? <ActionLabelView label={action} turnMs={FP.turnMs} still={paused} /> : null}
       {ready && !over && moment?.kind === "take" ? <PickupToast title={`${noun.charAt(0).toUpperCase()}${noun.slice(1)} collected`} line={moment.text.split(". ").slice(1).join(". ") || "Get to the exit."} /> : null}
-      {ready && !end ? <InventoryChips items={inventoryOf(run, noun)} /> : null}
       <ActionAnnouncer text={said} />
       {ready && !end ? <ControlsHint phase={hint.phase} ticks={hintTicks(hint.progress)} dragToLook={hud.refused} /> : null}
 

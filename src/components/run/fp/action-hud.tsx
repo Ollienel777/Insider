@@ -1,14 +1,13 @@
 "use client";
 
-// What E is doing and what the player carries, on the first-person HUD:
-// the label under the crosshair with a ring that fills over the hold, the
-// toast when the objective is taken, the inventory chip that stays for the
-// rest of the run, and a live region that says each as it lands. What they
-// show comes from action.ts; under reduced motion the ring jumps and nothing
-// fades.
+// What E is doing, on the first-person HUD: the label under the crosshair
+// with a ring that fills over the hold, the toast when the objective is
+// taken (the objective line's carry chip, #192, stays for the rest of the
+// run), and a live region that says each as it lands. What they show comes
+// from action.ts; under reduced motion the ring jumps and nothing fades.
 import { CircleCheck, FolderClosed } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ringFill, type ActionLabel, type Carried } from "./action";
+import { ringFill, type ActionLabel } from "./action";
 
 const KEYFRAMES = `
 @keyframes fp-action-in { from { opacity: 0 } to { opacity: 1 } }
@@ -116,25 +115,6 @@ export function PickupToast({ title, line }: { title: string; line: string }) {
         <span className="text-sm text-text-2">{line}</span>
       </span>
     </div>
-  );
-}
-
-/** What the player carries, in the HUD's corner, for the rest of the run. */
-export function InventoryChips({ items }: { items: readonly Carried[] }) {
-  if (items.length === 0) return null;
-  return (
-    <ul data-testid="fp-inventory" aria-label="Carrying" className="pointer-events-none absolute top-16 right-6 flex flex-col items-end gap-1.5">
-      {items.map((item) => (
-        <li
-          key={item.id}
-          data-item={item.id}
-          className="flex items-center gap-2 rounded-sm border border-success bg-surface-1 px-2.5 py-1.5 text-sm font-semibold text-text-1 shadow-e-1"
-        >
-          <FolderClosed aria-hidden className="size-4 stroke-[1.5] text-success" />
-          {item.label}
-        </li>
-      ))}
-    </ul>
   );
 }
 
