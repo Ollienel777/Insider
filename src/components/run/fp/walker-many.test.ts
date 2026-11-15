@@ -70,7 +70,7 @@ describe("a node with more neighbours than the board's nine keys", () => {
       let run: RunState = createRun(level);
       let walker = createWalker(ground, run);
       const to = at(i);
-      const controls: Controls = { forward: 1, strafe: 0, walk: false, yaw: Math.atan2(to.y, to.x), use: false, usePressed: false };
+      const controls: Controls = { forward: 1, strafe: 0, yaw: Math.atan2(to.y, to.x), use: false, usePressed: false };
       for (let n = 0; n < 2 / FP.stepS && run.playerNode === "hub"; n++) {
         const out = stepWalker(walker, ground, run, controls);
         walker = out.walker;

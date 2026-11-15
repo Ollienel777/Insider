@@ -1,7 +1,7 @@
 // The showcase: the CoStar kit buildings the demo shows, each paired with the
 // mission it stages (#93). Set on the demo server, never in the repository:
 //
-//   SHOWCASE_LEVELS=52227:romaine-1974,254167:sunset-1986
+//   SHOWCASE_LEVELS=900101:romaine-1974
 //
 // With a list, live CoStar shows only these kit buildings (beside the
 // fixtures), each opens on its own mission like F1–F5 do, and the server
@@ -26,7 +26,7 @@ export function parseShowcase(value: string | undefined): ShowcaseEntry[] {
     if (!pair) continue;
     const [buildingId, missionId, ...rest] = pair.split(":").map((s) => s.trim());
     if (!buildingId || !missionId || rest.length > 0 || !PLAIN.test(buildingId) || !PLAIN.test(missionId)) {
-      console.warn(`SHOWCASE_LEVELS: skipping "${pair}"; write building:mission, for example 52227:romaine-1974`);
+      console.warn(`SHOWCASE_LEVELS: skipping "${pair}"; write building:mission, for example 900101:romaine-1974`);
       continue;
     }
     entries.push({ buildingId, missionId });
