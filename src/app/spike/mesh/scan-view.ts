@@ -96,7 +96,10 @@ export interface ScanViewOptions {
    * mesh alone, painted from the panoramas and its textures. "photo" (the
    * default): the nearest panorama alone, warped a little by its depth
    * (photo-view-material.ts), dissolving into the next when it changes.
-   * "hybrid" (the default): walking, the photo view's sheets of the
+   * "glide" (the default): only ever the exact photograph, a plain skybox;
+   * walking from one panorama to the next narrows the picture toward the
+   * next (up to 1.25×, by distance), and the last part of the way
+   * crossfades to the next, which comes in from as much wider. "hybrid": walking, the photo view's sheets of the
    * panorama behind and the one ahead, blended by how far along between
    * them the eye is; at rest, eased to the exact photograph of the nearest
    * one in sight. "demo": the nearest panorama in sight as a plain skybox,
@@ -104,7 +107,7 @@ export interface ScanViewOptions {
    * forward, dissolving into the next (the street-view walk); the game's
    * own things drawn over it, hidden behind the mesh's walls.
    */
-  view?: "spheres" | "mesh" | "photo" | "demo" | "hybrid";
+  view?: "spheres" | "mesh" | "photo" | "demo" | "hybrid" | "glide";
   /** In the photo view: how far from its scan position the picture follows the eye, metres (photo-view-material.ts's REACH by default). */
   reach?: number;
   /** Vertical field of view, degrees. */
@@ -219,6 +222,12 @@ const HYBRID_REACH = 0.35;
 const HYBRID_IN = 0.25;
 const HYBRID_OUT = 0.5;
 const HYBRID_LINGER = 0.3;
+/** The glide view: the most the picture narrows toward the next panorama; the part of the way after which it crossfades to it; seconds the zoom takes to come in walking and to go at rest; seconds the fade takes to finish at rest. */
+const GLIDE_MAX = 1.25;
+const GLIDE_FADE_FROM = 0.82;
+const GLIDE_ZOOM_IN = 0.2;
+const GLIDE_ZOOM_OUT = 0.3;
+const GLIDE_SETTLE = 0.2;
 /** A patch's picture is this fine, metres a pixel, and at most this many pixels a side. */
 const PATCH_TEXEL = 0.012;
 const PATCH_PIXELS = 256;
@@ -307,6 +316,13 @@ export class ScanView {
   private readonly demoView: boolean;
   /** The hybrid view: the panorama behind and the one ahead (by index; -1 none), the ahead one's weight, and how far the motion has eased in (0 at rest, 1 walking). */
   private readonly hybridView: boolean;
+  /** The glide view: its own pair (from, to; -1 none), the fade to the second (0 to 1), and how much of the zoom is shown (0 at rest, 1 walking). */
+  private readonly glideView: boolean;
+  private glideA = -1;
+  private glideB = -1;
+  private glideFade = 0;
+  private glideProgress = 0;
+  private glideZoom = 0;
   private hybridA = -1;
   private hybridB = -1;
   private hybridW = 0;
@@ -381,8 +397,9 @@ export class ScanView {
     this.fanMaterial = createPhotoMaterial(this.photo, "stand-in", null, 2);
     this.sphereView = options.view === "spheres";
     this.demoView = options.view === "demo";
-    this.hybridView = options.view === undefined || options.view === "hybrid";
-    this.photoView = options.view === "photo" || this.demoView || this.hybridView;
+    this.hybridView = options.view === "hybrid";
+    this.glideView = options.view === undefined || options.view === "glide";
+    this.photoView = options.view === "photo" || this.demoView || this.hybridView || this.glideView;
     this.reachShown = options.reach ?? (this.hybridView ? HYBRID_REACH : REACH);
     if (this.photoView) {
       const { directions, index } = cubeSphere(SPHERE_CELLS);
@@ -391,7 +408,7 @@ export class ScanView {
       sphere.setIndex(new BufferAttribute(index, 1));
       this.photoMeshes = Array.from({ length: SLOTS }, (_, slot) => {
         const material = createPhotoViewMaterial(this.photo, slot);
-        if (this.demoView) {
+        if (this.demoView || this.glideView) {
           // A skybox: nothing of it is in front of anything.
           material.uniforms.uFlat.value = 1;
           material.depthTest = false;
@@ -504,7 +521,8 @@ export class ScanView {
         uniforms.uSolid.value = front ? this.leadIn : 1;
       });
     }
-    if (this.hybridView) this.chooseHybrid(dt);
+    if (this.glideView) this.chooseGlide(dt);
+    else if (this.hybridView) this.chooseHybrid(dt);
     else if (this.demoView) this.chooseDemo(dt);
     else if (this.photoView) this.choosePhoto(dt);
     this.draw(null);
@@ -582,6 +600,143 @@ export class ScanView {
           .map((c) => c.index)
       : [];
     panos.prefer = this.photoLead >= 0 ? [this.photoLead, ...next] : next;
+  }
+
+  /**
+   * The glide view's pair: the panorama walked from and the one walked to,
+   * both in sight, and how far along from the first to the second the eye
+   * is. Arriving (the fade done) makes the second the first. At rest the
+   * zoom eases out over 0.3 s on the nearer of the two, the fade finishing
+   * first when that is the second.
+   */
+  private chooseGlide(dt: number): void {
+    const panos = this.panos;
+    if (!panos) return;
+    const moving = this.stillFor < HYBRID_LINGER;
+    this.glideZoom = moving ? Math.min(1, this.glideZoom + dt / GLIDE_ZOOM_IN) : Math.max(0, this.glideZoom - dt / GLIDE_ZOOM_OUT);
+    const { x, y, z } = this.pose;
+    const eye: Vec3 = [x, y, z];
+    const travel = this.travel;
+    const find = (index: number) => this.used.find((u) => u.index === index);
+    const reach = (o: Vec3) => Math.hypot(o[0] - x, o[1] - y, o[2] - z);
+    const along = (o: Vec3) => (travel ? (o[0] - x) * travel[0] + (o[2] - z) * travel[1] : 0);
+    const visible = (u: PanoUse) => reach(u.origin) <= 0.3 || !panos.blocked?.(eye, u.origin);
+    const sight = this.used.filter(visible);
+    const nearest = sight.reduce<PanoUse | null>((best, u) => (!best || reach(u.origin) < reach(best.origin) ? u : best), null) ?? this.used[0] ?? null;
+    if (!nearest) return;
+    let a = find(this.glideA);
+    let b = find(this.glideB);
+    if (!a || !visible(a)) {
+      a = nearest;
+      b = undefined;
+      this.glideFade = 0;
+    }
+    if (b && !visible(b) && this.glideFade === 0) b = undefined;
+    // Walking back toward the first: the pair turns round.
+    if (moving && travel && a && b && along(a.origin) > 0.1 && along(b.origin) < -0.1) {
+      [a, b] = [b, a];
+      this.glideFade = 1 - this.glideFade;
+    }
+    if (!b && travel && moving) {
+      b = sight.filter((u) => u.index !== a!.index && along(u.origin) > 0.2).sort((p, q) => reach(p.origin) - reach(q.origin))[0];
+      this.glideFade = 0;
+    }
+    let progress = 0;
+    if (a && b) {
+      const ab = [b.origin[0] - a.origin[0], b.origin[1] - a.origin[1], b.origin[2] - a.origin[2]];
+      const length2 = Math.max(1e-6, ab[0] ** 2 + ab[1] ** 2 + ab[2] ** 2);
+      progress = Math.min(1, Math.max(0, ((x - a.origin[0]) * ab[0] + (y - a.origin[1]) * ab[1] + (z - a.origin[2]) * ab[2]) / length2));
+    }
+    if (a && b) {
+      if (moving) {
+        // The fade is where the eye is: over the last part of the way.
+        const t = Math.min(1, Math.max(0, (progress - GLIDE_FADE_FROM) / (1 - GLIDE_FADE_FROM)));
+        // Not onto a blurred picture while the sharp one shown is near: hold until the next one's full cube is in.
+        const sharp = (u: PanoUse) => ((this.photo.uPanoSharp.value as number[])[this.used.indexOf(u)] ?? 0) >= 0.99;
+        const hold = !sharp(b) && sharp(a) && reach(a.origin) < DEMO_SHARP_HOLD;
+        const goal = hold ? 0 : t * t * (3 - 2 * t);
+        // Where it is held back, it catches up quickly rather than at a stroke.
+        this.glideFade = goal >= this.glideFade && goal - this.glideFade < 0.25 ? goal : this.glideFade + Math.sign(goal - this.glideFade) * Math.min(Math.abs(goal - this.glideFade), dt / GLIDE_SETTLE);
+      } else {
+        // At rest: on to whichever is nearer.
+        const goal = reach(b.origin) < reach(a.origin) || this.glideFade > 0.5 ? 1 : 0;
+        this.glideFade += Math.sign(goal - this.glideFade) * Math.min(Math.abs(goal - this.glideFade), dt / GLIDE_SETTLE);
+      }
+      if (this.glideFade >= 1) {
+        a = b;
+        b = undefined;
+        this.glideFade = 0;
+        progress = 0;
+      } else if (!moving && this.glideFade <= 0 && this.glideZoom === 0) b = undefined;
+    }
+    this.glideA = a?.index ?? -1;
+    this.glideB = b?.index ?? -1;
+    this.glideProgress = progress;
+    this.photoLead = this.glideA;
+    this.photoFrom = -1;
+    const positions = this.scanPositions();
+    const next = travel
+      ? positions
+          .map((o, index) => ({ index, along: along(o), reach: Math.hypot(o[0] - x, o[2] - z) }))
+          .filter((c) => c.along > 0.3 && c.index !== this.glideA && c.index !== this.glideB)
+          .sort((p, q) => p.reach - q.reach)
+          .slice(0, 2)
+          .map((c) => c.index)
+      : [];
+    panos.prefer = [this.glideA, this.glideB, ...next].filter((i) => i >= 0);
+  }
+
+  /**
+   * The glide view: the first panorama narrowed toward the second as the eye
+   * goes (by distance, up to `GLIDE_MAX`), the second over it by the fade,
+   * from as much wider to as it is; both about the screen point of the way
+   * from the first to the second, so the corridor's lines meet through the
+   * fade. Plain skyboxes only: every line is the photograph's own.
+   */
+  private drawGlide(target: WebGLRenderTarget | null): boolean {
+    const slotOf = (index: number) => (index < 0 ? -1 : this.used.findIndex((u) => u.index === index));
+    const a = slotOf(this.glideA);
+    if (a < 0 || a >= this.photoMeshes.length) return false;
+    const b = slotOf(this.glideB);
+    const before = this.renderer.getRenderTarget();
+    let centre = { x: 0, y: 0, facing: 0 };
+    if (b >= 0 && b < this.photoMeshes.length) {
+      const pa = (this.photo.uPanoPos.value as Vector3[])[a];
+      const pb = (this.photo.uPanoPos.value as Vector3[])[b];
+      const way = new Vector3().subVectors(pb, pa).setY(0).normalize();
+      const look = this.camera.getWorldDirection(new Vector3()).setY(0).normalize();
+      const point = this.camera.position.clone().addScaledVector(way, 10).project(this.camera);
+      const inFront = point.z < 1;
+      centre = {
+        x: inFront ? Math.min(0.9, Math.max(-0.9, point.x)) : 0,
+        y: inFront ? Math.min(0.9, Math.max(-0.9, point.y)) : 0,
+        facing: Math.max(0, look.dot(way)),
+      };
+    }
+    const push = (GLIDE_MAX - 1) * this.glideZoom * centre.facing;
+    const reachIn = Math.min(1, this.glideProgress / GLIDE_FADE_FROM);
+    const zoomA = { factor: 1 + push * reachIn, x: centre.x, y: centre.y };
+    const fade = this.glideFade;
+    if (b >= 0 && b < this.photoMeshes.length && fade > 0.002) {
+      // The second comes in from as much wider as the first is narrower, easing to as it is.
+      const zoomB = { factor: 1 / (1 + push * reachIn * (1 - fade)), x: centre.x, y: centre.y };
+      const size = this.renderer.getDrawingBufferSize(new Vector2());
+      if (!this.fadeTarget || this.fadeTarget.width !== size.x || this.fadeTarget.height !== size.y) {
+        this.fadeTarget?.dispose();
+        this.fadeTarget = new WebGLRenderTarget(size.x, size.y, { samples: 4 });
+      }
+      this.drawPhotoSlot(b, this.fadeTarget, 1, zoomB);
+      this.drawPhotoSlot(a, target, 1, zoomA);
+      this.fadeMaterial.uniforms.tMap.value = this.fadeTarget.texture;
+      this.fadeMaterial.uniforms.uAlpha.value = fade;
+      const clear = this.renderer.autoClear;
+      this.renderer.autoClear = false;
+      this.renderer.render(this.fadeScene, this.fadeCamera);
+      this.renderer.autoClear = clear;
+    } else this.drawPhotoSlot(a, target, 1, zoomA);
+    this.drawActors(target);
+    this.renderer.setRenderTarget(before);
+    return true;
   }
 
   /**
@@ -722,7 +877,7 @@ export class ScanView {
   }
 
   /** Draws the photo view's panorama in store slot `slot` alone, to `target`, from the camera, warped for its clamped offset. */
-  private drawPhotoSlot(slot: number, target: WebGLRenderTarget | null, extraZoom = 1): void {
+  private drawPhotoSlot(slot: number, target: WebGLRenderTarget | null, extraZoom = 1, given?: { factor: number; x: number; y: number }): void {
     const origin = (this.photo.uPanoPos.value as Vector3[])[slot];
     const eye = this.camera.position;
     const shift = photoShift([eye.x, eye.y, eye.z], [origin.x, origin.y, origin.z], this.reachShown);
@@ -734,12 +889,12 @@ export class ScanView {
     const height = target ? target.height : this.renderer.getDrawingBufferSize(new Vector2()).y;
     uniforms.uPixel.value = (this.camera.fov * Math.PI) / 180 / Math.max(1, height);
     this.renderer.setRenderTarget(target);
-    if (!this.demoView) {
+    if (!this.demoView && !given) {
       this.renderer.render(this.photoScene, this.camera);
       return;
     }
     // The zoom, in screen space after the projection: a scale about a screen point keeps every line straight.
-    const zoom = this.demoZoom(origin);
+    const zoom = given ?? this.demoZoom(origin);
     const k = zoom.factor * extraZoom;
     const projection = this.camera.projectionMatrix.clone();
     const inverse = this.camera.projectionMatrixInverse.clone();
@@ -819,6 +974,7 @@ export class ScanView {
 
   /** Renders the current view to `target` (null: the screen), filled where no surface covers it. */
   draw(target: WebGLRenderTarget | null): void {
+    if (this.glideView && this.sphereShown && this.drawGlide(target)) return;
     if (this.hybridView && this.sphereShown && this.drawHybrid(target)) return;
     if (this.photoView && this.sphereShown && this.drawPhoto(target)) return;
     // In the sphere view every pixel is painted: the far view, the mesh over it, the spheres over that.

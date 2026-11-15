@@ -85,7 +85,7 @@ export interface WalkOptions {
   textured?: boolean;
   repair?: "all" | "none" | "shards" | "planes";
   /** What is drawn: the panoramas as spheres (the default), or the mesh. */
-  view?: "spheres" | "mesh" | "photo" | "demo" | "hybrid";
+  view?: "spheres" | "mesh" | "photo" | "demo" | "hybrid" | "glide";
   /** In the photo view: how far the picture follows the eye from its scan position, metres. */
   reach?: number;
   fill?: boolean;
@@ -540,7 +540,9 @@ export class ScanWalk {
     if (!this.holdLift) this.eyeLift *= Math.exp(-5 * dt);
 
     const speed = Math.hypot(next.vx, next.vz);
-    const bobTarget = recorder ? 0 : viewBob(next.walked, speed, this.options.reducedMotion);
+    // The glide view keeps the eye level: a bob would bounce the photograph.
+    const glide = this.options.view === undefined || this.options.view === "glide";
+    const bobTarget = recorder || glide ? 0 : viewBob(next.walked, speed, this.options.reducedMotion);
     this.bob += (bobTarget - this.bob) * (1 - Math.exp(-30 * dt));
     const eyeY = next.y + TUNING.eyeHeight + this.eyeLift;
 
