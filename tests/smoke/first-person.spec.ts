@@ -11,6 +11,12 @@ import { expect, test, type Page } from "@playwright/test";
 // that on where a newer Chromium would switch it off. Where no WebGL context
 // can be made at all, the view falls back to the board with a one-line
 // notice, and the tests assert that instead.
+//
+// Software WebGL draws few frames, and how few depends on the machine. The
+// view moves the body and turns the view once a frame, by the time since the
+// last one (at most 0.1 s), so neither a count of frames nor a wait in real
+// time says how far a held key has gone. These tests never count frames:
+// each key is held until the page shows the state it was held for (issue 147).
 test.use({ launchOptions: { args: ["--enable-unsafe-swiftshader"] } });
 
 const view = (page: Page) => page.locator('[data-testid="fp-view"][data-ready="true"]');
@@ -33,30 +39,83 @@ async function firstPerson(page: Page): Promise<boolean> {
 async function open(page: Page, building: string) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/b/${building}/run`);
-  await expect(page.getByTestId("run-board")).toBeVisible();
+  // The first render places the level in the browser, which on a slow machine takes longer than an expect's 5 s.
+  await expect(page.getByTestId("run-board")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("run-view")).toHaveAttribute("data-view", "board");
 }
 
+/**
+ * Holds `key` down until `selector` matches, then lets go; false when it
+ * already matched and nothing was held. The letting go happens in the page,
+ * the moment the DOM shows the state: a MutationObserver dispatches the key's
+ * keyup on `window`, where the view's own key handler takes it as it takes the
+ * browser's. The DOM changes in the task after the frame that reached the
+ * state, before the view's next frame, so the body or the view stops where the
+ * state was reached however slowly frames come, with no round trip to the test
+ * runner in between. The runner then lets go of the key too, which changes
+ * nothing more.
+ */
+async function holdUntil(page: Page, keys: { key: string; code: string }, selector: string, timeout: number): Promise<boolean> {
+  const already = await page.evaluate(
+    ({ code, selector }) => {
+      if (document.querySelector(selector)) return true;
+      const watch = new MutationObserver(() => {
+        if (!document.querySelector(selector)) return;
+        watch.disconnect();
+        window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
+      });
+      watch.observe(document.body, { subtree: true, childList: true, attributes: true });
+      return false;
+    },
+    { code: keys.code, selector },
+  );
+  if (already) return false;
+  await page.keyboard.down(keys.key);
+  await expect(page.locator(selector)).toHaveCount(1, { timeout });
+  await page.keyboard.up(keys.key);
+  return true;
+}
+
 test("first person runs in real time, and walking into the next node's area plays the engine's move", async ({ page }) => {
+  // Its own waits add up past the default 30 s on a busy machine (the first render, software WebGL's
+  // start, the walk), and it timed out there; the E test below has the same budget.
+  test.setTimeout(90_000);
   await open(page, "F1");
   if (!(await firstPerson(page))) return;
 
   await expect(page.getByTestId("run-board")).toHaveCount(0);
   await expect(view(page)).toHaveAttribute("data-node", "fl-car");
   await expect(page.getByTestId("fp-hint")).toContainText("hold");
-  // The clock runs on its own: turns pass while the player stands still, and they stay put.
+  // The clock waits for the first move (issue 171): looking around plays no turn. A drag there and
+  // back turns the view by a set angle each way, so it faces the lobby again after.
+  await expect(page.getByTestId("fp-first-move")).toContainText("The clock starts when you move");
+  await page.evaluate(() => {
+    const surface = document.querySelector('[data-testid="fp-view"]')!;
+    const at = (type: string, x: number) => surface.dispatchEvent(new PointerEvent(type, { button: 0, clientX: x, clientY: 0, pointerId: 1, bubbles: true }));
+    at("pointerdown", 0);
+    at("pointermove", 200);
+    at("pointermove", 0);
+    at("pointerup", 0);
+  });
+  // Several of first person's 700 ms turns: none is played while the player only looks.
+  await page.waitForTimeout(3_000);
+  expect(await turnOf(page)).toBe(0);
+  await expect(page.getByTestId("fp-first-move")).toBeVisible();
+  // A tap of W is the first move: from then on the clock runs on its own, turns passing while the
+  // player stands still, and they stay put.
+  await page.keyboard.press("w");
+  await expect(page.getByTestId("fp-first-move")).toHaveCount(0);
   const start = await turnOf(page);
-  await expect.poll(() => turnOf(page), { timeout: 5_000 }).toBeGreaterThan(start + 1);
+  await expect.poll(() => turnOf(page), { timeout: 10_000 }).toBeGreaterThan(start + 1);
   await expect(view(page)).toHaveAttribute("data-node", "fl-car");
   // No turn timer or play mode switch in first person; Details answers to I, since D strafes.
   await expect(page.getByTestId("turn-timer")).toHaveCount(0);
   await expect(page.getByTestId("details-toggle")).toHaveAttribute("aria-keyshortcuts", "I");
 
-  // The lobby node is straight ahead: walking into its area is the move.
+  // The lobby node is straight ahead: walking into its area is the move. W is let go the moment the
+  // engine has the player there, so the walk ends in the lobby rather than through its far door.
   const before = await turnOf(page);
-  await page.keyboard.down("w");
-  await expect(view(page)).toHaveAttribute("data-node", "fl-lobby", { timeout: 10_000 });
-  await page.keyboard.up("w");
+  await holdUntil(page, { key: "w", code: "KeyW" }, '[data-testid="fp-view"][data-node="fl-lobby"]', 30_000);
   expect(await turnOf(page)).toBeGreaterThan(before);
 
   // The run log is the one the Debrief replays: the walk is a move among the clock's waits.
@@ -75,12 +134,52 @@ test("first person runs in real time, and walking into the next node's area play
   // The choice is remembered for the next visit.
   await page.getByTestId("run-view-first-person").click();
   await page.reload();
-  await expect(page.getByTestId("run-view")).toHaveAttribute("data-view", "first-person", { timeout: 15_000 });
+  await expect(page.getByTestId("run-view")).toHaveAttribute("data-view", "first-person", { timeout: 30_000 });
+});
+
+test("first person: the controls hint is up for a first-time player, and fades once they have walked and looked", async ({ page }) => {
+  // As below: the software WebGL's start, on a slow machine.
+  test.setTimeout(90_000);
+  await open(page, "F1");
+  if (!(await firstPerson(page))) return;
+
+  // Issue 146: at the left of the view, every control named, and the suspicion meter up with it.
+  const hint = page.getByTestId("fp-controls-hint");
+  await expect(hint).toBeVisible();
+  for (const words of ["move", "look around", "pick the lock"]) await expect(hint).toContainText(words);
+  // Issue 189: no walk key. WASD, the mouse and hold E are the whole of it.
+  await expect(hint.locator("li")).toHaveCount(3);
+  await expect(hint).not.toContainText("Shift");
+  await expect(page.getByTestId("fp-hint")).not.toContainText("Shift");
+  await expect(page.getByTestId("fp-notice")).toHaveAttribute("data-tone", /calm|warning|danger/);
+
+  // Looking alone does not clear it. A drag turns the view by a set angle (0.004 rad a pixel), whatever
+  // the frame rate: 200 px is 0.8 rad, past the hint's 0.5. Each way in its own frame, so the view counts
+  // the turn; back again after, so the walk below heads into the lobby.
+  const drag = (from: number, to: number) =>
+    page.evaluate(
+      ([from, to]) => {
+        const surface = document.querySelector('[data-testid="fp-view"]')!;
+        const at = (type: string, x: number) => surface.dispatchEvent(new PointerEvent(type, { button: 0, clientX: x, clientY: 0, pointerId: 1, bubbles: true }));
+        at("pointerdown", from);
+        at("pointermove", to);
+        at("pointerup", to);
+      },
+      [from, to],
+    );
+  await drag(0, 200);
+  await expect(hint.locator("li").nth(1)).toHaveAttribute("data-done", "true");
+  await expect(hint).toHaveAttribute("data-phase", "shown");
+  await drag(200, 0);
+  await expect(hint).toHaveAttribute("data-phase", "shown");
+
+  // Walking too: W is held until the hint starts to fade, then it goes.
+  await holdUntil(page, { key: "w", code: "KeyW" }, '[data-testid="fp-controls-hint"][data-phase="fading"]', 30_000);
+  await expect(hint).toHaveCount(0, { timeout: 10_000 });
 });
 
 test("first person: holding E at a locked door picks it until the engine opens it", async ({ page }) => {
-  // The turn and the walk up to the door go a tap at a time, each waiting on drawn frames, which on CI's
-  // software WebGL takes longer than the default: the demo path's 90 s.
+  // As above: the software WebGL's start, on a slow machine.
   test.setTimeout(90_000);
   await open(page, "F3");
   // On the board, to the suite's south-west corner beside the server room's locked door.
@@ -94,36 +193,31 @@ test("first person: holding E at a locked door picks it until the engine opens i
   await expect(view(page)).toHaveAttribute("data-node", "s1-sw");
   await expect(view(page)).toHaveAttribute("data-locked", /d-server/);
 
-  // Paused the whole way to the door, so no turn passes and nothing on the floor moves meanwhile: turn
-  // until the view's line is on the door, then step up to it in short taps of W, reading the
-  // prompt after each. The view moves the body however few frames a slow machine draws, so a key held
-  // down could carry it past the door's reach, or slide it along the wall off the door; a tap at a time
-  // stops it where the prompt first says to pick. Walking along the line of view keeps that line on the
-  // same point of the door, and the door's side of the room is all one node's area.
+  // Paused the whole way to the door, so no turn passes and nothing on the floor moves meanwhile.
   await page.keyboard.press("p");
   await expect(page.getByTestId("fp-paused")).toBeVisible();
   const prompt = page.getByTestId("fp-prompt");
-  // The view reads the keys once a frame: a tap is held for at least one drawn frame, however slow they come.
-  const frames = (n: number) =>
-    page.evaluate((count) => new Promise<void>((done) => {
-      const next = (left: number) => (left === 0 ? done() : requestAnimationFrame(() => next(left - 1)));
-      next(count);
-    }), n);
-  const tap = async (key: string, settle: number) => {
-    await page.keyboard.down(key);
-    await Promise.all([frames(1), page.waitForTimeout(50)]);
-    await page.keyboard.up(key);
-    await frames(settle);
-  };
-  // A turn stops the moment the key is up: a frame for the HUD to catch up is enough.
-  for (let i = 0; i < 200 && !(await prompt.isVisible()); i++) await tap("ArrowRight", 1);
-  await expect(prompt).toHaveAttribute("data-kind", /far|pick/);
-  for (let i = 0; i < 40 && (await prompt.getAttribute("data-kind")) === "far"; i++) {
-    // A step: long enough after for the body to stop (a frame or two even on a slow machine) and the HUD to catch up.
-    await tap("w", 3);
-    await expect(view(page), "the step stays on the door's node").toHaveAttribute("data-node", "s1-sw");
+
+  // Turn until the view's line first meets the door (its prompt shows): the line is then within a frame's
+  // turn of the door's edge. A drag of the view turns it on by a set angle, 0.004 rad a pixel whatever the
+  // frame rate: 45 px, about 10 degrees, takes the line in off the edge. The door, with its frame, spans
+  // about 30 degrees from here, and a frame turns the view at most 14 (0.1 s at 2.4 rad/s).
+  if (await holdUntil(page, { key: "ArrowRight", code: "ArrowRight" }, '[data-testid="fp-prompt"]', 30_000)) {
+    // Through the view's own drag-to-look handlers, as a mouse drag where the pointer is not locked.
+    await page.evaluate((px) => {
+      const surface = document.querySelector('[data-testid="fp-view"]')!;
+      const at = (type: string, x: number) => surface.dispatchEvent(new PointerEvent(type, { button: 0, clientX: x, clientY: 0, pointerId: 1, bubbles: true }));
+      at("pointerdown", 0);
+      at("pointermove", px);
+      at("pointerup", px);
+    }, 45);
   }
-  await expect(prompt).toHaveAttribute("data-kind", "pick");
+  await expect(prompt).toHaveAttribute("data-kind", /far|pick/);
+
+  // Walk along the line of view until the prompt says to pick, and stop there. Walking along the line
+  // keeps it on the same point of the door, and the door's side of the room is all one node's area.
+  await holdUntil(page, { key: "w", code: "KeyW" }, '[data-testid="fp-prompt"][data-kind="pick"]', 30_000);
+  await expect(view(page), "the walk stays on the door's node").toHaveAttribute("data-node", "s1-sw");
   await expect(prompt).toContainText("Hold E to pick the lock");
   await expect(page.getByTestId("fp-paused")).toBeVisible();
 
@@ -132,7 +226,7 @@ test("first person: holding E at a locked door picks it until the engine opens i
   await expect(page.getByTestId("fp-paused")).toHaveCount(0);
   await page.keyboard.down("e");
   await expect(prompt).toContainText("Picking");
-  await expect(view(page)).not.toHaveAttribute("data-locked", /d-server/, { timeout: 15_000 });
+  await expect(view(page)).not.toHaveAttribute("data-locked", /d-server/, { timeout: 30_000 });
   await page.keyboard.up("e");
   await expect(view(page)).toHaveAttribute("data-node", "s1-sw");
 });

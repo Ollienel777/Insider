@@ -11,10 +11,8 @@ export const FP = Object.freeze({
   /** The player's body, a circle on the floor plan. */
   radiusM: 0.35,
 
-  /** Running, the default: constant, the same forwards, sideways and diagonally. */
+  /** The one speed: constant, the same forwards, sideways and diagonally. */
   runMps: 4.4,
-  /** Walking, with Shift held. */
-  walkMps: 2.0,
   /** Speeding up: full run speed in about five frames at 60 Hz. */
   accelMps2: 60,
   /** Stopping, with no key held: from a run in about four frames. */

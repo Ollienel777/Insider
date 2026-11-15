@@ -40,7 +40,7 @@ test("clicking the dock post shows Vexcel's dock entry and CoStar's Class A, wit
     const s = getComputedStyle(el);
     return { stroke: s.stroke, width: s.strokeWidth, duration: s.animationDuration, name: s.animationName };
   });
-  expect(style).toEqual({ stroke: "rgb(192, 140, 255)", width: "1px", duration: "0.3s", name: "thread-draw" });
+  expect(style).toEqual({ stroke: "rgb(143, 67, 164)", width: "1px", duration: "0.3s", name: "thread-draw" });
 
   // The card sits beside the board's piece, inside the board.
   const board = (await page.getByTestId("run-board").boundingBox())!;
@@ -63,7 +63,7 @@ test("clicking the records room lock shows the year-built row and the era rule; 
   expect((await rows(page))[0]).toEqual(["costar", "yearBuilt", "1974"]);
   await expect(card(page)).toContainText("Built 1974 (before 1980) → Analog era: key locks, pickable in 2 turns");
   const stroke = await page.getByTestId("provenance-thread").locator("line").evaluate((el) => getComputedStyle(el).stroke);
-  expect(stroke).toBe("rgb(122, 167, 255)");
+  expect(stroke).toBe("rgb(47, 111, 176)");
 
   // Outside the card and every piece: the board's empty corner.
   const board = (await page.getByTestId("run-board").boundingBox())!;

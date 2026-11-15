@@ -4,6 +4,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import type { StandInReason } from "@/adapters/llm";
 import { CrewPlan } from "@/domain";
 
 export const CREW_FIXTURES = path.join(process.cwd(), "fixtures", "llm");
@@ -30,6 +31,12 @@ export type CrewRecording = z.infer<typeof CrewRecording>;
 /** The building has no recorded crew replies. */
 export class NoRecordingError extends Error {
   override name = "NoRecordingError";
+  /** Why a recording was asked for: the model was off, timed out or failed (issue 140). */
+  readonly reason?: StandInReason;
+  constructor(message: string, reason?: StandInReason) {
+    super(message);
+    if (reason) this.reason = reason;
+  }
 }
 
 /** Reads and checks a building's recording; null when there is none. */

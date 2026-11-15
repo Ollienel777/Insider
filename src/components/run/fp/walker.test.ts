@@ -24,7 +24,7 @@ const CASES = [
   { id: "F3", cached: f3 },
 ] as const;
 
-const IDLE: Controls = { forward: 0, strafe: 0, walk: false, yaw: 0, use: false, usePressed: false };
+const IDLE: Controls = { forward: 0, strafe: 0, yaw: 0, use: false, usePressed: false };
 const distance = (a: Vec, b: Vec) => Math.hypot(a.x - b.x, a.y - b.y);
 const yawTo = (from: Vec, to: Vec) => Math.atan2(to.y - from.y, to.x - from.x);
 
@@ -59,8 +59,7 @@ function step(s: Session, controls: Controls): void {
 /** Runs straight at `target` until within 6 cm of it, or `seconds` pass. */
 function walkTo(s: Session, target: Vec, seconds = 12): void {
   for (let i = 0; i < seconds / FP.stepS && distance(s.walker.pos, target) > 0.06; i++) {
-    const near = distance(s.walker.pos, target) < 0.4;
-    step(s, { ...IDLE, forward: 1, walk: near, yaw: yawTo(s.walker.pos, target) });
+    step(s, { ...IDLE, forward: 1, yaw: yawTo(s.walker.pos, target) });
   }
 }
 
@@ -317,7 +316,7 @@ describe.each(CASES)("free movement on $id", ({ id, cached }) => {
 
   it("stays put through turns that leave the player where they were (the clock's waits)", () => {
     const s = session(world, { ...empty(), locked: [] });
-    for (let i = 0; i < 20; i++) step(s, { ...IDLE, forward: 1, walk: true, yaw: 0.4 });
+    for (let i = 0; i < 20; i++) step(s, { ...IDLE, forward: 1, yaw: 0.4 });
     const pos = s.walker.pos;
     play(s, { kind: "wait" });
     expect(reconcile(s.walker, s.ground, s.run).pos).toBe(pos);
@@ -441,5 +440,17 @@ describe("E at a locked door seen from another node's area plays nothing", () =>
     // Walking away plays the moves the body makes, as ever.
     walkEdge(s, area, neighbours(s.run.board, area).find((e) => e.doorId === undefined || !locked.includes(e.doorId))!.to);
     expect(ground.regionOf(s.walker.pos)).toBe(s.run.playerNode);
+  });
+});
+
+describe.each(CASES)("the prompt at a way out on $id (issue 188)", ({ id, cached }) => {
+  it("names the exit the player stands near once the objective is carried, and not before", () => {
+    const placed = placeLevel(LevelManifest.parse(structuredClone(cached)), structuredClone(FIXTURE_FLOORS[id]), RUN_SEED);
+    const ground = groundOf(buildWorld(placed.level.floor));
+    const exit = placed.level.exits[0];
+    const run: RunState = { ...createRun(placed.level), playerNode: exit };
+    const walker = createWalker(ground, run);
+    expect(promptFor(walker, ground, { ...run, carrying: true }, 0)).toEqual({ kind: "exit", nodeId: exit });
+    expect(promptFor(walker, ground, run, 0)?.kind).not.toBe("exit");
   });
 });

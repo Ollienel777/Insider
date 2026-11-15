@@ -1,4 +1,4 @@
-// Coverage and unwatched routes (issue 120): the night's length, small
+// Coverage and open windows (issue 120): the night's length, small
 // hand-made floors, F1's generated security and the prepared demo pair, each
 // measured over the nights the batch plays (issue 132). The demo pair's
 // numbers are pinned as they come out, not as the story wants.
@@ -14,18 +14,20 @@ import cachedF3 from "../../../data/levels/F3.night-desk.json";
 import { demoSetups } from "./demo-setups";
 import fixRecording from "../../../fixtures/llm/fix-F1.json";
 import { toEngineFix } from "./chief-fix";
+import { openWindows } from "./open-windows";
 import { ownerBatchInput, ownerZones } from "./owner-batch";
-import { boardOf, extendRound, setupFromPlaced, setupWithFix, startRound, updateCamera } from "./owner-edit";
+import { boardOf, extendRound, setTempo, setupFromPlaced, setupWithFix, startRound, updateCamera } from "./owner-edit";
 import {
   coverageLine,
   CYCLE_CAP,
   cycleLength,
+  firstWindowLine,
   measureChange,
   measureNights,
   measureSetup,
-  routesLine,
   timingLine,
   watchedPositions,
+  windowsLine,
   type MeasureNight,
 } from "./setup-measure";
 
@@ -117,22 +119,23 @@ describe("the night's length", () => {
   });
 });
 
-describe("coverage and unwatched routes on a small floor", () => {
-  it("with no cameras and no guards, nothing is watched and every way in reaches the objective", () => {
+describe("coverage and open windows on a small floor", () => {
+  it("with no cameras and no guards, nothing is watched and every moment is open", () => {
     const m = measure(diamondLevel(), ways);
-    expect(m).toMatchObject({ positions: 5, watched: 0, coverage: 0, entries: 2, unwatched: 2 });
+    expect(m).toMatchObject({ positions: 5, watched: 0, coverage: 0, entries: 2, windows: { open: 2, moments: 2 } });
     expect(coverageLine(m)).toBe("Coverage: 0% of the floor is watched at some point in every night the crew plays.");
-    expect(routesLine(m)).toBe("Unwatched routes: 2 of 2 ways in have, on the one night the crew plays, a route to the files that no camera or guard sees that night.");
+    expect(windowsLine(m)).toBe("Open windows: 2 of 2 moments in the one night the crew plays let a crew in and out unseen by guards and cameras. A moment is a way in at any turn of a night; the attempts all start at turn 0.");
   });
 
   it("counts a locked door as passable: the crew picks it", () => {
     const m = measure(diamondLevel({ lockedDoors: ["d-ab"], cameras: [{ id: "C1", kind: "fixed-ip", cover: ["c"] }] }), ways);
     // a still reaches d through the locked door to b; e has only the watched c.
-    expect(m).toMatchObject({ watched: 1, coverage: 20, unwatched: 1 });
-    expect(routesLine(m)).toBe("Unwatched routes: 1 of 2 ways in has, on the one night the crew plays, a route to the files that no camera or guard sees that night.");
+    expect(m).toMatchObject({ watched: 1, coverage: 20, windows: { open: 1, moments: 2 } });
+    expect(m.windows.first?.actions.filter((a) => a.kind === "pick")).toHaveLength(2);
+    expect(windowsLine(m)).toBe("Open windows: 1 of 2 moments in the one night the crew plays lets a crew in and out unseen by guards and cameras. A moment is a way in at any turn of a night; the attempts all start at turn 0.");
   });
 
-  it("with every route watched, no way in reaches the objective unseen", () => {
+  it("with every route watched, no moment is open", () => {
     const m = measure(
       diamondLevel({
         cameras: [{ id: "C1", kind: "fixed-ip", cover: ["c"] }],
@@ -140,8 +143,8 @@ describe("coverage and unwatched routes on a small floor", () => {
       }),
       ways,
     );
-    expect(m).toMatchObject({ watched: 2, coverage: 40, unwatched: 0 });
-    expect(routesLine(m)).toBe("Unwatched routes: 0 of 2 ways in have, on the one night the crew plays, a route to the files that no camera or guard sees that night.");
+    expect(m).toMatchObject({ watched: 2, coverage: 40, windows: { open: 0 } });
+    expect(windowsLine(m)).toBe("Open windows: 0 of 2 moments in the one night the crew plays let a crew in and out unseen by guards and cameras. A moment is a way in at any turn of a night; the attempts all start at turn 0.");
   });
 
   it("counts a sweeping camera's whole cover, and every node a guard's round passes", () => {
@@ -153,7 +156,7 @@ describe("coverage and unwatched routes on a small floor", () => {
       }),
       [{ nodeId: "n0" }],
     );
-    expect(m).toMatchObject({ watched: 5, coverage: 83, unwatched: 0, cycle: 4 });
+    expect(m).toMatchObject({ watched: 5, coverage: 83, cycle: 4 });
   });
 
   it("a guard standing its post has no facing, so it watches every sightline from its post, on every night", () => {
@@ -164,30 +167,28 @@ describe("coverage and unwatched routes on a small floor", () => {
     expect([...watchedPositions(post).nodes].sort()).toEqual(["n0", "n1", "n2", "n3", "n4"]);
     // The batch's variation moves only rounds and sweeps, so every night has the post the same.
     const nights = BATCH_SEEDS.map((seed) => ({ level: varyLevel(post, seed), entries: [{ nodeId: "n0" }] }));
-    expect(measureNights(nights)).toMatchObject({ positions: 5, watched: 5, coverage: 100, unwatched: 0, cycle: 1 });
+    expect(measureNights(nights)).toMatchObject({ positions: 5, watched: 5, coverage: 100, windows: { open: 0 }, cycle: 1 });
   });
 
-  it("over several nights, the owner's worst case: coverage counts what every night watches, a way in is unwatched if any night leaves it open", () => {
+  it("over several nights: coverage counts what every night watches, open windows are counted on each night and added up", () => {
     // The camera is over b one night, over c the next, and over both on a third.
     const night = (cover: string[]) => ({ level: diamondLevel({ cameras: [{ id: "C1", kind: "fixed-ip" as const, cover }] }), entries: ways });
     const [overB, overC, shut] = [night(["b"]), night(["c"]), night(["b", "c"])];
-    expect(measureNights([overB])).toMatchObject({ watched: 1, unwatched: 2, openNights: 1 });
-    expect(measureNights([overC])).toMatchObject({ watched: 1, unwatched: 1, openNights: 1 });
-    expect(measureNights([shut])).toMatchObject({ watched: 2, unwatched: 0, openNights: 0 });
-    // Neither b nor c is watched every night; a is open on both nights (via c, then via b), e only on the first.
-    expect(measureNights([overB, overC])).toMatchObject({ watched: 0, coverage: 0, unwatched: 2, openNights: 2, nights: 2 });
+    expect(measureNights([overB])).toMatchObject({ watched: 1, windows: { open: 2, moments: 2 }, openNights: 1 });
+    expect(measureNights([overC])).toMatchObject({ watched: 1, windows: { open: 1, moments: 2 }, openNights: 1 });
+    expect(measureNights([shut])).toMatchObject({ watched: 2, windows: { open: 0, moments: 2 }, openNights: 0 });
+    // Neither b nor c is watched every night; each night's windows count.
+    expect(measureNights([overB, overC])).toMatchObject({ watched: 0, coverage: 0, windows: { open: 3, moments: 4 }, openNights: 2, nights: 2 });
     // A night that shuts every route does not close the one another night leaves open.
     const m = measureNights([shut, overC, shut]);
-    expect(m).toMatchObject({ watched: 1, unwatched: 1, openNights: 1, nights: 3 });
-    expect(routesLine(m)).toBe("Unwatched routes: 1 of 2 ways in has, on 1 of the 3 nights the crew plays, a route to the files that no camera or guard sees that night.");
+    expect(m).toMatchObject({ watched: 1, windows: { open: 1, moments: 6 }, openNights: 1, nights: 3, firstNight: 2 });
+    expect(windowsLine(m)).toBe("Open windows: 1 of 6 moments in the 3 nights the crew plays lets a crew in and out unseen by guards and cameras. A moment is a way in at any turn of a night; the attempts all start at turn 0.");
+    expect(firstWindowLine(m)).toMatch(/^The first opens on night 2, turn 0, when the attempts start: /);
     expect(timingLine(m, 5)).toBeNull();
-    expect(routesLine(measureNights([overC, overC]))).toBe(
-      "Unwatched routes: 1 of 2 ways in has, on every one of the 2 nights the crew plays, a route to the files that no camera or guard sees that night.",
-    );
   });
 
   it("with no way in, says so instead of 0 of 0", () => {
-    expect(routesLine(measure(diamondLevel(), []))).toBe("Unwatched routes: this floor has no way in to measure.");
+    expect(windowsLine(measure(diamondLevel(), []))).toBe("Open windows: this floor has no way in to measure.");
     expect(timingLine(measure(diamondLevel(), []), 3)).toBeNull();
   });
 
@@ -215,7 +216,8 @@ function playedNights(manifest: LevelManifest, floor: FloorGraph, setup: OwnerSe
 }
 
 /**
- * The two numbers read without `watchedPositions` or the measure's search:
+ * Coverage, and which ways in have a route nothing watches all night, read
+ * without `watchedPositions` or the measure's search:
  * on each night the batch plays, the engine's own sighting check
  * (`sightingsAt`: cameras and guards, no cleaners) on every node, in the order
  * `act` plays a turn (the crew's half against this turn's cameras and the
@@ -254,12 +256,11 @@ function oracle(manifest: LevelManifest, floor: FloorGraph, setup: OwnerSetup) {
   });
   const opened = new Set(open.flatMap((o) => [...o]));
   return {
-    measure: {
-      watched: floor.nodes.filter((n) => seenBy.every((s) => s.has(n.id))).length,
-      unwatched: opened.size,
-      openNights: open.filter((o) => o.size > 0).length,
-    },
+    measure: { watched: floor.nodes.filter((n) => seenBy.every((s) => s.has(n.id))).length },
     perNight: open.map((o) => o.size),
+    opened,
+    open,
+    levels,
   };
 }
 
@@ -273,7 +274,7 @@ describe("on F1", () => {
 
   const played = (setup: typeof starting) => playedNights(manifest, floor, setup);
 
-  it("matches an independent reading of what each night the batch plays watches, and which ways in it leaves open", () => {
+  it("matches an independent reading of what each night the batch plays watches; no night leaves a route watched by nothing", () => {
     for (const setup of [starting, night, moved]) {
       const { measure: read, perNight } = oracle(manifest, floor, setup);
       expect(measureSetup(manifest, floor, setup)).toMatchObject(read);
@@ -296,31 +297,39 @@ describe("on F1", () => {
 
   it("measures the generated security over the batch's nights", () => {
     const m = measureSetup(manifest, floor, starting)!;
-    expect(m).toMatchObject({ positions: 30, watched: 14, coverage: 47, entries: 2, unwatched: 0, openNights: 0, nights: 10 });
+    expect(m).toMatchObject({ positions: 30, watched: 14, coverage: 47, entries: 2, windows: { open: 40, moments: 80 }, openNights: 10, nights: 10 });
     expect(coverageLine(m)).toBe("Coverage: 47% of the floor is watched at some point in every night the crew plays.");
-    expect(routesLine(m)).toBe(
-      "Unwatched routes: 0 of 2 ways in have, on any of the 10 nights the crew plays, a route to the files that no camera or guard sees that night.",
+    expect(windowsLine(m)).toBe("Open windows: 40 of 80 moments in the 10 nights the crew plays let a crew in and out unseen by guards and cameras. A moment is a way in at any turn of a night; the attempts all start at turn 0.");
+    // With windows open, attempts that got out need not have been seen: no timing line.
+    expect(timingLine(m, 17)).toBeNull();
+    // With none open, the ones that got out were seen or heard on the way.
+    const shut = { ...m, windows: { ...m.windows, open: 0, first: null } };
+    expect(timingLine(shut, 17)).toBe(
+      "No moment in the 10 nights the crew plays lets a crew in and out unseen by guards and cameras, so the 17 attempts that got out were seen or heard and not caught.",
     );
-    // 17 of 50 got out with no route unwatched on any night: by timing, or seen and not caught.
-    expect(timingLine(m, 17)).toBe(
-      "On every night the crew plays, every route to the files crosses ground a camera or guard watches at some point that night, so the 17 attempts that got out did it by timing, or were seen and not caught.",
-    );
-    expect(timingLine(m, 1)).toContain("so the one attempt that got out did it by timing, or was seen and not caught.");
-    expect(timingLine(m, 0)).toBeNull();
-    expect(timingLine({ ...m, unwatched: 1 }, 17)).toBeNull();
+    expect(timingLine(shut, 1)).toContain("so the one attempt that got out was seen or heard and not caught.");
+    expect(timingLine(shut, 0)).toBeNull();
   });
 
-  it("measures the prepared pair: moving C2 adds two watched positions and closes no route", () => {
+  it("measures the prepared pair: moving C2 adds two watched positions and halves the open windows", () => {
     const [a, b] = [night, moved].map((s) => measureSetup(manifest, floor, s)!);
-    expect(a).toMatchObject({ watched: 13, coverage: 43, entries: 2, unwatched: 0 });
-    expect(b).toMatchObject({ watched: 15, coverage: 50, entries: 2, unwatched: 0 });
-    expect(measureChange(a, b)).toBe("Coverage 43% → 50%, unwatched routes 0 → 0");
+    expect(a).toMatchObject({ watched: 13, coverage: 43, entries: 2, windows: { open: 40, moments: 80 } });
+    expect(b).toMatchObject({ watched: 15, coverage: 50, entries: 2, windows: { open: 20, moments: 80 } });
+    expect(measureChange(a, b)).toBe("Coverage 43% → 50%, open windows 40 of 80 → 20 of 80");
+  });
+
+  it("shows each side's total in the change, so a longer night does not read as more open (issue 144 review)", () => {
+    // Slowing G1 to tempo 5 makes the night five times longer and leaves half the moments open, as before.
+    const a = measureSetup(manifest, floor, night)!;
+    const slow = measureSetup(manifest, floor, setTempo(night, "G1", 5))!;
+    expect(slow.windows).toMatchObject({ open: 200, moments: 400, share: 50 });
+    expect(measureChange(a, slow)).toBe("Coverage 43% → 43%, open windows 40 of 80 → 200 of 400");
   });
 
   it("measures the Chief's recorded fix on the generated setup", () => {
     const fixed = setupWithFix(starting, toEngineFix(recordedFix, ownerZones(manifest, floor)), generated.level, "After the fix");
     const after = measureSetup(manifest, floor, fixed)!;
-    expect(measureChange(measureSetup(manifest, floor, starting)!, after)).toBe("Coverage 47% → 50%, unwatched routes 0 → 0");
+    expect(measureChange(measureSetup(manifest, floor, starting)!, after)).toBe("Coverage 47% → 50%, open windows 40 of 80 → 0 of 80");
   });
 
   it("changes when a camera moves, with no batch played", () => {
@@ -340,17 +349,23 @@ describe("on F3, where some nights leave a way in open (issue 132)", () => {
   const floor = FIXTURE_FLOORS.F3;
   const starting = setupFromPlaced(placeLevel(manifest, floor, 1));
 
-  it("counts a way in that any night leaves open, and on how many nights", () => {
+  it("counts the windows on every night, and every route nothing watches is open at every turn", () => {
     // On seeds 4, 7, 8 and 9 the dock way in has a route to the prototype that nothing watches that night.
     const { measure: read, perNight } = oracle(manifest, floor, starting);
     expect(perNight).toEqual([0, 0, 0, 1, 0, 0, 1, 1, 1, 0]);
     const m = measureSetup(manifest, floor, starting)!;
     expect(m).toMatchObject(read);
-    expect(m).toMatchObject({ positions: 24, watched: 11, coverage: 46, entries: 2, unwatched: 1, openNights: 4, nights: 10 });
-    expect(routesLine(m)).toBe(
-      "Unwatched routes: 1 of 2 ways in has, on 4 of the 10 nights the crew plays, a route to the prototype that no camera or guard sees that night.",
-    );
-    // So attempts that got out need not have timed anything: no timing line.
+    expect(m).toMatchObject({ positions: 24, watched: 11, coverage: 46, entries: 2, windows: { open: 20, moments: 40 }, openNights: 10, nights: 10 });
+    expect(windowsLine(m)).toBe("Open windows: 20 of 40 moments in the 10 nights the crew plays let a crew in and out unseen by guards and cameras. A moment is a way in at any turn of a night; the attempts all start at turn 0.");
+    // A route nothing watches all night is open at every turn of that night, whenever the crew steps in.
+    const { open, levels } = oracle(manifest, floor, starting);
+    levels.forEach((level, i) => {
+      for (const way of open[i]) {
+        const w = openWindows(level, [way]);
+        expect(w.open).toBe(w.moments);
+      }
+    });
+    // So attempts that got out need not have been seen: no timing line.
     expect(timingLine(m, 40)).toBeNull();
   });
 

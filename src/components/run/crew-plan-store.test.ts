@@ -89,4 +89,12 @@ describe("a kit building's crew plan (#95)", () => {
     expect(JSON.parse(storage.items.get(crewPlanKey("F2", "romaine-1974"))!)).toEqual({ plan, recorded: true });
     expect(loadCrewPlan("F2", storage, "romaine-1974")).toEqual({ plan, recorded: true });
   });
+
+  it("keeps a plan worked out on the board marked as the board's, stored or in memory (issue 140)", () => {
+    const storage = memoryStorage();
+    saveCrewPlan("F2", { plan, recorded: false, source: "board" }, storage, "romaine-1974");
+    expect(loadCrewPlan("F2", storage, "romaine-1974")).toEqual({ plan, recorded: false, source: "board" });
+    saveCrewPlan("900101", { plan, recorded: false, source: "board" }, storage, "romaine-1974", true);
+    expect(loadCrewPlan("900101", storage, "romaine-1974", true)).toEqual({ plan, recorded: false, source: "board" });
+  });
 });

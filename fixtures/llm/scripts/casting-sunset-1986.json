@@ -3,7 +3,7 @@
   "agents": [
     {
       "agent": "casting-director",
-      "systemIncludes": "You are the Casting Director for Heist Anywhere.",
+      "systemIncludes": "You are the Casting Director for Hobbs.",
       "turns": [
         {
           "content": "Reading sunset-1986.",

@@ -150,7 +150,7 @@ export function OwnerReady({
     return boardOf(manifest, floor, fix.rerun.fixed, OWNER_SEED) ?? batchBefore;
   }, [batchBefore, fix, side, manifest, floor]);
 
-  // Coverage and unwatched routes (issue 120): measured over the nights each setup's batch plays (issue 132),
+  // Coverage and open windows (issue 120): measured over the nights each setup's batch plays (issue 132),
   // so they follow every edit with no batch. A draft with a problem gets none: the batch would not play it, and
   // the board shows only the part of it that fits.
   const editMeasure = useMemo(
@@ -307,8 +307,8 @@ export function OwnerReady({
       visualLabel="Owner board"
       visual={
         <div className="absolute inset-0 flex flex-col">
-          <div className="flex h-14 shrink-0 items-center gap-3 px-4 sm:px-6">
-            <span className="hidden label-caps text-text-2 sm:inline">
+          <div className="flex h-14 shrink-0 items-center gap-3 px-4 md:px-6">
+            <span className="hidden label-caps text-text-2 md:inline">
               {view === "setup"
                 ? "Your security"
                 : view === "compare"
@@ -317,9 +317,9 @@ export function OwnerReady({
                     ? `${shownSummary.total} attempts`
                     : "The crew's attempts"}
             </span>
-            <span aria-hidden className="hidden h-4 w-px bg-border sm:block" />
+            <span aria-hidden className="hidden h-4 w-px bg-border md:block" />
             {/* On a phone the caption takes two lines, so the count and the side are never cut off. */}
-            <span data-testid="owner-board-caption" className="line-clamp-2 min-w-0 text-xs leading-snug text-text-1 sm:truncate sm:text-sm">
+            <span data-testid="owner-board-caption" className="line-clamp-2 min-w-0 text-xs leading-snug text-text-1 md:truncate md:text-sm">
               {view === "setup"
                 ? draft.pristine
                   ? "The building's generated security, as a starting point"
@@ -469,7 +469,7 @@ export function OwnerReady({
               onOpenFixed={openFixed}
             />
           )}
-          <Link href={debriefHref} data-testid="owner-back" className={cn(buttonVariants({ variant: "ghost" }), "self-start")}>
+          <Link href={debriefHref} data-testid="owner-back" className={cn(buttonVariants({ variant: "secondary" }), "self-start")}>
             Back to the debrief
           </Link>
         </div>

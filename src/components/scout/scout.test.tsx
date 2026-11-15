@@ -269,6 +269,65 @@ describe("the Scout on a live aerial", () => {
     expect(html).toContain('data-view="N"');
     expect(html).toContain("Vexcel · massing");
   });
+
+  /** The Scout panel for a building of `source`, with `aerial` loaded live. */
+  const panelWith = (source: "costar" | "fixture", aerial: typeof live) =>
+    renderToStaticMarkup(
+      <ScoutPanel
+        building={{ ...f1, id: "900001", source }}
+        load={{ status: "ready", aerial, live: true }}
+        selected={null}
+        onPick={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+  const derived = { ...live, entries: [], derived: true as const };
+
+  it("says a derived massing tags no entries, and a hand-made one's untagged aerial keeps its own line", () => {
+    const kit = panelWith("costar", derived);
+    expect(kit).toContain('data-testid="entries-untagged"');
+    expect(kit).toContain("No entries are tagged for this building");
+    expect(kit).toContain("A level built for it offers the");
+    expect(kit).toContain("0 tagged");
+    const untagged = { ...live, entries: [] };
+    for (const source of ["fixture", "costar"] as const) {
+      expect(panelWith(source, untagged), source).not.toContain('data-testid="entries-untagged"');
+      expect(panelWith(source, untagged), source).toContain("The aerial tags no entries on this building.");
+    }
+  });
+
+  it("shows a derived massing's height as a CoStar estimate, and a measured one as Vexcel's", () => {
+    const height = (html: string) => {
+      const [, layer, value] = /data-layer="(\w+)"[^>]*><\/span>Height<\/dt><dd[^>]*>([^<]*)<\/dd>/.exec(html)!;
+      return { layer, value };
+    };
+    expect(height(panelWith("costar", derived))).toEqual({ layer: "costar", value: `~${Math.round(live.heightM)} m` });
+    expect(height(panelWith("fixture", live))).toEqual({ layer: "vexcel", value: `${Math.round(live.heightM)} m` });
+  });
+
+  it("never draws a derived massing once every photo has failed: it offers a retry, and the chip stays Vexcel's aerial", () => {
+    const failed = ["N", "E", "S", "ortho"] as const;
+    const kit = { ...f1, id: "900001", source: "costar" as const };
+    // The estimate is not the building's shape: no massing views, only the photos that failed.
+    expect(scoutViews(derived, f1.stories, failed).every((v) => v.kind === "image")).toBe(true);
+
+    const html = renderToStaticMarkup(
+      <ScoutScreen building={kit} initialLoad={{ status: "ready", aerial: derived, live: true, failed: [...failed] }} />,
+    );
+    expect(html).not.toContain('data-testid="massing-wall"');
+    expect(html).not.toContain("from fixtures");
+    expect(html).toContain("Vexcel · aerial");
+    expect(html).toMatch(/data-testid="aerial-error"[\s\S]*<button[^>]*>Retry<\/button>/);
+    for (const dir of VIEW_ORDER) expect(chip(html, dir), dir).toContain(' disabled=""');
+
+    // Nor the derived massing itself, which has no photos at all, were it ever to reach the Scout.
+    const bare = { ...massing, entries: [], derived: true as const };
+    expect(scoutViews(bare, f1.stories)).toEqual([]);
+    const shown = renderToStaticMarkup(<ScoutScreen building={kit} initialLoad={{ status: "ready", aerial: bare, live: false }} />);
+    expect(shown).not.toContain('data-testid="massing-wall"');
+    expect(shown).not.toContain("from fixtures");
+    expect(shown).toContain('data-testid="aerial-error"');
+  });
 });
 
 describe("fetchAerial and the mode chip", () => {

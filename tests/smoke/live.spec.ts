@@ -358,12 +358,12 @@ test("the timer's bar drains in the accent over one turn, stops when the clock d
       const s = getComputedStyle(el);
       return { name: s.animationName, duration: s.animationDuration, state: s.animationPlayState, colour: s.backgroundColor };
     });
-  // DESIGN.md's --accent (#f2a93b), for LIVE_TURN_MS.
-  expect(await drawn()).toEqual({ name: "turn-drain", duration: `${LIVE_TURN_MS / 1000}s`, state: "running", colour: "rgb(242, 169, 59)" });
+  // DESIGN.md's --accent (#f0bd4a), for LIVE_TURN_MS.
+  expect(await drawn()).toEqual({ name: "turn-drain", duration: `${LIVE_TURN_MS / 1000}s`, state: "running", colour: "rgb(240, 189, 74)" });
   await page.keyboard.press("p");
   await expect(timer(page)).toHaveAttribute("data-state", "paused");
   expect(await drawn()).toMatchObject({ name: "turn-drain", state: "paused" });
-  expect((await drawn()).colour).not.toBe("rgb(242, 169, 59)");
+  expect((await drawn()).colour).not.toBe("rgb(240, 189, 74)");
   await page.screenshot({ path: "test-results/run-live/paused.png" });
   await page.keyboard.press("p");
   await expect(timer(page)).toHaveAttribute("data-state", "running");

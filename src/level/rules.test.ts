@@ -146,6 +146,24 @@ describe("staging floor and zones", () => {
     }
   });
 
+  it("offers a kit building the roof and the street lobby when its live aerial tags no entries", () => {
+    // Live imagery aimed from the kit building's CoStar facts: nothing in them marks a dock.
+    const untagged = { ...aerial("F1"), entries: [], derived: true as const };
+    const d = deriveSecurityProfile({ ...building("F1"), id: "900001", source: "costar" }, untagged);
+    expect(d.entries.map((e) => e.kind)).toEqual(["roof", "lobby"]);
+    // The provenance names CoStar's facts, which the massing came from, not that no aerial answered.
+    const roof = d.provenance.find((p) => p.elementRole === "entry:roof")!;
+    expect(roof.rule).toMatch(/^Nothing in CoStar's facts marks a way in/);
+    const none = deriveSecurityProfile({ ...building("F1"), id: "900001", source: "costar" }, null);
+    expect(none.provenance.find((p) => p.elementRole === "entry:roof")!.rule).toMatch(/^No Vexcel aerial answered/);
+  });
+
+  it("still offers a fixture no entries when its aerial tags none, so a degraded build fails", () => {
+    expect(deriveSecurityProfile(building("F1"), { ...aerial("F1"), entries: [] }).entries).toEqual([]);
+    // Nor a kit building whose aerial is a hand-made massing's: only a derived one tags none by design.
+    expect(deriveSecurityProfile({ ...building("F1"), source: "costar" }, { ...aerial("F1"), entries: [] }).entries).toEqual([]);
+  });
+
   it("offers only the aerial's entries when it tags some", () => {
     expect(deriveSecurityProfile(building("F1"), aerial("F1")).provenance.some((p) => /No Vexcel aerial/.test(p.rule))).toBe(false);
   });

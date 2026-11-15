@@ -13,6 +13,7 @@ import {
   BoxGeometry,
   BufferGeometry,
   Color,
+  ConeGeometry,
   CylinderGeometry,
   DoubleSide,
   Float32BufferAttribute,
@@ -115,6 +116,8 @@ interface Aim {
   from: Quaternion;
   to: Quaternion;
   at: number;
+  /** The light of its view, from the lens to what it watches on the floor this turn. */
+  cone: Mesh;
 }
 
 /** The ring on a door's faces that fills as it is picked. */
@@ -149,7 +152,8 @@ export class Actors {
   private readonly rings = new Map<string, PickRing>();
   private readonly areas = new Group();
   private areasBuilt = false;
-  private areasNode: string | null = null;
+  /** The player node and the locked doors the areas were last drawn for. */
+  private areasKey: string | null = null;
   private readonly lenses = new Map<string, MeshBasicMaterial>();
   private readonly floor = new Group();
   /** The watched nodes' markings, cross-faded from one turn to the next. */
@@ -165,7 +169,10 @@ export class Actors {
   private readonly pawnParts: { base: BufferGeometry; body: BufferGeometry; head: BufferGeometry; visor: BufferGeometry };
   private readonly pawnMaterial: Record<"guard" | "cleaner", MeshLambertMaterial>;
   private readonly visorMaterial: MeshLambertMaterial;
-  private readonly sightMaterial: Record<"calm" | "after" | "tripped" | "next", MeshBasicMaterial>;
+  private readonly sightMaterial: Record<"calm" | "after" | "tripped" | "next" | "camera", MeshBasicMaterial>;
+  /** The cameras' view cones, and the colour of one that sees the player. */
+  private readonly coneMaterial: MeshBasicMaterial;
+  private readonly coneTripped: MeshBasicMaterial;
   private readonly ringFill: MeshBasicMaterial;
 
   constructor(
@@ -201,8 +208,13 @@ export class Actors {
       calm: keep(flatMaterial(palette.n300, 0.2)),
       after: keep(flatMaterial(palette.n300, 0.12)),
       tripped: keep(flatMaterial(palette.danger, 0.4)),
-      next: keep(flatMaterial(palette.n400, 0.1)),
+      // Where a sweeping camera looks next: an outline that firms up as its turn runs out (`update`).
+      next: keep(flatMaterial(palette.warning, 0.1)),
+      // What a camera watches this turn, in its own colour, so its floor reads apart from a guard's.
+      camera: keep(flatMaterial(palette.warning, 0.3)),
     };
+    this.coneMaterial = keep(new MeshBasicMaterial({ color: palette.warning, transparent: true, opacity: 0.1, depthWrite: false, side: DoubleSide }));
+    this.coneTripped = keep(new MeshBasicMaterial({ color: palette.danger, transparent: true, opacity: 0.2, depthWrite: false, side: DoubleSide }));
     this.ringFill = keep(new MeshBasicMaterial({ color: palette.accent, side: DoubleSide }));
     this.group.add(this.floor);
     this.floorFade = new CrossFade(this.floor, turnMs, still);
@@ -263,24 +275,54 @@ export class Actors {
   }
 
   private buildCameras(keep: <T extends BufferGeometry | Material>(thing: T) => T): void {
-    const body = keep(new MeshLambertMaterial({ color: this.palette.n300 }));
-    const box = keep(new BoxGeometry(0.2, 0.16, 0.34));
-    const lensShape = keep(new SphereGeometry(0.055, 14, 10));
+    // Big enough to pick out from down a corridor, banded in the colour its floor is painted in.
+    const body = keep(new MeshLambertMaterial({ color: this.palette.n200 }));
+    const stripe = keep(new MeshBasicMaterial({ color: this.palette.warning }));
+    const box = keep(new BoxGeometry(0.3, 0.22, 0.5));
+    const band = keep(new BoxGeometry(0.31, 0.05, 0.3));
+    const arm = keep(new CylinderGeometry(0.025, 0.025, 0.45, 8));
+    const lensShape = keep(new SphereGeometry(0.085, 16, 12));
+    // A unit cone, apex at the lens, opening along +z: scaled each turn to reach the floor it watches.
+    const coneShape = keep(new ConeGeometry(1, 1, 28, 1, true));
+    coneShape.rotateX(-Math.PI / 2);
+    coneShape.translate(0, 0, 0.5);
     for (const camera of this.marks.cameras) {
       const to = { x: camera.looksAt.x - camera.mount.x, y: camera.looksAt.y - camera.mount.y };
       const length = Math.hypot(to.x, to.y) || 1;
       const holder = new Group();
       holder.position.set(camera.mount.x + (to.x / length) * 0.3, FP.wallHeightM - 0.45, camera.mount.y + (to.y / length) * 0.3);
       holder.add(new Mesh(box, body));
+      const bandMesh = new Mesh(band, stripe);
+      bandMesh.position.set(0, 0.06, -0.05);
+      holder.add(bandMesh);
       const lensMaterial = keep(new MeshBasicMaterial({ color: this.palette.n800 }));
       const lens = new Mesh(lensShape, lensMaterial);
-      lens.position.z = 0.18;
+      lens.position.z = 0.27;
       holder.add(lens);
+      const cone = new Mesh(coneShape, this.coneMaterial);
+      cone.position.z = 0.27;
+      cone.renderOrder = 2;
+      holder.add(cone);
       holder.lookAt(camera.looksAt.x, 0.6, camera.looksAt.y);
-      this.aims.set(camera.id, { holder, from: holder.quaternion.clone(), to: holder.quaternion.clone(), at: 0 });
+      // The arm up to the ceiling it hangs from.
+      const mast = new Mesh(arm, body);
+      mast.position.set(holder.position.x, holder.position.y + 0.3, holder.position.z);
+      this.group.add(mast);
+      this.aims.set(camera.id, { holder, from: holder.quaternion.clone(), to: holder.quaternion.clone(), at: 0, cone });
+      this.aimCone(camera.id, camera.looksAt, false);
       this.lenses.set(camera.id, lensMaterial);
       this.group.add(holder);
     }
+  }
+
+  /** Stretches a camera's cone to reach `at` on the floor, as wide there as a watched node's ground. */
+  private aimCone(id: string, at: Vec, seesPlayer: boolean): void {
+    const aim = this.aims.get(id);
+    if (!aim) return;
+    const { position } = aim.holder;
+    const reach = Math.hypot(at.x - position.x, 0.02 - position.y, at.y - position.z) - 0.27;
+    aim.cone.scale.set(FP.watchedM, FP.watchedM, Math.max(0.3, reach));
+    aim.cone.material = seesPlayer ? this.coneTripped : this.coneMaterial;
   }
 
   private buildMarks(keep: <T extends BufferGeometry | Material>(thing: T) => T): void {
@@ -338,6 +380,7 @@ export class Actors {
   /** Reads a new run state: who stands where, what is seen, which doors are shut, where the player may go. */
   sync(run: RunState, now: number): void {
     const restarted = run.turn < this.turn;
+    if (run.turn !== this.turn) this.turnAt = now;
     this.turn = run.turn;
 
     const walkers = [
@@ -380,7 +423,7 @@ export class Actors {
     }
 
     this.drawFloor(run, now);
-    if (this.areas.visible) this.drawAreas(run.playerNode);
+    if (this.areas.visible) this.drawAreas(run.playerNode, run.locked);
     this.objective.visible = !run.carrying;
     const exitColour = run.carrying ? this.palette.success : this.palette.n400;
     for (const exit of this.exitMarks) {
@@ -393,18 +436,25 @@ export class Actors {
   private drawFloor(run: RunState, now: number): void {
     const at = (id: string) => this.ground.nodes.get(id);
     const sight = sightOf(run, this.ground.unitM);
-    const layers = { calm: new Flat(), after: new Flat(), tripped: new Flat(), next: new Flat() };
+    const layers = { calm: new Flat(), after: new Flat(), tripped: new Flat(), next: new Flat(), camera: new Flat() };
+    const cameraIds = new Set(sight.filter((s) => s.kind === "camera").map((s) => s.id));
+    const mountOf = (id: string) => this.marks.cameras.find((c) => c.id === id)?.mount;
 
-    // Every node the engine would see the player on this turn: a disc the size of the node's own ground.
+    // Every node the engine would see the player on this turn: a disc the size of the node's own ground,
+    // in the cameras' colour where only cameras see it.
     for (const [nodeId, seen] of watchedNodes(sight)) {
       const node = at(nodeId);
-      if (node) (seen.tripped ? layers.tripped : layers.calm).disc(node, FP.watchedM, seen.tripped ? 0.016 : 0.012);
+      if (!node) continue;
+      const layer = seen.tripped ? layers.tripped : seen.by.every((id) => cameraIds.has(id)) ? layers.camera : layers.calm;
+      layer.disc(node, FP.watchedM, seen.tripped ? 0.016 : 0.012);
     }
     for (const s of sight) {
-      const layer = s.tripped ? layers.tripped : layers.calm;
+      const layer = s.tripped ? layers.tripped : s.kind === "camera" ? layers.camera : layers.calm;
+      // A camera's lines start under the camera as this view hangs it.
+      const origin = (s.kind === "camera" ? mountOf(s.id) : undefined) ?? s.origin;
       for (const id of s.nodes) {
         const node = at(id);
-        if (node) layer.beam(s.origin, node, 0.1, 0.014);
+        if (node) layer.beam(origin, node, 0.1, 0.014);
       }
       for (const id of s.after?.nodes ?? []) {
         const node = at(id);
@@ -412,7 +462,7 @@ export class Actors {
       }
       for (const id of s.next) {
         const node = at(id);
-        if (node) layers.next.disc(node, FP.watchedM, 0.008);
+        if (node) layers.next.ring(node, FP.watchedM - 0.1, FP.watchedM, 0.02);
       }
       const lens = this.lenses.get(s.id);
       if (lens) lens.color.copy(s.nodes.length > 0 ? this.palette.danger : this.palette.n800);
@@ -424,6 +474,7 @@ export class Actors {
         const probe = new Object3D();
         probe.position.copy(aim.holder.position);
         probe.lookAt(x, 0.6, y);
+        this.aimCone(s.id, { x, y }, s.tripped || s.nodes.includes(run.playerNode));
         if (!probe.quaternion.equals(aim.to)) {
           aim.from = aim.holder.quaternion.clone();
           aim.to = probe.quaternion.clone();
@@ -463,14 +514,16 @@ export class Actors {
   }
 
   /** Shows or hides the floor's areas, one per node (`Ground.regionOf`): a debug overlay. */
-  showAreas(on: boolean, playerNode: string): void {
+  showAreas(on: boolean, playerNode: string, locked: readonly string[]): void {
     this.areas.visible = on;
-    if (on) this.drawAreas(playerNode);
+    if (on) this.drawAreas(playerNode, locked);
   }
 
   /** The areas as a grid of tinted cells, the area the engine has the player in picked out in the accent. */
-  private drawAreas(playerNode: string): void {
-    if (this.areasBuilt && this.areasNode === playerNode) return;
+  private drawAreas(playerNode: string, locked: readonly string[]): void {
+    // A shut door is a wall to an area (`Ground.regionOf`), so the areas change as doors open.
+    const key = `${playerNode}|${locked.join(",")}`;
+    if (this.areasBuilt && this.areasKey === key) return;
     for (const child of [...this.areas.children]) {
       (child as Mesh).geometry.dispose();
       ((child as Mesh).material as Material).dispose();
@@ -487,7 +540,7 @@ export class Actors {
     for (let x = x0; x < x1; x += cell) {
       for (let y = y0; y < y1; y += cell) {
         const c = { x: x + cell / 2, y: y + cell / 2 };
-        const region = this.ground.regionOf(c);
+        const region = this.ground.regionOf(c, locked);
         if (region === null) continue;
         const flat = region === playerNode ? mine : flats[ids.indexOf(region) % tints.length];
         flat.beam({ x: c.x - cell * 0.45, y: c.y }, { x: c.x + cell * 0.45, y: c.y }, cell * 0.9, 0.006);
@@ -496,13 +549,15 @@ export class Actors {
     flats.forEach((flat, i) => this.areas.add(new Mesh(flat.geometry(), flatMaterial(tints[i], 0.16))));
     this.areas.add(new Mesh(mine.geometry(), flatMaterial(this.palette.accent, 0.28)));
     this.areasBuilt = true;
-    this.areasNode = playerNode;
+    this.areasKey = key;
   }
 
   /** Advances the glides and the doors to `now`. */
   update(now: number): void {
     const dt = this.lastFrame === 0 ? 0 : Math.min(0.1, (now - this.lastFrame) / 1000);
     this.lastFrame = now;
+    // Where a sweeping camera looks next firms up as the turn runs out: the sweep reads before it flips.
+    this.sightMaterial.next.opacity = this.still ? 0.4 : 0.12 + 0.5 * clamp((now - this.turnAt) / this.turnMs, 0, 1);
     for (const pawn of this.pawns.values()) {
       const glide = pawn.glide;
       if (!glide) continue;
@@ -565,7 +620,7 @@ export class Actors {
       out.push({ key: `p:${id}`, text: id, tone: this.pawnKind.get(id) ?? "guard", x: pawn.at.x, y: 1.82, z: pawn.at.y, at: pawn.at, beacon: false });
     }
     for (const camera of this.marks.cameras) {
-      out.push({ key: `c:${camera.id}`, text: camera.id, tone: "camera", x: camera.mount.x, y: FP.wallHeightM - 0.12, z: camera.mount.y, at: camera.looksAt, beacon: false });
+      out.push({ key: `c:${camera.id}`, text: `Camera ${camera.id}`, tone: "camera", x: camera.mount.x, y: FP.wallHeightM - 0.05, z: camera.mount.y, at: camera.looksAt, beacon: false });
     }
     const objective = this.ground.nodes.get(this.marks.objective.nodeId);
     if (objective && !run.carrying) {
@@ -573,7 +628,10 @@ export class Actors {
     }
     for (const exit of this.marks.exits) {
       const node = this.ground.nodes.get(exit.nodeId);
-      if (node) out.push({ key: `e:${exit.nodeId}`, text: exit.label, tone: "exit", x: node.x, y: 1.45, z: node.y, at: node, beacon: true });
+      if (!node) continue;
+      // Carrying, the exits take the objective's place as the beacons to make for (issue 188): a new key, so a new label.
+      if (run.carrying) out.push({ key: `w:${exit.nodeId}`, text: exit.label.replace(/^Exit · /, "Way out · "), tone: "objective", x: node.x, y: 1.6, z: node.y, at: node, beacon: true });
+      else out.push({ key: `e:${exit.nodeId}`, text: exit.label, tone: "exit", x: node.x, y: 1.45, z: node.y, at: node, beacon: true });
     }
     return out;
   }

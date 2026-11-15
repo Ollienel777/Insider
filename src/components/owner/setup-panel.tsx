@@ -100,7 +100,7 @@ export function SetupPanel({
   onReset: () => void;
   /** Shown after the saved setups: the prepared demo setups and the compare picker. */
   extra?: ReactNode;
-  /** The setup's coverage and unwatched routes as it stands (issue 120): they follow every edit, no batch needed. */
+  /** The setup's coverage and open windows as it stands (issue 120): they follow every edit, no batch needed. */
   measure?: SetupMeasure | null;
 }) {
   const { setup } = draft;
@@ -139,8 +139,8 @@ export function SetupPanel({
         {problems.all.length > 0 ? (
           // A setup with a problem is not what the batch would play, nor what the board draws whole: no number for it.
           <p data-testid="owner-setup-measure-blocked" className="text-sm text-text-2">
-            {problems.all.length === 1 ? "Fix the problem below" : `Fix the ${problems.all.length} problems below`} to measure coverage and unwatched
-            routes.
+            {problems.all.length === 1 ? "Fix the problem below" : `Fix the ${problems.all.length} problems below`} to measure coverage and open
+            windows.
           </p>
         ) : measure ? (
           <MeasureLines measure={measure} testId="owner-setup-measure" />

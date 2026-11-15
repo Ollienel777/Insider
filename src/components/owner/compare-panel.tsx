@@ -162,7 +162,7 @@ export function ComparePanel({
   onBack,
 }: {
   pair: OwnerPair;
-  /** Each side's coverage and unwatched routes, from the floor plan (issue 120). */
+  /** Each side's coverage and open windows, from the floor plan (issue 120). */
   measures?: [SetupMeasure, SetupMeasure] | null;
   floor: FloorGraph;
   /** Each side's setup on the board, for room names along its route. */
@@ -267,7 +267,7 @@ export function ComparePanel({
                   variant={selected ? "secondary" : "ghost"}
                   data-testid={`owner-pair-show-${id}`}
                   aria-pressed={selected}
-                  className="self-start"
+                  className="h-auto min-h-10 w-full min-w-0 py-1.5 text-center whitespace-normal"
                   onClick={() => onSide(id)}
                 >
                   {selected ? "On the board" : "Show on the board"}

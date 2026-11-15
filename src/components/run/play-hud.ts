@@ -28,6 +28,7 @@ import { canTake, crewPlanSteps, describeTurn, planSteps, roomName, sprintChoice
 import type { ChiefState, Revealed } from "./chief-panel";
 import type { StoredCrewPlan } from "./crew-plan-store";
 import { watcherPhrase, type Watcher } from "./danger-meter";
+import { useMoment, wayOutGoal, type Moment } from "./moment";
 import { useRadio, type RadioCallout, type RadioFacts, type RadioMessage } from "./radio";
 
 // ---- the hops left ---------------------------------------------------------------
@@ -74,26 +75,42 @@ function routePath(run: RunState): { path: readonly string[]; lockedDoors: reado
 
 /**
  * First person's pace (issue 115), for the HUD to speak in seconds rather than
- * hops and turns: metres to a floor-plan unit, the running speed, and a turn.
+ * hops and turns: metres to a floor-plan unit, the speed the player moves at,
+ * and a turn.
  */
 export interface Pace {
   unitM: number;
-  runMps: number;
+  /** The controller's speed: first person has the one. */
+  mps: number;
   turnMs: number;
+  /**
+   * The way the body walks the engine's edge from node `a` to node `b`, in
+   * metres: through its doorway, not the wall. Without it, node to node in a
+   * straight line.
+   */
+  edge?: (a: string, b: string) => readonly { x: number; y: number }[];
 }
 
 /**
- * About how many seconds the route left takes in first person: running node
- * to node along it, plus a turn for each pick its locked doors still need.
- * Rounded up, so it never says 0 until the player is there. Null with no route.
+ * About how many seconds the route left takes in first person: walking it
+ * node to node, through each edge's doorway, at the player's speed, plus a
+ * turn for each pick its locked doors still need. An estimate: it does not
+ * count speeding up, stopping or cut corners. Rounded up, so it never says 0
+ * until the player is there. Null with no route.
  */
 export function secondsLeft(run: RunState, pace: Pace): number | null {
   const route = routePath(run);
   if (!route) return null;
   let metres = 0;
   for (let i = 1; i < route.path.length; i++) {
-    const a = run.board.nodes.get(route.path[i - 1]);
-    const b = run.board.nodes.get(route.path[i]);
+    const [from, to] = [route.path[i - 1], route.path[i]];
+    const way = pace.edge?.(from, to) ?? [];
+    if (way.length >= 2) {
+      for (let k = 1; k < way.length; k++) metres += Math.hypot(way[k].x - way[k - 1].x, way[k].y - way[k - 1].y);
+      continue;
+    }
+    const a = run.board.nodes.get(from);
+    const b = run.board.nodes.get(to);
     if (a && b) metres += Math.hypot(b.x - a.x, b.y - a.y) * pace.unitM;
   }
   let picks = 0;
@@ -101,7 +118,7 @@ export function secondsLeft(run: RunState, pace: Pace): number | null {
     const done = run.picking?.doorId === doorId ? run.picking.progress : 0;
     picks += Math.max(0, picksToOpen(run.board.level, doorId) - done);
   }
-  return Math.ceil(metres / pace.runMps + (picks * pace.turnMs) / 1000);
+  return Math.ceil(metres / pace.mps + (picks * pace.turnMs) / 1000);
 }
 
 // ---- who noticed the player ------------------------------------------------------
@@ -239,7 +256,7 @@ export interface ObjectiveInfo {
   seconds?: number | null;
   /** Locked doors on the route. */
   locks: number;
-  /** "Files taken" once the player carries the objective; null before. */
+  /** "Carrying the files" once the player carries the objective; null before. */
   taken: string | null;
   /** The player stands on the objective and can take it: the label of the action that does. */
   take: string | null;
@@ -275,9 +292,9 @@ export function objectiveInfo(
     const take = canTake(run) ? `Take the ${noun}` : null;
     return { label: "Objective", goal: objective, hops, ...timed, locks, taken: null, take, outcome: null };
   }
-  const exit = placed.entries.find((e) => e.nodeId === route?.goal);
-  const goal = exit ? `Out by the ${exit.label.toLowerCase()}` : exitCondition;
-  return { label: "Way out", goal, hops, ...timed, locks, taken: `${noun[0].toUpperCase()}${noun.slice(1)} taken`, take: null, outcome: null };
+  // Every way out, nearest first, and that reaching one ends the run (issue 188): the engine wins on the move onto an exit.
+  const goal = placed.level.exits.length > 0 ? wayOutGoal(placed, route?.goal ?? null) : exitCondition;
+  return { label: "Way out", goal, hops, ...timed, locks, taken: `Carrying the ${noun}`, take: null, outcome: null };
 }
 
 /**
@@ -394,6 +411,8 @@ export interface PlayHud {
   danger: { alarm: AlarmState; watchers: readonly Watcher[] };
   /** The one line on the radio; null when it is quiet. */
   radio: RadioMessage | null;
+  /** The files just taken or a door just opened (issue 188), for a few turns; null otherwise. */
+  moment: Moment | null;
 }
 
 /** The run now and the state its last turn started from; `before` is null on a fresh run. */
@@ -458,11 +477,12 @@ export function usePlayHud({
     [on, placed, run, before, watchers, mission, crewPlan, chief, words, done, status, pace],
   );
   const radio = useRadio(facts);
+  const moment = useMoment(on ? placed : null, on ? run : null);
 
   const objective = useMemo(
     () => (on ? objectiveInfo(placed, run, mission.objective, mission.exitCondition, pace) : null),
     [on, placed, run, mission, pace],
   );
   if (!on || !objective) return null;
-  return { objective, danger: { alarm: run.alarm, watchers }, radio };
+  return { objective, danger: { alarm: run.alarm, watchers }, radio, moment };
 }
