@@ -19,6 +19,9 @@ hackathon/rehearsals/
 # The demo epoch `npm run demo:reset` writes (src/lib/demo-epoch.ts)
 .heist/
 
+# A scan's hand-made plan corrections (src/app/api/scan-overrides): scan-derived positions, never committed
+.local/
+
 # Secrets
 .env
 .env.*

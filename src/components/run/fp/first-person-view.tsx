@@ -46,7 +46,7 @@ import { noticeOf } from "./notice";
 import { readPalette } from "./palette";
 import { joinRefusal, joinScan } from "./scan-join";
 import { nodeFloors, scanGround } from "./scan-ground";
-import { addFurniture, derivePlan, FURNITURE, glassFromSight, mismatches, oneDoorPerRoom, reconcile, PLAN, planSolid, roomLabels, type ScanPlan } from "./scan-plan";
+import { addFurniture, applyOverrides, clearDoorways, tidyFurniture, derivePlan, FURNITURE, glassFromSight, mismatches, oneDoorPerRoom, reconcile, regularise, type PlanOverrides, PLAN, planSolid, roomLabels, type ScanPlan } from "./scan-plan";
 import { buildDress, DRESS } from "./scan-dress";
 import { fetchPhotoPanos, PhotoSet } from "./scan-photo";
 import { buildPlanGroup } from "./scan-plan-scene";
@@ -170,6 +170,20 @@ function fovFor(aspect: number, upright = FOV_DEGREES): number {
   const across = (MAX_ACROSS * Math.PI) / 360;
   const capped = (2 * Math.atan(Math.tan(across) / Math.max(aspect, 1e-3)) * 180) / Math.PI;
   return Math.min(upright, capped);
+}
+
+/** A scan's hand-made plan corrections from this machine (`.local/scan-overrides.json`), asked by a hash of its id; null when none. */
+async function loadOverrides(modelId: string): Promise<PlanOverrides | null> {
+  try {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(modelId));
+    const h = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 32);
+    const response = await fetch("/api/scan-overrides", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ h }), cache: "no-store" });
+    if (!response.ok) return null;
+    const body = (await response.json()) as PlanOverrides;
+    return Object.keys(body).length > 0 ? body : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The longest the set waits for the scan's detailed mesh (its furniture) before standing without it, ms. */
@@ -318,7 +332,30 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       // A scan's picture arrives after its mesh: the player is let loose once it has around them, or after a while.
       const looseAt = performance.now() + SCAN_WAIT_MS;
 
+      // With `?debug=1`: where the player stands and looks, in a corner, and K to note the spot (and copy the list).
+      const showWhere = debug !== null && new URLSearchParams(window.location.search).get("debug") === "1";
+      const where = showWhere ? document.createElement("div") : null;
+      const spots: string[] = [];
+      const NL = String.fromCharCode(10);
+      if (where) {
+        where.dataset.testid = "fp-where";
+        where.className = "pointer-events-none absolute bottom-2 left-2 z-20 whitespace-pre rounded-sm bg-surface-1 px-2 py-1 font-mono text-xs text-text-1";
+        host.appendChild(where);
+      }
+      const noteSpot = (event: KeyboardEvent) => {
+        if (event.key !== "k" && event.key !== "K") return;
+        const yawDeg = ((((controller.yaw * 180) / Math.PI) % 360) + 360) % 360;
+        spots.push(`${walker.pos.x.toFixed(2)}, ${walker.pos.y.toFixed(2)}, ${yawDeg.toFixed(0)}°`);
+        void navigator.clipboard?.writeText(spots.join(NL)).catch(() => {});
+      };
+      if (where) window.addEventListener("keydown", noteSpot);
+      let whereAt = 0;
       const frame = (now: number) => {
+        if (where && now - whereAt > 100) {
+          whereAt = now;
+          const yawDeg = ((((controller.yaw * 180) / Math.PI) % 360) + 360) % 360;
+          where.textContent = `x ${walker.pos.x.toFixed(2)}  z ${walker.pos.y.toFixed(2)}  heading ${yawDeg.toFixed(0)}°  (K notes it)${spots.length ? NL + spots.join(NL) : ""}`;
+        }
         raf = requestAnimationFrame(frame);
         const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
         last = now;
@@ -449,6 +486,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       return () => {
         cancelAnimationFrame(raf);
         observer?.disconnect();
+        where?.remove();
+        if (where) window.removeEventListener("keydown", noteSpot);
         latest.current.onHeld(null);
         latest.current.onReady?.(false);
         if (debug) delete debug.__fp;
@@ -566,7 +605,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
      * scan's own picture is not shown. Null, with the board back and a line
      * saying why, when the board doesn't stand on the scan.
      */
-    const planStage = (handle: ScanHandle, dressed: boolean): Stage | null => {
+    const planStage = (handle: ScanHandle, dressed: boolean, overrides: PlanOverrides | null = null): Stage | null => {
       const { view } = handle;
       const tree = view.meshTree;
       if (!tree) return null;
@@ -631,6 +670,9 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       const before = mismatches(plan, eyes, scanSees);
       const reconciled = reconcile(plan, before, paths, eyes);
       const after = mismatches(plan, eyes, scanSees);
+      // The scan's hand-made corrections, where this machine has any; then walls as rooms have them.
+      const overridden = overrides ? applyOverrides(plan, overrides) : 0;
+      const tidied = regularise(plan, paths, eyes);
       const walledUp = oneDoorPerRoom(plan, circulation);
       // The furniture, on the set only: the blockout draws none, and none may stop the player unseen.
       if (dressed) {
@@ -651,9 +693,11 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           }),
         );
       }
+      // Nothing in any doorway's way, either side; no fragment, nothing through a wall.
+      const cleared = clearDoorways(plan) + tidyFurniture(plan);
       // Counts only.
       console.info(
-        `First person draws the scan's plan: ${plan.walls.length} walls (${plan.stats.boundary} at the floor's edge), ${plan.doorways.length} doorways (${walledUp} more walled up, one door to a room), ${plan.glass.length} panes of glass (${glassWalls} walls seen through); the scan disagreed in ${before.length} places, ${reconciled} put right, ${after.length} left, ${plan.furniture.length} pieces of furniture, in ${Math.round(performance.now() - started)} ms`,
+        `First person draws the scan's plan: ${plan.walls.length} walls (${plan.stats.boundary} at the floor's edge), ${plan.doorways.length} doorways (${walledUp} more walled up, one door to a room), ${plan.glass.length} panes of glass (${glassWalls} walls seen through); the scan disagreed in ${before.length} places, ${reconciled} put right, ${after.length} left; ${overridden} corrections, ${tidied.extended} walls run on, ${tidied.removed} stubs gone, ${cleared} things out of doorways, ${plan.furniture.length} pieces of furniture, in ${Math.round(performance.now() - started)} ms`,
       );
       const ground = scanGround(floor, planSolid(plan), join.heights, { leashM: PLAN.leashM + 1 });
       const nodeRoom = new Map(floor.nodes.map((n) => [n.id, n.roomId]));
@@ -825,10 +869,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       phase();
       void scan.ready.then(async (ok) => {
         if (gone || !ok) return;
-        // The set's furniture is found in the scan's detailed mesh: wait for it a while.
-        if (look === "set") await detailIn(scan, DETAIL_WAIT_MS);
+        // The set's furniture is found in the scan's detailed mesh: wait for it a while. Its corrections, meanwhile.
+        const [, overrides] = await Promise.all([look === "set" ? detailIn(scan, DETAIL_WAIT_MS) : Promise.resolve(), loadOverrides(scan.modelId)]);
         if (gone) return;
-        const made = photo ? scanStage(scan) : planStage(scan, look === "set");
+        const made = photo ? scanStage(scan) : planStage(scan, look === "set", overrides);
         if (made) begin(made);
       });
     }

@@ -992,6 +992,8 @@ export const FURNITURE = Object.freeze({
   pathClearM: 0.3,
   /** A box thinner than this is dropped (a half-height wall is a box one cell thick). */
   minSideM: 0.1,
+  /** A box this small across both ways is a fragment, and goes. */
+  fragmentM: 0.3,
   minAreaM2: 0.08,
   maxBoxes: 600,
 });
@@ -1546,4 +1548,183 @@ function distanceToSeg(s: Seg, p: Vec): number {
   const len2 = ex * ex + ey * ey || 1;
   const t = Math.max(0, Math.min(1, ((p.x - s.a.x) * ex + (p.y - s.a.y) * ey) / len2));
   return Math.hypot(p.x - s.a.x - t * ex, p.y - s.a.y - t * ey);
+}
+
+/** A scan's hand-made corrections (`.local/scan-overrides.json`, never in git), in plan x and y (the scan's x and z). */
+export interface PlanOverrides {
+  glass?: { x1: number; z1: number; x2: number; z2: number; door?: { x: number; z: number } }[];
+  wall?: { x1: number; z1: number; x2: number; z2: number }[];
+  open?: { x1: number; z1: number; x2: number; z2: number }[];
+}
+
+/** Takes the stretch `seg` (with 0.15 m to spare) out of every wall and pane running along it. */
+function clearAlong(plan: ScanPlan, seg: Seg): void {
+  const len = Math.hypot(seg.b.x - seg.a.x, seg.b.y - seg.a.y);
+  if (len < 1e-6) return;
+  const d = { x: (seg.b.x - seg.a.x) / len, y: (seg.b.y - seg.a.y) / len };
+  const cut = <T extends Seg>(list: T[], make: (from: T, a: Vec, b: Vec) => T): T[] =>
+    list.flatMap((w) => {
+      const wl = Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y) || 1;
+      if (Math.abs(((w.b.x - w.a.x) * d.x + (w.b.y - w.a.y) * d.y) / wl) < 0.97) return [w];
+      if (distanceToSeg(seg, w.a) > 0.3 && distanceToSeg(seg, w.b) > 0.3 && distanceToSeg(w, seg.a) > 0.3 && distanceToSeg(w, seg.b) > 0.3) return [w];
+      const t = (p: Vec) => (p.x - seg.a.x) * d.x + (p.y - seg.a.y) * d.y;
+      const [ta, tb] = [t(w.a), t(w.b)];
+      const lo = Math.min(ta, tb);
+      const hi = Math.max(ta, tb);
+      const at = (s: number) => {
+        const k = (s - ta) / (tb - ta || 1);
+        return { x: w.a.x + (w.b.x - w.a.x) * k, y: w.a.y + (w.b.y - w.a.y) * k };
+      };
+      const out: T[] = [];
+      if (lo < -0.15) out.push(make(w, at(lo), at(-0.15)));
+      if (hi > len + 0.15) out.push(make(w, at(len + 0.15), at(hi)));
+      return out;
+    });
+  plan.walls = cut(plan.walls, (w, a, b) => ({ ...w, a, b }));
+  plan.glass = cut(plan.glass, (_w, a, b) => ({ a, b }));
+}
+
+/** Applies a scan's hand-made corrections to its plan. Returns how many it applied. */
+export function applyOverrides(plan: ScanPlan, o: PlanOverrides): number {
+  let applied = 0;
+  const seg = (e: { x1: number; z1: number; x2: number; z2: number }): Seg => ({ a: { x: e.x1, y: e.z1 }, b: { x: e.x2, y: e.z2 } });
+  for (const e of o.open ?? []) {
+    clearAlong(plan, seg(e));
+    applied++;
+  }
+  for (const e of o.wall ?? []) {
+    const s = seg(e);
+    clearAlong(plan, s);
+    plan.walls.push({ ...s, boundary: false });
+    applied++;
+  }
+  for (const e of o.glass ?? []) {
+    const s = seg(e);
+    clearAlong(plan, s);
+    plan.doorways = plan.doorways.filter((d) => distanceToSeg(s, { x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2 }) > 0.4);
+    const len = Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y);
+    const dir = { x: (s.b.x - s.a.x) / len, y: (s.b.y - s.a.y) / len };
+    const at = (t: number) => ({ x: s.a.x + dir.x * t, y: s.a.y + dir.y * t });
+    if (e.door) {
+      const half = PLAN.doorClearM / 2;
+      const c = Math.min(len - half, Math.max(half, (e.door.x - s.a.x) * dir.x + (e.door.z - s.a.y) * dir.y));
+      if (c - half > 0.05) plan.glass.push({ a: s.a, b: at(c - half) });
+      if (len - c - half > 0.05) plan.glass.push({ a: at(c + half), b: s.b });
+      plan.doorways.push({ a: at(c - half), b: at(c + half), width: 2 * half, lintel: true, shut: false, walked: true, room: null });
+    } else plan.glass.push(s);
+    applied++;
+  }
+  return applied;
+}
+
+/**
+ * Walls as a room's walls are: each runs on to the next wall square to it, or
+ * a doorway, rather than stopping in the middle of a side; a short piece that
+ * meets nothing at either end is clutter and goes.
+ */
+export function regularise(plan: ScanPlan, paths: readonly Seg[] = [], nodes: readonly Vec[] = []): { extended: number; removed: number } {
+  const sideOf = (u: Vec, v: Vec, p: Vec) => (v.x - u.x) * (p.y - u.y) - (v.y - u.y) * (p.x - u.x);
+  const blocksWay = (p: Vec, q: Vec) =>
+    paths.some((s) => sideOf(p, q, s.a) * sideOf(p, q, s.b) < 0 && sideOf(s.a, s.b, p) * sideOf(s.a, s.b, q) < 0) ||
+    nodes.some((n) => distanceToSeg({ a: p, b: q }, n) < 0.5);
+  const square = (w: Seg, o: Seg) => {
+    const a = Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y) || 1;
+    const b = Math.hypot(o.b.x - o.a.x, o.b.y - o.a.y) || 1;
+    return Math.abs(((w.b.x - w.a.x) * (o.b.x - o.a.x) + (w.b.y - w.a.y) * (o.b.y - o.a.y)) / (a * b)) < 0.2;
+  };
+  const meets = (p: Vec, self: number) =>
+    plan.walls.some((o, j) => j !== self && distanceToSeg(o, p) < 0.12) ||
+    plan.glass.some((g) => distanceToSeg(g, p) < 0.12) ||
+    plan.doorways.some((d) => Math.hypot(d.a.x - p.x, d.a.y - p.y) < 0.15 || Math.hypot(d.b.x - p.x, d.b.y - p.y) < 0.15);
+  let extended = 0;
+  let removed = 0;
+  for (let i = 0; i < plan.walls.length; i++) {
+    const w = plan.walls[i];
+    if (w.boundary || w.door) continue;
+    const len = Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y);
+    if (len < 1e-6) continue;
+    const d = { x: (w.b.x - w.a.x) / len, y: (w.b.y - w.a.y) / len };
+    for (const end of ["a", "b"] as const) {
+      const p = w[end];
+      if (meets(p, i)) continue;
+      const out = end === "b" ? d : { x: -d.x, y: -d.y };
+      // The nearest square wall straight ahead, within 2 m: run on to it.
+      let best: number | null = null;
+      for (const [j, o] of plan.walls.entries()) {
+        if (j === i || !square(w, o)) continue;
+        const ex = o.b.x - o.a.x;
+        const ey = o.b.y - o.a.y;
+        const den = out.x * ey - out.y * ex;
+        if (Math.abs(den) < 1e-9) continue;
+        const wx = o.a.x - p.x;
+        const wy = o.a.y - p.y;
+        const t = (wx * ey - wy * ex) / den;
+        const s = (wx * out.y - wy * out.x) / den;
+        if (t > 0 && t < 2 && s >= -0.05 && s <= 1.05 && (best === null || t < best)) best = t;
+      }
+      if (best === null) continue;
+      // Not across a doorway or a walk's way.
+      const to = { x: p.x + out.x * best, y: p.y + out.y * best };
+      if (plan.doorways.some((dw) => distanceToSeg({ a: p, b: to }, { x: (dw.a.x + dw.b.x) / 2, y: (dw.a.y + dw.b.y) / 2 }) < 0.5)) continue;
+      if (blocksWay(p, to)) continue;
+      w[end] = to;
+      extended++;
+    }
+  }
+  // Short pieces meeting nothing at either end.
+  for (let i = plan.walls.length - 1; i >= 0; i--) {
+    const w = plan.walls[i];
+    if (w.boundary || w.door) continue;
+    const len = Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y);
+    if (len < 1.5 && !meets(w.a, i) && !meets(w.b, i)) {
+      plan.walls.splice(i, 1);
+      removed++;
+    }
+  }
+  return { extended, removed };
+}
+
+/**
+ * Nothing in a doorway's way: a zone 1 m deep and the doorway's width either
+ * side of it is kept clear of furniture, stray wall and glass.
+ */
+export function clearDoorways(plan: ScanPlan): number {
+  let cleared = 0;
+  for (const d of plan.doorways) {
+    const len = Math.hypot(d.b.x - d.a.x, d.b.y - d.a.y);
+    if (len < 1e-6) continue;
+    const dir = { x: (d.b.x - d.a.x) / len, y: (d.b.y - d.a.y) / len };
+    const n = { x: -dir.y, y: dir.x };
+    const mid = { x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2 };
+    const inZone = (p: Vec) => {
+      const along = Math.abs((p.x - mid.x) * dir.x + (p.y - mid.y) * dir.y);
+      const across = Math.abs((p.x - mid.x) * n.x + (p.y - mid.y) * n.y);
+      return along < len / 2 - 0.02 && across > 0.08 && across < 1.0;
+    };
+    const touches = (s: Seg) => {
+      for (let k = 0; k <= 10; k++) if (inZone({ x: s.a.x + ((s.b.x - s.a.x) * k) / 10, y: s.a.y + ((s.b.y - s.a.y) * k) / 10 })) return true;
+      return false;
+    };
+    const before = plan.furniture.length + plan.walls.length + plan.glass.length;
+    plan.furniture = plan.furniture.filter((box) => !box.corners.some((p, k) => touches({ a: p, b: box.corners[(k + 1) % 4] })) && !inZone(box.corners.reduce((s, p) => ({ x: s.x + p.x / 4, y: s.y + p.y / 4 }), { x: 0, y: 0 })));
+    plan.glass = plan.glass.filter((g) => !touches(g));
+    cleared += before - (plan.furniture.length + plan.walls.length + plan.glass.length);
+  }
+  return cleared;
+}
+
+/** Furniture as a room has it: no fragment smaller than `FURNITURE.fragmentM` both ways, nothing through a wall or glass. */
+export function tidyFurniture(plan: ScanPlan): number {
+  const side = (u: Vec, v: Vec, p: Vec) => (v.x - u.x) * (p.y - u.y) - (v.y - u.y) * (p.x - u.x);
+  const crosses = (p: Vec, q: Vec, s: Seg) => side(p, q, s.a) * side(p, q, s.b) < 0 && side(s.a, s.b, p) * side(s.a, s.b, q) < 0;
+  const before = plan.furniture.length;
+  plan.furniture = plan.furniture.filter((box) => {
+    const [c0, c1, , c3] = box.corners;
+    const w = Math.hypot(c1.x - c0.x, c1.y - c0.y);
+    const h = Math.hypot(c3.x - c0.x, c3.y - c0.y);
+    if (Math.max(w, h) < FURNITURE.fragmentM) return false;
+    const edges = box.corners.map((p, k) => [p, box.corners[(k + 1) % 4]] as const);
+    return [...plan.walls, ...plan.glass].every((s) => !edges.some(([p, q]) => crosses(p, q, s)));
+  });
+  return before - plan.furniture.length;
 }

@@ -76,6 +76,8 @@ export const PHOTO = Object.freeze({
   depthPx: 256,
   /** Panoramas fetched at once. */
   fetches: 12,
+  /** Whether the photographs' details are drawn over the flat colours: off, clean over detailed. */
+  decals: false,
   /** The ceiling's tiles, metres: a drop ceiling's two feet. */
   ceilingTileM: 0.61,
 });
@@ -281,6 +283,8 @@ export class PhotoSet {
       vertexShader: /* glsl */ `
 attribute vec3 colour;
 attribute float kind;
+attribute float pattern;
+varying float vPattern;
 varying vec2 vUv;
 varying vec3 vColour;
 varying vec3 vWorld;
@@ -288,6 +292,7 @@ varying vec3 vNormal;
 varying float vKind;
 void main() {
   vColour = colour;
+  vPattern = pattern;
   vUv = uv;
   vKind = kind;
   vNormal = normal;
@@ -304,6 +309,7 @@ uniform sampler2D uAtlas;
 uniform float uGrain;
 uniform float uHasAtlas;
 uniform float uCeilY;
+varying float vPattern;
 varying vec2 vUv;
 varying vec3 vColour;
 varying vec3 vWorld;
@@ -331,6 +337,21 @@ void main() {
     if (vKind < 0.5) c *= (1.0 - 0.16 * exp(-(vWorld.y - uFloorY) / 0.22)) * (1.0 - 0.1 * exp(-(uCeilY - vWorld.y) / 0.18));
   } else if (vKind < 1.5) {
     // The floor: a carpet's grain, as varied as the photographs' carpet.
+    if (vPattern > 1.5) {
+      // Tile: 45 cm squares, pale grout, a faint difference tile to tile.
+      vec2 t = floor(square / 0.45);
+      c *= 0.97 + 0.06 * hash(t + 3.0);
+      vec2 g = abs(fract(square / 0.45) - 0.5) * 0.45;
+      if (min(0.225 - g.x, 0.225 - g.y) < 0.003) c = mix(c, vec3(0.86), 0.6);
+    } else if (vPattern > 0.5) {
+      // Wood: 15 cm boards, staggered 1.2 m lengths, each its own shade, a fine grain and dark joints.
+      float row = floor(square.y / 0.15);
+      float along = square.x + hash(vec2(row, 1.0)) * 1.2;
+      float board = floor(along / 1.2);
+      c *= 0.9 + 0.2 * hash(vec2(row, board));
+      c *= 0.96 + 0.08 * hash(vec2(floor(along / 0.01), row));
+      if (fract(square.y / 0.15) < 0.03 || fract(along / 1.2) < 0.004) c *= 0.7;
+    } else {
     // Loop pile: fine speckle, a coarser mottle, and the faint seams of 60 cm carpet tiles laid quarter-turned.
     vec2 tile = floor(square / 0.6);
     float turned = mod(tile.x + tile.y, 2.0);
@@ -338,7 +359,7 @@ void main() {
     c *= 1.0 + uGrain * (2.0 * hash(floor(pile / 0.006)) - 1.0) * 0.8 + 0.5 * uGrain * (2.0 * hash(floor(pile / 0.03) + 7.0) - 1.0) + 0.25 * uGrain * (turned - 0.5);
     vec2 seam = abs(fract(square / 0.6) - 0.5) * 0.6;
     if (min(0.3 - seam.x, 0.3 - seam.y) < 0.003) c *= 0.94;
-    // Soft occlusion along the walls' feet is in the walls; the floor darkens under the ceiling's own light only.
+    }
   } else if (vKind < 2.5) {
     // The ceiling: a drop ceiling's grid.
     vec2 g = abs(fract(square / uTile) - 0.5) * uTile;
@@ -722,6 +743,7 @@ void main() {
     geometry.setAttribute("normal", new BufferAttribute(new Float32Array(normals), 3));
     geometry.setAttribute("kind", new BufferAttribute(new Float32Array(kinds), 1));
     geometry.setAttribute("uv", new BufferAttribute(new Float32Array(uvs), 2));
+    geometry.setAttribute("pattern", new BufferAttribute(new Float32Array(kinds.length), 1));
     const colours = new Float32Array(positions.length);
     for (let v = 0; v < kinds.length; v++) {
       const kind = (["wall", "floor", "ceiling", "furniture"] as const)[kinds[v]];
@@ -1105,7 +1127,9 @@ void main() {
     const wallColour = (si: number): Rgb => {
       const room = median(wallsBy.get(wallRoom[si]), wallAll);
       const own = (ownWall.get(si)?.length ?? 0) >= 24 ? median(ownWall.get(si), room) : room;
-      return Math.hypot(own[0] - room[0], own[1] - room[1], own[2] - room[2]) < 0.12 ? own : room;
+      void own;
+      // One colour to a room's walls.
+      return room;
     };
     this.surfaces.forEach((s, si) => {
       if (s.kind === "floor") return;
@@ -1115,7 +1139,19 @@ void main() {
         s.kind === "wall" ? wallColour(si) : s.kind === "ceiling" ? ceilingColour : median(pieces.get(s.piece), pieceAll);
       set(si * 6, 6, c);
     });
-    for (const run of this.floorRuns) set(run.start, run.count, median(floorsBy.get(run.room), floorAll));
+    // Each room's floor: its colour, and what it is by its colour (wood is warm and middling, tile pale and grey).
+    const pattern = this.drawn.geometry.getAttribute("pattern") as BufferAttribute;
+    const material = (c: Rgb) => {
+      const sum = c[0] + c[1] + c[2];
+      const spread = Math.max(...c) - Math.min(...c);
+      return c[0] - c[2] > 0.07 && sum < 2.2 && sum > 0.6 ? 1 : sum > 2.25 && spread < 0.06 ? 2 : 0;
+    };
+    for (const run of this.floorRuns) {
+      const c = median(floorsBy.get(run.room), floorAll);
+      set(run.start, run.count, c);
+      for (let v = run.start; v < run.start + run.count; v++) pattern.setX(v, material(c));
+    }
+    pattern.needsUpdate = true;
     set(this.floorStart, 6, floorAll);
     colour.needsUpdate = true;
     const b = median(base, [0.24, 0.23, 0.22]);
@@ -1132,7 +1168,8 @@ void main() {
     renderer.setClearColor(new Color(0, 0, 0), 0);
     renderer.clear();
     renderer.render(this.bakeScene, this.orthographic);
-    this.drawMaterial.uniforms.uHasAtlas.value = 1;
+    // Clean over detailed: the photographs give the colours, and no decal is drawn from them.
+    this.drawMaterial.uniforms.uHasAtlas.value = PHOTO.decals ? 1 : 0;
     this.finished = true;
     this.seconds = (performance.now() - this.started) / 1000;
     // What only the asking needed.
