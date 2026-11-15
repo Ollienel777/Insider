@@ -49,7 +49,8 @@ import { MuteToggle, useRunSound } from "./run-sound";
 import { RunStage } from "./run-stage";
 import { placeOrFixture } from "./scan-fallback";
 import { ScanWait, useWaitsOnScan } from "./scan-wait";
-import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, FullscreenToggle, useBark, useRunView, useScanPreload, ViewSwitch, type HeldAction } from "./fp/run-view";
+import { fullscreenStep } from "./fp/fullscreen";
+import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, FullscreenToggle, useBark, useStageFullscreen, useRunView, useScanPreload, ViewSwitch, type HeldAction } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
 
@@ -501,6 +502,16 @@ export function RunScreen({
   // Live's layout (issue 100): the HUD around the board, and everything else behind Details.
   const [details, toggleDetails] = useDetails(layoutMode === "live", fpOn ? "i" : "d");
   const open = panelsOpen(layoutMode, details);
+  // Fullscreen shows the stage alone, and the side panel is outside it: whichever came last wins
+  // (fp/fullscreen.ts). Going fullscreen closes Details; opening the panel leaves fullscreen.
+  const stageFull = useStageFullscreen();
+  const wasStageFull = useRef(false);
+  useEffect(() => {
+    const step = fullscreenStep(wasStageFull.current, stageFull, open, layoutMode === "live");
+    wasStageFull.current = stageFull;
+    if (step === "close-details") toggleDetails();
+    else if (step === "leave-fullscreen") void document.exitFullscreen().catch(() => {});
+  }, [stageFull, open, layoutMode, toggleDetails]);
   // The lens is put away with the bar: its key does nothing until Details opens it again.
   const [lens, toggleLens] = useLayerLens(open);
   // First person's time left is at the controller's one speed.
@@ -721,7 +732,8 @@ export function RunScreen({
                 Live mode switch takes the top-right corner, so the mute button sits under it there. */}
             {run ? (
               <div className="absolute top-2 right-8 flex items-center gap-2 max-md:top-16 max-md:right-6">
-                <FullscreenToggle />
+                {/* Only where the stage carries the alarm and the clock itself: Live and first person. */}
+                <FullscreenToggle available={layoutMode === "live"} />
                 <MuteToggle muted={muted} onToggle={toggleMute} />
               </div>
             ) : null}

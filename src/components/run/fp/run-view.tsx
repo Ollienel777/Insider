@@ -20,7 +20,7 @@ export type { ScanHandle } from "./scan-preload";
 
 export { useRunView } from "./view-store";
 
-export { FullscreenToggle } from "./fullscreen-toggle";
+export { FullscreenToggle, useStageFullscreen } from "./fullscreen-toggle";
 
 /** The view, in its own bundle and never rendered on the server: it needs a canvas and WebGL. */
 export const FirstPersonView = dynamic(() => import("./first-person-view"), {

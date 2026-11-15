@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fullscreenSupported, isFullscreenKey, toggleFullscreen } from "./fullscreen";
+import { fullscreenStep, fullscreenSupported, isFullscreenKey, stageFullscreen, toggleFullscreen } from "./fullscreen";
 
 const key = (over: Partial<KeyboardEvent> = {}) =>
   ({ key: "f", altKey: false, ctrlKey: false, metaKey: false, repeat: false, target: null, ...over }) as KeyboardEvent;
@@ -60,5 +60,38 @@ describe("toggleFullscreen", () => {
   it("resolves when the browser refuses", async () => {
     const root = { requestFullscreen: vi.fn(() => Promise.reject(new TypeError("no gesture"))) };
     await expect(toggleFullscreen(root, doc(null))).resolves.toBeUndefined();
+  });
+});
+
+describe("stageFullscreen", () => {
+  const el = (marked: boolean) => ({ hasAttribute: (name: string) => marked && name === "data-fullscreen-root" }) as unknown as Element;
+
+  it("is true only while the element in fullscreen is the Run screen's stage", () => {
+    expect(stageFullscreen(undefined)).toBe(false);
+    expect(stageFullscreen({ fullscreenElement: null })).toBe(false);
+    expect(stageFullscreen({ fullscreenElement: el(false) })).toBe(false);
+    expect(stageFullscreen({ fullscreenElement: el(true) })).toBe(true);
+  });
+});
+
+describe("fullscreenStep: the stage in fullscreen and the side panel never show together", () => {
+  it("does nothing while only one of them shows", () => {
+    expect(fullscreenStep(false, false, true, true)).toBeNull();
+    expect(fullscreenStep(false, true, false, true)).toBeNull();
+    expect(fullscreenStep(true, true, false, true)).toBeNull();
+    expect(fullscreenStep(true, false, true, false)).toBeNull();
+  });
+
+  it("closes Details when the stage goes fullscreen over an open panel", () => {
+    expect(fullscreenStep(false, true, true, true)).toBe("close-details");
+  });
+
+  it("leaves fullscreen when Details opens while the stage is fullscreen", () => {
+    expect(fullscreenStep(true, true, true, true)).toBe("leave-fullscreen");
+  });
+
+  it("leaves fullscreen in Tactical, whose panel cannot be closed", () => {
+    expect(fullscreenStep(true, true, true, false)).toBe("leave-fullscreen");
+    expect(fullscreenStep(false, true, true, false)).toBe("leave-fullscreen");
   });
 });

@@ -3,27 +3,37 @@
 // The Fullscreen button, beside the view switch and the mute button: the Run
 // screen's stage (the HUD, the board or first person, the radio line) fills
 // the screen, and `F` does the same. Esc leaves it, after it frees the mouse.
-// Nothing shows where the browser has no Fullscreen API.
+// Nothing shows where the browser has no Fullscreen API, or where the stage
+// does not carry the alarm and the clock (Tactical, whose side panel does).
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { Maximize, Minimize } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { FULLSCREEN_ROOT, fullscreenSupported, isFullscreenKey, toggleFullscreen } from "./fullscreen";
+import { FULLSCREEN_ROOT, fullscreenSupported, isFullscreenKey, stageFullscreen, toggleFullscreen } from "./fullscreen";
 
 const subscribe = (change: () => void) => {
   document.addEventListener("fullscreenchange", change);
   return () => document.removeEventListener("fullscreenchange", change);
 };
-/** Whether the stage is what is fullscreen now. */
-const stageFullscreen = () => document.fullscreenElement?.hasAttribute(FULLSCREEN_ROOT) ?? false;
+const stageFullscreenHere = () => stageFullscreen(document);
 const never = () => false;
 const noop = () => () => {};
 const supportedHere = () => fullscreenSupported(document);
 
-export function FullscreenToggle({ className }: { className?: string }) {
+/** Whether the Run screen's stage is fullscreen now. False on the server. */
+export function useStageFullscreen(): boolean {
+  return useSyncExternalStore(subscribe, stageFullscreenHere, never);
+}
+
+/**
+ * `available` is false where the stage alone would hide what the player needs:
+ * in Tactical the alarm, the turn and the Chief are only in the side panel,
+ * which fullscreen leaves behind. Then there is no button, and F does nothing.
+ */
+export function FullscreenToggle({ available = true, className }: { available?: boolean; className?: string }) {
   const button = useRef<HTMLButtonElement>(null);
   // False on the server, which has no document; the button comes in on hydration.
-  const supported = useSyncExternalStore(noop, supportedHere, never);
-  const on = useSyncExternalStore(subscribe, stageFullscreen, never);
+  const supported = useSyncExternalStore(noop, supportedHere, never) && available;
+  const on = useStageFullscreen();
 
   const toggle = useCallback(() => {
     const el = button.current?.closest<HTMLElement>(`[${FULLSCREEN_ROOT}]`);

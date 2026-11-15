@@ -79,6 +79,11 @@ export function DemoSettings({ status }: { status: DemoStatus | null }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // An element in fullscreen (the Run screen's stage) covers this popover: leave fullscreen so it can be seen.
+  useEffect(() => {
+    if (open && document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+  }, [open]);
+
   if (!open || !status) return null;
   const close = () => {
     setOpen(false);

@@ -22,6 +22,27 @@ export function isFullscreenKey(event: Pick<KeyboardEvent, "key" | "altKey" | "c
   return !target?.closest?.("input, textarea, select, [contenteditable=true], [contenteditable='']");
 }
 
+/** Whether the Run screen's stage is what is fullscreen now. */
+export function stageFullscreen(doc: Pick<Document, "fullscreenElement"> | undefined): boolean {
+  return doc?.fullscreenElement?.hasAttribute(FULLSCREEN_ROOT) ?? false;
+}
+
+/** What to do so the stage in fullscreen and the side panel never show together. */
+export type FullscreenStep = "close-details" | "leave-fullscreen" | null;
+
+/**
+ * Fullscreen shows the stage alone: the side panel is outside it, so with the
+ * panel open its controls would do nothing anyone could see. Whichever came
+ * last wins. Going fullscreen closes Details; opening the panel while
+ * fullscreen (Details, or a switch to Tactical, whose panel is always open)
+ * leaves fullscreen. `live` says the panel can be closed at all: in Tactical
+ * it can't, so fullscreen gives way.
+ */
+export function fullscreenStep(wasFullscreen: boolean, fullscreen: boolean, panels: boolean, live: boolean): FullscreenStep {
+  if (!fullscreen || !panels) return null;
+  return !wasFullscreen && live ? "close-details" : "leave-fullscreen";
+}
+
 /**
  * Puts `root` fullscreen, or takes the page out of fullscreen if anything is
  * fullscreen already. A refusal (no user gesture, a policy) leaves the page
