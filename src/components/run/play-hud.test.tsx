@@ -217,7 +217,7 @@ describe("the objective line's words", () => {
 
 describe("the HUD in first person (issue 115): seconds and plain words, not hops and turns", () => {
   const pace = { unitM: 1, mps: 1, turnMs: 1000 };
-  const FIRST_PERSON_PACE = firstPersonPace(placed.level.floor, false);
+  const FIRST_PERSON_PACE = firstPersonPace(placed.level.floor);
 
   it("counts the seconds the route takes at a run, and a turn for each pick its locks still need", () => {
     // Round by c and e: three open hops of 2 units.
@@ -242,7 +242,7 @@ describe("the HUD in first person (issue 115): seconds and plain words, not hops
     expect(secondsLeft(twoWays(["d-short"]), { ...pace, edge: bent })).toBe(6);
   });
 
-  it("on a fixture floor, follows the walker's doorways at the controller's run, and its walk with Shift", () => {
+  it("on a fixture floor, follows the walker's doorways at the controller's one speed", () => {
     const floor = placed.level.floor;
     const run = start();
     const world = buildWorld(floor);
@@ -256,25 +256,21 @@ describe("the HUD in first person (issue 115): seconds and plain words, not hops
       return m + Math.hypot(b.x - a.x, b.y - a.y) * FP.unitM;
     }, 0);
     expect(throughDoors).toBeGreaterThan(straight);
-    const ran = firstPersonPace(floor, false);
-    const walked = firstPersonPace(floor, true);
+    const ran = firstPersonPace(floor);
     expect(ran.mps).toBe(FP.runMps);
-    expect(walked.mps).toBe(FP.walkMps);
     // Less the records door's picks, the time is the doorway path at that speed.
     expect(routeLeft(run)?.locks).toBe(1);
     expect(secondsLeft(run, { ...ran, turnMs: 0 })).toBe(Math.ceil(throughDoors / FP.runMps));
-    expect(secondsLeft(run, { ...walked, turnMs: 0 })).toBe(Math.ceil(throughDoors / FP.walkMps));
-    expect(secondsLeft(run, walked)!).toBeGreaterThan(secondsLeft(run, ran)!);
   });
 
   it("on a live scan's floor, times node to node in a straight line in the scan's own metres", () => {
     const floor = { ...placed.level.floor, source: "matterport" } as typeof placed.level.floor;
-    const ran = firstPersonPace(floor, false);
+    const ran = firstPersonPace(floor);
     // A scan's board is in metres already (its ground's `unitM` is 1), not the fixture floors' plan units.
     expect(ran.unitM).toBe(1);
     expect(ran.edge).toBeUndefined();
     expect(ran.mps).toBe(FP.runMps);
-    expect(firstPersonPace(placed.level.floor, false).unitM).toBe(FP.unitM);
+    expect(firstPersonPace(placed.level.floor).unitM).toBe(FP.unitM);
   });
 
   it("keeps the Details panel in real time: the plan says hold E, no turn count, the end in plain words", () => {

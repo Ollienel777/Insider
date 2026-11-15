@@ -444,13 +444,9 @@ export function RunScreen({
   const open = panelsOpen(layoutMode, details);
   // The lens is put away with the bar: its key does nothing until Details opens it again.
   const [lens, toggleLens] = useLayerLens(open);
-  // First person's time left is at the controller's speed: a walk while Shift is held, else a run.
-  const [walking, setWalking] = useState(false);
+  // First person's time left is at the controller's one speed.
   const fpFloor = placed?.level.floor ?? null;
-  const pace = useMemo(
-    () => (fpOn && fpFloor ? firstPersonPace(fpFloor, walking) : null),
-    [fpOn, fpFloor, walking],
-  );
+  const pace = useMemo(() => (fpOn && fpFloor ? firstPersonPace(fpFloor) : null), [fpOn, fpFloor]);
   const hud = usePlayHud({
     live: layoutMode === "live",
     placed,
@@ -632,7 +628,6 @@ export function RunScreen({
                 objective={manifest.mission.objective}
                 onAct={play}
                 onHeld={holdFp}
-                onWalking={setWalking}
                 paused={clock.state === "paused"}
                 scan={scan}
                 onReady={setFpReady}

@@ -495,7 +495,7 @@ describe("an area behind a locked door, with a second way round within reach", (
     }
     return { status: "playing", playerNode, turn, locked: [...locked], picking: null, board: { adjacency, level: { pickTurns: 2 } } as unknown as Board } as unknown as RunState;
   };
-  const IDLE: Controls = { forward: 0, strafe: 0, walk: false, yaw: 0, use: false, usePressed: false };
+  const IDLE: Controls = { forward: 0, strafe: 0, yaw: 0, use: false, usePressed: false };
 
   it("stands the locked door's bar east of the middle of its edge, with the second doorway open", () => {
     expect(door.centre.x).toBeGreaterThan((at("a").x + at("b").x) / 2 + 1);
@@ -556,7 +556,7 @@ describe("a door the engine locks with the body in its doorway, on the near side
   const twoWayFloor = FloorGraph.parse({ ...board, nodes: moved, edges: [...board.edges, { a: "c", b: "d" }] });
   const oneWayFloor = FloorGraph.parse({ ...board, nodes: moved });
   const STRIP: Vec = { x: 4.5, y: 3.5 };
-  const IDLE: Controls = { forward: 0, strafe: 0, walk: false, yaw: 0, use: false, usePressed: false };
+  const IDLE: Controls = { forward: 0, strafe: 0, yaw: 0, use: false, usePressed: false };
 
   const runOn = (floor: typeof board, playerNode: string, locked: readonly string[], turn = 0): RunState => {
     const adjacency = new Map<string, Exit[]>();

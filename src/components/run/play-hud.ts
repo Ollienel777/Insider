@@ -74,12 +74,12 @@ function routePath(run: RunState): { path: readonly string[]; lockedDoors: reado
 
 /**
  * First person's pace (issue 115), for the HUD to speak in seconds rather than
- * hops and turns: metres to a floor-plan unit, the speed the player moves at
- * now, and a turn.
+ * hops and turns: metres to a floor-plan unit, the speed the player moves at,
+ * and a turn.
  */
 export interface Pace {
   unitM: number;
-  /** The controller's speed as the player moves now: a run, or a walk with Shift held. */
+  /** The controller's speed: first person has the one. */
   mps: number;
   turnMs: number;
   /**
@@ -92,7 +92,7 @@ export interface Pace {
 
 /**
  * About how many seconds the route left takes in first person: walking it
- * node to node, through each edge's doorway, at the player's speed now, plus a
+ * node to node, through each edge's doorway, at the player's speed, plus a
  * turn for each pick its locked doors still need. An estimate: it does not
  * count speeding up, stopping or cut corners. Rounded up, so it never says 0
  * until the player is there. Null with no route.

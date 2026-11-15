@@ -5,11 +5,10 @@
 import { FP } from "./tuning";
 import type { Seg, Vec } from "./ground";
 
-/** What the keys ask for: forwards and sideways from -1 to 1, and whether Shift is held. */
+/** What the keys ask for: forwards and sideways from -1 to 1. */
 export interface Wish {
   forward: number;
   strafe: number;
-  walk: boolean;
 }
 
 /** The view's forward direction on the floor plan: yaw 0 looks east, and it grows turning right. */
@@ -25,8 +24,7 @@ export function wishVelocity(wish: Wish, yaw: number): Vec {
   const y = f.y * wish.forward + f.x * wish.strafe;
   const length = Math.hypot(x, y);
   if (length < 1e-9) return { x: 0, y: 0 };
-  const speed = wish.walk ? FP.walkMps : FP.runMps;
-  return { x: (x / length) * speed, y: (y / length) * speed };
+  return { x: (x / length) * FP.runMps, y: (y / length) * FP.runMps };
 }
 
 /**
