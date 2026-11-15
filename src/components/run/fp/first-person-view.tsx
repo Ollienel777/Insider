@@ -46,7 +46,7 @@ import { noticeOf } from "./notice";
 import { readPalette } from "./palette";
 import { joinRefusal, joinScan } from "./scan-join";
 import { nodeFloors, scanGround } from "./scan-ground";
-import { addFurniture, derivePlan, FURNITURE, oneDoorPerRoom, PLAN, planSolid, roomLabels, type ScanPlan } from "./scan-plan";
+import { addFurniture, derivePlan, FURNITURE, glassFromSight, mismatches, oneDoorPerRoom, reconcile, PLAN, planSolid, roomLabels, type ScanPlan } from "./scan-plan";
 import { buildDress, DRESS } from "./scan-dress";
 import { fetchPhotoPanos, PhotoSet } from "./scan-photo";
 import { buildPlanGroup } from "./scan-plan-scene";
@@ -616,12 +616,26 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         },
       });
       // One door to a room: extra doorways no one went through become wall.
+      // Glass the photographs saw through, from where they stood.
+      const eyes = floor.nodes.flatMap((n) => {
+        const y = join.heights.eye.get(n.id);
+        return y === undefined ? [] : [{ x: n.x, y: n.y, eye: y }];
+      });
+      // Against the detailed mesh, where it is in: the walkable one smooths a glass wall's holes over.
+      const detailed = handle.view.detailMesh;
+      const detailWorld = dressed && detailed ? new MeshWorld(detailed, 0.45) : null;
+      const seer = detailWorld ? meshSolid(detailWorld) : mesh;
+      const glassWalls = glassFromSight(plan, eyes, paths, (from, dir, far) => seer.hit(from, dir, far));
+      // The set against the scan, from every scan camera: doorways it lacks, walls it lacks. Fixed, then counted again.
+      const scanSees = (from: readonly [number, number, number], dir: readonly [number, number, number], far: number) => mesh.hit(from, dir, far);
+      const before = mismatches(plan, eyes, scanSees);
+      const reconciled = reconcile(plan, before, paths, eyes);
+      const after = mismatches(plan, eyes, scanSees);
       const walledUp = oneDoorPerRoom(plan, circulation);
       // The furniture, on the set only: the blockout draws none, and none may stop the player unseen.
       if (dressed) {
         // The detailed mesh has the desks the walkable one smooths away; without it, the walkable one.
-        const detail = handle.view.detailMesh;
-        const furnished = detail ? new MeshWorld(detail, 0.45) : tree;
+        const furnished = detailWorld ?? tree;
         addFurniture(
           plan,
           floor.nodes.map((n) => ({ x: n.x, y: n.y })),
@@ -639,7 +653,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       }
       // Counts only.
       console.info(
-        `First person draws the scan's plan: ${plan.walls.length} walls (${plan.stats.boundary} at the floor's edge), ${plan.doorways.length} doorways (${walledUp} more walled up, one door to a room), ${plan.glass.length} panes of glass, ${plan.furniture.length} pieces of furniture, in ${Math.round(performance.now() - started)} ms`,
+        `First person draws the scan's plan: ${plan.walls.length} walls (${plan.stats.boundary} at the floor's edge), ${plan.doorways.length} doorways (${walledUp} more walled up, one door to a room), ${plan.glass.length} panes of glass (${glassWalls} walls seen through); the scan disagreed in ${before.length} places, ${reconciled} put right, ${after.length} left, ${plan.furniture.length} pieces of furniture, in ${Math.round(performance.now() - started)} ms`,
       );
       const ground = scanGround(floor, planSolid(plan), join.heights, { leashM: PLAN.leashM + 1 });
       const nodeRoom = new Map(floor.nodes.map((n) => [n.id, n.roomId]));

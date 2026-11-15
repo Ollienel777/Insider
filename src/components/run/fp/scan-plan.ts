@@ -1267,6 +1267,11 @@ export function oneDoorPerRoom(plan: ScanPlan, nodes: readonly (Vec & { open?: b
     return i >= 0 && j >= 0 && i < cols && j < rows ? room[j * cols + i] : -1;
   };
   const corridor = new Set(nodes.filter((n) => n.open).map((n) => roomAt(n)));
+  const standing = new Map<number, number>();
+  for (const n of nodes) {
+    const r = roomAt(n);
+    if (r >= 0) standing.set(r, (standing.get(r) ?? 0) + 1);
+  }
   const area = new Map<number, number>();
   for (const r of room) if (r >= 0) area.set(r, (area.get(r) ?? 0) + 1);
   // Each doorway's room side: the side that is not a corridor, else the smaller enclosed area. Its door swings in there.
@@ -1276,9 +1281,17 @@ export function oneDoorPerRoom(plan: ScanPlan, nodes: readonly (Vec & { open?: b
     const mid = { x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2 };
     const left = roomAt({ x: mid.x + n.x * 0.4, y: mid.y + n.y * 0.4 });
     const right = roomAt({ x: mid.x - n.x * 0.4, y: mid.y - n.y * 0.4 });
-    const score = (r: number) => (r < 0 ? Infinity : corridor.has(r) ? 1e9 + (area.get(r) ?? 0) : (area.get(r) ?? 0));
-    if (left !== right && (score(left) !== score(right))) {
-      d.room = score(left) <= score(right) ? n : { x: -n.x, y: -n.y };
+    // A corridor is where the scanner walked: the side more scan positions stand in is the corridor, then the larger.
+    // A side with no floor is a room no one went into, when a wall closes it within a room's depth; else it
+    // is outside the building.
+    const closedOff = (s: number) => {
+      const far = { x: mid.x + n.x * s * 8, y: mid.y + n.y * s * 8 };
+      const from = { x: mid.x + n.x * s * 0.3, y: mid.y + n.y * s * 0.3 };
+      return plan.walls.some((w) => side(from, far, w.a) * side(from, far, w.b) < 0 && side(w.a, w.b, from) * side(w.a, w.b, far) < 0);
+    };
+    const score = (r: number, s: number) => (r < 0 ? (closedOff(s) ? -1 : Infinity) : (corridor.has(r) ? 1e9 : 0) + (standing.get(r) ?? 0) * 1e5 + (area.get(r) ?? 0));
+    if (left !== right && score(left, 1) !== score(right, -1)) {
+      d.room = score(left, 1) <= score(right, -1) ? n : { x: -n.x, y: -n.y };
       continue;
     }
     // Both sides one area: the room is the side fewer scan positions stand near (the corridor is where they walked).
@@ -1319,4 +1332,218 @@ export function oneDoorPerRoom(plan: ScanPlan, nodes: readonly (Vec & { open?: b
   });
   plan.doorways = doorways;
   return closed.size;
+}
+
+/**
+ * Glass the photographs saw through: an inside wall where most rays from the
+ * scan cameras in front of it, to points on it between 1 and 2 m up, go on
+ * well past it into the scan's mesh (the room behind it), with floor behind
+ * it too (a window to the street is not a glass wall). It becomes a pane, with
+ * one door where a walk between two scan positions crosses it. `see` is how
+ * far the scan's mesh lets a ray from `from` go in the unit direction `dir`.
+ */
+export function glassFromSight(
+  plan: ScanPlan,
+  eyes: readonly { x: number; y: number; eye: number }[],
+  paths: readonly Seg[],
+  see: (from: readonly [number, number, number], dir: readonly [number, number, number], far: number) => number | null,
+): number {
+  const found: number[] = [];
+  plan.walls.forEach((w, index) => {
+    if (w.boundary || w.door) return;
+    const len = Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y);
+    if (len < 1.5) return;
+    const n = { x: -(w.b.y - w.a.y) / len, y: (w.b.x - w.a.x) / len };
+    let through = 0;
+    let solid = 0;
+    for (const e of eyes) {
+      for (let k = 1; k <= 6; k++) {
+        const t = k / 7;
+        const p = { x: w.a.x + (w.b.x - w.a.x) * t, y: w.a.y + (w.b.y - w.a.y) * t };
+        const side = (e.x - p.x) * n.x + (e.y - p.y) * n.y;
+        if (Math.abs(side) < 0.3) continue;
+        // The far side, behind the wall as this camera sees it, must be floor: a room, not the street.
+        const behind = { x: p.x - Math.sign(side) * n.x * 0.6, y: p.y - Math.sign(side) * n.y * 0.6 };
+        if (!onPlanFloor(plan.floor, behind.x, behind.y)) continue;
+        for (const h of [1.1, 1.6]) {
+          const target = [p.x, plan.floorY + h, p.y] as const;
+          const dx = target[0] - e.x;
+          const dy = target[1] - e.eye;
+          const dz = target[2] - e.y;
+          const d = Math.hypot(dx, dy, dz);
+          if (d > 10 || d < 0.5) continue;
+          // Square enough to the wall to read it, not grazing along it.
+          if (Math.abs((dx * n.x + dz * n.y) / d) < 0.5) continue;
+          const hit = see([e.x, e.eye, e.y], [dx / d, dy / d, dz / d], d + 3);
+          if (hit !== null && hit < d - 0.6) continue; // something in front of the wall: no vote
+          if (hit === null || hit > d + 0.6) through++;
+          else solid++;
+        }
+      }
+    }
+    if (through >= 10 && through > 2.5 * solid) found.push(index);
+  });
+  const panes: Seg[] = [];
+  for (const index of found) {
+    const w = plan.walls[index];
+    const len = Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y);
+    const dir = { x: (w.b.x - w.a.x) / len, y: (w.b.y - w.a.y) / len };
+    // One door where a walk crosses it.
+    let at: number | null = null;
+    const side = (u: Vec, v: Vec, p: Vec) => (v.x - u.x) * (p.y - u.y) - (v.y - u.y) * (p.x - u.x);
+    for (const s of paths) {
+      if (side(w.a, w.b, s.a) * side(w.a, w.b, s.b) >= 0 || side(s.a, s.b, w.a) * side(s.a, s.b, w.b) >= 0) continue;
+      const da = side(s.a, s.b, w.a);
+      const db = side(s.a, s.b, w.b);
+      at = (da / (da - db)) * len;
+      break;
+    }
+    const point = (t: number) => ({ x: w.a.x + dir.x * t, y: w.a.y + dir.y * t });
+    if (at === null) {
+      panes.push({ a: w.a, b: w.b });
+      continue;
+    }
+    const half = PLAN.doorClearM / 2;
+    const c = Math.min(len - half, Math.max(half, at));
+    if (c - half > 0.2) panes.push({ a: w.a, b: point(c - half) });
+    if (len - (c + half) > 0.2) panes.push({ a: point(c + half), b: w.b });
+    plan.doorways.push({ a: point(c - half), b: point(c + half), width: 2 * half, lintel: true, shut: false, walked: true, room: null });
+  }
+  plan.walls = plan.walls.filter((_, index) => !found.includes(index));
+  plan.glass.push(...panes);
+  return found.length;
+}
+
+/** A place where the set and the scan disagree, seen from a scan position. */
+export interface Mismatch {
+  kind: "set-wall" | "set-open";
+  a: Vec;
+  b: Vec;
+}
+
+/**
+ * Where the set and the scan disagree, as each scan camera sees them: a fan
+ * of level rays at 1.6 and 1.8 m (over the desks) from every camera, against
+ * the set's walls (`plan` as `planSolid` answers it) and against the scan's
+ * mesh (`see`). A run of rays the set stops but the scan lets through is a
+ * doorway the set lacks ("set-wall"); a straight run the scan stops but the
+ * set lets through is a wall the set lacks ("set-open").
+ */
+export function mismatches(
+  plan: ScanPlan,
+  eyes: readonly { x: number; y: number }[],
+  see: (from: readonly [number, number, number], dir: readonly [number, number, number], far: number) => number | null,
+): Mismatch[] {
+  const solid = planSolid(plan);
+  const STEPS = 360;
+  const FAR = 9;
+  const found: Mismatch[] = [];
+  for (const e of eyes) {
+    const kinds: ("set-wall" | "set-open" | null)[] = [];
+    const points: Vec[] = [];
+    for (let k = 0; k < STEPS; k++) {
+      const angle = (k / STEPS) * Math.PI * 2;
+      const dir = [Math.cos(angle), 0, Math.sin(angle)] as const;
+      let kind: "set-wall" | "set-open" | null = null;
+      let at = 0;
+      let agree = 0;
+      for (const h of [1.6, 1.8]) {
+        const from = [e.x, plan.floorY + h, e.y] as const;
+        const s = solid.hit(from, dir, FAR) ?? FAR;
+        const m = see(from, dir, FAR) ?? FAR;
+        const here = s < m - 0.6 && s < FAR - 1 ? "set-wall" : m < s - 0.6 && m < FAR - 1 ? "set-open" : null;
+        if (h === 1.6) {
+          kind = here;
+          at = here === "set-wall" ? s : m;
+        } else if (here === kind) agree = 1;
+      }
+      kinds.push(agree ? kind : null);
+      points.push({ x: e.x + Math.cos(angle) * at, y: e.y + Math.sin(angle) * at });
+    }
+    // Runs of one kind whose points hold together, as wide as a doorway or more.
+    let k = 0;
+    while (k < STEPS) {
+      const kind = kinds[k];
+      if (!kind) {
+        k++;
+        continue;
+      }
+      let end = k;
+      while (end + 1 < STEPS && kinds[end + 1] === kind && Math.hypot(points[end + 1].x - points[end].x, points[end + 1].y - points[end].y) < 0.35) end++;
+      const a = points[k];
+      const b = points[end];
+      const width = Math.hypot(b.x - a.x, b.y - a.y);
+      if (width >= 0.6 && width <= 6) found.push({ kind, a, b });
+      k = end + 1;
+    }
+  }
+  return found;
+}
+
+/**
+ * Brings the plan in line with the scan where the scan cameras saw it differ
+ * (`mismatches`): a door-wide gap the scan sees through a set wall becomes a
+ * doorway; a straight wall the scan sees across a set opening that no walk
+ * goes through becomes wall (a doorway in it no one went through goes too).
+ * Returns how many it changed.
+ */
+export function reconcile(plan: ScanPlan, found: readonly Mismatch[], paths: readonly Seg[], nodes: readonly Vec[]): number {
+  let changed = 0;
+  const near = (p: Vec, s: Seg) => distanceToSeg(s, p);
+  const side = (u: Vec, v: Vec, p: Vec) => (v.x - u.x) * (p.y - u.y) - (v.y - u.y) * (p.x - u.x);
+  const crossed = (s: Seg) => paths.some((q) => side(s.a, s.b, q.a) * side(s.a, s.b, q.b) < 0 && side(q.a, q.b, s.a) * side(q.a, q.b, s.b) < 0);
+  for (const m of found) {
+    const mid = { x: (m.a.x + m.b.x) / 2, y: (m.a.y + m.b.y) / 2 };
+    const width = Math.hypot(m.b.x - m.a.x, m.b.y - m.a.y);
+    if (m.kind === "set-wall") {
+      if (width > 1.6) continue;
+      // The wall the run lies on.
+      const index = plan.walls.findIndex((w) => !w.boundary && near(mid, w) < 0.2 && near(m.a, w) < 0.3 && near(m.b, w) < 0.3);
+      if (index < 0) continue;
+      const w = plan.walls[index];
+      const len = Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y);
+      const dir = { x: (w.b.x - w.a.x) / len, y: (w.b.y - w.a.y) / len };
+      const t = (mid.x - w.a.x) * dir.x + (mid.y - w.a.y) * dir.y;
+      const half = PLAN.doorClearM / 2;
+      const c = Math.min(len - half, Math.max(half, t));
+      const at = (s: number) => ({ x: w.a.x + dir.x * s, y: w.a.y + dir.y * s });
+      if (len < 2 * half + 0.1) continue;
+      if (plan.doorways.some((d) => near({ x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2 }, { a: at(c - half), b: at(c + half) }) < 1.5)) continue;
+      // Floor both sides: a window to the street is seen through too, and is no doorway.
+      const n = { x: -dir.y, y: dir.x };
+      const centre = at(c);
+      if (!onPlanFloor(plan.floor, centre.x + n.x * 0.6, centre.y + n.y * 0.6) || !onPlanFloor(plan.floor, centre.x - n.x * 0.6, centre.y - n.y * 0.6)) continue;
+      // Room for a body either side, clear of other walls: not a slot.
+      const roomy = (q: Vec) => plan.walls.every((o, j) => j === index || near(q, o) > 0.4);
+      if (!roomy({ x: centre.x + n.x * 0.7, y: centre.y + n.y * 0.7 }) || !roomy({ x: centre.x - n.x * 0.7, y: centre.y - n.y * 0.7 })) continue;
+      const pieces: PlanWall[] = [];
+      if (c - half > 0.15) pieces.push({ a: w.a, b: at(c - half), boundary: false });
+      if (len - (c + half) > 0.15) pieces.push({ a: at(c + half), b: w.b, boundary: false });
+      plan.walls.splice(index, 1, ...pieces);
+      plan.doorways.push({ a: at(c - half), b: at(c + half), width: 2 * half, lintel: true, shut: false, walked: true, room: null });
+      changed++;
+    } else {
+      // A wall across an opening: straight and square to the building, no walk through it, no one standing in it.
+      if (width < 1.0) continue;
+      const along = Math.abs(((m.b.x - m.a.x) * Math.cos(plan.angle) + (m.b.y - m.a.y) * Math.sin(plan.angle)) / width);
+      if (along > 0.15 && along < 0.985) continue;
+      const seg = { a: m.a, b: m.b };
+      if (crossed(seg) || nodes.some((n) => near(n, seg) < 0.6)) continue;
+      // A doorway no one went through, under it: gone.
+      const before = plan.doorways.length;
+      plan.doorways = plan.doorways.filter((d) => d.walked || near({ x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2 }, seg) > 0.3);
+      if (plan.doorways.length === before && plan.walls.some((w) => near(mid, w) < 0.3)) continue;
+      plan.walls.push({ a: m.a, b: m.b, boundary: false });
+      changed++;
+    }
+  }
+  return changed;
+}
+
+function distanceToSeg(s: Seg, p: Vec): number {
+  const ex = s.b.x - s.a.x;
+  const ey = s.b.y - s.a.y;
+  const len2 = ex * ex + ey * ey || 1;
+  const t = Math.max(0, Math.min(1, ((p.x - s.a.x) * ex + (p.y - s.a.y) * ey) / len2));
+  return Math.hypot(p.x - s.a.x - t * ex, p.y - s.a.y - t * ey);
 }
