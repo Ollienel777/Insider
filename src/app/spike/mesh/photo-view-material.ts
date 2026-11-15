@@ -14,9 +14,12 @@
 // The camera itself stays where the player is (walking and collision use
 // it). The sphere is moved by the difference instead: drawn from the
 // camera, it looks exactly as it would from the clamped point.
-import { DoubleSide, ShaderMaterial, Vector3, type IUniform } from "three";
+import { DoubleSide, ShaderMaterial, Vector3, Vector4, type IUniform } from "three";
 import type { PhotoUniforms } from "./photo-material";
 import { DEPTH_FAR, DEPTH_NEAR, DEPTH_STEP } from "./sphere-material";
+
+/** Fitted planes handed to the shader at most, the ones that matter most to the panorama shown. */
+export const PLANES = 48;
 
 /** How far from its scan position the picture follows the eye, metres. */
 export const REACH = 0.6;
@@ -34,6 +37,9 @@ uniform vec3 uPanoPos[4];
 uniform samplerCube uDepth${slot};
 /** The camera's position less the clamped one the picture is from. */
 uniform vec3 uShift;
+/** The mesh's fitted planes near the panorama (normal, offset: normal · p = offset), and how many are set. */
+uniform vec4 uPlanes[${PLANES}];
+uniform int uPlaneCount;
 varying vec3 vDirection;
 /** Where the panorama looks just past this vertex's edge, on its far side: what a stretched triangle is painted with. */
 varying vec3 vBack;
@@ -126,7 +132,34 @@ void main() {
   // still parts sheared against the moving ones wherever they met.
   float wide = (r2.y + 2.0 * r4.y) / 3.0;
   depth = 1.0 / mix(wide, 1.0 / depth, confidence);
-  vec3 world = uPanoPos[${slot}] + direction * max(depth, ${PARALLAX_NEAR.toFixed(2)}) + uShift;
+  // On a fitted plane (a wall, a partition's face, a desk, a pane) the plane's own depth, not the
+  // samples': the surface moves as one rigid sheet. A plane counts only where the depth the
+  // panorama has here (its own, unsmoothed) is close to where the ray meets it.
+  float onPlane = 0.0;
+  float planeDepth = depth;
+  float best = 1e9;
+  vec3 origin = uPanoPos[${slot}];
+  for (int k = 0; k < ${PLANES}; k++) {
+    if (k >= uPlaneCount) break;
+    vec4 plane = uPlanes[k];
+    float facing = dot(plane.xyz, direction);
+    if (abs(facing) < 0.08) continue;
+    float t = (plane.w - dot(plane.xyz, origin)) / facing;
+    if (t <= 0.0) continue;
+    float miss = abs(t - own) / (0.04 + 0.03 * own);
+    if (miss < 1.0 && miss < best) {
+      best = miss;
+      planeDepth = t;
+    }
+  }
+  if (best < 1.0) {
+    // Only where the depth round the vertex is already trusted: an infinite plane met by chance at
+    // an edge would undo the smooth sheet there and tear it again.
+    onPlane = (1.0 - smoothstep(0.15, 1.0, best)) * smoothstep(0.4, 0.8, confidence);
+    depth = mix(depth, planeDepth, onPlane);
+    vConfidence = max(vConfidence, onPlane);
+  }
+  vec3 world = origin + direction * max(depth, ${PARALLAX_NEAR.toFixed(2)}) + uShift;
   gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
 }
 `;
@@ -163,7 +196,7 @@ void main() {
 
 /** The material for the panorama in the store's slot `slot`, drawn alone and whole. `uShift` is set each frame. */
 export function createPhotoViewMaterial(panos: PhotoUniforms, slot: number): ShaderMaterial {
-  const uniforms: Record<string, IUniform> = { ...panos, uShift: { value: new Vector3() }, uShowConfidence: { value: 0 }, uPixel: { value: 0.001 } };
+  const uniforms: Record<string, IUniform> = { ...panos, uShift: { value: new Vector3() }, uPlanes: { value: Array.from({ length: PLANES }, () => new Vector4()) }, uPlaneCount: { value: 0 }, uShowConfidence: { value: 0 }, uPixel: { value: 0.001 } };
   return new ShaderMaterial({
     uniforms,
     vertexShader: vertex(slot),
@@ -184,4 +217,23 @@ export function photoShift(eye: readonly [number, number, number], origin: reado
   if (length <= reach) return [0, 0, 0];
   const keep = 1 - reach / length;
   return [dx * keep, dy * keep, dz * keep];
+}
+
+/**
+ * The planes that matter most to a panorama at `origin`, best first: the
+ * largest and nearest, within `reach` metres. `planes` is five numbers a
+ * plane (normal, offset, area), as the repair sends them.
+ */
+export function planesFor(planes: Float32Array, origin: readonly [number, number, number], count = PLANES, reach = 15): number[] {
+  const scored: [number, number][] = [];
+  for (let i = 0; i * 5 < planes.length; i++) {
+    const at = i * 5;
+    const distance = Math.abs(planes[at] * origin[0] + planes[at + 1] * origin[1] + planes[at + 2] * origin[2] - planes[at + 3]);
+    if (distance > reach) continue;
+    scored.push([i, planes[at + 4] / (1 + distance)]);
+  }
+  return scored
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, count)
+    .map(([i]) => i);
 }

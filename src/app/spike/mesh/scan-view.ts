@@ -32,6 +32,7 @@ import {
   type CubeTexture,
   ShaderMaterial,
   Vector2,
+  Vector4,
 } from "three";
 import type { BlendMode } from "@/lib/scan-mesh/blend";
 import type { Vec3 } from "@/lib/scan-mesh/coords";
@@ -58,7 +59,7 @@ import { blankCube, PanoStore, type PanoCounts, type PanoUse } from "./panos";
 import { createPhotoMaterial, createPhotoUniforms, type PhotoUniforms } from "./photo-material";
 import { createScanMaterial, SLOTS } from "./projection";
 import { createSphereMaterial } from "./sphere-material";
-import { createPhotoViewMaterial, photoShift } from "./photo-view-material";
+import { createPhotoViewMaterial, photoShift, planesFor } from "./photo-view-material";
 
 export type { ScanPose } from "@/lib/scan-mesh/pose";
 export { eyePose, yawFromHeading } from "@/lib/scan-mesh/pose";
@@ -289,6 +290,9 @@ export class ScanView {
   private photoFade = 1;
   /** In the photo view: tint what the depth is not trusted to move (debug, setConfidenceView). */
   private showConfidence = false;
+  /** The detailed mesh's fitted planes (five numbers each), once the repair is in; and which were last handed to each slot's sphere. */
+  private planes: Float32Array | null = null;
+  private planesShown: string[] = [];
   private fadeTarget: WebGLRenderTarget | null = null;
   private readonly fadeScene = new Scene();
   private readonly fadeCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -482,10 +486,22 @@ export class ScanView {
     const uniforms = (this.photoMeshes[slot].material as ShaderMaterial).uniforms;
     (uniforms.uShift.value as Vector3).set(shift[0], shift[1], shift[2]);
     uniforms.uShowConfidence.value = this.showConfidence ? 1 : 0;
+    this.setPlanes(slot, uniforms, [origin.x, origin.y, origin.z]);
     const height = target ? target.height : this.renderer.getDrawingBufferSize(new Vector2()).y;
     uniforms.uPixel.value = (this.camera.fov * Math.PI) / 180 / Math.max(1, height);
     this.renderer.setRenderTarget(target);
     this.renderer.render(this.photoScene, this.camera);
+  }
+
+  /** Hands slot `slot`'s sphere the planes that matter to the panorama at `origin`, when they have changed. */
+  private setPlanes(slot: number, uniforms: Record<string, { value: unknown }>, origin: [number, number, number]): void {
+    const key = this.planes ? `${this.planes.length}:${origin.map((n) => n.toFixed(2)).join(",")}` : "";
+    if (this.planesShown[slot] === key) return;
+    this.planesShown[slot] = key;
+    const chosen = this.planes ? planesFor(this.planes, origin) : [];
+    const out = uniforms.uPlanes.value as Vector4[];
+    chosen.forEach((i, k) => out[k].set(this.planes![i * 5], this.planes![i * 5 + 1], this.planes![i * 5 + 2], this.planes![i * 5 + 3]));
+    uniforms.uPlaneCount.value = chosen.length;
   }
 
   /** The photo view: the lead's panorama alone, and while one dissolves into the next, the old one over it fading out. */
@@ -981,6 +997,7 @@ export class ScanView {
     this.useFill(reply.fans, reply.stats.holes);
     if (this.fill && reply.patches.length > 0) this.usePatches(reply.patches, reply.patchPositions, reply.patchUvs);
     this.panos?.setGeometry(geometry);
+    this.planes = reply.planes;
     const repair = this.state.detail.repair;
     if (repair) Object.assign(repair, { stats: reply.stats, patches: reply.patches.length });
     this.push();

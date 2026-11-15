@@ -82,6 +82,8 @@ export type DetailReply =
       patchPositions: Float32Array;
       patchUvs: Float32Array;
       patches: PlanePatch[];
+      /** The fitted planes, five numbers each: the unit normal, the offset along it, and the area on it (m²). */
+      planes: Float32Array;
       stats: RepairStats;
     }
   /** A picture's gaps filled; null when it had nothing to fill them from. */
@@ -363,6 +365,8 @@ async function repair(
   const closed = closeHoles(vertices, kept.welded);
   let replaced = 0;
   for (let t = 0; t < fill.replaced.length; t++) if (fill.replaced[t]) replaced++;
+  const planeList = new Float32Array(fit.planes.length * 5);
+  fit.planes.forEach((plane, i) => planeList.set([...plane.normal, plane.offset, plane.area], i * 5));
   scope.postMessage(
     {
       kind: "repair",
@@ -373,6 +377,7 @@ async function repair(
       patchPositions: fill.positions,
       patchUvs: fill.uvs,
       patches: fill.patches,
+      planes: planeList,
       stats: {
         shards: dropped + floaters.count,
         found,
@@ -391,7 +396,7 @@ async function repair(
         steps: [(afterSeen - started) / 1000, (afterFit - afterSeen) / 1000, (afterFill - afterFit) / 1000, (performance.now() - afterFill) / 1000],
       },
     },
-    [positions.buffer, trimmed.index.buffer, closed.triangles.buffer, fill.positions.buffer, fill.uvs.buffer],
+    [positions.buffer, trimmed.index.buffer, closed.triangles.buffer, fill.positions.buffer, fill.uvs.buffer, planeList.buffer],
   );
 }
 
