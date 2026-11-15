@@ -7,7 +7,7 @@ import type { LevelManifest } from "@/domain";
 import { CHIEF_RATIONALE_MAX } from "@/domain";
 import type { ChiefRequest } from "./request";
 
-export const CHIEF_PROMPT_HEAD = "You are the night Security Chief in a Heist Anywhere level.";
+export const CHIEF_PROMPT_HEAD = "You are the night Security Chief in a Hobbs level.";
 
 export function chiefSystemPrompt(manifest: LevelManifest, request: ChiefRequest): string {
   const p = manifest.securityProfile;

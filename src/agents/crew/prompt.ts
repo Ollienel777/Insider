@@ -19,7 +19,7 @@ export interface CrewContext {
   security: Pick<LevelManifest["securityProfile"], "era" | "cameraKind" | "cameraCount" | "lockKind">;
 }
 
-export const CREW_PROMPT_HEAD = "You are the crew for a Heist Anywhere job.";
+export const CREW_PROMPT_HEAD = "You are the crew for a Hobbs job.";
 
 /** The longest order the crew reads. */
 export const ORDER_MAX = 400;
