@@ -36,11 +36,24 @@ describe("stepStates", () => {
 describe("StepRailView", () => {
   const html = renderToStaticMarkup(<StepRailView buildingId="F1" current="scout" />);
 
-  it("lists the steps in order as numbered folder tabs, then Owner Mode, on one row", () => {
-    const items = [...html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)].map((m) => text(m[1]).replace(/ \(.*\)$/, ""));
-    expect(items).toEqual(["1Scout", "2Dossier", "3Plan", "4Run", "5Debrief", "6Owner Mode"]);
+  it("lists the whole game in order as numbered folder tabs, then Owner Mode, on one row", () => {
+    const items = [...html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)].map((m) => text(m[1]).replace(/\s*\(.*\)$/, ""));
+    expect(items).toEqual(["1Missions", "2Cast", "3Scout", "4Dossier", "5Plan", "6Run", "7Debrief", "8Owner Mode"]);
     expect(html).not.toContain("Drill");
     expect(html).toContain("flex-nowrap");
+  });
+
+  it("shows every tab on the mission picker, with only Missions and Owner Mode open", () => {
+    const picker = renderToStaticMarkup(<StepRailView current="missions" />);
+    expect([...picker.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1])).toEqual(["/", "/b/F1/owner"]);
+    expect(picker).toMatch(/aria-disabled="true" title="Pick a mission first" data-state="upcoming"/);
+    expect(picker.match(/aria-disabled="true"/g)).toHaveLength(6);
+  });
+
+  it("opens Cast on the cast screen, with the mission in its link", () => {
+    const cast = renderToStaticMarkup(<StepRailView current="cast" missionId="romaine-1974" />);
+    expect([...cast.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1])).toEqual(["/", "/m/romaine-1974/cast", "/b/F1/owner"]);
+    expect(cast).toMatch(/aria-disabled="true" title="Finish Cast first" data-state="upcoming"/);
   });
 
   it("marks the current step with aria-current and the front tab", () => {
@@ -52,21 +65,22 @@ describe("StepRailView", () => {
 
   it("locks the steps not reached yet, says why, and keeps Owner Mode open", () => {
     const links = [...html.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1]);
-    expect(links).toEqual(["/b/F1/scout", "/b/F1/owner"]);
+    expect(links).toEqual(["/", "/b/F1/scout", "/b/F1/owner"]);
     expect(html).toMatch(/aria-disabled="true" title="Finish Scout first" data-state="upcoming"/);
     expect(html).toMatch(/aria-disabled="true" title="Finish Run first" data-state="upcoming"/);
   });
 
   it("opens every step on Owner Mode", () => {
-    const owner = renderToStaticMarkup(<StepRailView buildingId="F1" current="owner" />);
+    const owner = renderToStaticMarkup(<StepRailView buildingId="F1" current="owner" missionId="romaine-1974" />);
     expect(owner).not.toContain('aria-disabled="true"');
-    expect([...owner.matchAll(/<a [^>]*aria-current="page"[^>]*href="([^"]+)"/g)].map((m) => m[1])).toEqual(["/b/F1/owner"]);
+    expect([...owner.matchAll(/<a [^>]*aria-current="page"[^>]*href="([^"]+)"/g)].map((m) => m[1])).toEqual(["/b/F1/owner?m=romaine-1974"]);
   });
 
   it("shows a check on done steps", () => {
     const run = renderToStaticMarkup(<StepRailView buildingId="F1" current="run" />);
-    expect(run.match(/data-state="done"/g)).toHaveLength(3);
-    expect(run.match(/lucide-check/g)).toHaveLength(3);
+    // Missions, Scout, Dossier and Plan (Cast needs the mission in the address to link).
+    expect(run.match(/data-state="done"/g)).toHaveLength(4);
+    expect(run.match(/lucide-check/g)).toHaveLength(4);
   });
 });
 

@@ -8,11 +8,13 @@ import { expect, test, type Page } from "@playwright/test";
 const M = "romaine-1974";
 const at = (screen: string, m = M) => new RegExp(`/b/F1/${screen}\\?m=${m}$`);
 
-/** Every open tab keeps ?m=: the steps reached so far, the current one, and Owner Mode (the rest are locked, issue 166). */
+/** Every open building tab keeps ?m=: the steps reached so far, the current one, and Owner Mode (the rest are locked, issue 166). */
 async function railKeeps(page: Page, m: string, open: number) {
-  const links = page.getByRole("navigation", { name: "Steps" }).getByRole("link");
+  const links = page.getByRole("navigation", { name: "Steps" }).locator('a[href^="/b/"]');
   await expect(links).toHaveCount(open);
   for (const link of await links.all()) expect(await link.getAttribute("href")).toMatch(new RegExp(`^/b/F1/[a-z]+\\?m=${m}$`));
+  // Cast links back to the mission's own cast screen.
+  await expect(page.getByRole("navigation", { name: "Steps" }).locator(`a[href="/m/${m}/cast"]`)).toHaveCount(1);
 }
 
 test("Scout → Dossier → Plan → Run → Debrief keeps ?m= in the address", async ({ page }) => {

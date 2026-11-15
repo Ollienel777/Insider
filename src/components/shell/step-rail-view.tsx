@@ -2,11 +2,13 @@ import Link from "next/link";
 import { Check, Lock } from "lucide-react";
 import { buildingHref } from "@/lib/building-href";
 import { cn } from "@/lib/utils";
-import { FACTS_ONLY_NOTE, FACTS_ONLY_STEPS, STEPS, stepStates, type StepSegment, type StepState } from "./steps";
+import { FACTS_ONLY_NOTE, FACTS_ONLY_STEPS, STEPS, type StepSegment, type StepState } from "./steps";
 
-// The steps as folder tabs on the case file's top edge (issue 166). A step you
-// have not reached yet is pushed back into the stack, shaded and locked; Owner
-// Mode is always open. The row never wraps: the tabs shrink first.
+// The whole game as folder tabs on the case file's top edge (issue 166), on
+// every screen: Missions, Cast, the building's steps, then Owner Mode. A tab
+// you have not reached yet is pushed back into the stack, shaded and locked;
+// Owner Mode is always open. Drill Mode is on hold, so it has no tab. The row
+// never wraps: the tabs shrink first.
 const TAB = cn(
   "relative inline-flex h-10 min-w-0 shrink items-center gap-1.5 overflow-hidden rounded-t-[12px] border-[3px] border-b-0 border-border-strong",
   "px-[clamp(6px,0.9vw,12px)] font-hand text-[clamp(12px,1.05vw,15px)] whitespace-nowrap",
@@ -14,7 +16,17 @@ const TAB = cn(
 );
 const NUM = "grid h-5 min-w-5 shrink-0 place-items-center rounded-[6px] border-2 border-border-strong bg-n-950 px-1 font-display text-xs leading-none";
 
-function StepLink({ href, label, n, state }: { href: string; label: string; n: number; state: StepState }) {
+/** Where the demo's Owner Mode opens before a building is cast: the showcase building. */
+const OWNER_DEMO_HREF = "/b/F1/owner";
+
+export type RailTab = "missions" | "cast" | Exclude<StepSegment, "drill">;
+export const RAIL_TABS: readonly { tab: RailTab; label: string }[] = [
+  { tab: "missions", label: "Missions" },
+  { tab: "cast", label: "Cast" },
+  ...STEPS.filter((s) => s.segment !== "drill").map((s) => ({ tab: s.segment as RailTab, label: s.label })),
+];
+
+function TabLink({ href, label, n, state }: { href: string; label: string; n: number; state: StepState }) {
   return (
     <Link
       href={href}
@@ -35,8 +47,8 @@ function StepLink({ href, label, n, state }: { href: string; label: string; n: n
   );
 }
 
-/** A step not reached yet, or one a building does not have: shown in the stack, shaded, not linked. */
-function StepLocked({ label, n, why, state }: { label: string; n: number; why: string; state: string }) {
+/** A tab not reached yet, or a step a building does not have: shown in the stack, shaded, not linked. */
+function TabLocked({ label, n, why, state }: { label: string; n: number; why: string; state: string }) {
   return (
     <span
       aria-disabled="true"
@@ -52,45 +64,62 @@ function StepLocked({ label, n, why, state }: { label: string; n: number; why: s
   );
 }
 
-/** The rail itself, with the current step given; `StepRail` supplies it from the route. */
+/**
+ * The tabs, with the current screen given: "missions", "cast", a building
+ * step, "owner", or a building page that has no tab (Drill), where every step
+ * before it counts as reached. `StepRail` supplies it on building screens.
+ */
 export function StepRailView({
-  buildingId,
+  buildingId = null,
   current,
   missionId = null,
   factsOnly = false,
 }: {
-  buildingId: string;
+  /** The building on screen; none on the mission picker and the cast screen. */
+  buildingId?: string | null;
   current: string | null;
   /** The chosen mission, carried on every step as `?m=` (issue 119). */
   missionId?: string | null;
   /** A kit building (`isFactsOnly`): only Scout and the Dossier are linked; the rest are shown off. */
   factsOnly?: boolean;
 }) {
-  const states = stepStates(current);
-  const href = (segment: string) => buildingHref(buildingId, segment, missionId);
   const owner = current === "owner";
-  // Drill Mode is on hold, so the file has no Drill tab; its page is untouched.
-  const steps = STEPS.filter((s) => s.segment !== "drill").map((s, i) => ({ ...s, n: i + 1 }));
-  const renderStep = ({ segment, label, n }: { segment: StepSegment; label: string; n: number }, i: number) => {
-    if (factsOnly && !FACTS_ONLY_STEPS.includes(segment)) return <StepLocked label={label} n={n} why={FACTS_ONLY_NOTE} state="off" />;
-    // On Owner Mode every step is open: the owner came from a finished run.
-    if (!owner && states[segment] === "upcoming") {
-      const before = steps[i - 1]?.label ?? "the step before";
-      return <StepLocked label={label} n={n} why={`Finish ${before} first`} state="upcoming" />;
+  const at = RAIL_TABS.findIndex((t) => t.tab === current);
+  // A building page without a tab of its own (Drill) comes after every step.
+  const reached = owner ? RAIL_TABS.length : at >= 0 ? at : buildingId ? RAIL_TABS.length : 0;
+  const href = (tab: RailTab): string | null => {
+    if (tab === "missions") return "/";
+    if (tab === "cast") return missionId ? `/m/${encodeURIComponent(missionId)}/cast` : null;
+    return buildingId ? buildingHref(buildingId, tab, missionId) : null;
+  };
+  const renderTab = ({ tab, label }: (typeof RAIL_TABS)[number], i: number) => {
+    const n = i + 1;
+    if (factsOnly && i >= 2 && !FACTS_ONLY_STEPS.includes(tab as StepSegment)) {
+      return <TabLocked label={label} n={n} why={FACTS_ONLY_NOTE} state="off" />;
     }
-    return <StepLink href={href(segment)} label={label} n={n} state={owner ? "done" : states[segment]} />;
+    const to = href(tab);
+    if (i > reached || to === null) {
+      const before = RAIL_TABS[i - 1]?.label ?? "the step before";
+      return <TabLocked label={label} n={n} why={i === 1 ? "Pick a mission first" : `Finish ${before} first`} state="upcoming" />;
+    }
+    return <TabLink href={to} label={label} n={n} state={i === at ? "current" : "done"} />;
   };
   return (
     <nav aria-label="Steps" className="min-w-0 flex-1 pl-[clamp(8px,1.6vw,22px)]">
       <ol className="flex min-w-0 flex-nowrap items-end gap-1">
-        {steps.map((s, i) => (
-          <li key={s.segment} className="flex min-w-0 shrink">
-            {renderStep(s, i)}
+        {RAIL_TABS.map((t, i) => (
+          <li key={t.tab} className="flex min-w-0 shrink">
+            {renderTab(t, i)}
           </li>
         ))}
         {factsOnly ? null : (
           <li className="flex min-w-0 shrink">
-            <StepLink href={href("owner")} label="Owner Mode" n={steps.length + 1} state={owner ? "current" : "upcoming"} />
+            <TabLink
+              href={buildingId ? buildingHref(buildingId, "owner", missionId) : OWNER_DEMO_HREF}
+              label="Owner Mode"
+              n={RAIL_TABS.length + 1}
+              state={owner ? "current" : "upcoming"}
+            />
           </li>
         )}
       </ol>

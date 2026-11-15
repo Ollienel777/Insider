@@ -12,6 +12,7 @@ import type { ServerStatus } from "@/lib/demo-status";
 import { CaseCover } from "./case-cover";
 import { DemoSafety } from "./demo-safety";
 import { StepRail } from "./step-rail";
+import { StepRailView } from "./step-rail-view";
 import { isFactsOnly } from "./steps";
 import { TopBar } from "./top-bar";
 
@@ -19,6 +20,10 @@ interface AppShellProps {
   children: ReactNode;
   /** On building screens: the building, which also turns the step rail on. */
   building?: Pick<Building, "id" | "name" | "city"> & Partial<Pick<Building, "source">>;
+  /** Off building screens: which tab is current, the mission picker's or the cast screen's (issue 166). */
+  tab?: "missions" | "cast";
+  /** On the cast screen: the mission being cast, which its tab links to. */
+  missionId?: string;
 }
 
 /**
@@ -40,7 +45,7 @@ export function serverStatus(forced: ReadonlySet<Service>): ServerStatus {
  * along the top, the folder's tabs under them, then the open case file, which
  * holds the screen. Run takes the whole screen (`body.playing`, set by Run).
  */
-export async function AppShell({ children, building }: AppShellProps) {
+export async function AppShell({ children, building, tab = "missions", missionId }: AppShellProps) {
   // Read the mode per request, not at build time, so the chip reports how the
   // running server is configured.
   await connection();
@@ -59,9 +64,7 @@ export async function AppShell({ children, building }: AppShellProps) {
             builtMissions={isFactsOnly(building.source) ? builtMissions(building.id) : undefined}
           />
         ) : (
-          <span className="ml-[clamp(8px,1.6vw,22px)] inline-flex h-10 items-center rounded-t-[12px] border-[3px] border-b-0 border-border-strong bg-manila px-4 font-hand text-[15px] text-text-1">
-            Case files
-          </span>
+          <StepRailView current={tab} missionId={missionId ?? null} />
         )}
       </div>
       <main
