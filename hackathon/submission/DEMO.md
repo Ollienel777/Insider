@@ -9,20 +9,27 @@ building from the kit.
   on 15 November (00:00 ET).
 - **Owner Mode** gets 15 seconds after the Debrief (Q9, status issue #1).
 
-Written against `main` at c08ae94, at 00:48 UTC on 15 November. Every F1 step
-was walked on that tree in fake mode: a production build with every service
-on `fake`, at 1440×900. So were first person on F1, and the kit-building screens
-on the fictional test building (`HEIST_TEST_KIT=1`). No keys were used here, so
-every step that needs live CoStar, Matterport or a model says **live only, not
-walked here**.
+Written against `main` at a678cce, at 02:03 UTC on 15 November.
+
+- **What was walked:** on c08ae94, in fake mode (a production build with every
+  service on `fake`, at 1440×900):
+  - every F1 step;
+  - first person on F1;
+  - the kit-building screens, on the fictional test building
+    (`HEIST_TEST_KIT=1`).
+- **What changed since:** #142 and #144 merged after the walk. The screens they
+  changed (beat 5's slow-model plan, and beat 8's open windows) are quoted from
+  `main`'s code and smoke tests, not walked.
+- **What needs keys:** none were used here, so every step that needs live
+  CoStar, Matterport or a model says **live only, not walked here**.
 
 ## On stage
 
 - One presenter. A judge picks the mission (beat 1) and makes the fatal move
   (beat 6).
 - **Say only what the screen shows.** The chip top right reads `LIVE` or
-  `FIXTURES`. A **Recorded**, **Rule-based** or **Worked out on the board** tag
-  means no model wrote that answer. Never narrate one of those as live.
+  `FIXTURES`. A **Recorded**, **Rule-based** or **No crew reply** tag means no
+  model wrote that answer. Never narrate one of those as live.
 - The showcase building is real, so read its name off the cast card; this
   file doesn't name it. The guards, cameras and locks in it are game fiction.
   Beat 4 says so.
@@ -156,9 +163,6 @@ The mission briefing follows.
    The security is game fiction."**
 2. Click **Brief the crew**.
 
-Don't say the staged floor's number. The scan is of a different floor (Open
-items, 4).
-
 Fallbacks:
 
 - The replay stalls: click **Skip**. Say: **"Here's the finished level."**
@@ -175,9 +179,8 @@ Screen: the Plan board and the order box. The order is on the clipboard
 
 `In through the street lobby, straight to the files, and out the way we came.`
 
-It names the way in and the objective, and asks for no wait. An order with a
-wait once had the crew wait in a suite on the staged floor, which the scan
-doesn't have, and the board struck that step out (Open items, 4).
+It names the way in and the objective, and asks for no wait, so the crew has
+no reason to stop in a suite (Open items, 4).
 
 1. Click the **Your order** box, paste, and press **Enter**.
 2. While the crew answers, click camera **C1** on the board. Its Why card
@@ -185,30 +188,32 @@ doesn't have, and the board struck that step out (Open items, 4).
    there."** Press **Esc**.
 3. The crew's plan appears, checked on the board. A live reply carries no
    tag. Click **Start the run** at once, in this same window, and say the
-   Plan line while the Run opens. The scan starts loading when Run opens, so
-   this gives it the narration's seconds before beat 6. Say: **"The crew
-   answers in plain English, and the board checks its plan."**
+   Plan line while the Run opens. That gives the scan those seconds to finish
+   loading before beat 6. Say: **"The crew answers in plain English, and the
+   board checks its plan."**
 
 Fallbacks:
 
-- A step is struck through, with "Dropped step N: …" under the plan. Say:
-  **"That suite isn't on this scan, so the board drops the step."** Click
-  **Start the run**.
-- "The crew didn't answer": the model was slow, and a kit building has no
-  recorded reply.
-  - **#142 had not merged** at 00:48 UTC. On `main`, click **Start the run**.
-    The Run carries the level's own plan. Say: **"The model's slow
-    tonight. The level carries a plan of its own."**
-  - If #142 has merged, its plan arrives with the chip **Worked out on the
-    board**. Say: **"The model was slow, so this plan is worked out on the
-    board, with no model."**
+- **A step is struck through**, with "Dropped step N: …" under the plan. Say:
+  **"That step isn't on this board, so the board drops it."** Click **Start
+  the run**.
+- **The model is slow.** A kit building has no recorded reply, so the board
+  works out a plan instead (#142, merged). It arrives headed **The board's
+  plan**, with the chip **No crew reply**. Say: **"The model was slow, so the
+  board worked out this plan, with no model."** Click **Start the run**.
+- **"The crew didn't answer"**, with **Retry**: the server couldn't plan at
+  all. Click **Start the run**; the Run carries the level's own plan. Say:
+  **"The level carries a plan of its own."**
 
 Walked here:
 
 - the Why card on the Plan board (F1 and the test building);
 - the Run's own four-step plan on the test building with no crew plan.
 
-Live only, not walked here: this order to the live crew.
+Not walked here:
+
+- #142's board plan, which merged after the walk;
+- this order to the live crew (live only).
 
 ## Beat 6 · 1:00–1:28 · Run, in the real scan
 
@@ -228,17 +233,18 @@ in, or fails on stage.
 Live only, not walked here.
 
 Screen: the Run, labelled **Real CoStar record · real Matterport scan**. The
-scan started loading when Run opened, during beat 5. The player waits until
-the picture around them is in: at most 12 s once the mesh is in.
+scan was loaded before the pitch, or is finishing now (checklist). Once its
+mesh is in, the player waits at most 12 s for the picture around them.
 
 1. Check that the label says **real Matterport scan**.
 2. If the Run didn't open in first person, click **First person** (top right,
-   under the scan stage's header). Wait for "Loading the building around you"
-   to clear.
-3. Hand the judge the keyboard and mouse. Say: **"You're in the real building,
-   its own scan. W to walk, the mouse to look. The files are deep inside; see
-   how far you get."** Don't promise a win. The HUD shows how far away the
-   files are.
+   under the scan stage's header). Wait for #157's loading line to clear: it
+   says "Loading the building", then "Loading the picture around you".
+3. Click the view once: mouse look starts only after that click. Then hand the
+   judge the keyboard and mouse. Say: **"You're in the real building, its own
+   scan. W to move, the mouse to look. The files are deep inside; see how far
+   you get."** Don't promise a win. The HUD shows how far away the files are.
+   W runs by default, and Shift walks.
 4. The judge walks from the entry into the first corridor.
    - Steer them away from the corridor door where the picture tears (Esun4's
      walk report on #157; Open items, 3).
@@ -277,9 +283,12 @@ Fallbacks, one per fix and one per known rough edge:
   scan's real doors. The mission's one door is at the files."**
 - **The picture tears.** Say: **"That's where two panoramas meet."** Keep
   walking.
-- **The label says stand-in floor plan, or the scan hasn't loaded in 10 s.**
-  The page fell back to the fixture floor, and first person still plays on it.
-  Say: **"The scan didn't load, so this is the stand-in floor plan."**
+- **The label says stand-in floor plan.** The page fell back to the fixture
+  floor, and first person still plays on it. Say: **"The scan didn't load, so
+  this is the stand-in floor plan."**
+- **The board still has no scan after 30 s.** The board waits up to 30 s for a
+  scan's rooms (#143), so don't call it before then. After 30 s, use the F1
+  fallback below.
 - **First person is refused, or the beat can't run at all.** Use the F1
   fallback below.
 
@@ -294,8 +303,9 @@ On `main` (PRs #119 and #138). Walked here. The run moves to Halvorsen Tower
 1. Click the **F1 Run tab**. Say: **"Tonight's run is on our hand-built floor,
    a fixture building."**
 2. Click **First person**. It was ready in 1.8 s on the walk.
-3. Hand over. Say: **"W to walk, the mouse to look. Through the lobby, then
-   left, down the dock corridor."**
+3. Click the view once, so the mouse looks, then hand over. Say: **"W to move,
+   the mouse to look. Through the lobby, then left, down the dock
+   corridor."**
 4. The judge walks forward into the lobby, turns a quarter left, and walks
    into the Dock Corridor. On the walk, from the turn:
    - Camera C2 saw them about 3 s later. The alarm went to **Alert**, and the
@@ -358,22 +368,18 @@ Mode on Halvorsen Tower:
 
 - "Made-up setup on a fixture building";
 - **Two setups, side by side**, tagged **Recorded**;
-- A, "Demo: night shift": **7 / 50**, 43% watched;
-- B, "Demo: night shift, C2 moved": **1 / 50**, 50% watched;
+- A, "Demo: night shift": **7 / 50**, "43% watched · 40/80 open";
+- B, "Demo: night shift, C2 moved": **1 / 50**, "50% watched · 20/80 open";
 - "C2 moved from the Freight Lift Lobby to the Dock Corridor";
 - "7 → 1 of 50: 6 fewer got out.";
-- "Coverage 43% → 50%".
+- "Coverage 43% → 50%, open windows 40 of 80 → 20 of 80."
 
 1. Click the **Owner tab**.
-2. Say: **"And for the owner: enter your own security, here a made-up one.
-   The AI crew tries fifty break-ins: seven get out. Move camera C2: coverage
-   43 to 50 percent, and one in fifty."**
+2. Say: **"And for the owner: their own security, here made up. Fifty AI
+   break-ins: seven get out. Move camera C2: coverage 43 to 50 percent, open
+   windows 40 to 20 of 80, and one in fifty."**
 3. If time allows, click **Show on the board** under B. C2 is ringed, as what
    noticed the crew first most often.
-
-Leave out the open windows. PR #144 had not merged at 00:48 UTC, so no
-screen shows "40 of 80 → 20 of 80". Say it only if #144 merges and this tab
-shows it.
 
 Fallback: the tab lost its result, because it was reloaded.
 
@@ -381,13 +387,16 @@ Fallback: the tab lost its result, because it was reloaded.
    pair.
 2. Click **Compare**.
 
-Coverage 43% → 50% comes from the floor plan, so it holds. The counts 7 and 1
-come from the crew's recorded strategies. With a live model, read the counts
-off the screen.
+Coverage and open windows come from the floor plan, so they hold. The counts 7
+and 1 come from the crew's recorded strategies. With a live model, read the
+counts off the screen.
 
-Walked here in fake mode: Compare in 0.4 s, 7 / 50 → 1 / 50, coverage 43% →
-50%, and C2 ringed on B. Not walked: forcing the Model in the checklist,
-because fake mode locks that switch.
+Walked here in fake mode, on c08ae94: Compare in 0.4 s, 7 / 50 → 1 / 50,
+coverage 43% → 50%, and C2 ringed on B. The open windows came with #144 after
+the walk. Their numbers are from `main`'s owner smoke test.
+
+Not walked: forcing the Model in the checklist, because fake mode locks that
+switch.
 
 ## If the showcase building is out: the F1 path
 
@@ -458,19 +467,22 @@ in the server's memory.
 
 - [ ] `npm run demo:reset`, then reload the browser on `/`. The reset needs
       that reload, so it comes first.
-- [ ] **Open the showcase building's Run once.** The scan is about 233 MB,
-      and this puts it in memory before the pitch.
-  1. From the cast card's **Run** link, click **First person**.
-  2. Wait until you can walk, then click **Restart**.
-  3. Go back to `/` with the **Heist Anywhere** wordmark. Don't reload after
-     this.
+- [ ] **Load the scan before the pitch.**
+  1. In the pitch window, in front, open the showcase building's **Plan**,
+     from the cast card's **Plan** link.
+  2. Let the scan load there.
+  3. Go back to `/` with the **Heist Anywhere** wordmark. The scan stays
+     loaded.
+  4. Keep the window in front from here on.
 
-  If the Run opens mid-run on stage, click **Restart**.
+  **This needs the scan-keeping fix** (Open items, 8). The fix keeps the scan
+  per model for the tab's session, and starts loading it from the Plan
+  screen. On #157 alone the scan is dropped when the Run screen closes, so
+  loading it early does nothing. Without the fix, the scan starts loading when
+  Run opens, in beat 5's step 3.
 
-  On stage, the Run opens again during beat 5 (its step 3), in the same
-  visible window. The scan starts loading when Run opens, and the player then
-  waits up to 12 s for the picture around them once the mesh is in. Opening
-  Run while narrating Plan has the scan in by beat 6.
+  Check at the 05:00 UTC rehearsal: time a cold load, so you know how long
+  this step takes.
 
   Live only, not walked here.
 - [ ] **Open the F1 fallback tab.** In a second tab, open
@@ -526,32 +538,22 @@ in the repo or the video's files.
 3. **The walk route.** Esun4's walk report on #157 says the picture tears at
    one corridor door, but doesn't say which. Pin the route at the rehearsal,
    and write here the door to steer the judge away from.
-4. **The crew's floor isn't the scan's floor.**
-   - The level is staged on the floor that CoStar lists as vacant, and the scan
-     is of a suite on another floor.
-   - The live crew plans on the manifest's zones, so it can name a suite on
-     the staged floor that the scan doesn't have. The board strikes that step
-     out.
-   - Beat 5's order asks for no wait, which avoided it on the walk.
+4. **The live crew can name a zone the board doesn't have.** It plans on the
+   manifest's zones, not the placed board's, and the board strikes such a
+   step out.
+   - Beat 5's order asks for no wait, which avoids it.
    - The fix is #142's review finding M4: send the placed zones with the crew
      request. It has no ticket yet.
-5. **#142, the crew's board fallback, is open.** Until it merges, beat 5's
-   slow-model fallback on the showcase building is **Start the run** with the
-   level's own plan.
-6. **#144, open windows, is open.** Beat 8 leaves its number out.
-7. **Scout has no aerial on the showcase building.** Vexcel has no imagery for
+5. **Scout has no aerial on the showcase building.** Vexcel has no imagery for
    kit buildings, so the ways in come from rules.
-8. **The showcase path was not walked for this script.** That covers the cast
-   card, the real record, the scan, the live crew and the Chief.
-   - Esun4 walked it live, three times before this was written, then about
-     five more runs at #157's 2ac0c80.
-   - The run places on the real scan and runs at 60 fps.
-   - Every run was caught in the first corridor.
-   - The files are far from the entry, past a locked door. Nobody has
-     reached them.
-9. **Not walked: forcing the Model in the demo settings, to prepare the Owner
+6. **The showcase path was not walked for this script.** That covers the cast
+   card, the real record, the scan, the live crew and the Chief, because no
+   keys were used here. Esun4's live walks are reported on #157.
+7. **Not walked: forcing the Model in the demo settings, to prepare the Owner
    tab.** Fake mode locks the switch. Expect the result to stay on screen when
    you switch it back, since the page re-renders without a reload. The
    checklist checks it.
-10. **Whether a reload keeps the warmed scan is not known.** So the checklist
-    warms it after the reset's reload, and nothing reloads after that.
+8. **The scan-keeping fix isn't merged.** It keeps the scan per model for the
+   tab's session, and starts loading it from the Plan screen. It ships on the
+   scan-join agent's branch after #157. Until it merges, the checklist's early
+   load does nothing, and the scan loads when Run opens.
