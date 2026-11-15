@@ -248,8 +248,8 @@ test("opened from the step rail mid-run, after the Chief's answer, the debrief l
   const pending = await page.evaluate(() => JSON.parse(localStorage.getItem("heist:run-log:F1:romaine-1974") ?? "null").pendingChief);
   expect(pending).toMatchObject({ turn: 2, chief: { rationale: answered }, chiefSource: "recorded" });
 
-  // The Debrief tab is locked while Run is the current step: the Debrief opens by its address, with the run's log in storage.
-  await page.goto("/b/F1/debrief?m=romaine-1974");
+  // The Debrief tab is open from Run mid-run (the demo script's fallback), with the run's log in storage.
+  await page.getByRole("navigation", { name: "Steps" }).getByRole("link", { name: "Debrief", exact: true }).click();
   await expect(page).toHaveURL(/\/b\/F1\/debrief\?m=romaine-1974$/, { timeout: 15_000 });
   const outcome = page.getByTestId("debrief-outcome");
   await expect(outcome).toHaveAttribute("data-status", "playing");

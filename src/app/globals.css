@@ -50,7 +50,7 @@
   /* text */
   --text-1: var(--n-50);
   --text-2: var(--n-300);
-  --text-3: var(--n-400);
+  --text-3: #665240; /* a shade under n-400: AA on manila too */
 
   /* the accent: a sunny yellow, for the one big button and the player */
   --accent: #f0bd4a;
@@ -58,10 +58,13 @@
   --accent-active: #dfa52a;
   --accent-ink: #2b1d12;
   --accent-wash: rgb(240 189 74 / 0.22);
+  /* The accent as a line or piece on the paper board: 3:1 on every surface, where --accent is 1.5:1. */
+  --accent-deep: #9a6400;
+  --accent-deep-shade: #6f4800;
 
   /* semantic */
-  --success: #2f7a5c;
-  --warning: #b86e0e;
+  --success: #24654b; /* AA as text on every surface and on manila */
+  --warning: #8a4f06; /* AA as text on every surface */
   --danger: #b8392a;
 
   /* data layers */
@@ -126,6 +129,8 @@
   --color-accent-active: var(--accent-active);
   --color-accent-ink: var(--accent-ink);
   --color-accent-wash: var(--accent-wash);
+  --color-accent-deep: var(--accent-deep);
+  --color-accent-deep-shade: var(--accent-deep-shade);
 
   --color-success: var(--success);
   --color-warning: var(--warning);

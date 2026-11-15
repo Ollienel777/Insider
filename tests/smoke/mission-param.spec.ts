@@ -32,9 +32,10 @@ test("Scout → Dossier → Plan → Run → Debrief keeps ?m= in the address", 
   await page.getByRole("link", { name: "Start the run" }).click();
   await expect(page).toHaveURL(at("run"), { timeout: 15_000 });
   await expect(page.getByTestId("run-board")).toBeVisible();
-  await railKeeps(page, M, 5);
-  // The Debrief tab is locked until the run is over, so it is opened by its address.
-  await page.goto(`/b/F1/debrief?m=${M}`);
+  // Run opens the Debrief too: Scout to Debrief and Owner Mode.
+  await railKeeps(page, M, 6);
+  // The Debrief tab is open from Run, mid-run included.
+  await page.getByRole("navigation", { name: "Steps" }).getByRole("link", { name: "Debrief" }).click();
   await expect(page).toHaveURL(at("debrief"), { timeout: 15_000 });
   await railKeeps(page, M, 6);
 });
