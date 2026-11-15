@@ -312,24 +312,26 @@ function chainOf(adj: Adjacency, nodes: readonly string[], fromStart: ReadonlyMa
 }
 
 /**
+ * Every node on some shortest way from `a` to `b` (`fromA` and `fromB` are the
+ * moves from each); empty when `b` cannot be reached from `a`.
+ */
+function onShortestWays(fromA: ReadonlyMap<string, number>, fromB: ReadonlyMap<string, number>, b: string): Set<string> {
+  const d = fromA.get(b);
+  const on = new Set<string>();
+  if (d === undefined) return on;
+  for (const [id, x] of fromA) if (x + (fromB.get(id) ?? Infinity) === d) on.add(id);
+  return on;
+}
+
+/**
  * The way through on a scan (issue 176): every node on a shortest way from
- * `start` to `objective`, and every node all ways there must cross (the cut
- * nodes). A scan's corridor is often the only way to the objective, so a
- * camera or a round on these nodes leaves no careful plan a way past.
+ * `start` to `objective`. That holds the cut nodes too, the ones every way
+ * there must cross, since a node on every way is on every shortest one. A
+ * scan's corridor is often the only way to the objective, so a camera or a
+ * round on these nodes leaves no careful plan a way past.
  */
 function wayThrough(adj: Adjacency, start: string, objective: string): Set<string> {
-  const fromStart = hops(adj, [start]);
-  const fromObjective = hops(adj, [objective]);
-  const d = fromStart.get(objective);
-  const through = new Set<string>();
-  if (d === undefined) return through;
-  for (const [id, a] of fromStart) if (a + (fromObjective.get(id) ?? Infinity) === d) through.add(id);
-  const all = [...adj.keys()];
-  for (const id of all) {
-    if (id === start || id === objective || through.has(id)) continue;
-    if (!hops(adj, [start], new Set(all.filter((n) => n !== id))).has(objective)) through.add(id);
-  }
-  return through;
+  return onShortestWays(hops(adj, [start]), hops(adj, [objective]), objective);
 }
 
 /** `nodes` split into the pieces that hang together (by their own edges), each from its lowest id. */
