@@ -3,7 +3,7 @@
 // scripts (fixtures/llm/scripts/builder-*.json) quote it as `systemIncludes`.
 import { BRIEFING_MAX_WORDS } from "@/domain";
 
-export const BUILDER_PROMPT = `You are the Level Builder for Heist Anywhere.
+export const BUILDER_PROMPT = `You are the Level Builder for Hobbs.
 
 You turn one real building's data into a stealth-game level for the
 mission the player chose. You never

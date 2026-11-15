@@ -13,7 +13,9 @@
 // Terms (SPEC §4.5, DECISION risk 2): until the sponsor says yes in writing,
 // what this file returns is held in browser memory only. Nothing here or in
 // live.ts fetches, stores or posts; the graph goes to the caller and nowhere
-// else. No scan id, label, coordinate or edge reaches the server or a model.
+// else. No scan id, coordinate or edge reaches the server or a model. A
+// room's label (or its fiction name) goes to the Chief as that room's name
+// (issue 172; the spec's Q2 rule is Nelson's to change), under an opaque id.
 // One thing shaped by the scan does: on every alarm transition the Run
 // screen sends the Chief opaque `area-N` zones for the rooms outside the
 // manifest's zones, and which zone each guard and the last sighting is in

@@ -89,7 +89,12 @@ export function castBecauseRow({ candidate, mission, derived }: CastBecause): Da
   };
 }
 
-export function dataToLevelRows(manifest: LevelManifest, cast?: CastBecause | null): DataToLevelRow[] {
+export function dataToLevelRows(
+  manifest: LevelManifest,
+  cast?: CastBecause | null,
+  /** A kit building's real record: its suites are counted, not listed, so no kit label or number goes on screen. */
+  realRecord = false,
+): DataToLevelRow[] {
   const byRole = new Map<string, Provenance>();
   for (const p of manifest.provenance) if (!byRole.has(p.elementRole)) byRole.set(p.elementRole, p);
   const profile = manifest.securityProfile;
@@ -140,7 +145,9 @@ export function dataToLevelRows(manifest: LevelManifest, cast?: CastBecause | nu
       rule: detail ? `Most free space: ${detail}` : "Most free space of any floor",
       result:
         quiet.length > 0
-          ? `Staged on ${floor}; ${quiet.length === 1 ? "suite" : "suites"} ${suiteRange(quiet)} are quiet zones`
+          ? realRecord
+            ? `Staged on ${floor}; its ${quiet.length === 1 ? "free suite is a quiet zone" : `${quiet.length} free suites are quiet zones`}`
+            : `Staged on ${floor}; ${quiet.length === 1 ? "suite" : "suites"} ${suiteRange(quiet)} are quiet zones`
           : `Staged on ${floor}`,
     });
   }

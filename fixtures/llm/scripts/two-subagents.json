@@ -3,7 +3,7 @@
   "agents": [
     {
       "agent": "level-builder",
-      "systemIncludes": "You are the Level Builder for Heist Anywhere.",
+      "systemIncludes": "You are the Level Builder for Hobbs.",
       "turns": [
         {
           "content": "Planning the level.",

@@ -129,7 +129,8 @@ describe("the Run screen keeps a scanned board's log out of storage from its fir
 });
 
 describe("the Chief's request body on a scanned board", () => {
-  it("names no sweep (node id) and no scanned room id or label outside the manifest's zones", () => {
+  // A room's name on the board goes, so the Chief can say it (issue 172, Q2 answered yes); its scan id never does.
+  it("names no sweep (node id) and no scanned room id outside the manifest's zones", () => {
     const zones = chiefZones(placed);
     const run = play(createRun(placed.level), [
       { kind: "move", to: F1_DEMO.freightLiftWait },
@@ -149,7 +150,6 @@ describe("the Chief's request body on a scanned board", () => {
     for (const room of scannedFloor.rooms) {
       if (manifestZones.has(room.id)) continue;
       expect(strings.has(room.id), room.id).toBe(false);
-      expect(strings.has(room.label), room.label).toBe(false);
     }
     expect(body).not.toMatch(/"(x|y|edges|sightlines|nodes)"/);
   });

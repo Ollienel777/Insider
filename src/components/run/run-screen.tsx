@@ -41,6 +41,7 @@ import { useTurnClock } from "./turn-clock";
 import { FirstMoveHint } from "./fp/first-move-hint";
 import { ChiefPanel, hiddenRoutes, useChiefStream, type ChiefState } from "./chief-panel";
 import { askChief, chiefRequest, chiefZones, toEngineOrders, type ChiefAnswer } from "./chief-request";
+import { ChiefCalls } from "./chief-calls";
 import { loadCrewPlan, PLAN_HEADING, planSourceOf, type StoredCrewPlan } from "./crew-plan-store";
 import { clearRunLog, keepRunLogInMemory, runLogOf, saveRunLog } from "./run-log-store";
 import { appendRunHistory, chiefHistory, clearRunHistory, loadRunHistory, postureOf, runRecordOf, type RunRecord } from "./run-history";
@@ -51,6 +52,15 @@ import { ScanWait, useWaitsOnScan } from "./scan-wait";
 import { FIRST_PERSON_TURN_MS, firstPersonPace, firstPersonOn, FirstPersonView, FP_UNAVAILABLE, useBark, useRunView, useScanPreload, ViewSwitch, type HeldAction } from "./fp/run-view";
 
 export type RunBuilding = Pick<Building, "id" | "name" | "matterportModelId">;
+
+/**
+ * What the status line says as a run opens at `entry`: how to move, in the
+ * controls of the view the run is played in. On the board, the numbers; in
+ * first person, W to walk and the mouse to look, as its first-move hint says.
+ */
+export function openingLine(entry: string, firstPerson: boolean): string {
+  return `You're in at the ${entry.toLowerCase()}. ${firstPerson ? "W to walk, the mouse to look." : "Pick a number to move."}`;
+}
 
 /** The seed every run of the demo uses, so a rehearsed run plays the same way in front of judges. */
 export const RUN_SEED = 7;
@@ -117,6 +127,8 @@ export function RunScreen({
   const [storedRuns, setStoredRuns] = useState(0);
   const [run, setRun] = useState<RunState | null>(null);
   const [status, setStatus] = useState<string>("");
+  /** The way in the run opened at, while the status line still says so: first person words it for its own keys. */
+  const [opening, setOpening] = useState<string | null>(null);
   const [muted, toggleMute] = useRunSound(run);
   const missionId = useMissionId();
   /** Walking or sprinting (issue 121): `S` switches; any action, and Restart, go back to walking. */
@@ -128,8 +140,8 @@ export function RunScreen({
   // Nothing waits on it: the engine already has the guards converging.
   const [chief, setChief] = useState<ChiefState>({ status: "idle" });
   const latestRun = useRef<RunState | null>(null);
-  const latestSeq = useRef(-1);
   const pendingChief = useRef<AbortController | null>(null);
+  const chiefCalls = useRef(new ChiefCalls());
   /** Turn number → where the Chief's orders logged on that turn came from, for the Debrief. */
   const chiefSources = useRef(new Map<number, ChiefAnswer["source"]>());
   /** The Chief's answer that landed after the run ended, if one did. */
@@ -145,7 +157,7 @@ export function RunScreen({
   const startRun = useCallback((level: PlacedLevel["level"]) => {
     pendingChief.current?.abort();
     pendingChief.current = null;
-    latestSeq.current = -1;
+    chiefCalls.current.reset();
     chiefSources.current = new Map();
     lateChief.current = null;
     setChief({ status: "idle" });
@@ -199,7 +211,8 @@ export function RunScreen({
           const placed = await placeOrFixture(building, floor, (on) => (live ? placeAndStart(manifest, on) : null));
           if (!live) return;
           if (!placed) return setLoad({ status: "no-floor" });
-          setStatus(`You're in at the ${placed.entries[0].label.toLowerCase()}. Pick a number to move.`);
+          setStatus(openingLine(placed.entries[0].label, false));
+          setOpening(placed.entries[0].label);
         },
         (error: unknown) => {
           if (live) setLoad({ status: "error", message: error instanceof Error ? error.message : String(error) });
@@ -254,13 +267,25 @@ export function RunScreen({
   }, [run]);
   useEffect(() => () => pendingChief.current?.abort(), []);
 
+  // A call out is let finish when the alarm moves again; the newest event that waited is asked about after it (issue 172).
+  const callChiefNext = useRef<(state: RunState, seq: number, queued: boolean) => void>(() => {});
   const callChief = useCallback(
-    (state: RunState, seq: number) => {
-      if (!placed || !zones) return;
-      pendingChief.current?.abort();
+    (state: RunState, seq: number, queued = false) => {
+      if (!placed || !zones) {
+        // No board to ask about: a queued call must not hold the queue shut.
+        if (queued) chiefCalls.current.reset();
+        return;
+      }
+      if (!queued && !chiefCalls.current.ask(seq)) return;
       const controller = new AbortController();
       pendingChief.current = controller;
-      latestSeq.current = seq;
+      // This call is done: the newest event that waited behind it goes next, on the run as it stands now.
+      const next = () => {
+        const waiting = chiefCalls.current.settled(seq);
+        if (waiting === null) return;
+        if (latestRun.current) callChiefNext.current(latestRun.current, waiting, true);
+        else chiefCalls.current.reset();
+      };
       let request: ReturnType<typeof chiefRequest>;
       try {
         // The run's first transition carries the summary of earlier runs, so the Chief's first word can adapt.
@@ -273,13 +298,19 @@ export function RunScreen({
       } catch (error) {
         // A board the request can't carry: the panel says so, and the turn (and its log) goes on.
         setChief({ status: "error", seq, message: error instanceof Error ? error.message : String(error) });
+        next();
         return;
       }
-      setChief({ status: "pending", seq });
+      // A queued call leaves an answer before it on the panel until its own lands, so that answer is seen;
+      // an error before it gives way to "pending", so the panel never reads as failed while a call is out.
+      setChief((shown) => (queued && shown.status === "ready" ? shown : { status: "pending", seq }));
       askChief(request, { signal: controller.signal }).then(
         (answer) => {
-          // A newer alarm event has its own call out; this answer is stale.
-          if (controller.signal.aborted || latestSeq.current !== seq || !latestRun.current) return;
+          // Aborted by a restart or by leaving the screen, or a call from before a restart: stale.
+          if (controller.signal.aborted || !chiefCalls.current.isOut(seq)) return;
+          if (!latestRun.current) return next();
+          // A newer alarm event may be waiting: its call goes once these orders are on the board.
+          queueMicrotask(next);
           const current = latestRun.current;
           const orders = toEngineOrders(answer.orders, zones);
           const result = applyChiefOrders(current, orders);
@@ -301,13 +332,21 @@ export function RunScreen({
           setChief({ status: "ready", seq, answer, applied: result });
         },
         (error: unknown) => {
-          if (controller.signal.aborted || latestSeq.current !== seq) return;
+          if (controller.signal.aborted || !chiefCalls.current.isOut(seq)) return;
           setChief({ status: "error", seq, message: error instanceof Error ? error.message : String(error) });
+          next();
         },
       );
     },
     [placed, zones, history, building.id, missionId],
   );
+  useEffect(() => {
+    callChiefNext.current = (state, seq, queued) => {
+      // A run that has ended asks nothing more.
+      if (state.status === "playing") callChief(state, seq, queued);
+      else chiefCalls.current.reset();
+    };
+  }, [callChief]);
 
   const play = useCallback(
     (action: Action) => {
@@ -346,6 +385,8 @@ export function RunScreen({
   // First person (issue 115) always runs on the clock, at its own pace, and its turn is the view's
   // to choose: the next pick while E is held at a door, otherwise a wait.
   const fpOn = placed !== null && firstPersonOn(runView, placed.level.floor, scan);
+  // The opening line names the player's own controls: the numbers on the board, W and the mouse in first person.
+  const shownStatus = opening !== null && status === openingLine(opening, false) ? openingLine(opening, fpOn) : status;
   const fpHeld = useRef<HeldAction | null>(null);
   const holdFp = useCallback((held: HeldAction | null) => {
     fpHeld.current = held;
@@ -425,7 +466,7 @@ export function RunScreen({
     crewPlan,
     chief,
     revealed,
-    status,
+    status: shownStatus,
     // First person is played in real time: the HUD says seconds and plain words, not hops and turns.
     pace,
   });
@@ -640,7 +681,7 @@ export function RunScreen({
       footer={
           <div className="flex h-16 shrink-0 items-center justify-between gap-6 px-6">
             <p data-testid="run-status" aria-live="polite" className="min-w-0 text-sm text-text-1 md:truncate">
-              {status}
+              {shownStatus}
             </p>
             <div className={cn("flex shrink-0 items-center gap-4 text-sm text-text-2 max-md:hidden", fpOn ? "hidden" : null)}>
               <span className="flex items-center gap-2">

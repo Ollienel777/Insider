@@ -186,7 +186,7 @@ describe("ScriptedChatModel under deepagents (createDeepAgent)", () => {
 
     const agent = createDeepAgent({
       model,
-      systemPrompt: "You are the Level Builder for Heist Anywhere.",
+      systemPrompt: "You are the Level Builder for Hobbs.",
       // deepagents 1.16.5 does not add the todo list by default; the builder
       // passes it explicitly.
       middleware: [todoListMiddleware()],
