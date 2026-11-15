@@ -162,7 +162,7 @@ export function ComparePanel({
   onBack,
 }: {
   pair: OwnerPair;
-  /** Each side's coverage and unwatched routes, from the floor plan (issue 120). */
+  /** Each side's coverage and open windows, from the floor plan (issue 120). */
   measures?: [SetupMeasure, SetupMeasure] | null;
   floor: FloorGraph;
   /** Each side's setup on the board, for room names along its route. */

@@ -1,36 +1,54 @@
 "use client";
 
-// The Run screen in first person (issue 115), on a fixture floor: the room
-// the player is standing in, drawn by our own renderer, walked freely with
-// the keys and the mouse. The engine is untouched and still decides
-// everything: this view hands its actions to `onAct`, which is the Run
-// screen's own `play`, and draws whatever run state comes back.
+// The Run screen in first person (issue 115): the room the player is standing
+// in, walked freely with the keys and the mouse. The engine is untouched and
+// still decides everything: this view hands its actions to `onAct`, which is
+// the Run screen's own `play`, and draws whatever run state comes back.
 //
-// Four parts, each replaceable (issue 118 swaps the floor for a scan's mesh):
+// Two stages, one game (issue 118). On a fixture floor the stage is ours: the
+// walls of world.ts, drawn by scene.ts. On a floor from a live scan it is the
+// scan itself, drawn by its own renderer (spike/mesh/scan-view.ts) from its
+// mesh and panoramas, and walked over the mesh (scan-ground.ts). On either,
+// the same parts play:
 //   controller.ts  keys and mouse → what the player asks for
 //   walker.ts      free position → engine actions, over a `Ground`
-//   scene.ts       the floor's static geometry, one three.js group
 //   actors.ts      guards, cameras, sight, doors and markers, over a `Ground`
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AmbientLight, DirectionalLight, Fog, PerspectiveCamera, PointLight, Scene, Vector3, WebGLRenderer } from "three";
-import type { Action, RunState } from "@/engine";
+import {
+  AmbientLight,
+  DirectionalLight,
+  Fog,
+  Group,
+  PerspectiveCamera,
+  PointLight,
+  Scene,
+  Vector3,
+  WebGLRenderer,
+  type Camera,
+  type Object3D,
+} from "three";
+import { act, type Action, type RunState } from "@/engine";
 import type { PlacedLevel } from "@/level/placer";
 import { objectiveLabel, objectiveNoun } from "@/lib/objective-noun";
 import { cn } from "@/lib/utils";
 import { cameraMount, choices, roomName } from "../board";
-import type { HeldAction } from "./run-view";
+import { scanStageOf, type HeldAction, type ScanHandle, type ScanPreload } from "./run-view";
 import { Actors, type Marks } from "./actors";
 import { Controller } from "./controller";
 import { ControlsHint } from "./controls-hint";
+import type { Ground, Vec } from "./ground";
 import { hintDone, hintPhase, hintTicks, type HintPhase, type HintProgress } from "./hint";
 import { noticeOf, type Notice } from "./notice";
 import { readPalette } from "./palette";
+import { joinRefusal, joinScan } from "./scan-join";
+import { scanGround } from "./scan-ground";
+import { meshSolid } from "./scan-solid";
 import { buildFloorGroup, disposeGroup, type RoomTone } from "./scene";
 import { sightOf, type Sight } from "./sight";
 import { SuspicionMeter } from "./suspicion-meter";
 import { FP } from "./tuning";
 import { createWalker, heldAction, promptFor, stepWalker, type Prompt } from "./walker";
-import { buildWorld, groundOf } from "./world";
+import { buildWorld, groundOf, type World } from "./world";
 
 export interface FirstPersonViewProps {
   placed: PlacedLevel;
@@ -39,12 +57,52 @@ export interface FirstPersonViewProps {
   objective: string;
   /** Plays an engine action: the Run screen's own `play`. */
   onAct: (action: Action) => void;
-  /** WebGL is not there, or its context was lost: the Run screen goes back to the board. */
-  onUnavailable: () => void;
+  /**
+   * First person can't be drawn here (no WebGL, a lost context, a scan whose
+   * board doesn't stand on its mesh): the Run screen goes back to the board,
+   * saying `why`.
+   */
+  onUnavailable: (why?: string) => void;
   /** Hands the turn clock what to play when a turn runs out: the next pick while E is held, or a wait. */
   onHeld: (held: HeldAction | null) => void;
   /** The player paused the clock with P. */
   paused: boolean;
+  /** On a floor from a live scan: the scan's preload, started when the Run screen opened (scan-preload.ts). */
+  scan?: ScanPreload | null;
+  /** The player is let loose (true), or the view is gone (false): on a scan the Run screen holds the clock until then. */
+  onReady?: (ready: boolean) => void;
+  /** Shift went down or up: the HUD's time left is then at a walk or a run. */
+  onWalking?: (walking: boolean) => void;
+}
+
+/** What a scan's stage says while it loads: null once the player is let loose. */
+type ScanLoad = { line: string; held: number; total: number } | null;
+
+/** The scan renderer's loading phases, as the player is told them. */
+const SCAN_PHASE: Record<string, string> = {
+  manifest: "Asking for the scan",
+  mesh: "Downloading the building",
+  building: "Building the walls and floor",
+};
+
+/** The longest the player waits for a scan's picture around them before being let loose on what has arrived, ms. */
+const SCAN_WAIT_MS = 12_000;
+
+/** What the view stands on and draws with: our own walls, or a scan. */
+interface Stage {
+  ground: Ground & { feetAt?: (p: Vec) => number };
+  /** The height the run's pieces stand at, in the drawing's frame. */
+  liftY: number;
+  /** Puts the run's pieces (actors.ts) in the drawing. */
+  add(object: Object3D): void;
+  /** Whether the picture around `pos` has arrived: until it has, the view draws but the player waits. */
+  settled(pos: Vec): boolean;
+  /** How much of the building's picture is in, for the loading line; null when there is nothing to load. */
+  counts(): { held: number; total: number } | null;
+  resize(): void;
+  /** Draws the frame from the walker's place, the bob's lift, and where the player looks; returns the camera it drew from. */
+  draw(walker: { pos: Vec; vel: Vec }, lift: number, yaw: number, pitch: number, dt: number): Camera;
+  dispose(): void;
 }
 
 interface Hud {
@@ -78,12 +136,13 @@ function hasWebGL(): boolean {
   }
 }
 
-export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused }: FirstPersonViewProps) {
+export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, scan = null, onReady, onWalking }: FirstPersonViewProps) {
   const surface = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const labelLayer = useRef<HTMLDivElement>(null);
   const [hud, setHud] = useState<Hud>({ locked: false, refused: false, prompt: null, using: false });
   const [ready, setReady] = useState(false);
+  const [scanLoad, setScanLoad] = useState<ScanLoad>(null);
   // The first-time controls hint and being noticed (issue 146).
   const [hint, setHint] = useState<{ phase: HintPhase; progress: HintProgress }>({
     phase: "shown",
@@ -91,266 +150,420 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
   });
   const [notice, setNotice] = useState<Notice | null>(null);
 
-  const world = useMemo(() => buildWorld(placed.level.floor), [placed]);
-  const ground = useMemo(() => groundOf(world), [world]);
+  const onScan = placed.level.floor.source !== "fixture";
+  const world = useMemo(() => (onScan ? null : buildWorld(placed.level.floor)), [placed, onScan]);
+  // The preload's parts the view acts on: its object changes when it turns ready, which must not rebuild the stage.
+  const scanGiven = scan !== null;
+  const scanHandle = scan?.handle ?? null;
+  const scanFailed = scan?.failed ?? null;
 
   // The loop reads the latest run and the latest `play` without being rebuilt for each turn. Updated in a
   // layout effect, before the browser paints, so no animation frame reads the run before last.
-  const latest = useRef({ run, onAct, onUnavailable, onHeld });
+  const latest = useRef({ run, onAct, onUnavailable, onHeld, onReady, onWalking });
   useLayoutEffect(() => {
-    latest.current = { run, onAct, onUnavailable, onHeld };
-  }, [run, onAct, onUnavailable, onHeld]);
+    latest.current = { run, onAct, onUnavailable, onHeld, onReady, onWalking };
+  }, [run, onAct, onUnavailable, onHeld, onReady, onWalking]);
 
   useEffect(() => {
     const host = surface.current;
     const target = canvas.current;
     const labels = labelLayer.current;
     if (!host || !target || !labels) return;
-    if (!hasWebGL()) {
-      latest.current.onUnavailable();
-      return;
-    }
-    let renderer: WebGLRenderer;
-    try {
-      renderer = new WebGLRenderer({ canvas: target, antialias: true, powerPreference: "high-performance" });
-    } catch {
-      latest.current.onUnavailable();
-      return;
-    }
+    let gone = false;
+    const unavailable = (why?: string) => {
+      if (gone) return;
+      gone = true;
+      latest.current.onUnavailable(why);
+    };
     const onLost = (event: Event) => {
       event.preventDefault();
-      latest.current.onUnavailable();
+      unavailable();
     };
-    target.addEventListener("webglcontextlost", onLost);
-
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const palette = readPalette(document.documentElement);
-    const { level } = placed;
-    const first = latest.current.run;
-
-    const scene = new Scene();
-    scene.background = palette.n950;
-    scene.fog = new Fog(palette.n950, 4, 36);
-    const camera = new PerspectiveCamera(72, 1, 0.05, 80);
-    // An even night light, a slanted one so walls that meet at a corner differ in shade, and a
-    // little carried by the player so what is near reads before what is far.
-    scene.add(new AmbientLight(palette.n100, 2));
-    const slant = new DirectionalLight(palette.n100, 1.5);
-    slant.position.set(-0.55, 1, -0.3);
-    scene.add(slant);
-    // A slow falloff: a wall the player is pressed against must not burn out.
-    const torch = new PointLight(palette.n100, 0.9, 14, 0.6);
-    camera.add(torch);
-    scene.add(camera);
-
-    const tone = (roomId: string): RoomTone => {
-      const zone = placed.zones.find((z) => z.roomIds.includes(roomId));
-      return zone?.role === "crowded" ? "lit" : zone?.role === "quiet" ? "dark" : "plain";
+    let stage: Stage | null = null;
+    let stopSession: (() => void) | null = null;
+    let loadKey = "";
+    const loading = (next: ScanLoad) => {
+      const key = JSON.stringify(next);
+      if (key === loadKey) return;
+      loadKey = key;
+      setScanLoad(next);
     };
-    const floorGroup = buildFloorGroup(world, palette, tone);
-    scene.add(floorGroup);
 
-    const metres = (p: { x: number; y: number }) => ({ x: p.x * ground.unitM, y: p.y * ground.unitM });
-    const marks: Marks = {
-      objective: { nodeId: level.objective, label: objectiveLabel(level.missionId) },
-      exits: level.exits.map((nodeId) => ({
-        nodeId,
-        label: `Exit · ${placed.entries.find((e) => e.nodeId === nodeId)?.label ?? roomName(level.floor, nodeId)}`,
-      })),
-      cameras: first.board.cameras.map((c) => {
-        const cover = c.parts.flat();
-        const seen = cover.map((id) => first.board.nodes.get(id)!);
-        const middle = { x: seen.reduce((s, n) => s + n.x, 0) / seen.length, y: seen.reduce((s, n) => s + n.y, 0) / seen.length };
-        return { id: c.id, mount: metres(cameraMount(level.floor, cover)), looksAt: metres(middle) };
-      }),
-    };
-    const tempo = (id: string) => level.guardTempo?.[id] ?? level.patrolTempo;
-    const actors = new Actors(ground, palette, marks, still, FP.turnMs, tempo);
-    scene.add(actors.group);
+    /** The walker, the controller, the actors and the labels on `on`, and the frame loop that draws it. */
+    const runSession = (on: Stage): (() => void) => {
+      const { ground } = on;
+      const { level } = placed;
+      const first = latest.current.run;
+      const metres = (p: { x: number; y: number }) => ({ x: p.x * ground.unitM, y: p.y * ground.unitM });
+      const marks: Marks = {
+        objective: { nodeId: level.objective, label: objectiveLabel(level.missionId) },
+        exits: level.exits.map((nodeId) => ({
+          nodeId,
+          label: `Exit · ${placed.entries.find((e) => e.nodeId === nodeId)?.label ?? roomName(level.floor, nodeId)}`,
+        })),
+        cameras: first.board.cameras.map((c) => {
+          const cover = c.parts.flat();
+          const seen = cover.map((id) => first.board.nodes.get(id)!);
+          const middle = { x: seen.reduce((s, n) => s + n.x, 0) / seen.length, y: seen.reduce((s, n) => s + n.y, 0) / seen.length };
+          return { id: c.id, mount: metres(cameraMount(level.floor, cover)), looksAt: metres(middle) };
+        }),
+      };
+      const tempo = (id: string) => level.guardTempo?.[id] ?? level.patrolTempo;
+      const actors = new Actors(ground, palette, marks, still, FP.turnMs, tempo);
+      on.add(actors.group);
 
-    // Facing the first way on from where the engine has the player.
-    let walker = createWalker(ground, first);
-    const wayOn = (state: RunState, from: { x: number; y: number }): number | null => {
-      const ahead = choices(state)[0];
-      const towards = ahead ? ground.path(state.playerNode, ahead.nodeId)[1] : null;
-      return towards ? Math.atan2(towards.y - from.y, towards.x - from.x) : null;
-    };
-    const controller = new Controller(
-      host,
-      wayOn(first, walker.pos) ?? 0,
-      (locked) => setHud((h) => (h.locked === locked ? h : { ...h, locked, refused: locked ? false : h.refused })),
-      () => setHud((h) => (h.refused ? h : { ...h, refused: true })),
-    );
-
-    const resize = () => {
-      const { clientWidth: w, clientHeight: h } = host;
-      if (w === 0 || h === 0) return;
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-      renderer.setSize(w, h, false);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-    };
-    resize();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resize);
-    observer?.observe(host);
-
-    const labelEls = new Map<string, HTMLSpanElement>();
-    const point = new Vector3();
-    let seen: RunState | null = null;
-    let sight: Sight[] = [];
-    // What the player has tried, for the hint; when it was done, for its fade.
-    const progress: HintProgress = { walkedM: 0, lookedRad: 0, sneaked: false, used: false };
-    let doneAt: number | null = null;
-    let hintKey = "";
-    let noticedRun: RunState | null = null;
-    let looked = { yaw: controller.yaw, pitch: controller.pitch };
-    let last = performance.now();
-    let owed = 0;
-    let use = false;
-    let bob = 0;
-    let hudKey = "";
-    let areas = false;
-    // The turn clock asks the view what a turn the player lets run out should be.
-    latest.current.onHeld((state) => heldAction(walker, ground, state, { use: controller.using, yaw: controller.yaw }));
-    let raf = 0;
-    let drawn = false;
-
-    const frame = (now: number) => {
-      raf = requestAnimationFrame(frame);
-      const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
-      last = now;
-      const { run: current, onAct: act } = latest.current;
-      if (current !== seen) {
-        actors.sync(current, now);
-        seen = current;
-        sight = sightOf(current, ground.unitM);
-      }
-
-      // The movement runs at a fixed step, however fast the screen draws.
-      controller.frame(dt);
-      const controls = controller.controls();
-      use ||= controls.usePressed;
-      owed += dt;
-      const stood = walker.pos;
-      const walkedBefore = walker.walked;
-      if (controls.usePressed) progress.used = true;
-      while (owed >= FP.stepS) {
-        owed -= FP.stepS;
-        const out = stepWalker(walker, ground, current, { ...controls, usePressed: use });
-        use = false;
-        walker = out.walker;
-        if (out.action) act(out.action);
-      }
-      // Turned by the player since the last frame (the mouse, a drag, the arrow keys): before the view is put back on a hop below.
-      progress.lookedRad += Math.abs(controller.yaw - looked.yaw) + Math.abs(controller.pitch - looked.pitch);
-      // Put back on the engine's node (a restart, a number key): look the way that hop went, or,
-      // at the start, the first way on. A frame of walking never covers this much ground.
-      if (Math.hypot(walker.pos.x - stood.x, walker.pos.y - stood.y) > 0.5) {
-        const hop = Math.atan2(walker.pos.y - stood.y, walker.pos.x - stood.x);
-        controller.yaw = current.turn === 0 ? (wayOn(current, walker.pos) ?? hop) : hop;
-        controller.pitch = 0;
-      }
-      looked = { yaw: controller.yaw, pitch: controller.pitch };
-      progress.walkedM += walker.walked - walkedBefore;
-      if (controls.walk && walker.walked - walkedBefore > 0) progress.sneaked = true;
-      if (controller.areas !== areas) {
-        areas = controller.areas;
-        actors.showAreas(areas, current.playerNode);
-      }
-
-      // The view: at eye height, with a small bob tied to the ground covered.
-      const speed = Math.hypot(walker.vel.x, walker.vel.y);
-      bob += ((still ? 0 : Math.min(1, speed / FP.runMps)) - bob) * Math.min(1, dt * 12);
-      const lift = Math.sin((walker.walked / FP.strideM) * Math.PI * 4) * FP.bobM * bob;
-      camera.position.set(walker.pos.x, FP.eyeM + lift, walker.pos.y);
-      const flat = Math.cos(controller.pitch);
-      camera.lookAt(
-        walker.pos.x + Math.cos(controller.yaw) * flat,
-        FP.eyeM + lift + Math.sin(controller.pitch),
-        walker.pos.y + Math.sin(controller.yaw) * flat,
+      // Facing the first way on from where the engine has the player.
+      let walker = createWalker(ground, first);
+      const wayOn = (state: RunState, from: { x: number; y: number }): number | null => {
+        const ahead = choices(state)[0];
+        const towards = ahead ? ground.path(state.playerNode, ahead.nodeId)[1] : null;
+        return towards ? Math.atan2(towards.y - from.y, towards.x - from.x) : null;
+      };
+      const controller = new Controller(
+        host,
+        wayOn(first, walker.pos) ?? 0,
+        (locked) => setHud((h) => (h.locked === locked ? h : { ...h, locked, refused: locked ? false : h.refused })),
+        () => setHud((h) => (h.refused ? h : { ...h, refused: true })),
       );
-      actors.update(now);
-      renderer.render(scene, camera);
 
-      // Labels: each at its piece, hidden behind the view and behind walls (a beacon shows through).
-      // Nearest first, and one that would cover another is drawn above it.
-      const w = host.clientWidth;
-      const h = host.clientHeight;
-      const live = new Set<string>();
-      const taken: { x: number; y: number; half: number }[] = [];
-      const far = (at: { x: number; y: number }) => Math.hypot(at.x - walker.pos.x, at.y - walker.pos.y);
-      for (const label of actors.labels(current).sort((p, q) => far(p.at) - far(q.at))) {
-        point.set(label.x, label.y, label.z).project(camera);
-        const away = far(label.at);
-        const inSight = ground.clear(walker.pos, label.at, current.locked);
-        if (point.z > 1 || point.z < -1 || (!label.beacon && (!inSight || away > 30))) continue;
-        live.add(label.key);
-        let el = labelEls.get(label.key);
-        if (!el) {
-          el = document.createElement("span");
-          el.className = `${LABEL_BASE} ${LABEL_TONE[label.tone]}`;
-          el.dataset.label = label.key;
-          labels.appendChild(el);
-          labelEls.set(label.key, el);
+      on.resize();
+      const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => on.resize());
+      observer?.observe(host);
+
+      const labelEls = new Map<string, HTMLSpanElement>();
+      const point = new Vector3();
+      let seen: RunState | null = null;
+      let sight: Sight[] = [];
+      // What the player has tried, for the hint; when it was done, for its fade.
+      const progress: HintProgress = { walkedM: 0, lookedRad: 0, sneaked: false, used: false };
+      let doneAt: number | null = null;
+      let hintKey = "";
+      let noticedRun: RunState | null = null;
+      let looked = { yaw: controller.yaw, pitch: controller.pitch };
+      let last = performance.now();
+      let owed = 0;
+      let use = false;
+      let bob = 0;
+      let hudKey = "";
+      let areas = false;
+      // Each mount starts at a run, whatever the Run screen last heard.
+      let walking = false;
+      latest.current.onWalking?.(false);
+      // The turn clock asks the view what a turn the player lets run out should be.
+      latest.current.onHeld((state) => heldAction(walker, ground, state, { use: controller.using, yaw: controller.yaw }));
+      // For poking at from the console in development (a scripted walk): never in a production build.
+      const debug = process.env.NODE_ENV !== "production" ? (window as unknown as { __fp?: unknown }) : null;
+      if (debug) debug.__fp = { walker: () => walker, controller, ground, run: () => latest.current.run, act, choices };
+      let raf = 0;
+      let drawn = false;
+      // A scan's picture arrives after its mesh: the player is let loose once it has around them, or after a while.
+      const looseAt = performance.now() + SCAN_WAIT_MS;
+
+      const frame = (now: number) => {
+        raf = requestAnimationFrame(frame);
+        const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
+        last = now;
+        const { run: current, onAct: play } = latest.current;
+        if (current !== seen) {
+          actors.sync(current, now);
+          seen = current;
+          sight = sightOf(current, ground.unitM);
         }
-        const text = label.beacon ? `${label.text} · ${Math.max(1, Math.round(away))} m` : label.text;
-        if (el.textContent !== text) el.textContent = text;
-        const x = ((point.x + 1) / 2) * w;
-        let y = ((1 - point.y) / 2) * h;
-        const half = text.length * 4 + 10;
-        while (taken.some((t) => Math.abs(t.x - x) < t.half + half && Math.abs(t.y - y) < LABEL_PITCH)) y -= LABEL_PITCH;
-        taken.push({ x, y, half });
-        el.style.opacity = inSight ? "1" : "0.55";
-        el.style.transform = `translate(-50%, -100%) translate(${x}px, ${y}px)`;
-      }
-      for (const [key, el] of labelEls) {
-        if (live.has(key)) continue;
-        el.remove();
-        labelEls.delete(key);
-      }
 
-      // The HUD's words change rarely: React hears of it only when they do. The door being picked
-      // carries the engine's own count on a ring on its face.
-      const prompt = promptFor(walker, ground, current, controller.yaw);
-      const using = controller.using;
-      actors.showPick(prompt?.kind === "pick" && (using || prompt.done > 0) ? prompt : null);
-      const key = JSON.stringify([prompt, using]);
-      if (key !== hudKey) {
-        hudKey = key;
-        setHud((was) => ({ ...was, prompt, using }));
-      }
-      if (doneAt === null && hintDone(progress)) doneAt = now;
-      const phase = hintPhase(doneAt === null ? null : now - doneAt, still);
-      const ticks = hintTicks(progress);
-      const nextHint = `${phase}${ticks.move}${ticks.look}${ticks.sneak}${ticks.use}`;
-      if (nextHint !== hintKey) {
-        hintKey = nextHint;
-        setHint({ phase, progress: { ...progress } });
-      }
-      // The meter changes only with the run: read once a new state has come in.
-      if (seen !== noticedRun) {
-        noticedRun = seen;
-        setNotice(noticeOf(current, sight));
-      }
-      if (!drawn) {
-        drawn = true;
-        setReady(true);
-      }
+        // The movement runs at a fixed step, however fast the screen draws.
+        controller.frame(dt);
+        const waiting = !drawn && now < looseAt && !on.settled(walker.pos);
+        if (waiting) owed = 0;
+        const controls = controller.controls();
+        if (controls.walk !== walking) {
+          walking = controls.walk;
+          latest.current.onWalking?.(walking);
+        }
+        use ||= controls.usePressed;
+        owed += dt;
+        const stood = walker.pos;
+        const walkedBefore = walker.walked;
+        if (controls.usePressed) progress.used = true;
+        while (!waiting && owed >= FP.stepS) {
+          owed -= FP.stepS;
+          const out = stepWalker(walker, ground, current, { ...controls, usePressed: use });
+          use = false;
+          walker = out.walker;
+          if (out.action) play(out.action);
+        }
+        // Turned by the player since the last frame (the mouse, a drag, the arrow keys): before the view is put back on a hop below.
+        progress.lookedRad += Math.abs(controller.yaw - looked.yaw) + Math.abs(controller.pitch - looked.pitch);
+        // Put back on the engine's node (a restart, a number key): look the way that hop went, or,
+        // at the start, the first way on. A frame of walking never covers this much ground.
+        if (Math.hypot(walker.pos.x - stood.x, walker.pos.y - stood.y) > 0.5) {
+          const hop = Math.atan2(walker.pos.y - stood.y, walker.pos.x - stood.x);
+          controller.yaw = current.turn === 0 ? (wayOn(current, walker.pos) ?? hop) : hop;
+          controller.pitch = 0;
+        }
+        looked = { yaw: controller.yaw, pitch: controller.pitch };
+        progress.walkedM += walker.walked - walkedBefore;
+        if (controls.walk && walker.walked - walkedBefore > 0) progress.sneaked = true;
+        if (controller.areas !== areas) {
+          areas = controller.areas;
+          actors.showAreas(areas, current.playerNode, current.locked);
+        }
+
+        // The view: at eye height, with a small bob tied to the ground covered.
+        const speed = Math.hypot(walker.vel.x, walker.vel.y);
+        bob += ((still ? 0 : Math.min(1, speed / FP.runMps)) - bob) * Math.min(1, dt * 12);
+        const lift = Math.sin((walker.walked / FP.strideM) * Math.PI * 4) * FP.bobM * bob;
+        actors.update(now);
+        const camera = on.draw(walker, lift, controller.yaw, controller.pitch, dt);
+
+        // Labels: each at its piece, hidden behind the view and behind walls (a beacon shows through).
+        // Nearest first, and one that would cover another is drawn above it.
+        const w = host.clientWidth;
+        const h = host.clientHeight;
+        const live = new Set<string>();
+        const taken: { x: number; y: number; half: number }[] = [];
+        const far = (at: { x: number; y: number }) => Math.hypot(at.x - walker.pos.x, at.y - walker.pos.y);
+        for (const label of actors.labels(current).sort((p, q) => far(p.at) - far(q.at))) {
+          point.set(label.x, label.y + on.liftY, label.z).project(camera);
+          const away = far(label.at);
+          const inSight = ground.clear(walker.pos, label.at, current.locked);
+          if (point.z > 1 || point.z < -1 || (!label.beacon && (!inSight || away > 30))) continue;
+          live.add(label.key);
+          let el = labelEls.get(label.key);
+          if (!el) {
+            el = document.createElement("span");
+            el.className = `${LABEL_BASE} ${LABEL_TONE[label.tone]}`;
+            el.dataset.label = label.key;
+            labels.appendChild(el);
+            labelEls.set(label.key, el);
+          }
+          const text = label.beacon ? `${label.text} · ${Math.max(1, Math.round(away))} m` : label.text;
+          if (el.textContent !== text) el.textContent = text;
+          const x = ((point.x + 1) / 2) * w;
+          let y = ((1 - point.y) / 2) * h;
+          const half = text.length * 4 + 10;
+          while (taken.some((t) => Math.abs(t.x - x) < t.half + half && Math.abs(t.y - y) < LABEL_PITCH)) y -= LABEL_PITCH;
+          taken.push({ x, y, half });
+          el.style.opacity = inSight ? "1" : "0.55";
+          el.style.transform = `translate(-50%, -100%) translate(${x}px, ${y}px)`;
+        }
+        for (const [key, el] of labelEls) {
+          if (live.has(key)) continue;
+          el.remove();
+          labelEls.delete(key);
+        }
+
+        // The HUD's words change rarely: React hears of it only when they do. The door being picked
+        // carries the engine's own count on a ring on its face.
+        const prompt = promptFor(walker, ground, current, controller.yaw);
+        const using = controller.using;
+        actors.showPick(prompt?.kind === "pick" && (using || prompt.done > 0) ? prompt : null);
+        const key = JSON.stringify([prompt, using]);
+        if (key !== hudKey) {
+          hudKey = key;
+          setHud((was) => ({ ...was, prompt, using }));
+        }
+        if (doneAt === null && hintDone(progress)) doneAt = now;
+        const phase = hintPhase(doneAt === null ? null : now - doneAt, still);
+        const ticks = hintTicks(progress);
+        const nextHint = `${phase}${ticks.move}${ticks.look}${ticks.sneak}${ticks.use}`;
+        if (nextHint !== hintKey) {
+          hintKey = nextHint;
+          setHint({ phase, progress: { ...progress } });
+        }
+        // The meter changes only with the run: read once a new state has come in.
+        if (seen !== noticedRun) {
+          noticedRun = seen;
+          setNotice(noticeOf(current, sight));
+        }
+        if (waiting) {
+          const counts = on.counts();
+          loading({ line: "Loading the picture around you", held: counts?.held ?? 0, total: counts?.total ?? 0 });
+        } else if (!drawn) {
+          drawn = true;
+          loading(null);
+          setReady(true);
+          latest.current.onReady?.(true);
+        }
+      };
+      raf = requestAnimationFrame(frame);
+
+      return () => {
+        cancelAnimationFrame(raf);
+        observer?.disconnect();
+        latest.current.onHeld(null);
+        latest.current.onReady?.(false);
+        if (debug) delete debug.__fp;
+        controller.dispose();
+        for (const el of labelEls.values()) el.remove();
+        actors.group.removeFromParent();
+        actors.dispose();
+      };
     };
-    raf = requestAnimationFrame(frame);
+
+    /** A fixture floor: our own scene of world.ts's walls, drawn by our own renderer on the view's canvas. */
+    const fixtureStage = (floorWorld: World): Stage | null => {
+      if (!hasWebGL()) return null;
+      let renderer: WebGLRenderer;
+      try {
+        renderer = new WebGLRenderer({ canvas: target, antialias: true, powerPreference: "high-performance" });
+      } catch {
+        return null;
+      }
+      target.addEventListener("webglcontextlost", onLost);
+      const scene = new Scene();
+      scene.background = palette.n950;
+      scene.fog = new Fog(palette.n950, 4, 36);
+      const camera = new PerspectiveCamera(72, 1, 0.05, 80);
+      // An even night light, a slanted one so walls that meet at a corner differ in shade, and a
+      // little carried by the player so what is near reads before what is far.
+      scene.add(new AmbientLight(palette.n100, 2));
+      const slant = new DirectionalLight(palette.n100, 1.5);
+      slant.position.set(-0.55, 1, -0.3);
+      scene.add(slant);
+      // A slow falloff: a wall the player is pressed against must not burn out.
+      const torch = new PointLight(palette.n100, 0.9, 14, 0.6);
+      camera.add(torch);
+      scene.add(camera);
+      const tone = (roomId: string): RoomTone => {
+        const zone = placed.zones.find((z) => z.roomIds.includes(roomId));
+        return zone?.role === "crowded" ? "lit" : zone?.role === "quiet" ? "dark" : "plain";
+      };
+      const floorGroup = buildFloorGroup(floorWorld, palette, tone);
+      scene.add(floorGroup);
+      return {
+        ground: groundOf(floorWorld),
+        liftY: 0,
+        add: (object) => scene.add(object),
+        settled: () => true,
+        counts: () => null,
+        resize() {
+          const { clientWidth: w, clientHeight: h } = host;
+          if (w === 0 || h === 0) return;
+          renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+          renderer.setSize(w, h, false);
+          camera.aspect = w / h;
+          camera.updateProjectionMatrix();
+        },
+        draw(walker, lift, yaw, pitch) {
+          camera.position.set(walker.pos.x, FP.eyeM + lift, walker.pos.y);
+          const flat = Math.cos(pitch);
+          camera.lookAt(walker.pos.x + Math.cos(yaw) * flat, FP.eyeM + lift + Math.sin(pitch), walker.pos.y + Math.sin(yaw) * flat);
+          renderer.render(scene, camera);
+          return camera;
+        },
+        dispose() {
+          target.removeEventListener("webglcontextlost", onLost);
+          disposeGroup(floorGroup);
+          renderer.dispose();
+        },
+      };
+    };
+
+    /**
+     * A live scan: the scan's own renderer (spike/mesh/scan-view.ts, opened
+     * when the Run screen opened) draws its mesh and panoramas from the pose
+     * the walker gives it each frame, with the run's pieces in its scene, on
+     * its own canvas, put on the page while this view shows. Null, with the
+     * board back and a line saying why, when the board doesn't stand on it.
+     */
+    const scanStage = (handle: ScanHandle): Stage | null => {
+      const { view } = handle;
+      const tree = view.meshTree;
+      if (!tree) return null;
+      const join = joinScan(placed.level.floor, view.scanPoints());
+      // Counts only: no id or position of the scan is logged.
+      console.info(`First person on the scan: ${join.matched} of ${join.total} board positions are panoramas, at most ${join.worstM.toFixed(3)} m apart`);
+      const refusal = joinRefusal(join);
+      if (refusal) {
+        unavailable(`${refusal} You're on the board.`);
+        return null;
+      }
+      const ground = scanGround(placed.level.floor, meshSolid(tree), join.heights);
+      const pieces = new Group();
+      pieces.name = "run-pieces";
+      // The scan's picture needs no light; the guards, cameras and doors do.
+      pieces.add(new AmbientLight(palette.n100, 2));
+      const slant = new DirectionalLight(palette.n100, 1.5);
+      slant.position.set(-0.55, 1, -0.3);
+      pieces.add(slant);
+      // Just off the scan's floor, so the areas and markings are not lost in its lumps.
+      pieces.position.y = ground.floorY + 0.07;
+      view.scene.add(pieces);
+      let feet: number | null = null;
+      const eye = (pos: Vec): [number, number, number] => [pos.x, ground.feetAt(pos) + FP.eyeM, pos.y];
+      return {
+        ground,
+        liftY: pieces.position.y,
+        add: (object) => pieces.add(object),
+        settled: (pos) => view.settled(eye(pos)),
+        counts: () => view.counts(),
+        resize() {
+          const { clientWidth: w, clientHeight: h } = host;
+          if (w > 0 && h > 0) view.resize(w, h);
+        },
+        draw(walker, lift, yaw, pitch, dt) {
+          // The feet settle on the floor's height, as the sandbox's do; a jump (a restart) lands at once.
+          const floor = ground.feetAt(walker.pos);
+          feet = feet === null || Math.abs(floor - feet) > 0.5 ? floor : feet + (floor - feet) * (1 - Math.exp(-14 * dt));
+          // The renderer's yaw is zero down -z and grows to the left; this view's is zero east (+x) and grows to the right.
+          view.setPose({ x: walker.pos.x, y: feet + FP.eyeM + lift, z: walker.pos.y, yaw: -yaw - Math.PI / 2, pitch }, [walker.vel.x, walker.vel.y]);
+          view.render(dt);
+          return view.camera;
+        },
+        dispose() {
+          pieces.removeFromParent();
+        },
+      };
+    };
+
+    const begin = (made: Stage | null) => {
+      if (gone) return;
+      if (!made) return unavailable();
+      stage = made;
+      stopSession = runSession(made);
+    };
+
+    let stopListening = () => {};
+    if (world) {
+      begin(fixtureStage(world));
+    }
+    const choice = world ? null : scanStageOf(scanGiven ? { handle: scanHandle, failed: scanFailed, ready: false } : null);
+    const scan = choice?.kind === "walk" ? choice.handle : null;
+    if (choice?.kind === "wait") {
+      // The preload's own module is still on its way: the scan comes as a new handle, which runs this again.
+      loading({ line: "Opening the scan", held: 0, total: 0 });
+    } else if (choice?.kind === "refuse") {
+      unavailable(choice.line);
+    } else if (scan) {
+      // The scan's canvas, under the labels and the HUD, while this view shows.
+      host.insertBefore(scan.canvas, labels);
+      scan.canvas.addEventListener("webglcontextlost", onLost);
+      const phase = () => {
+        const status = scan.status().phase;
+        if (status !== "ready") loading({ line: SCAN_PHASE[status] ?? "Loading the building", held: 0, total: 0 });
+      };
+      stopListening = scan.subscribe(phase);
+      phase();
+      void scan.ready.then((ok) => {
+        if (gone || !ok) return;
+        const made = scanStage(scan);
+        if (made) begin(made);
+      });
+    }
 
     return () => {
-      cancelAnimationFrame(raf);
-      observer?.disconnect();
-      target.removeEventListener("webglcontextlost", onLost);
-      latest.current.onHeld(null);
-      controller.dispose();
-      for (const el of labelEls.values()) el.remove();
-      actors.dispose();
-      disposeGroup(floorGroup);
-      renderer.dispose();
+      gone = true;
+      stopListening();
+      stopSession?.();
+      stage?.dispose();
+      if (scan) {
+        scan.canvas.removeEventListener("webglcontextlost", onLost);
+        scan.canvas.remove();
+      }
     };
-  }, [world, ground, placed]);
+  }, [world, placed, scanGiven, scanHandle, scanFailed]);
 
   const noun = objectiveNoun(placed.level.missionId);
   const over = run.status !== "playing";
@@ -360,6 +573,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
     <div
       ref={surface}
       data-testid="fp-view"
+      data-stage={onScan ? "scan" : "fixture"}
       data-ready={ready ? "true" : undefined}
       data-node={run.playerNode}
       data-turn={run.turn}
@@ -386,8 +600,29 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         />
       ) : null}
 
-      {notice && !over ? <SuspicionMeter notice={notice} /> : null}
-      {over ? null : <ControlsHint phase={hint.phase} ticks={hintTicks(hint.progress)} dragToLook={hud.refused} />}
+      {onScan ? (
+        <p data-testid="fp-fiction" className="pointer-events-none absolute top-3 left-6 rounded-sm bg-surface-1 px-3 py-1.5 text-xs text-text-2 shadow-e-1">
+          The building is the real scan. Security shown is game fiction.
+        </p>
+      ) : null}
+
+      {scanLoad ? (
+        <div data-testid="fp-scan-loading" role="status" className="pointer-events-none absolute inset-0 grid place-items-center">
+          <p className="rounded-sm bg-surface-1 px-4 py-3 text-sm text-text-1 shadow-e-1">
+            {scanLoad.line}
+            {scanLoad.total > 0 ? (
+              <>
+                : <span className="font-mono tabular-nums">{scanLoad.held}</span> of <span className="font-mono tabular-nums">{scanLoad.total}</span>
+              </>
+            ) : (
+              "…"
+            )}
+          </p>
+        </div>
+      ) : null}
+
+      {notice && ready && !over ? <SuspicionMeter notice={notice} /> : null}
+      {over || !ready ? null : <ControlsHint phase={hint.phase} ticks={hintTicks(hint.progress)} dragToLook={hud.refused} />}
 
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-end px-6 py-3">
         <div className="flex flex-col items-center gap-2">
