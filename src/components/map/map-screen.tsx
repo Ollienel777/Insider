@@ -330,7 +330,7 @@ export function MapView<B extends Pick<MapBuilding, "id" | "lat" | "lng">>({ cit
           priority
           unoptimized
           sizes="100vw"
-          className="select-none animate-in fade-in-0 duration-base"
+          className="paper-map select-none animate-in fade-in-0 duration-base"
         />
         </div>
         {buildings.map((building) => {

@@ -1,7 +1,7 @@
 // The first-time controls hint (issue 146): what a player handed the mouse
 // has tried so far, and when the hint can go. It goes once they have both
-// walked and looked about; sneaking and E are ticked off when tried but never
-// keep it up, since a judge may never need either.
+// walked and looked about; E is ticked off when tried but never keeps it up,
+// since a judge may never need it.
 //
 // Pure: the view feeds it what the walker and the controller measured.
 
@@ -17,23 +17,20 @@ export interface HintProgress {
   walkedM: number;
   /** Radians turned since the view opened, by the mouse, a drag or the arrow keys. */
   lookedRad: number;
-  /** Shift was held while moving. */
-  sneaked: boolean;
   /** E went down. */
   used: boolean;
 }
 
-export const NO_PROGRESS: HintProgress = Object.freeze({ walkedM: 0, lookedRad: 0, sneaked: false, used: false });
+export const NO_PROGRESS: HintProgress = Object.freeze({ walkedM: 0, lookedRad: 0, used: false });
 
 export interface HintTicks {
   move: boolean;
   look: boolean;
-  sneak: boolean;
   use: boolean;
 }
 
 export function hintTicks(p: HintProgress): HintTicks {
-  return { move: p.walkedM >= HINT_WALK_M, look: p.lookedRad >= HINT_LOOK_RAD, sneak: p.sneaked, use: p.used };
+  return { move: p.walkedM >= HINT_WALK_M, look: p.lookedRad >= HINT_LOOK_RAD, use: p.used };
 }
 
 /** The hint has done its job: the player has walked and looked. */

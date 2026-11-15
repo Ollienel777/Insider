@@ -35,12 +35,11 @@ const worlds = new WeakMap<FloorGraph, World>();
 
 /**
  * First person's pace on `floor`, for the HUD to speak in seconds rather than
- * hops and turns (`usePlayHud`): the controller's own speed, a walk while
- * Shift is held and a run otherwise, and each edge walked through its doorway
- * as the body walks it.
+ * hops and turns (`usePlayHud`): the controller's one speed, and each edge
+ * walked through its doorway as the body walks it.
  */
-export function firstPersonPace(floor: FloorGraph, walking: boolean): Pace {
-  const pace = { unitM: FP.unitM, mps: walking ? FP.walkMps : FP.runMps, turnMs: FP.turnMs };
+export function firstPersonPace(floor: FloorGraph): Pace {
+  const pace = { unitM: FP.unitM, mps: FP.runMps, turnMs: FP.turnMs };
   // A live scan's floor has no walls of ours to walk through: node to node in a straight line, and in
   // metres already, as its ground is (scan-ground.ts, `unitM` 1).
   if (floor.source !== "fixture") return { ...pace, unitM: 1 };

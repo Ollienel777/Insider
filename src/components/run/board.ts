@@ -330,7 +330,7 @@ export function planSteps(
   });
 }
 
-function joinOr(items: readonly string[]): string {
+export function joinOr(items: readonly string[]): string {
   if (items.length <= 1) return items[0] ?? "way you came";
   return `${items.slice(0, -1).join(", ")} or the ${items[items.length - 1]}`;
 }

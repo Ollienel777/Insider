@@ -42,7 +42,7 @@ export function SuspicionMeter({ notice }: { notice: Notice }) {
             <span
               key={i}
               className="h-3.5 w-5 rounded-[2px] transition-colors duration-fast"
-              style={{ background: notice.level >= (i + 1) / SEGMENTS - 0.001 ? colour : "var(--n-800)" }}
+              style={{ background: notice.level >= (i + 1) / SEGMENTS - 0.001 ? colour : "var(--n-600)" }}
             />
           ))}
         </span>

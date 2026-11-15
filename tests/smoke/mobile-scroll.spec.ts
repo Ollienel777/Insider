@@ -11,6 +11,7 @@ for (const step of ["plan", "run", "debrief", "drill"] as const) {
     // One page load and one measurement; 30 s covers a cold server on a loaded VM.
     test.setTimeout(30_000);
     await page.goto(`/b/F1/${step}`);
+    // Every step shows the tab row, Run included.
     await expect(page.getByRole("navigation", { name: "Steps" })).toBeVisible();
     if (step === "plan" || step === "run") await expect(page.getByTestId(`${step}-board`)).toBeVisible();
     const { scroll, client } = await page.evaluate(() => ({

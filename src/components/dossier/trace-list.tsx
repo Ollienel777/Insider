@@ -18,7 +18,10 @@ interface TraceListProps {
   title?: string;
   /** Shown between the plan and the subagents and tools (the cast screen's funnel). */
   afterPlan?: ReactNode;
-  /** Let a header part over 40 characters wrap inside itself (a long model name in a narrow panel). */
+  /**
+   * Let a header part over 40 characters wrap inside itself (a long model name in a narrow panel).
+   * On by default: the Dossier's "model turns: scripted (…), no LLM" ran past the panel's edge at 1440 (issue 166).
+   */
   wrapLongParts?: boolean;
   /** Rows open on their recorded input and output. Off where the payloads never reach the browser (the cast screen). */
   expandable?: boolean;
@@ -40,7 +43,7 @@ export function TraceList({
   subagents,
   title = "Level Builder",
   afterPlan,
-  wrapLongParts = false,
+  wrapLongParts = true,
   expandable = true,
 }: TraceListProps) {
   return (
@@ -65,7 +68,7 @@ export function TraceList({
             ))}
           </p>
       </div>
-      <p data-testid="trace-banner" className="rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm text-text-2">
+      <p data-testid="trace-banner" className="text-sm text-text-2">
         {banner}
       </p>
 

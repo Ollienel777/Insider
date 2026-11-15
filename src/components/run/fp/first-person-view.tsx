@@ -49,6 +49,7 @@ import { SuspicionMeter } from "./suspicion-meter";
 import { FP } from "./tuning";
 import { createWalker, heldAction, promptFor, stepWalker, type Prompt } from "./walker";
 import { buildWorld, groundOf, type World } from "./world";
+import { useMoment } from "../moment";
 
 export interface FirstPersonViewProps {
   placed: PlacedLevel;
@@ -71,8 +72,6 @@ export interface FirstPersonViewProps {
   scan?: ScanPreload | null;
   /** The player is let loose (true), or the view is gone (false): on a scan the Run screen holds the clock until then. */
   onReady?: (ready: boolean) => void;
-  /** Shift went down or up: the HUD's time left is then at a walk or a run. */
-  onWalking?: (walking: boolean) => void;
   /** What the end of the run offers next to its outcome (the Run screen's "See the debrief"). */
   endAction?: ReactNode;
 }
@@ -145,7 +144,7 @@ function hasWebGL(): boolean {
   }
 }
 
-export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, scan = null, onReady, onWalking, endAction = null }: FirstPersonViewProps) {
+export default function FirstPersonView({ placed, run, onAct, onUnavailable, onHeld, paused, scan = null, onReady, endAction = null }: FirstPersonViewProps) {
   const surface = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const labelLayer = useRef<HTMLDivElement>(null);
@@ -165,10 +164,10 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
   // The loop reads the latest run and the latest `play` without being rebuilt for each turn. Updated in a
   // layout effect, before the browser paints, so no animation frame reads the run before last.
-  const latest = useRef({ run, onAct, onUnavailable, onHeld, onReady, onWalking });
+  const latest = useRef({ run, onAct, onUnavailable, onHeld, onReady });
   useLayoutEffect(() => {
-    latest.current = { run, onAct, onUnavailable, onHeld, onReady, onWalking };
-  }, [run, onAct, onUnavailable, onHeld, onReady, onWalking]);
+    latest.current = { run, onAct, onUnavailable, onHeld, onReady };
+  }, [run, onAct, onUnavailable, onHeld, onReady]);
 
   useEffect(() => {
     const host = surface.current;
@@ -252,9 +251,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       let bob = 0;
       let hudKey = "";
       let areas = false;
-      // Each mount starts at a run, whatever the Run screen last heard.
-      let walking = false;
-      latest.current.onWalking?.(false);
       // The turn clock asks the view what a turn the player lets run out should be.
       latest.current.onHeld((state) => heldAction(walker, ground, state, { use: controller.using, yaw: controller.yaw }));
       // For poking at from the console in development (a scripted walk): never in a production build.
@@ -287,10 +283,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         const waiting = !drawn && now < looseAt && !on.settled(walker.pos);
         if (waiting) owed = 0;
         const controls = controller.controls();
-        if (controls.walk !== walking) {
-          walking = controls.walk;
-          latest.current.onWalking?.(walking);
-        }
         use ||= controls.usePressed;
         owed += dt;
         const stood = walker.pos;
@@ -314,7 +306,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         }
         looked = { yaw: controller.yaw, pitch: controller.pitch };
         progress.walkedM += walker.walked - walkedBefore;
-        if (controls.walk && walker.walked - walkedBefore > 0) progress.sneaked = true;
         if (controller.areas !== areas) {
           areas = controller.areas;
           actors.showAreas(areas, current.playerNode, current.locked);
@@ -377,7 +368,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         if (doneAt === null && hintDone(progress)) doneAt = now;
         const phase = hintPhase(doneAt === null ? null : now - doneAt, still);
         const ticks = hintTicks(progress);
-        const nextHint = `${phase}${ticks.move}${ticks.look}${ticks.sneak}${ticks.use}`;
+        const nextHint = `${phase}${ticks.move}${ticks.look}${ticks.use}`;
         if (nextHint !== hintKey) {
           hintKey = nextHint;
           setHint({ phase, progress: { ...progress } });
@@ -580,6 +571,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
   }, [world, placed, scanGiven, scanHandle, scanFailed]);
 
   const noun = objectiveNoun(placed.level.missionId);
+  const moment = useMoment(placed, run);
   const over = run.status !== "playing";
   const end = useMemo(() => endState(placed, run), [placed, run]);
   // The run's end frees the mouse, so the Debrief is a click away.
@@ -598,6 +590,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       data-turn={run.turn}
       data-locked={run.locked.join(" ")}
       data-alarm={run.alarm}
+      data-carrying={run.carrying ? "true" : undefined}
       data-pointer={hud.locked ? "locked" : "free"}
       role="application"
       aria-label="First-person view of the floor. W, A, S and D move, the arrow keys turn, hold E to use, P pauses."
@@ -656,7 +649,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
               data-testid="fp-prompt"
               data-kind={hud.prompt.kind}
               data-using={hud.using ? "true" : undefined}
-              className="flex items-center gap-2 rounded-sm bg-surface-1 px-3 py-2 text-sm text-text-1 shadow-e-1"
+              className={cn(PROMPT, hud.prompt.kind === "exit" && "border border-success")}
             >
               {hud.prompt.kind === "far" ? (
                 "A locked door. Step up to it and hold E to pick it."
@@ -664,6 +657,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
                 <>
                   Hold <Key>E</Key> to take the {noun}
                 </>
+              ) : hud.prompt.kind === "exit" ? (
+                exitPrompt(placed, hud.prompt.nodeId, noun)
               ) : hud.using ? (
                 <>
                   Picking… hold <Key>E</Key>
@@ -681,9 +676,14 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
                 </>
               )}
             </p>
+          ) : moment?.kind === "door" ? (
+            // The picked door's prompt does not just vanish: it says the door is open, for the moment's turns (issue 188).
+            <p data-testid="fp-prompt" data-kind="open" className={cn(PROMPT, "border border-success")}>
+              Door open. Walk on through.
+            </p>
           ) : null}
           {over ? null : (
-          <p data-testid="fp-hint" className="flex items-center gap-3 rounded-sm bg-surface-1 px-3 py-1.5 text-sm text-text-2 shadow-e-1">
+          <p data-testid="fp-hint" className="flex max-w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-sm bg-surface-1 px-3 py-1.5 text-sm text-text-2 shadow-e-1">
             {hud.locked ? null : (
               <span data-testid="fp-look-hint" className="text-text-1">
                 {hud.refused ? "Hold the mouse button and drag to look" : "Click to look, or hold and drag"}
@@ -694,9 +694,6 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
               <Key>A</Key>
               <Key>S</Key>
               <Key>D</Key> move
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Key>Shift</Key> walk
             </span>
             {hud.locked ? null : (
               <span className="flex items-center gap-1.5">
@@ -727,7 +724,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
 
       {/* The end of the run: what happened and why, and the way on. The view takes no more input. */}
       {end ? (
-        <div data-testid="fp-end" data-status={run.status} className="absolute inset-0 grid place-items-center bg-surface-0/55 p-6">
+        <div data-testid="fp-end" data-status={run.status} className="absolute inset-0 grid place-items-center bg-n-50/55 p-6">
           <div role="status" className="flex max-w-lg flex-col items-center gap-3 rounded-md border border-border bg-surface-1 px-8 py-6 text-center shadow-e-2">
             <p className="label-caps text-text-3">{end.outcome === "won" ? "Run complete" : "Run over"}</p>
             <p data-testid="fp-over" className={cn("text-2xl font-semibold", end.outcome === "won" ? "text-success" : "text-danger")}>
@@ -744,6 +741,14 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       ) : null}
     </div>
   );
+}
+
+const PROMPT = "flex items-center gap-2 rounded-sm bg-surface-1 px-3 py-2 text-sm text-text-1 shadow-e-1";
+
+/** Carrying, at an exit: walking on to it is the win, with no key (issue 188). */
+export function exitPrompt(placed: PlacedLevel, nodeId: string, noun: string): string {
+  const name = placed.entries.find((e) => e.nodeId === nodeId)?.label ?? roomName(placed.level.floor, nodeId);
+  return `The way out: the ${name.toLowerCase()}. Walk on to it with the ${noun} to end the run.`;
 }
 
 function Key({ children }: { children: string }) {

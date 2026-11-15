@@ -1,3 +1,4 @@
+import { Building2 } from "lucide-react";
 import { LAYERS, LayerDot, type Layer } from "@/components/shell/layer-dot";
 import { cn } from "@/lib/utils";
 import { BuildingCard, cardPlacement } from "./building-card";
@@ -50,17 +51,11 @@ export function MapPin({ building, x, y, selected, showCard, onSelect, onHover }
           disabled ? "cursor-default" : "cursor-pointer",
         )}
       >
-        <span
-          aria-hidden
-          className={cn(
-            "size-3 rounded-full ring-2 ring-surface-0 transition-transform duration-fast",
-            disabled ? "bg-n-500" : selected ? "bg-accent" : "bg-text-1 group-hover:scale-125",
-          )}
-        />
+        <BuildingMarker tone={disabled ? "muted" : selected ? "selected" : "default"} className="group-hover:scale-110" />
         {selected ? (
-          <span aria-hidden className="absolute size-6 rounded-full border border-accent" />
+          <span aria-hidden className="absolute size-9 rounded-[8px] border border-accent" />
         ) : null}
-        <span className="absolute top-[calc(50%+12px)] left-1/2 flex -translate-x-1/2 gap-0.5">
+        <span className="absolute top-[calc(50%+16px)] left-1/2 flex -translate-x-1/2 gap-0.5">
           {LAYER_ORDER.map((layer) => (
             <LayerDot key={layer} layer={layer} absent={!building.layers[layer]} decorative />
           ))}
@@ -68,7 +63,7 @@ export function MapPin({ building, x, y, selected, showCard, onSelect, onHover }
         <span
           aria-hidden
           className={cn(
-            "absolute top-1/2 left-[calc(50%+16px)] -translate-y-1/2 whitespace-nowrap rounded-sm bg-surface-0/80 px-1.5 text-xs font-medium",
+            "absolute top-1/2 left-[calc(50%+20px)] -translate-y-1/2 whitespace-nowrap rounded-sm bg-surface-0/80 px-1.5 text-xs font-medium",
             disabled ? "text-text-3" : selected ? "text-accent" : "text-text-1",
           )}
         >
@@ -77,5 +72,35 @@ export function MapPin({ building, x, y, selected, showCard, onSelect, onHover }
       </button>
       {showCard ? <BuildingCard building={building} placement={cardPlacement(x, y)} /> : null}
     </div>
+  );
+}
+
+/**
+ * The little building that marks a building's spot on every map (the map, the
+ * mission picker's map, the cast map). Decorative: the pin or caption around
+ * it names the building.
+ */
+export function BuildingMarker({
+  tone = "default",
+  size = "md",
+  className,
+}: {
+  tone?: "default" | "selected" | "muted";
+  size?: "sm" | "md";
+  className?: string;
+}) {
+  return (
+    <span
+      aria-hidden
+      data-testid="pin-building"
+      className={cn(
+        "flex shrink-0 items-center justify-center ring-2 ring-surface-0 shadow-e-1 transition-transform duration-fast",
+        size === "md" ? "size-6 rounded-[5px]" : "size-5 rounded-[4px]",
+        tone === "muted" ? "bg-n-500 text-surface-0" : tone === "selected" ? "bg-accent text-text-1" : "bg-text-1 text-surface-0",
+        className,
+      )}
+    >
+      <Building2 className={cn("stroke-[2]", size === "md" ? "size-4" : "size-3.5")} />
+    </span>
   );
 }

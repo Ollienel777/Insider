@@ -8,8 +8,8 @@ import { useCallback, useEffect, useState } from "react";
 
 export type RunView = "board" | "first-person";
 
-/** The view a browser that has never chosen sees, and the one every other smoke test walks. */
-export const DEFAULT_RUN_VIEW: RunView = "board";
+/** The view a browser that has never chosen sees: first person (issue 166). The smoke tests start on the board (playwright.config.ts). */
+export const DEFAULT_RUN_VIEW: RunView = "first-person";
 
 /** One key for the whole browser: the choice is the player's, not the building's. */
 export const RUN_VIEW_KEY = "heist:run-view";
@@ -17,13 +17,30 @@ export const RUN_VIEW_KEY = "heist:run-view";
 /** The browser's storage, read inside the caller's `try`: the getter itself throws when site data is blocked. */
 const browserStorage = (): Storage | undefined => globalThis.localStorage;
 
-/** The stored choice. The board when there is none, when it is not a view, or when storage cannot be read. */
-export function loadRunView(storage?: Pick<Storage, "getItem">): RunView {
+/** A phone-width screen, where first person is not offered (run-view.tsx) and the board is the default. */
+const PHONE = "(max-width: 767px)";
+function isPhone(): boolean {
   try {
-    return (storage ?? browserStorage())?.getItem(RUN_VIEW_KEY) === "first-person" ? "first-person" : DEFAULT_RUN_VIEW;
+    return globalThis.matchMedia?.(PHONE).matches === true;
   } catch {
-    return DEFAULT_RUN_VIEW;
+    return false;
   }
+}
+
+/** The view for a browser that has never chosen: first person, or the board on a phone. */
+export function defaultRunView(phone: boolean = isPhone()): RunView {
+  return phone ? "board" : DEFAULT_RUN_VIEW;
+}
+
+/** The stored choice; with none, or one that is not a view, or storage that cannot be read, the default (`defaultRunView`). */
+export function loadRunView(storage?: Pick<Storage, "getItem">, phone?: boolean): RunView {
+  try {
+    const stored = (storage ?? browserStorage())?.getItem(RUN_VIEW_KEY);
+    if (stored === "board" || stored === "first-person") return stored;
+  } catch {
+    // Fall through to the default.
+  }
+  return defaultRunView(phone);
 }
 
 export function saveRunView(view: RunView, storage?: Pick<Storage, "setItem">): void {
@@ -51,7 +68,8 @@ export interface RunViewState {
  * board; a browser that chose first person switches a moment later.
  */
 export function useRunView(): RunViewState {
-  const [view, setView] = useState<RunView>(DEFAULT_RUN_VIEW);
+  // The server's render and the browser's first one show the board; the stored choice, or first person, follows a moment later.
+  const [view, setView] = useState<RunView>("board");
   const [unavailable, setUnavailable] = useState(false);
   const [reason, setReason] = useState<string | null>(null);
   useEffect(() => {

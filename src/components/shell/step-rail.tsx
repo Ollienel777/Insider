@@ -2,7 +2,7 @@
 
 import { useSelectedLayoutSegment } from "next/navigation";
 import { useMissionId } from "@/lib/use-mission-id";
-import { StepRailView } from "./step-rail-view";
+import { RememberedRailView } from "./remembered-rail";
 
 /**
  * The step rail under the top bar on `/b/[id]/*`; reads the current step and
@@ -21,5 +21,5 @@ export function StepRail({
   const segment = useSelectedLayoutSegment();
   const missionId = useMissionId();
   const built = missionId !== null && builtMissions.includes(missionId);
-  return <StepRailView buildingId={buildingId} current={segment} missionId={missionId} factsOnly={factsOnly && !built} />;
+  return <RememberedRailView buildingId={buildingId} current={segment} missionId={missionId} factsOnly={factsOnly && !built} />;
 }

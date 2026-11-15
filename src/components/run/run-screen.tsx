@@ -187,6 +187,13 @@ export function RunScreen({
     [building.id, startRun, missionId, source],
   );
 
+  // The board needs the room: while Run is open the desk's margins are thinner (globals.css). The game's
+  // card, the mode chip and the tabs stay.
+  useEffect(() => {
+    document.body.classList.add("playing");
+    return () => document.body.classList.remove("playing");
+  }, []);
+
   useEffect(() => {
     if (!manifest) return;
     let live = true;
@@ -444,13 +451,9 @@ export function RunScreen({
   const open = panelsOpen(layoutMode, details);
   // The lens is put away with the bar: its key does nothing until Details opens it again.
   const [lens, toggleLens] = useLayerLens(open);
-  // First person's time left is at the controller's speed: a walk while Shift is held, else a run.
-  const [walking, setWalking] = useState(false);
+  // First person's time left is at the controller's one speed.
   const fpFloor = placed?.level.floor ?? null;
-  const pace = useMemo(
-    () => (fpOn && fpFloor ? firstPersonPace(fpFloor, walking) : null),
-    [fpOn, fpFloor, walking],
-  );
+  const pace = useMemo(() => (fpOn && fpFloor ? firstPersonPace(fpFloor) : null), [fpOn, fpFloor]);
   const hud = usePlayHud({
     live: layoutMode === "live",
     placed,
@@ -545,12 +548,12 @@ export function RunScreen({
       record={record}
       bar={
           <div className="flex h-14 shrink-0 items-center gap-3 px-6">
-            <span className="flex items-center gap-2 label-caps text-text-2">
+            <span className="flex min-w-0 items-center gap-2 label-caps whitespace-nowrap text-text-2">
               <LayerDot layer="matterport" decorative />
               Matterport
               {/* A kit building's label (below) names its floor, so the line doesn't say it twice. */}
               {source === "costar" ? null : (
-                <span className="max-md:hidden">
+                <span className="truncate max-md:hidden">
                   {load.status === "ready" && load.live ? " · floor plan from the scan" : sourcePending ? null : " · floor plan from fixtures"}
                 </span>
               )}
@@ -558,8 +561,9 @@ export function RunScreen({
             {/* Closed with the bar in Live, where the HUD carries it instead: one label on the page. */}
             {open ? record : null}
             <span aria-hidden className="h-4 w-px bg-border" />
-            <span className="truncate text-sm text-text-1">{manifest?.mission.title}</span>
-            <div className="ml-auto flex items-center gap-2">
+            <span className="min-w-0 truncate text-sm text-text-1">{manifest?.mission.title}</span>
+            {/* The buttons keep their width: the labels to their left give way first. */}
+            <div className="ml-auto flex shrink-0 items-center gap-2">
               {storedRuns > 0 ? (
                 <Button
                   variant="ghost"
@@ -632,7 +636,6 @@ export function RunScreen({
                 objective={manifest.mission.objective}
                 onAct={play}
                 onHeld={holdFp}
-                onWalking={setWalking}
                 paused={clock.state === "paused"}
                 scan={scan}
                 onReady={setFpReady}
@@ -707,8 +710,9 @@ export function RunScreen({
           chief={<ChiefPanel state={chief} revealed={revealed} zoneName={(id) => (placed ? zoneName(placed, id) : id)} onRetry={retryChief} />}
         />
       }
+      // In first person the end card carries "See the debrief": one way on, not two.
       action={
-        over ? (
+        over && !fpOn ? (
           <Link
             href={buildingHref(building.id, "debrief", missionId)}
             className={buttonVariants({ variant: "primary" })}
