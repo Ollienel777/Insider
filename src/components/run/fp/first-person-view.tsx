@@ -46,7 +46,7 @@ import { noticeOf } from "./notice";
 import { readPalette } from "./palette";
 import { joinRefusal, joinScan } from "./scan-join";
 import { nodeFloors, scanGround } from "./scan-ground";
-import { addFurniture, applyOverrides, clearDoorways, tidyFurniture, derivePlan, FURNITURE, glassFromSight, mismatches, oneDoorPerRoom, reconcile, regularise, type PlanOverrides, PLAN, planSolid, roomLabels, type ScanPlan } from "./scan-plan";
+import { addFurniture, applyOverrides, clearDoorways, tidyFurniture, windowsFromSight, derivePlan, FURNITURE, glassFromSight, mismatches, oneDoorPerRoom, reconcile, regularise, type PlanOverrides, PLAN, planSolid, roomLabels, type ScanPlan } from "./scan-plan";
 import { buildDress, DRESS } from "./scan-dress";
 import { fetchPhotoPanos, PhotoSet } from "./scan-photo";
 import { buildPlanGroup } from "./scan-plan-scene";
@@ -693,11 +693,13 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
           }),
         );
       }
+      // Windows on the outside walls, where the scan cameras saw out.
+      if (dressed) plan.windows = windowsFromSight(plan, eyes, scanSees);
       // Nothing in any doorway's way, either side; no fragment, nothing through a wall.
       const cleared = clearDoorways(plan) + tidyFurniture(plan);
       // Counts only.
       console.info(
-        `First person draws the scan's plan: ${plan.walls.length} walls (${plan.stats.boundary} at the floor's edge), ${plan.doorways.length} doorways (${walledUp} more walled up, one door to a room), ${plan.glass.length} panes of glass (${glassWalls} walls seen through); the scan disagreed in ${before.length} places, ${reconciled} put right, ${after.length} left; ${overridden} corrections, ${tidied.extended} walls run on, ${tidied.removed} stubs gone, ${cleared} things out of doorways, ${plan.furniture.length} pieces of furniture, in ${Math.round(performance.now() - started)} ms`,
+        `First person draws the scan's plan: ${plan.walls.length} walls (${plan.stats.boundary} at the floor's edge), ${plan.doorways.length} doorways (${walledUp} more walled up, one door to a room), ${plan.glass.length} panes of glass (${glassWalls} walls seen through); the scan disagreed in ${before.length} places, ${reconciled} put right, ${after.length} left; ${overridden} corrections, ${tidied.extended} walls run on, ${tidied.removed} stubs gone, ${cleared} things out of doorways, ${plan.furniture.length} pieces of furniture, ${plan.windows?.length ?? 0} windows, in ${Math.round(performance.now() - started)} ms`,
       );
       const ground = scanGround(floor, planSolid(plan), join.heights, { leashM: PLAN.leashM + 1 });
       const nodeRoom = new Map(floor.nodes.map((n) => [n.id, n.roomId]));

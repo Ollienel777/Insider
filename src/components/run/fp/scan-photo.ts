@@ -27,6 +27,7 @@ import {
   CubeTexture,
   CustomBlending,
   DataUtils,
+  type DataTexture,
   DoubleSide,
   Group,
   HalfFloatType,
@@ -56,6 +57,7 @@ import { isAllowedAssetUrl } from "@/lib/scan-mesh/manifest";
 import { alignToCube, CUBE_LOOKUP_FLIP } from "@/lib/scan-mesh/skybox";
 import type { Vec } from "./ground";
 import { nearestOn } from "./motion";
+import { bakeLightField, bakeOcclusion, LIGHT, setLights, trofferGroup, troffers, windowGroup, type Occlusion, type SetWindow } from "./scan-light";
 import { fromCellFrame, onPlanFloor, PLAN, type ScanPlan } from "./scan-plan";
 
 /** Every number the painting is tuned by. */
@@ -194,6 +196,9 @@ export class PhotoSet {
   private readonly surfaces: Surface[] = [];
   private readonly bakeGeometry: BufferGeometry;
   private readonly drawMaterial: ShaderMaterial;
+  private readonly occlusion: Occlusion;
+  private readonly panels: { centre: Vec; along: Vec }[];
+  private lit: DataTexture;
   private readonly atlas: WebGLRenderTarget;
   private readonly resolveMaterial: ShaderMaterial;
   /** Where each surface's six vertices start in the drawn geometry, and the floor's runs with their rooms. */
@@ -269,6 +274,10 @@ export class PhotoSet {
 
     // What is drawn: flat colours, a touch of shade by which way a face looks so corners read, a
     // dark baseboard along the walls' feet, the ceiling's tile grid and the carpet's grain.
+    this.occlusion = bakeOcclusion(plan);
+    this.panels = troffers(plan);
+    this.lit = bakeLightField(plan, setLights(this.panels, []), this.occlusion);
+    this.group.add(trofferGroup(plan, this.panels));
     this.drawMaterial = new ShaderMaterial({
       uniforms: {
         uFloorY: { value: this.plan.floorY },
@@ -279,6 +288,11 @@ export class PhotoSet {
         uHasAtlas: { value: 0 },
         uCeilY: { value: this.plan.ceilingY },
         uGrain: { value: 0.05 },
+        uAo: { value: this.occlusion.texture },
+        uLit: { value: this.lit },
+        uAoOrigin: { value: new Vector3(this.occlusion.u0, this.occlusion.v0, 0) },
+        uAoSize: { value: new Vector3(this.occlusion.width, this.occlusion.height, 0) },
+        uExposure: { value: LIGHT.exposure },
       },
       vertexShader: /* glsl */ `
 attribute vec3 colour;
@@ -309,6 +323,11 @@ uniform sampler2D uAtlas;
 uniform float uGrain;
 uniform float uHasAtlas;
 uniform float uCeilY;
+uniform sampler2D uAo;
+uniform sampler2D uLit;
+uniform vec3 uAoOrigin;
+uniform vec3 uAoSize;
+uniform float uExposure;
 varying float vPattern;
 varying vec2 vUv;
 varying vec3 vColour;
@@ -316,6 +335,15 @@ varying vec3 vWorld;
 varying vec3 vNormal;
 varying float vKind;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+vec2 inSquare(vec3 w, float c0, float s0) { return vec2(w.x * c0 + w.z * s0, -w.x * s0 + w.z * c0); }
+float field(sampler2D t, vec2 sq) { return texture2D(t, (sq - uAoOrigin.xy) / uAoSize.xy).r; }
+vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 void main() {
   vec3 c = vColour;
   vec3 n = normalize(vNormal);
@@ -333,8 +361,15 @@ void main() {
     if (vKind > 2.5) differs = 1.0;
     c = mix(c, photo.rgb, differs * seen);
     if (vKind < 0.5 && vWorld.y - uFloorY < 0.1) c = uBase;
-    // Soft occlusion where a wall meets the floor and the ceiling.
-    if (vKind < 0.5) c *= (1.0 - 0.16 * exp(-(vWorld.y - uFloorY) / 0.22)) * (1.0 - 0.1 * exp(-(uCeilY - vWorld.y) / 0.18));
+    // Soft occlusion where a wall meets the floor and the ceiling, and in the corners (the field, a little out from the face).
+    if (vKind < 0.5) {
+      c *= (1.0 - 0.16 * exp(-(vWorld.y - uFloorY) / 0.22)) * (1.0 - 0.1 * exp(-(uCeilY - vWorld.y) / 0.18));
+      float corner = clamp(field(uAo, inSquare(vWorld + vec3(n.x, 0.0, n.z) * 0.3, c0, s0)) / 0.86, 0.0, 1.0);
+      c *= mix(1.0, corner, 0.65);
+      // Matte paint: a very faint mottle.
+      c *= 1.0 + 0.012 * (noise(vec2(dot(vWorld.xz, vec2(n.z, -n.x)), vWorld.y) * 3.0) - 0.5);
+      c *= 1.0 + 0.35 * field(uLit, inSquare(vWorld + vec3(n.x, 0.0, n.z) * 0.6, c0, s0)) * smoothstep(uCeilY, uFloorY, vWorld.y);
+    }
   } else if (vKind < 1.5) {
     // The floor: a carpet's grain, as varied as the photographs' carpet.
     if (vPattern > 1.5) {
@@ -360,13 +395,19 @@ void main() {
     vec2 seam = abs(fract(square / 0.6) - 0.5) * 0.6;
     if (min(0.3 - seam.x, 0.3 - seam.y) < 0.003) c *= 0.94;
     }
+    c *= field(uAo, square);
+    c *= 1.0 + 0.6 * field(uLit, square);
   } else if (vKind < 2.5) {
-    // The ceiling: a drop ceiling's grid.
+    // The ceiling: a drop ceiling's grid, the tiles' fissured face, its edges a touch shaded.
+    c *= 0.97 + 0.04 * noise(square * 40.0);
+    c *= mix(1.0, field(uAo, square), 0.5);
     vec2 g = abs(fract(square / uTile) - 0.5) * uTile;
     if (min(0.5 * uTile - g.x, 0.5 * uTile - g.y) < 0.012) c *= 0.82;
     shade = 1.0;
   }
-  gl_FragColor = vec4(c * shade, 1.0);
+  // Into light, exposed for the photographs' bright whites, through ACES, and back.
+  vec3 linear = pow(max(c * shade, 0.0), vec3(2.2)) * uExposure;
+  gl_FragColor = vec4(pow(aces(linear), vec3(1.0 / 2.2)), 1.0);
 }`,
       side: DoubleSide,
     });
@@ -963,6 +1004,19 @@ void main() {
     }
   }
 
+  /** Draws the windows found and bakes their light, with the troffers', into the floor's light. */
+  private addWindows(windows: SetWindow[]): void {
+    this.windows = windows;
+    if (windows.length > 0) this.group.add(windowGroup(this.plan, windows));
+    const lit = bakeLightField(this.plan, setLights(this.panels, windows), this.occlusion);
+    this.lit.dispose();
+    this.lit = lit;
+    this.drawMaterial.uniforms.uLit.value = lit;
+  }
+
+  /** The windows found, for the console. */
+  windows: SetWindow[] = [];
+
   /**
    * The ceiling's lights, where the photographs saw them: bright patches of the ceiling, gathered on a 1.2 m
    * grid of the building's square, each drawn as a glowing 1.2 × 0.6 m troffer.
@@ -1059,6 +1113,7 @@ void main() {
     const allFloors: Rgb[] = [];
     const allPieces: Rgb[] = [];
     const bright: { x: number; y: number; l: number }[] = [];
+    const skyTally = new Map<number, [number, number]>();
     const push = (map: Map<string | number, Rgb[]>, key: string | number, value: Rgb) => {
       const list = map.get(key);
       if (list) list.push(value);
@@ -1077,6 +1132,15 @@ void main() {
           const a = ((x + 0.5) * k - s.x) / s.pw;
           const b = ((y + 0.5) * k - s.y) / s.ph;
           if (s.kind === "wall") {
+            // Sky at eye height: bright, a touch blue.
+            if (b * s.h > 1.0 && b * s.h < 2.0) {
+              const column = Math.floor((a * s.w) / 0.2);
+              const key = si * 1000 + column;
+              const tally = skyTally.get(key) ?? [0, 0];
+              tally[1]++;
+              if (c[0] + c[1] + c[2] > 2.55 && c[2] >= c[0] - 0.02) tally[0]++;
+              skyTally.set(key, tally);
+            }
             if (b * s.h < 0.1) base.push(c);
             else if (b * s.h > 0.3) {
               push(wallsBy, wallRoom[si], c);
@@ -1122,7 +1186,7 @@ void main() {
       for (let v = start; v < start + count; v++) colour.setXYZ(v, c[0], c[1], c[2]);
     };
     const ceilingColour = median(ceiling, FALLBACK.ceiling);
-    this.lightPanels(bright, ceilingColour[0] + ceilingColour[1] + ceilingColour[2]);
+    void bright;
     // A wall face keeps its own colour only near its room's: one whose photographs were mostly a window's view is room paint.
     const wallColour = (si: number): Rgb => {
       const room = median(wallsBy.get(wallRoom[si]), wallAll);
@@ -1144,7 +1208,7 @@ void main() {
     const material = (c: Rgb) => {
       const sum = c[0] + c[1] + c[2];
       const spread = Math.max(...c) - Math.min(...c);
-      return c[0] - c[2] > 0.07 && sum < 2.2 && sum > 0.6 ? 1 : sum > 2.25 && spread < 0.06 ? 2 : 0;
+      return c[0] - c[2] > 0.2 && sum < 1.95 && sum > 0.6 ? 1 : sum > 2.3 && spread < 0.05 ? 2 : 0;
     };
     for (const run of this.floorRuns) {
       const c = median(floorsBy.get(run.room), floorAll);
@@ -1168,6 +1232,27 @@ void main() {
     renderer.setClearColor(new Color(0, 0, 0), 0);
     renderer.clear();
     renderer.render(this.bakeScene, this.orthographic);
+    // Window spans: runs of sky columns (20 cm each) at least 60 cm long, on wall faces.
+    const windowSpans: SetWindow[] = [];
+    this.surfaces.forEach((s, si) => {
+      if (s.kind !== "wall" || s.w < 0.8) return;
+      const columns = Math.ceil(s.w / 0.2);
+      let start = -1;
+      for (let k = 0; k <= columns; k++) {
+        const t = k < columns ? skyTally.get(si * 1000 + k) : undefined;
+        const sky = t !== undefined && t[1] > 0 && t[0] / t[1] >= 0.5;
+        if (sky && start < 0) start = k;
+        if (!sky && start >= 0) {
+          if ((k - start) * 0.2 >= 0.6) {
+            const at = (col: number) => ({ x: s.o.x + s.u.x * Math.min(s.w, col * 0.2), y: s.o.z + s.u.z * Math.min(s.w, col * 0.2) });
+            windowSpans.push({ a: at(start), b: at(k), n: { x: s.n.x, y: s.n.z } });
+          }
+          start = -1;
+        }
+      }
+    });
+    // Windows: where the photographs saw the sky at eye height on a wall; their light spills in.
+    this.addWindows([...(this.plan.windows ?? []), ...windowSpans]);
     // Clean over detailed: the photographs give the colours, and no decal is drawn from them.
     this.drawMaterial.uniforms.uHasAtlas.value = PHOTO.decals ? 1 : 0;
     this.finished = true;

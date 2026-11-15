@@ -143,6 +143,8 @@ export interface PlanBox {
 
 export interface ScanPlan {
   angle: number;
+  /** Windows on the outside walls (`windowsFromSight`); none until found. */
+  windows?: { a: Vec; b: Vec; n: Vec }[];
   /** The furniture (`addFurniture`); none until it is added. */
   furniture: PlanBox[];
   floorY: number;
@@ -1727,4 +1729,71 @@ export function tidyFurniture(plan: ScanPlan): number {
     return [...plan.walls, ...plan.glass].every((s) => !edges.some(([p, q]) => crosses(p, q, s)));
   });
   return before - plan.furniture.length;
+}
+
+/** A window on an outside wall: its stretch along the wall (plan points) and the way into the building. */
+export interface PlanWindow {
+  a: Vec;
+  b: Vec;
+  n: Vec;
+}
+
+/**
+ * Windows, where the scan cameras saw out: points along an outside wall (no
+ * floor behind it) at eye height where the scan's mesh lets a camera's ray
+ * run on well past the wall. Runs of them at least 0.6 m long are windows.
+ */
+export function windowsFromSight(
+  plan: ScanPlan,
+  eyes: readonly { x: number; y: number; eye: number }[],
+  see: (from: readonly [number, number, number], dir: readonly [number, number, number], far: number) => number | null,
+): PlanWindow[] {
+  const out: PlanWindow[] = [];
+  const STEP = 0.3;
+  for (const w of plan.walls) {
+    if (w.door) continue;
+    const len = Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y);
+    if (len < 0.8) continue;
+    const n0 = { x: -(w.b.y - w.a.y) / len, y: (w.b.x - w.a.x) / len };
+    for (const s of [1, -1]) {
+      const n = { x: n0.x * s, y: n0.y * s };
+      const mid = { x: (w.a.x + w.b.x) / 2, y: (w.a.y + w.b.y) / 2 };
+      // Floor on this side, none behind: an outside wall seen from inside.
+      if (!onPlanFloor(plan.floor, mid.x + n.x * 0.5, mid.y + n.y * 0.5) || onPlanFloor(plan.floor, mid.x - n.x * 0.5, mid.y - n.y * 0.5)) continue;
+      const near = eyes.filter((e) => (e.x - mid.x) * n.x + (e.y - mid.y) * n.y > 0.5 && Math.hypot(e.x - mid.x, e.y - mid.y) < len / 2 + 6);
+      if (near.length === 0) continue;
+      const out1: boolean[] = [];
+      for (let t = STEP / 2; t < len; t += STEP) {
+        const p = { x: w.a.x + ((w.b.x - w.a.x) * t) / len, y: w.a.y + ((w.b.y - w.a.y) * t) / len };
+        let through = 0;
+        let solid = 0;
+        for (const e of near) {
+          const target = [p.x, plan.floorY + 1.5, p.y] as const;
+          const dx = target[0] - e.x;
+          const dy = target[1] - e.eye;
+          const dz = target[2] - e.y;
+          const d = Math.hypot(dx, dy, dz);
+          if (d > 8 || Math.abs((dx * n.x + dz * n.y) / d) < 0.4) continue;
+          const hit = see([e.x, e.eye, e.y], [dx / d, dy / d, dz / d], d + 4);
+          if (hit !== null && hit < d - 0.5) continue;
+          if (hit === null || hit > d + 0.8) through++;
+          else solid++;
+        }
+        out1.push(through > 0 && through >= solid);
+      }
+      let start = -1;
+      for (let k = 0; k <= out1.length; k++) {
+        const on = k < out1.length && out1[k];
+        if (on && start < 0) start = k;
+        if (!on && start >= 0) {
+          if ((k - start) * STEP >= 0.6) {
+            const at = (t: number) => ({ x: w.a.x + ((w.b.x - w.a.x) * t) / len, y: w.a.y + ((w.b.y - w.a.y) * t) / len });
+            out.push({ a: at(start * STEP), b: at(Math.min(len, k * STEP)), n });
+          }
+          start = -1;
+        }
+      }
+    }
+  }
+  return out;
 }
