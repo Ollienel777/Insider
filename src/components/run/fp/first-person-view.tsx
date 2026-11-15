@@ -49,6 +49,7 @@ import { SuspicionMeter } from "./suspicion-meter";
 import { FP } from "./tuning";
 import { createWalker, heldAction, promptFor, stepWalker, type Prompt } from "./walker";
 import { buildWorld, groundOf, type World } from "./world";
+import { useMoment } from "../moment";
 
 export interface FirstPersonViewProps {
   placed: PlacedLevel;
@@ -580,6 +581,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
   }, [world, placed, scanGiven, scanHandle, scanFailed]);
 
   const noun = objectiveNoun(placed.level.missionId);
+  const moment = useMoment(placed, run);
   const over = run.status !== "playing";
   const end = useMemo(() => endState(placed, run), [placed, run]);
   // The run's end frees the mouse, so the Debrief is a click away.
@@ -598,6 +600,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       data-turn={run.turn}
       data-locked={run.locked.join(" ")}
       data-alarm={run.alarm}
+      data-carrying={run.carrying ? "true" : undefined}
       data-pointer={hud.locked ? "locked" : "free"}
       role="application"
       aria-label="First-person view of the floor. W, A, S and D move, the arrow keys turn, hold E to use, P pauses."
@@ -656,7 +659,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
               data-testid="fp-prompt"
               data-kind={hud.prompt.kind}
               data-using={hud.using ? "true" : undefined}
-              className="flex items-center gap-2 rounded-sm bg-surface-1 px-3 py-2 text-sm text-text-1 shadow-e-1"
+              className={cn(PROMPT, hud.prompt.kind === "exit" && "border border-success")}
             >
               {hud.prompt.kind === "far" ? (
                 "A locked door. Step up to it and hold E to pick it."
@@ -664,6 +667,8 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
                 <>
                   Hold <Key>E</Key> to take the {noun}
                 </>
+              ) : hud.prompt.kind === "exit" ? (
+                exitPrompt(placed, hud.prompt.nodeId, noun)
               ) : hud.using ? (
                 <>
                   Picking… hold <Key>E</Key>
@@ -680,6 +685,11 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
                   Hold <Key>E</Key> to pick the lock
                 </>
               )}
+            </p>
+          ) : moment?.kind === "door" ? (
+            // The picked door's prompt does not just vanish: it says the door is open, for the moment's turns (issue 188).
+            <p data-testid="fp-prompt" data-kind="open" className={cn(PROMPT, "border border-success")}>
+              Door open. Walk on through.
             </p>
           ) : null}
           {over ? null : (
@@ -744,6 +754,14 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
       ) : null}
     </div>
   );
+}
+
+const PROMPT = "flex items-center gap-2 rounded-sm bg-surface-1 px-3 py-2 text-sm text-text-1 shadow-e-1";
+
+/** Carrying, at an exit: walking on to it is the win, with no key (issue 188). */
+export function exitPrompt(placed: PlacedLevel, nodeId: string, noun: string): string {
+  const name = placed.entries.find((e) => e.nodeId === nodeId)?.label ?? roomName(placed.level.floor, nodeId);
+  return `The way out: the ${name.toLowerCase()}. Walk on to it with the ${noun} to end the run.`;
 }
 
 function Key({ children }: { children: string }) {

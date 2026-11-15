@@ -628,7 +628,10 @@ export class Actors {
     }
     for (const exit of this.marks.exits) {
       const node = this.ground.nodes.get(exit.nodeId);
-      if (node) out.push({ key: `e:${exit.nodeId}`, text: exit.label, tone: "exit", x: node.x, y: 1.45, z: node.y, at: node, beacon: true });
+      if (!node) continue;
+      // Carrying, the exits take the objective's place as the beacons to make for (issue 188): a new key, so a new label.
+      if (run.carrying) out.push({ key: `w:${exit.nodeId}`, text: exit.label.replace(/^Exit · /, "Way out · "), tone: "objective", x: node.x, y: 1.6, z: node.y, at: node, beacon: true });
+      else out.push({ key: `e:${exit.nodeId}`, text: exit.label, tone: "exit", x: node.x, y: 1.45, z: node.y, at: node, beacon: true });
     }
     return out;
   }
