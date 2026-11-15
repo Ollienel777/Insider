@@ -31,6 +31,12 @@ import { AGREE_HIGH, AGREE_LOW, FILL_POWER, FILL_REACH, SEEN_FLOOR, SHARPEN } fr
 
 /** Panoramas blended at once. */
 export const SLOTS = 4;
+/**
+ * The patch a panorama blurs under its own tripod, as angles from straight
+ * down: it counts in full outside the outer one, and least inside the inner.
+ */
+export const NADIR_OUTER_DEG = 46;
+export const NADIR_INNER_DEG = 39;
 
 const VERTEX = /* glsl */ `
 varying vec3 vWorld;
@@ -66,6 +72,8 @@ uniform float uDebug;
 /** lib/scan-mesh/combine.ts: lean on the strongest where colours disagree; fill what nobody saw from one panorama. */
 uniform float uAgree;
 uniform float uFill;
+/** The patch under a panorama's own tripod: x and y the cosines of its outer and inner angle from straight down, z how much less the panorama counts inside it (0: as before). */
+uniform vec3 uNadir;
 varying vec3 vWorld;
 
 void sampleSlot(samplerCube pano, samplerCube low, float sharp, samplerCube depth, vec3 origin, mat3 toPano, float share, vec3 gain, vec3 normal, vec3 sight, out vec3 colour, out float base, out float seen, out float miss) {
@@ -95,6 +103,8 @@ void sampleSlot(samplerCube pano, samplerCube low, float sharp, samplerCube dept
     float penalty = angle + ${REACH_PENALTY.toFixed(4)} * max(0.0, (reach - camReach) / max(reach, 1e-4)) + ${ANGLE_FLOOR.toFixed(4)};
     base = share * (0.1 + 0.9 * facing) / (penalty * penalty);
   }
+  // The photograph is blurred under its own tripod: there a panorama that saw that floor from the side has the better picture.
+  base *= 1.0 - uNadir.z * smoothstep(uNadir.x, uNadir.y, -along.y);
 #endif
   vec3 lookup = toPano * ray;
   colour = sharp >= 1.0 ? textureCube(pano, lookup).rgb
@@ -227,6 +237,7 @@ export function createScanMaterial(blank: CubeTexture, backdrop = false): Shader
     uDebug: { value: 0 },
     uAgree: { value: 1 },
     uFill: { value: 1 },
+    uNadir: { value: new Vector3(Math.cos((NADIR_OUTER_DEG * Math.PI) / 180), Math.cos((NADIR_INNER_DEG * Math.PI) / 180), 0) },
   };
   for (let i = 0; i < SLOTS; i++) {
     uniforms[`uPano${i}`] = { value: blank };
