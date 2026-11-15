@@ -134,9 +134,59 @@ export function clockState({
   return held ? "held" : "running";
 }
 
+/**
+ * The first move (issue 171): in first person the clock waits for the player
+ * to move before it plays a turn, so they can look around first. It is one
+ * more hold beside the others, lifted by the player rather than by the
+ * screen: while it waits the clock plays nothing, so the run log and the
+ * Debrief's replay hold only the turns that were played.
+ *
+ * It waits again on entering first person and on a restart (the turn number
+ * going back). A turn the player plays while it waits (a number key, a walk
+ * into the next node) is their first move too.
+ */
+export interface FirstMove {
+  /** Waiting for a first move is asked for: in first person. */
+  readonly on: boolean;
+  /** The player has moved since it was asked for. */
+  readonly moved: boolean;
+  readonly board: unknown;
+  readonly turn: number;
+}
+
+export const NO_FIRST_MOVE: FirstMove = { on: false, moved: false, board: null, turn: 0 };
+
+/** The first move as the run stands now. The same object when nothing changed, so a caller can keep it in state. */
+export function followRun(was: FirstMove, on: boolean, run: RunState | null): FirstMove {
+  const board = run?.board ?? null;
+  const turn = run?.turn ?? 0;
+  if (was.on === on && was.board === board && was.turn === turn) return was;
+  const fresh = !was.on || was.board !== board || turn < was.turn;
+  const moved = on && !fresh && (was.moved || turn > was.turn);
+  return { on, moved, board, turn };
+}
+
+/** The keys that are a first move: W A S D and ↑ ↓ walk, E uses. Looking (the mouse, ← →) is not. */
+export const FIRST_MOVE_KEYS: ReadonlySet<string> = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "KeyE"]);
+
+/**
+ * The first move after a key. A key only counts while nothing else holds the
+ * clock: another hold (the scan's picture still coming in) comes first, and
+ * the wait for the first move starts once it lifts.
+ */
+export function pressKey(was: FirstMove, code: string, heldElsewhere: boolean): FirstMove {
+  if (!was.on || was.moved || heldElsewhere || !FIRST_MOVE_KEYS.has(code)) return was;
+  return { ...was, moved: true };
+}
+
+/** Whether the clock is waiting for the first move. */
+export const awaitingMove = (gate: FirstMove): boolean => gate.on && !gate.moved;
+
 /** The clock as the Run screen's Live pieces see it (the timer now; the play HUD and the scan view next). */
 export interface LiveClock {
   state: TurnClockState;
+  /** Held only for the player's first move, with nothing else holding it: what the first-person hint says. */
+  awaitingMove: boolean;
   /** Changes whenever the countdown starts over. The timer keys its bar on it. */
   lap: string;
   /** Pauses the clock, or resumes it: what `P` does. Does nothing while the clock is off or the run is over. */
@@ -172,8 +222,8 @@ const tabHidden = () => document.visibilityState === "hidden";
  * it over; the Chief's orders landing mid-turn do not. When it runs out the
  * clock plays `clockAction` through `play`. `P` pauses and resumes, except
  * while typing. It also holds while a Why card is open, while the tab is
- * hidden and while the caller says `hold`, and it is done once the run has
- * ended. It never holds for the Security Chief: his orders apply on the turn
+ * hidden and while the caller says `hold`, then, with `startOnMove`, until
+ * the player's first move; and it is done once the run has ended. It never holds for the Security Chief: his orders apply on the turn
  * they land.
  */
 export function useTurnClock({
@@ -183,6 +233,7 @@ export function useTurnClock({
   hold = false,
   turnMs = LIVE_TURN_MS,
   action,
+  startOnMove = false,
 }: {
   live: boolean;
   /** The run on the board; null while there is none. */
@@ -198,6 +249,8 @@ export function useTurnClock({
   turnMs?: number;
   /** The turn the clock plays when one runs out, in place of `clockAction`: first person picks only while E is held. */
   action?: (run: RunState) => Action;
+  /** Holds the clock until the player's first move (`FIRST_MOVE_KEYS`, or a turn they play): first person's look around. */
+  startOnMove?: boolean;
 }): LiveClock {
   const [paused, setPaused] = useState(false);
   // Leaving Live drops the pause, so choosing Live again starts the clock.
@@ -209,7 +262,27 @@ export function useTurnClock({
   const whyOpen = useSyncExternalStore(live ? watchWhyCard : noWatch, live ? whyCardOpen : never, never);
   const hidden = useSyncExternalStore(live ? watchTab : noWatch, live ? tabHidden : never, never);
 
-  const state = clockState({ live, run, paused, held: whyOpen || hidden || hold });
+  // The first move is one hold among the others, and waits behind them (issue 171).
+  const [firstMove, setFirstMove] = useState(NO_FIRST_MOVE);
+  const followed = followRun(firstMove, live && startOnMove, run);
+  if (followed !== firstMove) setFirstMove(followed);
+  const heldElsewhere = whyOpen || hidden || hold;
+  const waiting = awaitingMove(followed);
+
+  const state = clockState({ live, run, paused, held: heldElsewhere || waiting });
+
+  const listening = waiting && !heldElsewhere && state !== "off" && state !== "over";
+  useEffect(() => {
+    if (!listening) return;
+    // In the capture phase, ahead of first person's own handler, which marks the keys it takes as handled.
+    function onKey(event: KeyboardEvent) {
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+      if ((event.target as Element | null)?.closest?.(TYPING)) return;
+      setFirstMove((was) => pressKey(was, event.code, false));
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [listening]);
 
   const clock = useRef<TurnClock | null>(null);
   /** The run state the countdown is running for. */
@@ -269,5 +342,5 @@ export function useTurnClock({
     return () => window.removeEventListener("keydown", onKey);
   }, [pausable]);
 
-  return { state, lap: `${run?.turn ?? 0}:${due.laps}`, togglePause };
+  return { state, awaitingMove: listening && state === "held", lap: `${run?.turn ?? 0}:${due.laps}`, togglePause };
 }

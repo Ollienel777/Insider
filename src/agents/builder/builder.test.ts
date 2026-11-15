@@ -202,6 +202,20 @@ describe("the builder takes the chosen mission as input (#119)", () => {
     expect(built.trace.events.some((e) => e.label === "list_missions")).toBe(false);
   }, 30_000);
 
+  it("get_aerial_entries hands a derived massing's height over as an estimate, and a measured one as heightM", async () => {
+    const r = run();
+    const entries = tool(analystTools(r), "get_aerial_entries");
+    const measured = JSON.parse(await entries.invoke({ buildingId: "F1" }));
+    expect(measured.heightM).toBeGreaterThan(0);
+    expect(measured.estimatedHeightM).toBeUndefined();
+    const f1 = (await createFakeVexcel().getAerial("F1"))!;
+    r.vexcel = { getAerial: async () => ({ ...f1, entries: [], derived: true }) };
+    const derived = JSON.parse(await entries.invoke({ buildingId: "F1" }));
+    expect(derived.heightM).toBeUndefined();
+    expect(derived.estimatedHeightM).toBe(f1.heightM);
+    expect(derived.note).toContain("estimated from its stories");
+  });
+
   it("get_mission and write_manifest refuse any mission but the run's", async () => {
     const r = run();
     const getMission = tool(gameMasterTools(r), "get_mission");

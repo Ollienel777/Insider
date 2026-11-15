@@ -3,7 +3,10 @@
 // adjacency. The Chief's zone ids are the manifest's zones and entries as
 // they are, and the floor's other rooms: by their room id on a hand-authored
 // fixture floor, and by an opaque `area-N` on a scanned (Matterport) floor,
-// so no scan id or label leaves the browser. Orders come back in those ids
+// so no scan id leaves the browser. Each goes with the board's own name for
+// the room, so the Chief says "the Kitchen", not "Area 3" (issue 172); a room
+// with no name stays "Area N", and a name two rooms share is numbered.
+// Orders come back in those ids
 // and are mapped to the engine's before the engine clamps them.
 import { ChiefRequest, strayHistoryIds, type ChiefAnswer, type ChiefHistory } from "@/agents/chief/request";
 import { ChiefOrders } from "@/domain";
@@ -35,6 +38,17 @@ const clampName = (name: string, fallback: string) => {
   return trimmed.length > MAX_NAME ? `${trimmed.slice(0, MAX_NAME - 1)}…` : trimmed;
 };
 
+/**
+ * A scan's room label as a plain name for the model's prompt: free text from whoever made the scan, so
+ * only letters, digits, spaces and simple punctuation stay, on one line (issue 172).
+ */
+export function plainName(label: string): string {
+  return label
+    .replace(/[^\p{L}\p{N} .,'&()/-]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** The zones the Chief may name on this placed level. */
 export function chiefZones(placed: PlacedLevel): ChiefZones {
   const { level } = placed;
@@ -56,12 +70,23 @@ export function chiefZones(placed: PlacedLevel): ChiefZones {
   // The rooms no zone holds: where a guard or the player can be outside every zone.
   const board = compileBoard(level);
   let area = 0;
+  const said = new Set(zones.map((z) => z.name.toLowerCase()));
+  // Clamped first, so the number stays inside the request's limit and two long names stay apart.
+  const unique = (raw: string) => {
+    const name = clampName(raw, raw);
+    let named = name;
+    for (let n = 2; said.has(named.toLowerCase()); n++) named = clampName(`${name.slice(0, MAX_NAME - String(n).length - 2)} ${n}`, name);
+    said.add(named.toLowerCase());
+    return named;
+  };
   for (const node of level.floor.nodes) {
     const zone = zoneOf(board, node.id).zoneId;
     if (toChief.has(zone)) continue;
-    area += 1;
-    if (scanned) add(zone, `area-${area}`, `Area ${area}`);
-    else add(zone, zone, level.floor.rooms.find((r) => r.id === zone)?.label ?? zone);
+    const label = level.floor.rooms.find((r) => r.id === zone)?.label?.trim();
+    if (scanned) {
+      area += 1;
+      add(zone, `area-${area}`, unique(plainName(label ?? "") || `Area ${area}`));
+    } else add(zone, zone, label || zone);
   }
   return { zones, toEngine, toChief };
 }
@@ -128,19 +153,41 @@ export function toEngineOrders(orders: ChiefOrders, zones: ChiefZones): ChiefOrd
   };
 }
 
-/** Asks the Chief; throws with the server's message on a failure. */
+/**
+ * The browser's own deadline for a Chief call: a little over the server's 4 s budget, so a hung
+ * request (a dropped route, a stalled server) fails here and the next alarm event's call can go (issue 172).
+ */
+export const CHIEF_CLIENT_TIMEOUT_MS = 8_000;
+
+/** Asks the Chief; throws with the server's message on a failure, and on no answer within `timeoutMs`. */
 export async function askChief(
   request: ChiefRequest,
-  options: { signal?: AbortSignal; fetch?: typeof fetch } = {},
+  options: { signal?: AbortSignal; fetch?: typeof fetch; timeoutMs?: number } = {},
 ): Promise<ChiefAnswer> {
   const doFetch = options.fetch ?? fetch;
-  const response = await doFetch("/api/chief", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(request),
-    signal: options.signal,
-  });
-  const body = (await response.json().catch(() => null)) as (Partial<ChiefAnswer> & { error?: string }) | null;
+  const timeoutMs = options.timeoutMs ?? CHIEF_CLIENT_TIMEOUT_MS;
+  const deadline = new AbortController();
+  const timer = setTimeout(() => deadline.abort(), timeoutMs);
+  const signal = options.signal ? AbortSignal.any([options.signal, deadline.signal]) : deadline.signal;
+  let response: Response;
+  let body: (Partial<ChiefAnswer> & { error?: string }) | null;
+  try {
+    response = await doFetch("/api/chief", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+      signal,
+    });
+    body = (await response.json().catch(() => null)) as typeof body;
+    if (deadline.signal.aborted) throw new Error("timed out");
+  } catch (error) {
+    if (deadline.signal.aborted && !options.signal?.aborted) {
+      throw new Error(`the Chief didn't answer within ${Math.round(timeoutMs / 1000)} s`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
   if (!response.ok || !body) throw new Error(body?.error ?? `the Chief didn't answer (HTTP ${response.status})`);
   noteResponse(body);
   // Only an answer that says the model wrote it reads as live. A missing or unknown source reads as recorded:

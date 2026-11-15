@@ -24,6 +24,11 @@
 // - The engine is the truth. When its player node is not the one this view
 //   expected (a restart, a number key, a refused move), the body goes back to
 //   where it last stood in the engine's node's area, or onto the node.
+// - A door the engine shuts with the body in the doorway, on the near side of
+//   the bar but still in the far node's area (issue 118's scans, where a bar
+//   need not stand at an edge's middle), cuts the body off from the engine's
+//   node: the body goes onto that node, as for a refusal. It never plays the
+//   moves round to the area it now stands in, which it did not walk.
 //
 // Pure: no DOM, no renderer, no clock but the `dt` it is given. It reads the
 // floor only through `Ground` (ground.ts).
@@ -107,6 +112,23 @@ export function reconcile(walker: Walker, ground: Ground, run: RunState): Walker
 }
 
 /**
+ * A body standing still in another node's area than the engine's, with the
+ * engine's node now behind a shut door though the mesh leaves the line clear:
+ * the door was locked with the body between the edge's middle and the bar.
+ * The engine is the truth, so the body goes onto its node.
+ */
+function cutOff(walker: Walker, ground: Ground, run: RunState): Walker {
+  if (walker.pending || walker.queue.length > 0 || run.locked.length === 0) return walker;
+  const at = ground.nodes.get(walker.node);
+  if (!at) return walker;
+  const here = ground.regionOf(walker.pos, run.locked);
+  if (here === null || here === walker.node) return walker;
+  if (ground.clear(walker.pos, at, run.locked) || !ground.clear(walker.pos, at, [])) return walker;
+  const pos = { x: at.x, y: at.y };
+  return { ...walker, pos, home: pos, region: walker.node, vel: { x: 0, y: 0 } };
+}
+
+/**
  * The legal moves from `from` to `to`, in order, by the fewest hops through
  * open edges (the engine's `move` refuses a locked door); null when `to` is
  * further than `maxHops` or cannot be reached.
@@ -173,20 +195,25 @@ function nearSide(ground: Ground, door: GroundDoor, pos: Vec): string {
   return na && side(na) === side(pos) ? door.a : door.b;
 }
 
-/** The locked door the middle of the view is on, within reach, if any. */
+/**
+ * The locked door the middle of the view is on, within reach, if any. Where
+ * two doors stand in one doorway (two board edges of a scan cross it, issue
+ * 118), the one on the edge out of the area the body stands in.
+ */
 export function doorInView(ground: Ground, run: RunState, pos: Vec, yaw: number, reach: number = FP.reachM): GroundDoor | null {
   const look = facing(yaw);
-  let best: GroundDoor | null = null;
-  let bestT: number = reach;
+  const hits: { door: GroundDoor; t: number }[] = [];
   for (const door of ground.doors) {
     if (!run.locked.includes(door.doorId)) continue;
     const t = lineMeets(door, pos, look);
-    if (t !== null && t <= bestT) {
-      best = door;
-      bestT = t;
-    }
+    if (t !== null && t <= reach) hits.push({ door, t });
   }
-  return best;
+  if (hits.length === 0) return null;
+  hits.sort((p, q) => p.t - q.t);
+  if (hits.length === 1) return hits[0].door;
+  const here = ground.regionOf(pos, run.locked);
+  const own = hits.find((h) => h.t - hits[0].t < 0.3 && nearSide(ground, h.door, pos) === here);
+  return (own ?? hits[0]).door;
 }
 
 export function promptFor(walker: Walker, ground: Ground, run: RunState, yaw: number): Prompt {
@@ -197,7 +224,7 @@ export function promptFor(walker: Walker, ground: Ground, run: RunState, yaw: nu
     const node = nearSide(ground, door, walker.pos);
     // Picked only from the door's own node, standing in its area: E then plays no move, so the engine's node
     // stays where the body is. From anywhere else, the player steps up to it, and that walk plays the moves.
-    if (ground.regionOf(walker.pos) !== node) return { kind: "far", doorId: door.doorId };
+    if (ground.regionOf(walker.pos, run.locked) !== node) return { kind: "far", doorId: door.doorId };
     const done = run.picking?.doorId === door.doorId ? run.picking.progress : 0;
     return { kind: "pick", doorId: door.doorId, node, done, of: picksToOpen(run.board.level, door.doorId) };
   }
@@ -238,6 +265,8 @@ export function stepWalker(
 ): { walker: Walker; action: Action | null } {
   let walker = reconcile(before, ground, run);
   const playing = run.status === "playing";
+  // A door shut under the body, cutting it off from the engine's node: onto the node, before anything else.
+  if (playing) walker = cutOff(walker, ground, run);
 
   // Move. A run that is over stops the body where it stands.
   const wish = playing ? wishVelocity(controls, controls.yaw) : { x: 0, y: 0 };
@@ -257,14 +286,14 @@ export function stepWalker(
   }
 
   // Into another area: the legal moves there, or held at the edge of this one.
-  const region = ground.regionOf(walker.pos);
+  const region = ground.regionOf(walker.pos, run.locked);
   if (region !== null && region !== walker.region) {
     const moves = legalMoves(run, destination(walker), region);
     if (moves) {
       walker = { ...walker, region, queue: [...walker.queue.filter((a) => a.kind === "move"), ...moves] };
     } else {
       // Held back at the edge of its own area: the step that crossed is not taken.
-      const back = ground.regionOf(from) === walker.region ? from : walker.home;
+      const back = ground.regionOf(from, run.locked) === walker.region ? from : walker.home;
       walker = { ...walker, pos: back, vel: { x: 0, y: 0 } };
     }
   }

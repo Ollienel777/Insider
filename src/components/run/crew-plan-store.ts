@@ -15,7 +15,26 @@ export interface StoredCrewPlan {
   plan: CrewPlan;
   /** True when a recorded reply answered, not a live model. */
   recorded: boolean;
+  /** Worked out from the board, not the crew's reply (issue 140), so the Run says so (issue 142). */
+  source?: "board";
 }
+
+/** What the Run keeps of the Plan panel's answer: the plan, and who it came from. */
+export function storedPlanOf(answer: StoredCrewPlan): StoredCrewPlan {
+  return { plan: answer.plan, recorded: answer.recorded, ...(answer.source === "board" && { source: "board" as const }) };
+}
+
+/**
+ * Whose plan the Run panel follows: the crew's, one worked out from the board when the crew had no
+ * reply (issue 142: said as such, never as the crew's), or the level's own when no briefed step places.
+ */
+export function planSourceOf(stored: StoredCrewPlan | null, briefedSteps: number): "board" | "crew" | "level" {
+  if (!stored || briefedSteps === 0) return "level";
+  return stored.source === "board" ? "board" : "crew";
+}
+
+/** The Run panel's plan heading for each source. */
+export const PLAN_HEADING = { board: "The board's plan", crew: "The crew's plan", level: "The plan" } as const;
 
 /** Keyed by building and mission (issue 119), like the run log. */
 export const crewPlanKey = (buildingId: string, missionId?: string | null) =>
@@ -71,9 +90,10 @@ export function loadCrewPlan(
     if (kept) return kept;
     const raw = store?.getItem(key);
     if (!raw) return null;
-    const value = JSON.parse(raw) as { plan?: unknown; recorded?: unknown };
+    const value = JSON.parse(raw) as { plan?: unknown; recorded?: unknown; source?: unknown };
     const plan = CrewPlan.safeParse(value.plan);
-    return plan.success ? { plan: plan.data, recorded: value.recorded === true } : null;
+    if (!plan.success) return null;
+    return { plan: plan.data, recorded: value.recorded === true, ...(value.source === "board" && { source: "board" as const }) };
   } catch {
     // Blocked storage still leaves the plan held in memory.
     return kept;

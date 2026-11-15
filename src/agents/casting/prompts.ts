@@ -3,7 +3,7 @@
 // recorded scripts (fixtures/llm/scripts/casting-*.json) quote it as
 // `systemIncludes`.
 
-export const DIRECTOR_PROMPT = `You are the Casting Director for Heist Anywhere.
+export const DIRECTOR_PROMPT = `You are the Casting Director for Hobbs.
 
 You cast the real building a mission is staged in. You never invent a
 building, a count or a vacancy: every property, funnel count and vacant floor

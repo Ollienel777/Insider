@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import { getMatterport } from "@/adapters/matterport";
+import { getMatterport, scanMeshModelFor } from "@/adapters/matterport";
+import { useScanPreload } from "@/components/run/fp/run-view";
 import { BoardView } from "@/components/run/board-view";
-import { saveCrewPlan } from "@/components/run/crew-plan-store";
+import { saveCrewPlan, storedPlanOf } from "@/components/run/crew-plan-store";
 import { LensLegend, LensToggle, useLayerLens } from "@/components/run/layer-lens";
 import { loadRunHistory, postureOf } from "@/components/run/run-history";
 import { RUN_SEED, type RunBuilding } from "@/components/run/run-screen";
@@ -17,9 +18,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { Building, LevelManifest } from "@/domain";
 import { createRun } from "@/engine";
 import { placeOrFixture } from "@/components/run/scan-fallback";
+import { ScanWait, useWaitsOnScan } from "@/components/run/scan-wait";
 import { placeLevel, type PlacedLevel } from "@/level/placer";
 import { validatePlan } from "@/level/validate-plan";
-import { askCrew, crewRequest, EXAMPLE_ORDER, type CrewAnswer } from "./crew-request";
+import { askCrewOrBoard, crewRequest, EXAMPLE_ORDER, type CrewAnswer } from "./crew-request";
 import { CrewReply, ghostOf } from "./crew-reply";
 import { warmModel } from "./warm-request";
 
@@ -59,6 +61,8 @@ export function PlanScreen({
   warmModel?: boolean;
 }) {
   const [loaded, setLoad] = useState<Load>({ status: "loading" });
+  /** Counts the loads: taking the stand-in floor plan (scan-wait.tsx) loads the floor again. */
+  const [attempt, setAttempt] = useState(0);
   const [order, setOrder] = useState("");
   const [ask, setAsk] = useState<Ask>({ status: "idle" });
   const [lens, toggleLens] = useLayerLens();
@@ -70,11 +74,12 @@ export function PlanScreen({
     if (!manifest) return;
     let live = true;
     const matterport = getMatterport(heistMode);
+    const abandon = new AbortController();
     const fail = (error: unknown) => {
       if (live) setLoad({ status: "error", message: error instanceof Error ? error.message : String(error) });
     };
     matterport.adapter
-      .loadFloor(building)
+      .loadFloor(building, abandon.signal)
       .then(async (floor) => {
         if (!live) return;
         if (!floor) return setLoad({ status: "no-floor" });
@@ -92,8 +97,10 @@ export function PlanScreen({
       .catch(fail);
     return () => {
       live = false;
+      // Nobody is waiting for this load now (the screen closed, or the stand-in floor plan was taken): a scan stops loading.
+      abandon.abort();
     };
-  }, [building, manifest, heistMode, missionId, source]);
+  }, [building, manifest, heistMode, missionId, source, attempt]);
 
   useEffect(() => warmModel(warm), [warm]);
 
@@ -108,6 +115,15 @@ export function PlanScreen({
   }, [ask]);
 
   const load: Load = manifest ? loaded : { status: "no-floor" };
+  // On a live scan, first person's scan starts loading here (issue 157), so the Run screen finds it in or
+  // on its way; the tab keeps it across screens (fp/scan-hold.ts). Nothing on fixtures.
+  const liveScan = load.status === "ready" && load.live;
+  const scanModel = useMemo(() => (liveScan ? scanMeshModelFor(building, heistMode) : null), [liveScan, building, heistMode]);
+  // Its picture around the run's start is drawn, unseen, as well, so first person opens on it.
+  useScanPreload(scanModel, undefined, load.status === "ready" ? load.placed.level.start : null);
+  // While the floor loads, the bar says "from fixtures" only once the browser knows no scan is loading:
+  // on a live scan the skeleton says what it waits for, and before the demo status is in, nobody knows.
+  const sourcePending = useWaitsOnScan(building, heistMode) !== false && load.status === "loading";
   const placed = load.status === "ready" ? load.placed : null;
   const run = useMemo(() => (placed ? createRun(placed.level) : null), [placed]);
   const answer = ask.status === "answered" ? ask.answer : null;
@@ -122,12 +138,14 @@ export function PlanScreen({
     pending.current = controller;
     setAsk({ status: "planning" });
     try {
-      const reply = await askCrew(crewRequest(building.id, text, missionId), { signal: controller.signal });
+      // No reply and no recording (a kit building, issue 140): the plan is worked out from the board.
+      const reply = await askCrewOrBoard(crewRequest(building.id, text, missionId), placed, { signal: controller.signal });
       if (!controller.signal.aborted) {
         setAsk({ status: "answered", answer: reply });
         // The run follows the briefed plan (beat 4 into beat 5). A kit building's is derived from its
         // real record, so it is held in memory, not stored (#95).
-        saveCrewPlan(building.id, { plan: reply.plan, recorded: reply.recorded }, undefined, missionId, source === "costar");
+        // Still marked when the board worked it out, so the Run heads it as the board's (issue 142).
+        saveCrewPlan(building.id, storedPlanOf(reply), undefined, missionId, source === "costar");
       }
     } catch (error) {
       if (!controller.signal.aborted) setAsk({ status: "error", message: error instanceof Error ? error.message : String(error) });
@@ -153,7 +171,7 @@ export function PlanScreen({
               <LayerDot layer="matterport" decorative />
               Matterport
               <span className="max-md:hidden">
-                {load.status === "ready" && load.live ? " · floor plan from the scan" : " · floor plan from fixtures"}
+                {load.status === "ready" && load.live ? " · floor plan from the scan" : sourcePending ? null : " · floor plan from fixtures"}
               </span>
             </span>
             <span aria-hidden className="h-4 w-px bg-border" />
@@ -164,7 +182,10 @@ export function PlanScreen({
           </div>
           <div className="relative min-h-0 flex-1">
             {load.status === "loading" ? (
-              <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
+              <>
+                <Skeleton data-testid="board-skeleton" className="absolute inset-x-6 inset-y-0 rounded-md bg-surface-1" />
+                <ScanWait building={building} heistMode={heistMode} onStandIn={() => setAttempt((a) => a + 1)} />
+              </>
             ) : load.status === "no-floor" ? (
               <BoardMessage
                 testId="board-empty"
@@ -203,7 +224,7 @@ export function PlanScreen({
           <div className="flex h-16 shrink-0 items-center gap-6 px-6 text-sm text-text-2">
             {checked ? (
               <>
-                <Legend swatch={<span className="h-1 w-6 rounded-sm bg-accent opacity-50" />}>The crew&apos;s plan</Legend>
+                <Legend swatch={<span className="h-1 w-6 rounded-sm bg-accent opacity-50" />}>{answer?.source === "board" ? "The board's plan" : "The crew's plan"}</Legend>
                 {checked.warnings.some((w) => w.by) ? (
                   <Legend swatch={<span className="size-3 rounded-full border-2 border-warning" />}>Where it&apos;s seen</Legend>
                 ) : null}

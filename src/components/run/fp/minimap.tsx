@@ -6,6 +6,8 @@
 // on next (waypoint.ts). The rooms, the pieces and the route change with the
 // run, a turn at a time; the player's arrow moves every frame, read from
 // `pose`, which the view writes and this map's own animation frame reads.
+// On a fixture floor it draws world.ts's rooms; on a scan, which has no room
+// walls of ours, it draws the engine's walkable edges through each doorway.
 import { useEffect, useMemo, useRef } from "react";
 import type { RunState } from "@/engine";
 import { cn } from "@/lib/utils";
@@ -25,6 +27,18 @@ export interface Pose {
 const MAX_W = 216;
 const MAX_H = 176;
 
+/** The floor's extent in metres: the world's own, or round the ground's nodes. */
+function boundsOf(world: World | null, ground: Ground): { x: number; y: number; w: number; h: number } {
+  if (world) return world.bounds;
+  const xs = [...ground.nodes.values()].map((n) => n.x);
+  const ys = [...ground.nodes.values()].map((n) => n.y);
+  if (xs.length === 0) return { x: 0, y: 0, w: 1, h: 1 };
+  const pad = 1.5;
+  const x = Math.min(...xs) - pad;
+  const y = Math.min(...ys) - pad;
+  return { x, y, w: Math.max(1, Math.max(...xs) + pad - x), h: Math.max(1, Math.max(...ys) + pad - y) };
+}
+
 /** The route's points in metres: through each edge's doorway, from the player's node to the goal. */
 export function routePoints(ground: Ground, route: readonly string[]): Vec[] {
   if (route.length === 0) return [];
@@ -43,7 +57,8 @@ export function Minimap({
   pose,
   className,
 }: {
-  world: World;
+  /** The fixture floor's rooms; null on a scan. */
+  world: World | null;
   ground: Ground;
   run: RunState;
   /** Each camera's mount, in metres. */
@@ -52,7 +67,7 @@ export function Minimap({
   pose: { readonly current: Pose | null };
   className?: string;
 }) {
-  const { bounds } = world;
+  const bounds = useMemo(() => boundsOf(world, ground), [world, ground]);
   const s = Math.min(MAX_W / bounds.w, MAX_H / bounds.h);
   const w = Math.round(bounds.w * s);
   const h = Math.round(bounds.h * s);
@@ -80,11 +95,20 @@ export function Minimap({
   }, [pose, s, bounds.x, bounds.y]);
 
   const here = ground.nodes.get(run.playerNode);
-  const hereRoom = here ? world.nodes.get(run.playerNode)?.roomId : undefined;
+  const hereRoom = here ? world?.nodes.get(run.playerNode)?.roomId : undefined;
   const route = useMemo(() => (waypoint ? routePoints(ground, waypoint.route) : []), [ground, waypoint]);
   const objective = ground.nodes.get(run.board.level.objective);
   const hunting = run.alarm === "alert" || run.alarm === "lockdown";
-  const doors = world.openings.filter((o) => o.doorId !== null && run.locked.includes(o.doorId));
+  const doors = ground.doors.filter((d) => run.locked.includes(d.doorId));
+  // Without rooms of ours (a scan), the floor is drawn as its walkable edges, each once.
+  const halls = useMemo(() => {
+    if (world) return [];
+    const out: { key: string; points: Vec[] }[] = [];
+    for (const [from, exits] of run.board.adjacency) {
+      for (const e of exits) if (from < e.to) out.push({ key: `${from}-${e.to}`, points: ground.path(from, e.to) });
+    }
+    return out;
+  }, [world, ground, run.board]);
 
   return (
     <div
@@ -102,7 +126,10 @@ export function Minimap({
         <span aria-hidden className="text-text-3">N ↑</span>
       </p>
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden className="block">
-        {world.rooms.map((room) => (
+        {halls.map((hall) => (
+          <polyline key={hall.key} points={hall.points.map(px).join(" ")} fill="none" stroke="var(--surface-3)" strokeWidth={6} strokeLinecap="round" strokeLinejoin="round" />
+        ))}
+        {(world?.rooms ?? []).map((room) => (
           <rect
             key={room.id}
             x={(room.outer.x - bounds.x) * s}

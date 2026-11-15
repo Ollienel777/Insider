@@ -12,7 +12,8 @@ import { placeLevel } from "@/level/placer";
 import cached from "../../../data/levels/F1.romaine-1974.json";
 import cachedF2 from "../../../data/levels/F2.sunset-1986.json";
 import cachedF3 from "../../../data/levels/F3.night-desk.json";
-import { choices, describeTurn, sprintChoices } from "./board";
+import { choices, describeTurn, planSteps, sprintChoices } from "./board";
+import { AlarmBanner } from "./alarm-banner";
 import { BoardView } from "./board-view";
 import { ChiefPanel, type ChiefState } from "./chief-panel";
 import { DangerMeter, UNSEEN, watcherPhrase } from "./danger-meter";
@@ -48,8 +49,10 @@ import {
   type RadioState,
 } from "./radio";
 import { RADIO_QUIET, RadioLine } from "./radio-line";
-import { FIRST_PERSON_PACE } from "./fp/run-view";
-import { RUN_SEED } from "./run-screen";
+import { FP } from "./fp/tuning";
+import { buildWorld, edgePath } from "./fp/world";
+import { firstPersonPace } from "./fp/run-view";
+import { Outcome, RUN_SEED } from "./run-screen";
 import { whyTargets } from "./why";
 
 const manifest = LevelManifest.parse(structuredClone(cached));
@@ -213,7 +216,8 @@ describe("the objective line's words", () => {
 // ---- first person: the same in real time -----------------------------------------
 
 describe("the HUD in first person (issue 115): seconds and plain words, not hops and turns", () => {
-  const pace = { unitM: 1, runMps: 1, turnMs: 1000 };
+  const pace = { unitM: 1, mps: 1, turnMs: 1000 };
+  const FIRST_PERSON_PACE = firstPersonPace(placed.level.floor, false);
 
   it("counts the seconds the route takes at a run, and a turn for each pick its locks still need", () => {
     // Round by c and e: three open hops of 2 units.
@@ -225,7 +229,66 @@ describe("the HUD in first person (issue 115): seconds and plain words, not hops
     // On the goal: nothing left.
     expect(secondsLeft({ ...locked, playerNode: "b" }, pace)).toBe(0);
     // Rounded up: never 0 short of the goal.
-    expect(secondsLeft(twoWays([]), { ...pace, runMps: 3 })).toBe(1);
+    expect(secondsLeft(twoWays([]), { ...pace, mps: 3 })).toBe(1);
+  });
+
+  it("walks each edge the way the body does, through its doorway, when the pace knows the way", () => {
+    // The hop through d-short bends out by 1 unit and back: 2 * sqrt(2) units, not 2.
+    const bent = (a: string, b: string) =>
+      a === "a" && b === "b" ? [{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 0 }] : [];
+    const locked = twoWays(["d-short", "d-far"]);
+    expect(secondsLeft(locked, { ...pace, edge: bent, turnMs: 0 })).toBe(Math.ceil(2 * Math.SQRT2));
+    // An edge the pace has no way for is straight, as before.
+    expect(secondsLeft(twoWays(["d-short"]), { ...pace, edge: bent })).toBe(6);
+  });
+
+  it("on a fixture floor, follows the walker's doorways at the controller's run, and its walk with Shift", () => {
+    const floor = placed.level.floor;
+    const run = start();
+    const world = buildWorld(floor);
+    const path = shortestPath(run.board, run.playerNode, [run.board.level.objective])!;
+    const throughDoors = path.slice(1).reduce((m, to, i) => {
+      const way = edgePath(world, path[i], to);
+      return m + way.slice(1).reduce((n, p, k) => n + Math.hypot(p.x - way[k].x, p.y - way[k].y), 0);
+    }, 0);
+    const straight = path.slice(1).reduce((m, to, i) => {
+      const [a, b] = [run.board.nodes.get(path[i])!, run.board.nodes.get(to)!];
+      return m + Math.hypot(b.x - a.x, b.y - a.y) * FP.unitM;
+    }, 0);
+    expect(throughDoors).toBeGreaterThan(straight);
+    const ran = firstPersonPace(floor, false);
+    const walked = firstPersonPace(floor, true);
+    expect(ran.mps).toBe(FP.runMps);
+    expect(walked.mps).toBe(FP.walkMps);
+    // Less the records door's picks, the time is the doorway path at that speed.
+    expect(routeLeft(run)?.locks).toBe(1);
+    expect(secondsLeft(run, { ...ran, turnMs: 0 })).toBe(Math.ceil(throughDoors / FP.runMps));
+    expect(secondsLeft(run, { ...walked, turnMs: 0 })).toBe(Math.ceil(throughDoors / FP.walkMps));
+    expect(secondsLeft(run, walked)!).toBeGreaterThan(secondsLeft(run, ran)!);
+  });
+
+  it("on a live scan's floor, times node to node in a straight line in the scan's own metres", () => {
+    const floor = { ...placed.level.floor, source: "matterport" } as typeof placed.level.floor;
+    const ran = firstPersonPace(floor, false);
+    // A scan's board is in metres already (its ground's `unitM` is 1), not the fixture floors' plan units.
+    expect(ran.unitM).toBe(1);
+    expect(ran.edge).toBeUndefined();
+    expect(ran.mps).toBe(FP.runMps);
+    expect(firstPersonPace(placed.level.floor, false).unitM).toBe(FP.unitM);
+  });
+
+  it("keeps the Details panel in real time: the plan says hold E, no turn count, the end in plain words", () => {
+    const run = start();
+    const lockStep = (realTime: boolean) => planSteps(placed, run, mission.objective, realTime).map((s) => s.label)[1];
+    expect(lockStep(true)).toBe("Pick the records room door: hold E at it");
+    expect(lockStep(false)).toBe("Pick the records room door, 2 turns");
+    expect(renderToStaticMarkup(<AlarmBanner alarm="calm" turn={null} />)).not.toContain('data-testid="turn"');
+    expect(renderToStaticMarkup(<AlarmBanner alarm="calm" turn={4} />)).toContain('data-testid="turn"');
+    const over: RunState = { ...run, turn: 12, status: "caught" };
+    const fp = renderToStaticMarkup(<Outcome placed={placed} run={over} realTime />);
+    expect(fp).toContain("No alarm raised. The debrief has the replay.");
+    expect(fp).not.toMatch(/turns?/);
+    expect(renderToStaticMarkup(<Outcome placed={placed} run={over} />)).toContain("12 turns, 0 alarm raises.");
   });
 
   it("gives the objective line seconds as well as the hops, and leaves the board's line as it was", () => {

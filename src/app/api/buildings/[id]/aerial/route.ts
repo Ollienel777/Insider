@@ -3,7 +3,7 @@
 // show whether this is a fixture massing or live imagery, and carries
 // `fallback` once a live failure has put Vexcel on fixtures, or when Vexcel is
 // live but this building is served as its massing (no coverage).
-import { getVexcel, noCoverageFallback } from "@/adapters/vexcel";
+import { getVexcel, hasFixtureMassing, noCoverageFallback } from "@/adapters/vexcel";
 import { forcedFromRequest } from "@/lib/mode";
 
 /** What the browser is told when the aerial fails; the cause stays in the server log. */
@@ -11,9 +11,14 @@ const AERIAL_FAILED = "The aerial service failed. Try again.";
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
   const { id } = await context.params;
-  const forced = forcedFromRequest(request).has("vexcel");
+  const forcedServices = forcedFromRequest(request);
+  const forced = forcedServices.has("vexcel");
   const { adapter } = getVexcel({ forced });
   try {
+    // CoStar forced to fixtures: no kit record to aim from, so a kit building has no aerial.
+    if (forcedServices.has("costar") && !(await hasFixtureMassing(id))) {
+      return Response.json({ mode: getVexcel({ forced }).mode, error: `no aerial for building "${id}"` }, { status: 404 });
+    }
     const aerial = await adapter.getAerial(id);
     // Read after the call: a live failure during it has switched Vexcel to fixtures.
     const { mode, fallback } = getVexcel({ forced });

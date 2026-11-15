@@ -86,7 +86,13 @@ export function analystTools(run: BuildRun) {
       if (!aerial) return json({ entries: [], note: "Vexcel has no aerial for this building" });
       return json({
         source: aerial.source,
-        heightM: aerial.heightM,
+        // A derived massing's height is the stories at a typical storey, not Vexcel's measurement.
+        ...(aerial.derived
+          ? {
+              estimatedHeightM: aerial.heightM,
+              note: "imagery aimed from the building's CoStar facts: the height is estimated from its stories, not measured, and no entries are tagged",
+            }
+          : { heightM: aerial.heightM }),
         entries: aerial.entries.map(({ id, kind, label, view, note }) => ({ id, kind, label, view, note })),
       });
     },

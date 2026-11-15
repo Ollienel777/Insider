@@ -37,10 +37,12 @@ export function saveRunView(view: RunView, storage?: Pick<Storage, "setItem">): 
 export interface RunViewState {
   view: RunView;
   choose: (view: RunView) => void;
-  /** First person could not be drawn here (no WebGL, or its context was lost): the board shows instead. */
+  /** First person could not be drawn here (no WebGL, its context was lost, a scan's mesh didn't load): the board shows instead. */
   unavailable: boolean;
+  /** Why, when it was said: the switch's tooltip. */
+  reason: string | null;
   /** Falls back to the board for this visit. The stored choice is left alone: another browser tab may draw it. */
-  fail: () => void;
+  fail: (reason?: string) => void;
 }
 
 /**
@@ -51,6 +53,7 @@ export interface RunViewState {
 export function useRunView(): RunViewState {
   const [view, setView] = useState<RunView>(DEFAULT_RUN_VIEW);
   const [unavailable, setUnavailable] = useState(false);
+  const [reason, setReason] = useState<string | null>(null);
   useEffect(() => {
     const timer = setTimeout(() => setView(loadRunView()), 0);
     return () => clearTimeout(timer);
@@ -59,6 +62,9 @@ export function useRunView(): RunViewState {
     setView(next);
     saveRunView(next);
   }, []);
-  const fail = useCallback(() => setUnavailable(true), []);
-  return { view: unavailable ? "board" : view, choose, unavailable, fail };
+  const fail = useCallback((why?: string) => {
+    setUnavailable(true);
+    setReason(why ?? null);
+  }, []);
+  return { view: unavailable ? "board" : view, choose, unavailable, reason, fail };
 }

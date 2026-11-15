@@ -21,7 +21,7 @@ export interface StrategyContext extends CrewContext {
   entries: string[];
 }
 
-export const STRATEGIES_PROMPT_HEAD = "You are the crew for a Heist Anywhere job, planning attempts on the building.";
+export const STRATEGIES_PROMPT_HEAD = "You are the crew for a Hobbs job, planning attempts on the building.";
 
 /** How many strategies the crew is asked for. */
 export const STRATEGY_COUNT = 5;
