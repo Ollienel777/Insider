@@ -8,9 +8,10 @@ import { cn } from "@/lib/utils";
 /**
  * How a line reads, by the rule down its left edge and its speaker's colour:
  * `next` for the step to take (the accent, as the plan's current step),
- * `warning` for a noise heard, `danger` for a sighting, `plain` otherwise.
+ * `warning` for a noise heard, `danger` for a sighting, `success` for the files
+ * taken or a door opened (issue 188), `plain` otherwise.
  */
-export type RadioTone = "plain" | "next" | "warning" | "danger";
+export type RadioTone = "plain" | "next" | "warning" | "danger" | "success";
 
 export interface RadioLineProps {
   /**
@@ -18,7 +19,7 @@ export interface RadioLineProps {
    * the speaker for where the line came from: "Recorded" on a Chief's line no
    * model wrote.
    */
-  line: { speaker: string; text: string; tone?: RadioTone; tag?: string | null } | null;
+  line: { speaker: string; text: string; tone?: RadioTone; tag?: string | null; moment?: string } | null;
   className?: string;
 }
 
@@ -30,6 +31,7 @@ const RULE: Readonly<Record<RadioTone, string>> = {
   next: "border-l-accent",
   warning: "border-l-warning",
   danger: "border-l-danger",
+  success: "border-l-success",
 };
 
 const SPEAKER: Readonly<Record<RadioTone, string>> = {
@@ -37,6 +39,7 @@ const SPEAKER: Readonly<Record<RadioTone, string>> = {
   next: "text-text-2",
   warning: "text-warning",
   danger: "text-danger",
+  success: "text-success",
 };
 
 /**
@@ -52,6 +55,7 @@ export function RadioLine({ line, className }: RadioLineProps) {
       data-testid="radio-line"
       data-speaker={line?.speaker}
       data-tone={line ? tone : undefined}
+      data-moment={line?.moment}
       className={cn(
         "flex gap-x-4 gap-y-1 rounded-md border border-l-2 border-border bg-surface-1 py-2 pr-4 pl-3 shadow-e-1",
         "max-md:min-h-20 max-md:flex-col md:min-h-16 md:items-center",

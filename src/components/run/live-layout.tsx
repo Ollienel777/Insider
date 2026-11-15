@@ -94,6 +94,17 @@ export function voiced(message: RadioMessage | null): RadioLineProps["line"] {
   return message ? { ...VOICE[message.kind], text: message.text, tag: message.tag ?? null } : null;
 }
 
+/**
+ * The radio line as shown: the files just taken or a door just opened has the
+ * air for its few turns (issue 188), in the success colour; a sighting or a
+ * noise still outranks it. Otherwise a guard's bark, else the radio's own line.
+ */
+export function onAir(hud: PlayHud, bark: RunLayoutProps["bark"] = null): RadioLineProps["line"] {
+  const callout = hud.radio?.kind === "sighting" || hud.radio?.kind === "noise";
+  if (hud.moment && !callout) return { speaker: "Crew", text: hud.moment.text, tone: "success", moment: hud.moment.kind };
+  return bark ?? voiced(hud.radio);
+}
+
 /** The rule under the HUD's top row: nothing at Calm, the alarm's colour above it. */
 const HUD_RULE: Readonly<Record<AlarmState, string>> = {
   calm: "border-transparent",
@@ -264,7 +275,7 @@ export function RunLayout({
           {live ? (
             <div key="radio" className="shrink-0 px-6 pt-2 pb-4 max-md:px-4">
               {hud ? (
-                <RadioLine line={bark ?? voiced(hud.radio)} className="mx-auto max-w-3xl" />
+                <RadioLine line={onAir(hud, bark)} className="mx-auto max-w-3xl" />
               ) : (
                 <Skeleton className="mx-auto h-16 max-w-3xl rounded-md max-md:h-20" />
               )}

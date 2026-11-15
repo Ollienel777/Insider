@@ -443,3 +443,15 @@ describe("E at a locked door seen from another node's area plays nothing", () =>
     expect(ground.regionOf(s.walker.pos)).toBe(s.run.playerNode);
   });
 });
+
+describe.each(CASES)("the prompt at a way out on $id (issue 188)", ({ id, cached }) => {
+  it("names the exit the player stands near once the objective is carried, and not before", () => {
+    const placed = placeLevel(LevelManifest.parse(structuredClone(cached)), structuredClone(FIXTURE_FLOORS[id]), RUN_SEED);
+    const ground = groundOf(buildWorld(placed.level.floor));
+    const exit = placed.level.exits[0];
+    const run: RunState = { ...createRun(placed.level), playerNode: exit };
+    const walker = createWalker(ground, run);
+    expect(promptFor(walker, ground, { ...run, carrying: true }, 0)).toEqual({ kind: "exit", nodeId: exit });
+    expect(promptFor(walker, ground, run, 0)?.kind).not.toBe("exit");
+  });
+});
