@@ -1,3 +1,4 @@
+import { Building2 } from "lucide-react";
 import { LAYERS, LayerDot, type Layer } from "@/components/shell/layer-dot";
 import { cn } from "@/lib/utils";
 import { BuildingCard, cardPlacement } from "./building-card";
@@ -50,17 +51,21 @@ export function MapPin({ building, x, y, selected, showCard, onSelect, onHover }
           disabled ? "cursor-default" : "cursor-pointer",
         )}
       >
+        {/* A little building marks the spot. */}
         <span
           aria-hidden
+          data-testid="pin-building"
           className={cn(
-            "size-3 rounded-full ring-2 ring-surface-0 transition-transform duration-fast",
-            disabled ? "bg-n-500" : selected ? "bg-accent" : "bg-text-1 group-hover:scale-125",
+            "flex size-6 items-center justify-center rounded-[5px] ring-2 ring-surface-0 shadow-e-1 transition-transform duration-fast",
+            disabled ? "bg-n-500 text-surface-0" : selected ? "bg-accent text-text-1" : "bg-text-1 text-surface-0 group-hover:scale-110",
           )}
-        />
+        >
+          <Building2 className="size-4 stroke-[2]" />
+        </span>
         {selected ? (
-          <span aria-hidden className="absolute size-6 rounded-full border border-accent" />
+          <span aria-hidden className="absolute size-9 rounded-[8px] border border-accent" />
         ) : null}
-        <span className="absolute top-[calc(50%+12px)] left-1/2 flex -translate-x-1/2 gap-0.5">
+        <span className="absolute top-[calc(50%+16px)] left-1/2 flex -translate-x-1/2 gap-0.5">
           {LAYER_ORDER.map((layer) => (
             <LayerDot key={layer} layer={layer} absent={!building.layers[layer]} decorative />
           ))}
@@ -68,7 +73,7 @@ export function MapPin({ building, x, y, selected, showCard, onSelect, onHover }
         <span
           aria-hidden
           className={cn(
-            "absolute top-1/2 left-[calc(50%+16px)] -translate-y-1/2 whitespace-nowrap rounded-sm bg-surface-0/80 px-1.5 text-xs font-medium",
+            "absolute top-1/2 left-[calc(50%+20px)] -translate-y-1/2 whitespace-nowrap rounded-sm bg-surface-0/80 px-1.5 text-xs font-medium",
             disabled ? "text-text-3" : selected ? "text-accent" : "text-text-1",
           )}
         >
