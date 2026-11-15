@@ -350,7 +350,9 @@ stopping at the first failure with that step's name and exit code:
    `NODE_OPTIONS=--max-old-space-size=1536` (the VM has 3.7 GB, and two gates
    may run at once).
 6. **Smoke.** `npm run smoke`: Playwright starts `next start` on
-   `PORT` (default 3100) with `reuseExistingServer: false`, in fake mode, and
+   `PORT` with `reuseExistingServer: false`, in fake mode (an explicit `PORT`
+   wins; on GitHub Actions it is 3100; otherwise the gate picks a free port
+   just before the smoke and logs it, so two local gates do not collide), and
    **asserts outcomes on the demo path**: the mission picker lists five
    missions; the cast screen for `romaine-1974` shows a funnel that starts at
    the fixture inventory's size and ends with three finalists, F1 first; the
@@ -402,7 +404,7 @@ required: with no `.env.local` the app runs fully in fake mode.
 | `NEXT_PUBLIC_MATTERPORT_SDK_KEY` | Showcase SDK key (bound to `localhost`, browser) | — |
 | `MATTERPORT_API_KEY`, `MATTERPORT_API_TOKEN` | Matterport GraphQL API, server only; unused until Q2 | — |
 | `HEIST_STATE_DIR` | where live casting results, live manifests and the demo epoch are written; never inside the repo's tracked files | `.heist/` |
-| `PORT` | server port, also the smoke test's | `3100` |
+| `PORT` | server port, also the smoke test's (a local gate picks a free one unless set) | `3100` |
 
 **How fake mode works.** Each adapter's `index.ts` reads its mode once. In live
 mode with a key missing, it uses the fake and the top bar's mode chip says
