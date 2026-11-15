@@ -327,7 +327,8 @@ body {
 
 /* The case file's cover (issue 166, src/components/shell/case-cover.tsx). Before
    script builds its strips, the sheet is one closed manila cover over the desk. */
-.case-cover { position: absolute; inset: 0; z-index: 70; perspective: 2400px; pointer-events: none; }
+/* Fixed to the window: it covers the whole screen, and its turning sheet never widens the page. */
+.case-cover { position: fixed; inset: 0; z-index: 70; perspective: 2400px; pointer-events: none; overflow: hidden; }
 html[data-cover-done] .case-cover { display: none; }
 .cover-sheet { position: absolute; inset: 4px 8px 8px; }
 .cover-sheet:not([data-built]) {

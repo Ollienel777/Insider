@@ -183,7 +183,7 @@ export function MissionList({ missions }: { missions: readonly Mission[] }) {
         </div>
         <p className="font-hand text-sm text-text-2">Somewhere in this city our agent finds a building that fits, then the board is built from it.</p>
         {/* Off the demo path: the map of every prepared building, kept for the building screens' "Back to the map". */}
-        <Link href="/map" className="w-fit font-mono text-xs text-text-2 underline decoration-border-strong underline-offset-4 hover:text-text-1">
+        <Link href="/map" className="inline-flex h-10 w-fit items-center font-mono text-xs text-text-2 underline decoration-border-strong underline-offset-4 hover:text-text-1">
           Or browse every prepared building on the map
         </Link>
         {/* The stamp, docked on the desk at the end of the tab row like every screen's action (see BuildingScreen). */}

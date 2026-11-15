@@ -399,7 +399,7 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
               )}
             </p>
           ) : null}
-          <p data-testid="fp-hint" className="flex items-center gap-3 rounded-sm bg-surface-1 px-3 py-1.5 text-sm text-text-2 shadow-e-1">
+          <p data-testid="fp-hint" className="flex max-w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-sm bg-surface-1 px-3 py-1.5 text-sm text-text-2 shadow-e-1">
             {hud.locked ? null : (
               <span data-testid="fp-look-hint" className="text-text-1">
                 {hud.refused ? "Hold the mouse button and drag to look" : "Click to look, or hold and drag"}
