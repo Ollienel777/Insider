@@ -53,6 +53,7 @@ import type { DetailReply, DetailRequest, RepairStats } from "./detail-worker";
 import { matchExposure } from "./exposure-match";
 import { HoleFill } from "./hole-fill";
 import { blankCube, PanoStore, type PanoCounts, type PanoUse } from "./panos";
+import { createCleanBackdrop, createCleanMaterial } from "./clean-material";
 import { createPhotoMaterial, createPhotoUniforms, type PhotoUniforms } from "./photo-material";
 import { createScanMaterial, SLOTS } from "./projection";
 import { createSphereMaterial } from "./sphere-material";
@@ -88,9 +89,11 @@ export interface ScanViewOptions {
    * What is drawn. "spheres" (the default): the panoramas themselves, each
    * a sphere pushed out to its own depth (sphere-material.ts), over the
    * mesh, which shows only through what the spheres leave out. "mesh": the
-   * mesh alone, painted from the panoramas and its textures.
+   * mesh alone, painted from the panoramas and its textures. "clean": the
+   * repaired mesh with the Matterpak's own textures alone and no panorama at
+   * all (clean-material.ts): less photographic, but nothing swims or ghosts.
    */
-  view?: "spheres" | "mesh";
+  view?: "spheres" | "mesh" | "clean";
   /** Vertical field of view, degrees. */
   fov?: number;
   /** Called whenever `status()` has news: a phase, the detailed mesh, the exposure match. */
@@ -169,6 +172,10 @@ const SMALL_TEXTURE = 512;
 /** Textures of surfaces this close to the eye, metres, are shown sharper, this many pixels square... */
 const SHARP_REACH = 4;
 const SHARP_TEXTURE = 1024;
+/** The clean view has only the textures to show: sharper ones, a little farther out. */
+const CLEAN_SHARP_REACH = 5;
+const CLEAN_SHARP_TEXTURE = 2048;
+const CLEAN_SHARP_MAX = 10;
 /** ...this many at most (each about 5.6 MB of GPU memory)... */
 const SHARP_MAX = 12;
 /** ...chosen again this often, seconds. */
@@ -270,6 +277,8 @@ export class ScanView {
   private lead = -1;
   private leadIn = 1;
   private readonly sphereView: boolean;
+  /** The clean view: the textures alone, no panoramas fetched. */
+  private readonly clean: boolean;
   private readonly fillMaterial: ShaderMaterial;
   /** For the fans that close small holes: a step farther behind, so a plane's patch over the same hole wins. */
   private readonly fanMaterial: ShaderMaterial;
@@ -303,12 +312,13 @@ export class ScanView {
     // Alpha 0 marks a pixel no surface covered, for the fill.
     this.renderer.setClearColor(new Color().setRGB(0.027, 0.035, 0.047), this.fill ? 0 : 1);
     this.blank = blankCube();
-    this.material = createScanMaterial(this.blank);
+    this.clean = options.view === "clean";
+    this.material = this.clean ? createCleanMaterial(null) : createScanMaterial(this.blank);
     this.photo = createPhotoUniforms(this.blank);
-    this.backdropMaterial = createPhotoMaterial(this.photo, "backdrop");
-    this.fillMaterial = createPhotoMaterial(this.photo, "stand-in");
-    this.fanMaterial = createPhotoMaterial(this.photo, "stand-in", null, 2);
-    this.sphereView = options.view !== "mesh";
+    this.backdropMaterial = this.clean ? createCleanBackdrop() : createPhotoMaterial(this.photo, "backdrop");
+    this.fillMaterial = this.clean ? createCleanMaterial(null, "stand-in") : createPhotoMaterial(this.photo, "stand-in");
+    this.fanMaterial = this.clean ? createCleanMaterial(null, "stand-in", 2) : createPhotoMaterial(this.photo, "stand-in", null, 2);
+    this.sphereView = options.view !== "mesh" && !this.clean;
     if (this.sphereView) {
       const { directions, index } = cubeSphere(SPHERE_CELLS);
       const sphere = new BufferGeometry();
@@ -677,6 +687,13 @@ export class ScanView {
       this.drawn.renderOrder = -30;
       this.scene.add(this.drawn);
 
+      this.loadDetail(manifest.detail);
+      if (this.clean) {
+        // No panoramas: the textures are the whole picture.
+        state.phase = "ready";
+        this.push();
+        return true;
+      }
       const sharp = sharpLayer(this.faces);
       this.panos = new PanoStore(this.renderer, geometry, Math.min(sharp.capacity, this.sphereView ? SPHERE_CUBES : SHARP_CUBES), sharp.size);
       this.panos.pair = this.sphereView;
@@ -692,7 +709,6 @@ export class ScanView {
       };
       this.panos.setPanos(manifest.panos);
 
-      this.loadDetail(manifest.detail);
       state.phase = "ready";
       this.push();
       return true;
@@ -798,8 +814,9 @@ export class ScanView {
         bytes: detail.bytes,
         textures: textured,
         small: SMALL_TEXTURE,
-        sharp: SHARP_TEXTURE,
+        sharp: this.clean ? CLEAN_SHARP_TEXTURE : SHARP_TEXTURE,
         repair: this.options.repair ?? "all",
+        clean: this.clean,
         panos: (this.manifest?.panos ?? []).filter((p) => p.faces !== null).map((p) => [p.position[0], p.position[1], p.position[2]]),
       };
       worker.postMessage(request);
@@ -856,6 +873,7 @@ export class ScanView {
       reply.groups.forEach((g, i) => geometry.addGroup(g.start, g.count, i));
       this.groups = reply.groups;
     }
+    if (reply.occlusion) geometry.setAttribute("occlusion", new BufferAttribute(reply.occlusion, 1));
     this.useFill(reply.fans, reply.stats.holes);
     if (this.fill && reply.patches.length > 0) this.usePatches(reply.patches, reply.patchPositions, reply.patchUvs);
     this.panos?.setGeometry(geometry);
@@ -975,7 +993,7 @@ export class ScanView {
     const map = this.sharp[group] ?? this.small[group];
     if (!map) return;
     const material = this.groupMaterials[group];
-    if (material === this.material) this.groupMaterials[group] = createPhotoMaterial(this.photo, "mesh", map);
+    if (material === this.material) this.groupMaterials[group] = this.clean ? createCleanMaterial(map) : createPhotoMaterial(this.photo, "mesh", map);
     else material.uniforms.uMap.value = map;
   }
 
@@ -984,10 +1002,10 @@ export class ScanView {
     const eye: [number, number, number] = [this.pose.x, this.pose.y, this.pose.z];
     const near = this.groups
       .map((g, i) => ({ i, d: distanceToGroup(g, eye), c: Math.hypot(g.centre[0] - eye[0], g.centre[1] - eye[1], g.centre[2] - eye[2]) }))
-      .filter(({ i, d }) => d <= SHARP_REACH && this.small[i] !== null)
+      .filter(({ i, d }) => d <= (this.clean ? CLEAN_SHARP_REACH : SHARP_REACH) && this.small[i] !== null)
       // Nearest first; among the boxes the eye stands in, the one whose middle is nearest.
       .sort((a, b) => a.d - b.d || a.c - b.c)
-      .slice(0, SHARP_MAX)
+      .slice(0, this.clean ? CLEAN_SHARP_MAX : SHARP_MAX)
       .map(({ i }) => i);
     const wanted = new Set(near);
     for (const i of this.sharpWanted) {
@@ -1062,7 +1080,7 @@ export class ScanView {
       const properties = this.renderer.properties.get(texture) as { __webglTexture?: WebGLTexture; __webglInit?: boolean };
       properties.__webglTexture = raw;
       properties.__webglInit = true;
-      const material = createPhotoMaterial(this.photo, "stand-in", texture);
+      const material = this.clean ? createCleanMaterial(texture, "stand-in") : createPhotoMaterial(this.photo, "stand-in", texture);
       const mesh = new Mesh(geometry, material);
       this.addFill(mesh);
       this.pages.push({ raw, texture, material, mesh });

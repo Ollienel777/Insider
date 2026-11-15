@@ -83,7 +83,7 @@ export interface WalkOptions {
   textured?: boolean;
   repair?: "all" | "none" | "shards" | "planes";
   /** What is drawn: the panoramas as spheres (the default), or the mesh. */
-  view?: "spheres" | "mesh";
+  view?: "spheres" | "mesh" | "clean";
   fill?: boolean;
   reducedMotion: boolean;
   /** Exposes the engine on `window` for poking at from the console. */
@@ -180,7 +180,7 @@ export class ScanWalk {
       speed: 0,
       projection: true,
       blend: "photo",
-      shows: options.view === "mesh" ? "mesh" : "spheres",
+      shows: options.view === "mesh" || options.view === "clean" ? "mesh" : "spheres",
       fixes: true,
       exposure: null,
       detail: { state: "none", triangles: 0, megabytes: 0, seconds: 0 },

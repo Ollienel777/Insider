@@ -12,8 +12,9 @@
 import { closeHoles } from "@/lib/scan-mesh/holes";
 import { inpaint } from "@/lib/scan-mesh/inpaint";
 import { isAllowedAssetUrl } from "@/lib/scan-mesh/manifest";
-import { fillPlanes, fitPlanes, flattenPlanes, type PlanePatch } from "@/lib/scan-mesh/planes";
-import { dropTriangles, findFloaters, findShards, SHARD_SCRAP } from "@/lib/scan-mesh/shards";
+import { vertexOcclusion } from "@/lib/scan-mesh/occlusion";
+import { fillPlanes, fitPlanes, flattenPlanes, PLANE_LIMITS, type PlanePatch } from "@/lib/scan-mesh/planes";
+import { dropTriangles, findFloaters, findShards, FLOATER_LIMITS, SHARD_SCRAP } from "@/lib/scan-mesh/shards";
 import { seenWork } from "./seen";
 import { distanceToGroup, parseMtl, parseTexturedObj, type TexturedGroup } from "@/lib/scan-mesh/textured";
 import {
@@ -42,6 +43,12 @@ export type DetailRequest =
       panos: [number, number, number][];
       /** Which repairs to make: the shards left out, the planes carried across their gaps. */
       repair: "all" | "none" | "shards" | "planes";
+      /**
+       * The clean view's repairs (issue 118): every shard out, seen or not,
+       * smaller and thinner floating pieces out, larger gaps in planes closed,
+       * and an occlusion value baked into each corner.
+       */
+      clean?: boolean;
     }
   /**
    * Fill the gaps (alpha under 128) of this picture of a surface from the
@@ -82,6 +89,8 @@ export type DetailReply =
       patchPositions: Float32Array;
       patchUvs: Float32Array;
       patches: PlanePatch[];
+      /** In the clean view: per corner of `positions`, 0 open to 1 shut in (lib/scan-mesh/occlusion.ts). */
+      occlusion: Float32Array | null;
       stats: RepairStats;
     }
   /** A picture's gaps filled; null when it had nothing to fill them from. */
@@ -130,6 +139,10 @@ const scope = self as unknown as WorkerScope;
 const SEEN_SLICE = 15_000;
 /** Range requests in flight at once for the textures. */
 const PARALLEL = 6;
+/** The clean view's limits: smaller and thinner pieces count as floating, and larger gaps are closed. */
+const CLEAN_FLOATERS = { ...FLOATER_LIMITS, maxArea: 4, needle: 0.2, needleLong: 0.4, minSeen: 0.7 };
+const CLEAN_PLANES = { ...PLANE_LIMITS, maxWallArea: 9, maxLevelArea: 40, minPatch: 0.01 };
+const CLEAN_HOLES = { maxEdges: 400, maxSpan: 2.2 };
 
 async function bytes(url: string, start: number, end: number): Promise<Uint8Array> {
   const response = await fetch(url, {
@@ -264,7 +277,7 @@ async function load(request: Extract<DetailRequest, { kind: "load" }>): Promise<
     // The textures' requests go out first; the repair holds this thread for a few seconds while they travel.
     const fetched = textured > 0 ? fetchTextures(url, total, parts.images) : null;
     try {
-      await repair(mesh.vertices, mesh.index, mesh.welded, shards.flags, request.panos, request.repair);
+      await repair(mesh.vertices, mesh.index, mesh.welded, shards.flags, request.panos, request.repair, request.clean === true);
     } catch {
       // The mesh stays as it was first sent.
     }
@@ -290,6 +303,7 @@ async function repair(
   shards: Uint8Array,
   panos: [number, number, number][],
   which: "all" | "none" | "shards" | "planes",
+  clean = false,
 ): Promise<void> {
   const started = performance.now();
   if (which === "none" || which === "planes") shards.fill(0);
@@ -313,14 +327,15 @@ async function repair(
       continue;
     }
     found++;
-    if (shards[t] & SHARD_SCRAP || !seenAll[t]) dropped++;
+    // The clean view has no photograph to make a seen shard read as the surface it is: every one goes.
+    if (clean || shards[t] & SHARD_SCRAP || !seenAll[t]) dropped++;
     else {
       shards[t] = 0;
       seen[keptCount++] = seenAll[t];
     }
   }
   // Pieces left hanging in the air, among what is still in.
-  const floaters = which === "all" || which === "shards" ? findFloaters(vertices, welded, shards, panos, undefined, seenAll) : { flags: new Uint8Array(0), count: 0, pieces: 0 };
+  const floaters = which === "all" || which === "shards" ? findFloaters(vertices, welded, shards, panos, clean ? CLEAN_FLOATERS : undefined, seenAll) : { flags: new Uint8Array(0), count: 0, pieces: 0 };
   if (floaters.count > 0) {
     keptCount = 0;
     for (let t = 0; t < shards.length; t++) {
@@ -349,7 +364,7 @@ async function repair(
     vertices,
     kept.welded,
     fit,
-    undefined,
+    clean ? CLEAN_PLANES : undefined,
     // Only true gaps are closed. What no panorama saw of a plane keeps the mesh's own surface and texture:
     // a patch laid over it reads as a slab set into the wall, its outline in steps.
     null,
@@ -360,7 +375,14 @@ async function repair(
   const afterFill = performance.now();
   const trimmed = dropTriangles(kept.index, kept.welded, kept.groups, fill.replaced);
   groups = trimmed.groups;
-  const closed = closeHoles(vertices, kept.welded);
+  const closed = closeHoles(vertices, kept.welded, clean ? CLEAN_HOLES : undefined);
+  let occlusion: Float32Array | null = null;
+  if (clean) {
+    // What is drawn, and its stand-ins, hide the space over each vertex.
+    const shut = vertexOcclusion(vertices, trimmed.welded);
+    occlusion = new Float32Array(corners);
+    for (let i = 0; i < index.length; i++) occlusion[index[i]] = shut[welded[i]];
+  }
   let replaced = 0;
   for (let t = 0; t < fill.replaced.length; t++) if (fill.replaced[t]) replaced++;
   scope.postMessage(
@@ -373,6 +395,7 @@ async function repair(
       patchPositions: fill.positions,
       patchUvs: fill.uvs,
       patches: fill.patches,
+      occlusion,
       stats: {
         shards: dropped + floaters.count,
         found,
@@ -391,7 +414,7 @@ async function repair(
         steps: [(afterSeen - started) / 1000, (afterFit - afterSeen) / 1000, (afterFill - afterFit) / 1000, (performance.now() - afterFill) / 1000],
       },
     },
-    [positions.buffer, trimmed.index.buffer, closed.triangles.buffer, fill.positions.buffer, fill.uvs.buffer],
+    [positions.buffer, trimmed.index.buffer, closed.triangles.buffer, fill.positions.buffer, fill.uvs.buffer, ...(occlusion ? [occlusion.buffer] : [])],
   );
 }
 

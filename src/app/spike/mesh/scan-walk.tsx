@@ -18,7 +18,7 @@ interface Props {
   /** Which of the mesh's repairs to make (scan-view.ts). */
   repair: "all" | "none" | "shards" | "planes";
   /** What is drawn: the panoramas as spheres, or the mesh. */
-  view: "spheres" | "mesh";
+  view: "spheres" | "mesh" | "clean";
   debug: boolean;
 }
 
