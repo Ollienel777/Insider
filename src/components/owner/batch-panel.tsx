@@ -12,6 +12,7 @@ import type { PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
 import { MeasureChange, MeasureChips, MeasureLines } from "./measure-lines";
 import { describeFix } from "./owner-edit";
+import { RULE_BASED_CREW } from "./crew-batch";
 import type { SetupMeasure } from "./setup-measure";
 import type { OwnerBatch, OwnerFix } from "./use-owner-batch";
 
@@ -107,7 +108,7 @@ export function BatchPanel({
   /** The batch's setup's name, null for the untouched starting point. */
   setupName: string | null;
   stale: boolean;
-  fixedSaved: { ok: boolean; setup: OwnerSetup } | null;
+  fixedSaved: { ok: boolean; setup: OwnerSetup; keptIn?: string } | null;
   /** The side the board shows once a fix is applied; the route and detector cards follow it. */
   side?: Side;
   /** The level the board draws (the after level on the After side); `generated` by default. */
@@ -181,10 +182,10 @@ export function BatchPanel({
           {batch.recorded ? (
             <span
               data-testid="owner-crew-recorded"
-              title={batch.reason ?? "Recorded strategies: no model was called."}
+              title={batch.derived ? RULE_BASED_CREW : (batch.reason ?? "Recorded strategies: no model was called.")}
               className="ml-auto rounded-sm border border-border px-1.5 py-0.5 label-caps text-text-2"
             >
-              Recorded
+              {batch.derived ? "Rule-based" : "Recorded"}
             </span>
           ) : null}
         </div>
@@ -368,7 +369,7 @@ function ChiefSection({
 }: {
   fix: OwnerFix;
   zoneName: (id: string) => string;
-  fixedSaved: { ok: boolean; setup: OwnerSetup } | null;
+  fixedSaved: { ok: boolean; setup: OwnerSetup; keptIn?: string } | null;
   measures: BatchMeasures | null;
   onOpenFixed: () => void;
 }) {
@@ -435,7 +436,7 @@ function BeforeAfter({
 }: {
   fix: Extract<OwnerFix, { status: "applied" }>;
   zoneName: (id: string) => string;
-  fixedSaved: { ok: boolean; setup: OwnerSetup } | null;
+  fixedSaved: { ok: boolean; setup: OwnerSetup; keptIn?: string } | null;
   measures: BatchMeasures | null;
   onOpenFixed: () => void;
 }) {
@@ -486,7 +487,7 @@ function BeforeAfter({
         fixedSaved.ok ? (
           <div className="flex items-center gap-3">
             <p data-testid="owner-fixed-saved" className="min-w-0 flex-1 text-sm text-text-2">
-              Saved as &ldquo;{fixedSaved.setup.name}&rdquo; on this device.
+              Saved as &ldquo;{fixedSaved.setup.name}&rdquo; {fixedSaved.keptIn ?? "on this device"}.
             </p>
             <Button variant="secondary" data-testid="owner-open-fixed" onClick={onOpenFixed}>
               Open it

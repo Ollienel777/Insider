@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { PlacedLevel } from "@/level/placer";
 import { cn } from "@/lib/utils";
+import { RULE_BASED_CREW } from "./crew-batch";
 import { detectorName, leftOut, routeRooms, Strip } from "./batch-panel";
 import type { DemoSetup } from "./demo-setups";
 import { MeasureChange, MeasureChips } from "./measure-lines";
@@ -43,10 +44,10 @@ const MadeUpChip = () => (
 );
 
 /** The prepared setups, each with a Load button: a demo is an ordinary setup, loaded in plain sight. */
-export function DemoList({ demos, onLoad }: { demos: readonly DemoSetup[]; onLoad: (name: string) => void }) {
+export function DemoList({ demos, onLoad, ms }: { demos: readonly DemoSetup[]; onLoad: (name: string) => void; ms?: number }) {
   if (demos.length === 0) return null;
   return (
-    <section aria-labelledby="owner-demo-label" className="flex flex-col gap-2" data-testid="owner-demos">
+    <section aria-labelledby="owner-demo-label" className="flex flex-col gap-2" data-testid="owner-demos" data-ms={ms}>
       <h2 id="owner-demo-label" className="label-caps text-text-3">
         Prepared for the demo
       </h2>
@@ -77,12 +78,15 @@ export function ComparePicker({
   planning,
   onPick,
   onCompare,
+  keptIn = "on this device",
 }: {
   options: readonly CompareOption[];
   pick: { a: string; b: string };
   planning: boolean;
   onPick: (pick: { a: string; b: string }) => void;
   onCompare: () => void;
+  /** Where saved setups are kept (`KEPT_IN_TAB` on a live scan). */
+  keptIn?: string;
 }) {
   const same = pick.a === pick.b;
   const enough = options.length >= 2;
@@ -124,7 +128,7 @@ export function ComparePicker({
         </>
       ) : (
         <p data-testid="owner-pair-empty" className="text-sm text-text-2">
-          Save two setups on this device to compare them.
+          Save two setups {keptIn} to compare them.
         </p>
       )}
     </section>
@@ -221,10 +225,10 @@ export function ComparePanel({
           {pair.recorded ? (
             <span
               data-testid="owner-pair-recorded"
-              title={pair.reason ?? "Recorded strategies: no model was called."}
+              title={pair.derived ? RULE_BASED_CREW : (pair.reason ?? "Recorded strategies: no model was called.")}
               className="ml-auto rounded-sm border border-border px-1.5 py-0.5 label-caps text-text-2"
             >
-              Recorded
+              {pair.derived ? "Rule-based" : "Recorded"}
             </span>
           ) : null}
         </div>

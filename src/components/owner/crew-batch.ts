@@ -12,6 +12,9 @@ import { placeLevel } from "@/level/placer";
 
 export type { StrategiesAnswer };
 
+/** The crew chip's note when the rule-based strategies stood in (issue 205). */
+export const RULE_BASED_CREW = "Rule-based strategies from the level's ways in: the model didn't answer in time.";
+
 export interface StrategiesRequest {
   buildingId: string;
   setupId?: string;
@@ -38,6 +41,7 @@ export async function askStrategies(
     dropped: DroppedStrategy.array().parse(answer.dropped ?? []),
     recorded: answer.recorded === true,
     ...(answer.reason && { reason: answer.reason }),
+    ...(answer.derived === true && { derived: true }),
   };
 }
 
