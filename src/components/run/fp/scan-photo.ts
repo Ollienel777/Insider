@@ -1023,12 +1023,18 @@ void main() {
       for (let v = start; v < start + count; v++) colour.setXYZ(v, c[0], c[1], c[2]);
     };
     const ceilingColour = median(ceiling, FALLBACK.ceiling);
+    // A wall face keeps its own colour only near its room's: one whose photographs were mostly a window's view is room paint.
+    const wallColour = (si: number): Rgb => {
+      const room = median(wallsBy.get(wallRoom[si]), wallAll);
+      const own = (ownWall.get(si)?.length ?? 0) >= 24 ? median(ownWall.get(si), room) : room;
+      return Math.hypot(own[0] - room[0], own[1] - room[1], own[2] - room[2]) < 0.12 ? own : room;
+    };
     this.surfaces.forEach((s, si) => {
       if (s.kind === "floor") return;
       const c =
         // A wall face its photographs saw well enough takes their colour (so its decals sit on their own paint);
         // one they barely saw takes its room's walls' colour.
-        s.kind === "wall" ? median((ownWall.get(si)?.length ?? 0) >= 24 ? ownWall.get(si) : wallsBy.get(wallRoom[si]), wallAll) : s.kind === "ceiling" ? ceilingColour : median(pieces.get(s.piece), pieceAll);
+        s.kind === "wall" ? wallColour(si) : s.kind === "ceiling" ? ceilingColour : median(pieces.get(s.piece), pieceAll);
       set(si * 6, 6, c);
     });
     for (const run of this.floorRuns) set(run.start, run.count, median(floorsBy.get(run.room), floorAll));

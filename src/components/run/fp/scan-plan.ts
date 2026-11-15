@@ -74,6 +74,8 @@ export const PLAN = Object.freeze({
   doorMinM: 0.6,
   /** No doorway narrower than this: the walls either side give way. */
   doorClearM: 0.95,
+  /** A walked opening into a room wider than this is a glass front with one door in it. */
+  glassDoorM: 1.5,
   /** Two parallel lines this close are one thick wall's two faces. */
   thickWallM: 0.5,
   glassMaxM: 8,
@@ -89,8 +91,8 @@ export interface PlanInput {
   /** The walked floor's height. */
   floorY: number;
   ceilingY: number;
-  /** The scan positions on this floor. */
-  nodes: readonly Vec[];
+  /** The scan positions on this floor; `open` where it stands in a corridor (circulation), not a room. */
+  nodes: readonly (Vec & { open?: boolean })[];
   /** The straight walks between them: the board's edges. */
   paths: readonly Seg[];
   /** Whether the mesh has this floor (within a step of `floorY`) under (x, y). */
@@ -108,6 +110,10 @@ export interface PlanWall extends Seg {
 export interface PlanDoorway extends Seg {
   width: number;
   lintel: boolean;
+  /** The scanner went through it (or stood in it): a real way in. */
+  walked: boolean;
+  /** Into the room it opens on (unit, plan x and y), its door swinging in; null when both sides are rooms or both corridor. */
+  room: Vec | null;
   /** No one went through it: its door is drawn shut, and is a wall (`PlanWall.door`). */
   shut: boolean;
 }
@@ -406,7 +412,7 @@ export function derivePlan(input: PlanInput): ScanPlan {
   joinCorners(lines);
 
   // Doorways: wherever a walk crosses a wall, or a scan position stands on one.
-  const nodesUV = nodes.map((n) => rot(n, angle));
+  const nodesUV = nodes.map((n) => ({ ...rot(n, angle), open: n.open ?? false }));
   const pathsUV = paths.map((s) => [rot(s.a, angle), rot(s.b, angle)] as const);
   let cuts = 0;
   for (const line of lines) {
@@ -555,6 +561,44 @@ export function derivePlan(input: PlanInput): ScanPlan {
     for (const [a, b] of line.head) covered += Math.max(0, Math.min(b, hi) - Math.max(a, lo));
     return covered / Math.max(1e-6, hi - lo);
   };
+  /** The nearest scan position each side of the line by the gap: which side is a room (not a corridor), +1 the left of increasing `along`. */
+  const roomSide = (line: Line, lo: number, hi: number): Vec | null => {
+    const mid = (lo + hi) / 2;
+    const near = (sign: number) => {
+      let best: (typeof nodesUV)[number] | null = null;
+      let bestD = Infinity;
+      nodesUV.forEach((n) => {
+        const across = (line.along === "v" ? n.v : n.u) - line.c;
+        if (across * sign <= 0.05) return;
+        const d = Math.hypot(across, (line.along === "v" ? n.u : n.v) - mid);
+        if (d < bestD && d < 6) {
+          bestD = d;
+          best = n;
+        }
+      });
+      return best as (typeof nodesUV)[number] | null;
+    };
+    const plus = near(1);
+    const minus = near(-1);
+    const roomPlus = plus !== null && !plus.open;
+    const roomMinus = minus !== null && !minus.open;
+    if (roomPlus === roomMinus) return null;
+    const sign = roomPlus ? 1 : -1;
+    const from = toWorld(line, mid);
+    const to = toWorld({ along: line.along, c: line.c + sign }, mid);
+    return { x: to.x - from.x, y: to.y - from.y };
+  };
+  /** Where along the line a walk crosses it within lo–hi (the middle when none does). */
+  const crossingAt = (line: Line, lo: number, hi: number) => {
+    for (const [p, q] of pathsUV) {
+      const dp = (line.along === "v" ? p.v : p.u) - line.c;
+      const dq = (line.along === "v" ? q.v : q.u) - line.c;
+      if (dp * dq >= 0) continue;
+      const at = (line.along === "v" ? p.u : p.v) + (dp / (dp - dq)) * ((line.along === "v" ? q.u : q.v) - (line.along === "v" ? p.u : p.v));
+      if (at > lo && at < hi) return at;
+    }
+    return (lo + hi) / 2;
+  };
   const spans: { line: Line; lo: number; hi: number }[] = [];
   let spansFrom = 0;
   // Each gap between two walls on a line: a doorway where the scanner went through it or stood in
@@ -592,12 +636,22 @@ export function derivePlan(input: PlanInput): ScanPlan {
       };
       if (walked(lo, hi)) {
         widen();
-        if (width <= PLAN.doorwayMaxM) doorways.push({ a: toWorld(line, lo), b: toWorld(line, hi), width, lintel: width <= PLAN.lintelMaxM, shut: false });
+        const room = roomSide(line, lo, hi);
+        if (width > PLAN.glassDoorM && room !== null && width <= PLAN.glassMaxM) {
+          // A wide opening into a room: a glass front with one door in it, where the scanner went through.
+          const at = Math.min(hi - PLAN.doorClearM / 2, Math.max(lo + PLAN.doorClearM / 2, crossingAt(line, lo, hi)));
+          const [d0, d1] = [at - PLAN.doorClearM / 2, at + PLAN.doorClearM / 2];
+          if (d0 - lo > 0.2) glass.push({ a: toWorld(line, lo), b: toWorld(line, d0) });
+          if (hi - d1 > 0.2) glass.push({ a: toWorld(line, d1), b: toWorld(line, hi) });
+          doorways.push({ a: toWorld(line, d0), b: toWorld(line, d1), width: d1 - d0, lintel: true, shut: false, walked: true, room });
+        } else if (width <= PLAN.doorwayMaxM) {
+          doorways.push({ a: toWorld(line, lo), b: toWorld(line, hi), width, lintel: width <= PLAN.lintelMaxM, shut: false, walked: true, room });
+        }
         kept.push([run[0], run[1]]);
       } else if ((headOver(line, lo, hi) >= 0.6 && width <= PLAN.doorwayMaxM && width >= 0.5) || (width >= PLAN.doorMinM && width < PLAN.glassMinM)) {
         // A doorway no one went through: open all the same, its leaf swung back. Only the game's locked doors shut.
         widen();
-        doorways.push({ a: toWorld(line, lo), b: toWorld(line, hi), width, lintel: width <= PLAN.lintelMaxM, shut: false });
+        doorways.push({ a: toWorld(line, lo), b: toWorld(line, hi), width, lintel: width <= PLAN.lintelMaxM, shut: false, walked: false, room: roomSide(line, lo, hi) });
         kept.push([run[0], run[1]]);
       } else if (width >= PLAN.glassMinM && width <= PLAN.glassMaxM) {
         glass.push({ a: toWorld(line, lo), b: toWorld(line, hi) });
@@ -622,6 +676,13 @@ export function derivePlan(input: PlanInput): ScanPlan {
   }
   for (const line of lines) for (const [lo, hi] of line.runs) walls.push({ a: toWorld(line, lo), b: toWorld(line, hi), boundary: false });
 
+  // One doorway where two were found (a wall's two faces, two gaps side by side): the walked one, else the first.
+  for (let k = doorways.length - 1; k >= 0; k--) {
+    const mk = { x: (doorways[k].a.x + doorways[k].b.x) / 2, y: (doorways[k].a.y + doorways[k].b.y) / 2 };
+    const twin = doorways.findIndex((d, j) => j !== k && Math.hypot((d.a.x + d.b.x) / 2 - mk.x, (d.a.y + d.b.y) / 2 - mk.y) < 0.8);
+    if (twin >= 0 && (twin < k || doorways[twin].walked) && !(doorways[k].walked && !doorways[twin].walked)) doorways.splice(k, 1);
+  }
+
   // No glass right before or behind a doorway (a wall's other face, a line of its own): the way through stays open.
   const segDistance = (g: Seg, p: Vec) => {
     const ex = g.b.x - g.a.x;
@@ -632,6 +693,8 @@ export function derivePlan(input: PlanInput): ScanPlan {
   };
   for (let k = glass.length - 1; k >= 0; k--) {
     if (doorways.some((d) => segDistance(glass[k], { x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2 }) < 0.6)) glass.splice(k, 1);
+    // Nor right by a scan position: the scanner stood there, so it was open.
+    else if (nodes.some((n) => segDistance(glass[k], n) < 0.6)) glass.splice(k, 1);
   }
 
   // Where the floor ends with no wall, a wall: what stops the player is drawn.
@@ -813,7 +876,7 @@ export const FURNITURE = Object.freeze({
   wallClearM: 0.15,
   /** No furniture this close to a scan position: the scanner stood there. (A board edge is a line of sight, not a walk: desks stand under them.) */
   nodeClearM: 0.45,
-  pathClearM: 0,
+  pathClearM: 0.3,
   /** A box thinner than this is dropped (a half-height wall is a box one cell thick). */
   minSideM: 0.1,
   minAreaM2: 0.08,
@@ -1033,4 +1096,95 @@ export function roomLabels(plan: ScanPlan, nodes: readonly (Vec & { room: string
     });
     return rooms[best] ?? "";
   };
+}
+
+/**
+ * One door to a room. The floor is cut into rooms at every wall, pane and
+ * doorway; a room no corridor position stands in, with more than one doorway
+ * into it, keeps the ones the scanner walked through (if far enough apart to
+ * be two real doors), else its first, and the others become wall.
+ */
+export function oneDoorPerRoom(plan: ScanPlan, nodes: readonly (Vec & { open?: boolean })[]): number {
+  const { floor } = plan;
+  const { cols, rows } = floor;
+  const blockers: Seg[] = [...plan.walls, ...plan.glass, ...plan.doorways];
+  const side = (u: Vec, v: Vec, w: Vec) => (v.x - u.x) * (w.y - u.y) - (v.y - u.y) * (w.x - u.x);
+  const BUCKET = 2;
+  const buckets = new Map<string, Seg[]>();
+  for (const w of blockers) {
+    for (let bx = Math.floor(Math.min(w.a.x, w.b.x) / BUCKET); bx <= Math.floor(Math.max(w.a.x, w.b.x) / BUCKET); bx++) {
+      for (let by = Math.floor(Math.min(w.a.y, w.b.y) / BUCKET); by <= Math.floor(Math.max(w.a.y, w.b.y) / BUCKET); by++) {
+        const key = `${bx}:${by}`;
+        const list = buckets.get(key);
+        if (list) list.push(w);
+        else buckets.set(key, [w]);
+      }
+    }
+  }
+  const crosses = (p: Vec, q: Vec) => {
+    for (const key of new Set([`${Math.floor(p.x / BUCKET)}:${Math.floor(p.y / BUCKET)}`, `${Math.floor(q.x / BUCKET)}:${Math.floor(q.y / BUCKET)}`])) {
+      for (const w of buckets.get(key) ?? []) if (side(p, q, w.a) * side(p, q, w.b) <= 0 && side(w.a, w.b, p) * side(w.a, w.b, q) < 0) return true;
+    }
+    return false;
+  };
+  const room = new Int32Array(cols * rows).fill(-1);
+  let rooms = 0;
+  for (let start = 0; start < room.length; start++) {
+    if (room[start] >= 0 || floor.cells[start] !== 1) continue;
+    room[start] = rooms;
+    const queue = [start];
+    for (let h = 0; h < queue.length; h++) {
+      const k = queue[h];
+      const i = k % cols;
+      const j = (k - i) / cols;
+      const from = cellCentre(floor, i, j);
+      for (const n of [i > 0 ? k - 1 : -1, i < cols - 1 ? k + 1 : -1, j > 0 ? k - cols : -1, j < rows - 1 ? k + cols : -1]) {
+        if (n < 0 || room[n] >= 0 || floor.cells[n] !== 1) continue;
+        if (crosses(from, cellCentre(floor, n % cols, Math.floor(n / cols)))) continue;
+        room[n] = rooms;
+        queue.push(n);
+      }
+    }
+    rooms++;
+  }
+  const roomAt = (p: Vec) => {
+    const { u, v } = rot(p, floor.angle);
+    const i = Math.floor((u - floor.u0) / floor.cell);
+    const j = Math.floor((v - floor.v0) / floor.cell);
+    return i >= 0 && j >= 0 && i < cols && j < rows ? room[j * cols + i] : -1;
+  };
+  const corridor = new Set(nodes.filter((n) => n.open).map((n) => roomAt(n)));
+  // Each doorway's rooms, either side.
+  const byRoom = new Map<number, number[]>();
+  plan.doorways.forEach((d, index) => {
+    const len = Math.hypot(d.b.x - d.a.x, d.b.y - d.a.y) || 1;
+    const n = { x: -(d.b.y - d.a.y) / len, y: (d.b.x - d.a.x) / len };
+    const mid = { x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2 };
+    for (const s of [1, -1]) {
+      const r = roomAt({ x: mid.x + n.x * 0.4 * s, y: mid.y + n.y * 0.4 * s });
+      if (r < 0 || corridor.has(r)) continue;
+      const list = byRoom.get(r);
+      if (list) list.push(index);
+      else byRoom.set(r, [index]);
+    }
+  });
+  const closed = new Set<number>();
+  const midOf = (d: PlanDoorway) => ({ x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2 });
+  for (const list of byRoom.values()) {
+    if (list.length < 2) continue;
+    const walked = list.filter((i) => plan.doorways[i].walked);
+    const keep: number[] = [];
+    for (const i of walked.length > 0 ? walked : [list[0]]) {
+      // Two walked doors into one room only when they are well apart: two real doorways.
+      if (keep.every((k) => Math.hypot(midOf(plan.doorways[k]).x - midOf(plan.doorways[i]).x, midOf(plan.doorways[k]).y - midOf(plan.doorways[i]).y) > 2.5)) keep.push(i);
+    }
+    for (const i of list) if (!keep.includes(i) && !plan.doorways[i].walked) closed.add(i);
+  }
+  const doorways: PlanDoorway[] = [];
+  plan.doorways.forEach((d, i) => {
+    if (closed.has(i)) plan.walls.push({ a: d.a, b: d.b, boundary: false });
+    else doorways.push(d);
+  });
+  plan.doorways = doorways;
+  return closed.size;
 }

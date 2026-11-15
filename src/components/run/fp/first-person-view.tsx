@@ -46,7 +46,7 @@ import { noticeOf } from "./notice";
 import { readPalette } from "./palette";
 import { joinRefusal, joinScan } from "./scan-join";
 import { nodeFloors, scanGround } from "./scan-ground";
-import { addFurniture, derivePlan, FURNITURE, PLAN, planSolid, roomLabels, type ScanPlan } from "./scan-plan";
+import { addFurniture, derivePlan, FURNITURE, oneDoorPerRoom, PLAN, planSolid, roomLabels, type ScanPlan } from "./scan-plan";
 import { buildDress, DRESS } from "./scan-dress";
 import { fetchPhotoPanos, PhotoSet } from "./scan-photo";
 import { buildPlanGroup } from "./scan-plan-scene";
@@ -597,18 +597,23 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         return a && b ? [{ a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y } }] : [];
       });
       const geometry = tree.bvh.geometry;
+      // Which scan positions stand in a corridor: a doorway's room is the side that is not one.
+      const corridorRooms = new Set(floor.rooms.filter((r) => /corridor|hall|lobby/i.test(r.label)).map((r) => r.id));
+      const circulation = floor.nodes.map((n) => ({ x: n.x, y: n.y, open: corridorRooms.has(n.roomId) }));
       const plan = derivePlan({
         positions: geometry.attributes.position.array,
         index: geometry.index?.array ?? null,
         floorY,
         ceilingY,
-        nodes: floor.nodes.map((n) => ({ x: n.x, y: n.y })),
+        nodes: circulation,
         paths,
         hasFloor: (x, z) => {
           const y = tree.floorBelow(x, floorY + 0.4, z, 0.8);
           return y !== null && Math.abs(y - floorY) < 0.3;
         },
       });
+      // One door to a room: extra doorways no one went through become wall.
+      const walledUp = oneDoorPerRoom(plan, circulation);
       // The furniture, on the set only: the blockout draws none, and none may stop the player unseen.
       if (dressed) {
         // The detailed mesh has the desks the walkable one smooths away; without it, the walkable one.
@@ -625,13 +630,13 @@ export default function FirstPersonView({ placed, run, onAct, onUnavailable, onH
         plan.furniture = plan.furniture.filter((box) =>
           plan.doorways.every((d) => {
             const mid = { x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2 };
-            return box.corners.every((p, k) => distanceTo({ a: p, b: box.corners[(k + 1) % 4] }, mid) > 0.6);
+            return box.corners.every((p, k) => distanceTo({ a: p, b: box.corners[(k + 1) % 4] }, mid) > 0.9);
           }),
         );
       }
       // Counts only.
       console.info(
-        `First person draws the scan's plan: ${plan.walls.length} walls (${plan.stats.boundary} at the floor's edge), ${plan.doorways.length} doorways, ${plan.furniture.length} pieces of furniture, in ${Math.round(performance.now() - started)} ms`,
+        `First person draws the scan's plan: ${plan.walls.length} walls (${plan.stats.boundary} at the floor's edge), ${plan.doorways.length} doorways (${walledUp} more walled up, one door to a room), ${plan.glass.length} panes of glass, ${plan.furniture.length} pieces of furniture, in ${Math.round(performance.now() - started)} ms`,
       );
       const ground = scanGround(floor, planSolid(plan), join.heights, { leashM: PLAN.leashM + 1 });
       const nodeRoom = new Map(floor.nodes.map((n) => [n.id, n.roomId]));

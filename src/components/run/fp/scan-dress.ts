@@ -18,6 +18,7 @@ import {
   type Material,
 } from "three";
 import type { Vec } from "./ground";
+import { distanceTo } from "./motion";
 import { onPlanFloor, PLAN, type ScanPlan } from "./scan-plan";
 import { FP } from "./tuning";
 
@@ -106,9 +107,9 @@ export function buildDress(plan: ScanPlan, gameDoors: readonly Vec[]): Group {
     if (len < 1e-3) continue;
     const d = { x: (door.b.x - door.a.x) / len, y: (door.b.y - door.a.y) / len };
     const head = door.width <= DRESS.openingM ? doorTop : y1;
-    // Jambs inside each end of the opening, and the head across.
-    bar(door.a, { x: door.a.x + d.x * f, y: door.a.y + d.y * f }, thick + 2 * f / 3, y0, head, metal);
-    bar({ x: door.b.x - d.x * f, y: door.b.y - d.y * f }, door.b, thick + 2 * f / 3, y0, head, metal);
+    // Jambs on the wall's ends either side, outside the opening: the way through keeps its full width.
+    bar({ x: door.a.x - d.x * f, y: door.a.y - d.y * f }, door.a, thick + 2 * f / 3, y0, head, metal);
+    bar(door.b, { x: door.b.x + d.x * f, y: door.b.y + d.y * f }, thick + 2 * f / 3, y0, head, metal);
     if (head < y1) bar(door.a, door.b, thick + 2 * f / 3, head - f, head, metal);
     if (door.width > DRESS.openingM) continue;
     const centre = lerp(door.a, door.b, 0.5);
@@ -129,11 +130,23 @@ export function buildDress(plan: ScanPlan, gameDoors: readonly Vec[]): Group {
     if (gameDoors.some((g) => Math.hypot(g.x - centre.x, g.y - centre.y) < Math.max(0.8, door.width / 2 + 0.3))) continue;
     // Not one of the game's doors: its leaf (or pair) stands open, swung back against the wall, into the side with floor.
     const n = { x: -d.y, y: d.x };
-    const side = onPlanFloor(floor, centre.x + n.x * 0.6, centre.y + n.y * 0.6) ? 1 : -1;
-    const leaves = door.width - 2 * f > DRESS.leafMaxM * 1.2 ? 2 : 1;
-    const leafW = (door.width - 2 * f) / leaves;
+    // The leaf swings into the room, never into the corridor; with no room either side, into the side with floor.
+    const side = door.room ? (door.room.x * n.x + door.room.y * n.y > 0 ? 1 : -1) : onPlanFloor(floor, centre.x + n.x * 0.6, centre.y + n.y * 0.6) ? 1 : -1;
+    const leaves = door.width > DRESS.leafMaxM * 1.2 ? 2 : 1;
+    const leafW = door.width / leaves;
+    // A single leaf hangs on the end nearer the room's corner (a wall square to the doorway, inside the room).
+    const inside = (p: Vec) => ({ x: p.x + n.x * side * 0.5, y: p.y + n.y * side * 0.5 });
+    const toCorner = (p: Vec) =>
+      Math.min(
+        9,
+        ...plan.walls
+          .filter((w) => Math.abs(((w.b.x - w.a.x) * d.x + (w.b.y - w.a.y) * d.y) / (Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y) || 1)) < 0.3)
+          .map((w) => distanceTo(w, inside(p))),
+      );
+    const flip = leaves === 1 && toCorner(door.b) < toCorner(door.a);
     for (let k = 0; k < leaves; k++) {
-      const hinge = k === 0 ? { x: door.a.x + d.x * f, y: door.a.y + d.y * f } : { x: door.b.x - d.x * f, y: door.b.y - d.y * f };
+      const first = flip ? k === 1 : k === 0;
+      const hinge = first ? { x: door.a.x, y: door.a.y } : { x: door.b.x, y: door.b.y };
       const out = { x: n.x * side, y: n.y * side };
       const off = thick / 2 + DRESS.leafM / 2;
       const from = { x: hinge.x + out.x * off, y: hinge.y + out.y * off };
@@ -141,7 +154,7 @@ export function buildDress(plan: ScanPlan, gameDoors: readonly Vec[]): Group {
       bar(from, to, DRESS.leafM, y0 + 0.01, doorTop - 0.02, wood);
       // A handle near the far edge, both faces.
       const grip = lerp(from, to, 0.88);
-      const across = { x: k === 0 ? d.x : -d.x, y: k === 0 ? d.y : -d.y };
+      const across = { x: first ? d.x : -d.x, y: first ? d.y : -d.y };
       bar(
         { x: grip.x - across.x * 0.06, y: grip.y - across.y * 0.06 },
         { x: grip.x + across.x * 0.06, y: grip.y + across.y * 0.06 },
