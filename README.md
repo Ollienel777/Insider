@@ -2,8 +2,8 @@
 
 **A stealth game whose levels an AI agent builds from a building's data.
 CoStar's record sets the security era, the guard force and the quiet zones,
-Vexcel's aerial sets the ways in, and Matterport's scan is the floor you play
-on, in first person. Trip a camera and an AI Security Chief re-plans the
+Vexcel's aerial shows the building from above, and Matterport's scan is the
+floor you play on, in first person. Trip a camera and an AI Security Chief re-plans the
 guards in front of you and says why. Click any guard to see which data put it
 there. Then Owner Mode lets a building's security lead put in their own
 security and watch an AI crew try 50 ways in.**
@@ -20,6 +20,8 @@ deterministic), and the Chief is given that summary and opens its rationale
 by saying so ([`tests/smoke/adapt.spec.ts`](tests/smoke/adapt.spec.ts)).
 Amazon Bedrock is wired in as an alternative model provider
 ([`bedrock.ts`](src/adapters/llm/bedrock.ts)) and not used.
+
+*Screenshots from 14 November, before the case-file restyle and first person; the Run now opens in first person on desktop.*
 
 ![The run screen: the player is seen by camera C2, the alarm jumps to Alert, the Security Chief's re-plan is in the side panel, and the Why card for guard G4 names the Vexcel and CoStar fields that put it there](docs/screenshots/run-why-card.png)
 
@@ -77,12 +79,15 @@ isn't ready yet.
 
 ## A real building
 
-In live mode, a real building from the CoStar kit reaches the game through a
-list the team sets on the server: `SHOWCASE_LEVELS`, pairs of kit building id
-and mission ([`showcase.ts`](src/lib/showcase.ts)). Casting does not choose
-it. The live CoStar adapter's inventory search still answers from the
-fixture inventory, because the kit mapping does not yet give a property type
-or entry kinds ([`live.ts`](src/adapters/costar/live.ts)), and
+In live mode, a real building from the CoStar kit reaches the game only by a
+person's choice, never an agent's: the team's `SHOWCASE_LEVELS` list on the
+server, pairs of kit building id and mission
+([`showcase.ts`](src/lib/showcase.ts)), or, with that list empty, any kit
+building in a mapped city, opened from `/map`
+([`map/page.tsx`](src/app/map/page.tsx)), whose level is built on demand.
+The live CoStar adapter's inventory search still answers from the fixture
+inventory, because the kit mapping does not yet give a property type or
+entry kinds ([`live.ts`](src/adapters/costar/live.ts)), and
 [`/api/cast`](src/app/api/cast/[missionId]/route.ts) serves a cached
 Casting Director shortlist, cast over that inventory, in every mode. The
 committed shortlists were cast on recorded model turns.
@@ -108,8 +113,13 @@ For a mission on that list:
 
 ## First person
 
-First person is the Run screen's default view on a desktop browser; a
-switch goes back to the board, and a phone-width screen gets the board.
+The Run screen has three ways to look: first person, the default on a
+desktop browser, with a switch back to the board (a phone-width screen gets
+the board); on the board, a Tactical / Live switch, where Tactical waits for
+you and Live passes a turn you let run out
+([`live-controls.tsx`](src/components/run/live-controls.tsx)); and on a live
+scan, the board beside the scan, with a Split / Board / Scan switch
+([`run-stage.tsx`](src/components/run/run-stage.tsx)).
 
 - **On the fixture floors** (F1, F2 and F3), our own three.js renderer draws
   the hand-authored floor
@@ -119,7 +129,9 @@ switch goes back to the board, and a phone-width screen gets the board.
   and the mesh are checked against each other on every load, and any
   mismatch, failed load or missing key gives the board back with a line
   saying why.
-- **Real time.** A turn passes every 700 ms whether or not you move
+- **Real time.** The clock waits for your first move ("Look around. The
+  clock starts when you move."). Once you first move, a turn passes every
+  700 ms whether or not you move again
   ([`FP_TURN_MS`](src/components/run/fp/tuning.ts)); guards and camera sweeps
   keep going. `P` pauses. The engine still decides everything: walking into
   another node's area plays that move.
@@ -134,7 +146,7 @@ switch goes back to the board, and a phone-width screen gets the board.
   says so. A run ends on a card that says why, with the way to the Debrief.
 
 **Inside the real building, expect to be caught.** Nobody on the team has
-won that run by hand, and a capture, which the Debrief replays, is the
+won that run yet, and a capture, which the Debrief replays, is the
 expected ending. For a winnable first-person run, play fixture F1.
 
 ## Owner Mode
@@ -204,14 +216,16 @@ element ids ([`/api/chief/fix`](src/app/api/chief/fix/route.ts)). A shipped
 version would unlock Owner Mode only for verified owners of the building,
 which CoStar's ownership records already make possible.
 
+*Screenshots from 14 November, before the case-file restyle and first person; the Run now opens in first person on desktop.*
+
 | | |
 |---|---|
 | ![The dossier: the Data to Level table and the Level Builder's recorded trace](docs/screenshots/dossier.png) | ![Scout: the fixture massing of Halvorsen Tower with five tagged entries](docs/screenshots/scout.png) |
 | **Dossier.** The Level Builder's run replays as a checklist of todos, subagent tasks and tool calls, and the Data → Level table fills in. | **Scout, fake mode.** The fixture massing, drawn from footprint and height, with its tagged ways in. Live mode shows Vexcel's photos instead. |
-| ![Drill Mode: West Stair blocked, 54 s to clear, warden posts and the narrator's recommendations](docs/screenshots/drill.png) | ![The Layer lens on the Run board: guards, cameras, locks and zones tinted CoStar, entries Vexcel, rooms Matterport, with a legend counting each](docs/screenshots/33-run-lens-on-1440.png) |
-| **Drill (on hold).** Same floor, a stair blocked: time to clear, the queue, warden posts. | **Layer lens.** Every element tinted and lettered C, V or M by its source, with a legend counting each layer. |
-| ![Owner Mode's batch: 17 of 50 attempts out, one row per crew strategy, the most common way out drawn on the board](docs/screenshots/128-owner-batch.png) | ![Owner Mode before and after the Chief's fix: 17 of 50 out before, 0 of 50 after, with what changed](docs/screenshots/128-owner-before-after.png) |
-| **Owner Mode.** 50 attempts against the setup: the count, each strategy, and the way out the crew used most. | **Before and after.** The Chief's one change, rerun: 17 of 50 to 0 of 50. |
+| ![The Layer lens on the Run board: guards, cameras, locks and zones tinted CoStar, entries Vexcel, rooms Matterport, with a legend counting each](docs/screenshots/33-run-lens-on-1440.png) | ![Owner Mode's batch: 17 of 50 attempts out, one row per crew strategy, the most common way out drawn on the board](docs/screenshots/128-owner-batch.png) |
+| **Layer lens.** Every element tinted and lettered C, V or M by its source, with a legend counting each layer. | **Owner Mode.** 50 attempts against the setup: the count, each strategy, and the way out the crew used most. |
+| ![Owner Mode before and after the Chief's fix: 17 of 50 out before, 0 of 50 after, with what changed](docs/screenshots/128-owner-before-after.png) | |
+| **Before and after.** The Chief's one change, rerun: 17 of 50 to 0 of 50. | |
 
 ## How it works
 
@@ -223,7 +237,7 @@ to Vexcel, Matterport's Model API and the model.
 flowchart LR
   subgraph Data["Sponsor data (adapters)"]
     CS["CoStar: building record"]
-    VX["Vexcel: aerial and entries"]
+    VX["Vexcel: aerial (entries hand-tagged on fixtures)"]
     MP["Matterport: sweeps, rooms, mesh"]
   end
 
@@ -267,7 +281,7 @@ flowchart LR
   end
 
   UI -- "order" --> CR
-  UI -- "alarm change, zone ids only" --> CH
+  UI -- "alarm change: zones, guards, no coordinates" --> CH
 ```
 
 There are two `deepagents` agents, and both run ahead of play: the Casting
@@ -355,10 +369,10 @@ times out is answered by a recording, or for the Chief by its template.
 | technology | what it does in the product | code | fake | live |
 |---|---|---|---|---|
 | **CoStar** building data | Year built, class, stories, floor area and available suites become the security era, guard force, staged floor, and quiet and crowded zones; a showcase building's record is set against its mission's needs on the Cast screen | [`src/adapters/costar/`](src/adapters/costar/index.ts): `getCoStar`; [`live.ts`](src/adapters/costar/live.ts) `createLiveCoStar`; the kit reader [`kit.ts`](src/adapters/costar/kit.ts) `loadKitIndex`; [`mapping.ts`](src/adapters/costar/mapping.ts) `KIT_FILES`. Read by [`src/level/rules.ts`](src/level/rules.ts) | Five invented buildings ([`fixtures/costar/buildings.json`](fixtures/costar/buildings.json)) and an invented 61-building inventory for casting ([`fixtures/inventory.json`](fixtures/inventory.json)) | `COSTAR_KIT_DIR`, the unpacked kit, never committed. Kit buildings show on the map (only the `SHOWCASE_LEVELS` ones when that is set) and get levels built live. The inventory search still answers from the fixtures |
-| **Vexcel** aerial imagery | The ways in and out, and the Scout screen | [`src/adapters/vexcel/`](src/adapters/vexcel/index.ts): `getVexcel`; [`live.ts`](src/adapters/vexcel/live.ts) `createLiveVexcel`; [`derived-massing.ts`](src/adapters/vexcel/derived-massing.ts). Served by [`/api/buildings/[id]/aerial`](src/app/api/buildings/[id]/aerial/route.ts) | A massing drawn as SVG from each building's footprint and height, in five views (N, E, S, W, ortho), with hand-placed entry tags, [`fixtures/vexcel/`](fixtures/vexcel/) | `VEXCEL_API_BASE` and `VEXCEL_API_KEY`. Real ortho and oblique photos, proxied through the server and held in memory, never stored. A fixture building's hand-placed tags are pinned on the photo; a kit building is aimed from a square derived from its CoStar facts and has no tags. Entries are not detected from the imagery |
+| **Vexcel** aerial imagery | The Scout screen's views from above; on a fixture building, the entry tags placed on its massing become the level's ways in and out | [`src/adapters/vexcel/`](src/adapters/vexcel/index.ts): `getVexcel`; [`live.ts`](src/adapters/vexcel/live.ts) `createLiveVexcel`; [`derived-massing.ts`](src/adapters/vexcel/derived-massing.ts). Served by [`/api/buildings/[id]/aerial`](src/app/api/buildings/[id]/aerial/route.ts) | A massing drawn as SVG from each building's footprint and height, in five views (N, E, S, W, ortho), with hand-placed entry tags, [`fixtures/vexcel/`](fixtures/vexcel/) | `VEXCEL_API_BASE` and `VEXCEL_API_KEY`. Real ortho and oblique photos, proxied through the server and held in memory, never stored. A fixture building's hand-placed tags are pinned on the photo; a kit building is aimed from a square derived from its CoStar facts and has no tags. Entries are not detected from the imagery |
 | **Matterport** 3D scans | The floor: nodes, edges, doors and sightlines; and the scan you walk in first person | [`src/adapters/matterport/`](src/adapters/matterport/index.ts) (browser only): `getMatterport`; [`mapping.ts`](src/adapters/matterport/mapping.ts) `toFloorGraph` from Showcase SDK `Sweep.data` and `Room.data`; first person in the scan, [`src/components/run/fp/`](src/components/run/fp/first-person-view.tsx); [`/api/scan-mesh`](src/app/api/scan-mesh/route.ts) | Hand-authored floors for F1, F2 and F3, [`fixtures/floors/`](fixtures/floors/). They are fiction: no Matterport content is in the repo | `NEXT_PUBLIC_MATTERPORT_SDK_KEY` (domain-bound) for the floor graph; `MATTERPORT_API_KEY` and `MATTERPORT_API_TOKEN` (server only) for the mesh and panoramas. Everything from a scan stays in the tab's memory |
-| **LangChain `deepagents`** | Two deep agents. The **Casting Director**: `createDeepAgent` with a todo list, the subagent `location-scout` (tools `get_mission`, `search_inventory`, `get_candidate`, `get_aerial_entries`) and its own `write_shortlist`. The **Level Builder**: a todo list, the subagents `data-analyst` (`get_building`, `get_available_space`, `get_aerial_entries`, `derive_security_profile`) and `game-master` (`get_mission`), and its own `write_manifest`. deepagents' `general-purpose` subagent is passed explicitly to each, so it shows in the traces | [`src/agents/casting/`](src/agents/casting/director.ts) `castMission`, run by [`scripts/cast.mts`](scripts/cast.mts); [`src/agents/builder/`](src/agents/builder/builder.ts) `buildLevel`, run by [`scripts/build-levels.mts`](scripts/build-levels.mts), [`warm-showcase.ts`](src/agents/builder/warm-showcase.ts) and [`/api/levels/[id]/generate`](src/app/api/levels/[id]/generate/route.ts) | The real deep agents run, graph, todos, subagent dispatch and tools included, against the fake adapters. Only the model's turns are replayed, by [`ScriptedChatModel`](src/adapters/llm/scripted.ts), from [`fixtures/llm/scripts/`](fixtures/llm/scripts/). The committed shortlists and the F1, F2 and F3 levels come from these runs | The same agents on Claude through `@langchain/anthropic`. In the app, live runs are the Level Builder's, for kit buildings: at server start for the showcase, or from the Dossier. A live run of the Casting Director (`npm run cast` in live mode) still searches the fixture inventory. An early live Level Builder run on F1 is kept in [`fixtures/llm/recorded/pre-119/`](fixtures/llm/recorded/pre-119/); it predates the mission input and no longer replays |
-| **Anthropic Claude** | The model for both deep agents, and one structured call each for the Crew, the Security Chief, Owner Mode's strategies and the Chief's fix | [`src/adapters/llm/`](src/adapters/llm/index.ts): `selectChatModel` in [`select.ts`](src/adapters/llm/select.ts), `createAnthropicModel` in [`anthropic.ts`](src/adapters/llm/anthropic.ts), `structuredCall` in [`structured.ts`](src/adapters/llm/structured.ts). Agents: [`crew`](src/agents/crew/crew.ts) `briefCrew`, [`chief`](src/agents/chief/chief.ts) `replanChief` | Recorded replies: keyword-routed for the Crew ([`fixtures/llm/crew-F1.json`](fixtures/llm/crew-F1.json)), per alarm transition then a deterministic [template](src/agents/chief/template.ts) for the Chief ([`chief-F1.json`](fixtures/llm/chief-F1.json)). The UI labels each answer recorded or rule-based | `ANTHROPIC_API_KEY`; default model `claude-sonnet-4-6`; on a 4 s timeout or a bad answer the recording answers instead. Measured: the Chief answers in about 3 s; the Crew's reply takes about 3.6 to 4 s, at its timeout, so it often falls back (#163) |
+| **LangChain `deepagents`** | Two deep agents. The **Casting Director**: `createDeepAgent` with a todo list, the subagent `location-scout` (tools `get_mission`, `search_inventory`, `get_candidate`, `get_aerial_entries`) and its own `get_mission` and `write_shortlist`. The **Level Builder**: a todo list, the subagents `data-analyst` (`get_building`, `get_available_space`, `get_aerial_entries`, `derive_security_profile`) and `game-master` (`get_mission`), and its own `write_manifest`. deepagents' `general-purpose` subagent is passed explicitly to each, so it shows in the traces | [`src/agents/casting/`](src/agents/casting/director.ts) `castMission`, run by [`scripts/cast.mts`](scripts/cast.mts); [`src/agents/builder/`](src/agents/builder/builder.ts) `buildLevel`, run by [`scripts/build-levels.mts`](scripts/build-levels.mts), [`warm-showcase.ts`](src/agents/builder/warm-showcase.ts) and [`/api/levels/[id]/generate`](src/app/api/levels/[id]/generate/route.ts) | The real deep agents run, graph, todos, subagent dispatch and tools included, against the fake adapters. Only the model's turns are replayed, by [`ScriptedChatModel`](src/adapters/llm/scripted.ts), from [`fixtures/llm/scripts/`](fixtures/llm/scripts/). The committed shortlists and the F1, F2 and F3 levels come from these runs | The same agents on Claude through `@langchain/anthropic`. In the app, live runs are the Level Builder's, for kit buildings: at server start for the showcase, or from the Dossier. A live run of the Casting Director (`npm run cast` in live mode) still searches the fixture inventory. An early live Level Builder run on F1 is kept in [`fixtures/llm/recorded/pre-119/`](fixtures/llm/recorded/pre-119/); it predates the mission input and no longer replays |
+| **Anthropic Claude** | The model for both deep agents, and one structured call each for the Crew, the Security Chief, Owner Mode's strategies and the Chief's fix | [`src/adapters/llm/`](src/adapters/llm/index.ts): `selectChatModel` in [`select.ts`](src/adapters/llm/select.ts), `createAnthropicModel` in [`anthropic.ts`](src/adapters/llm/anthropic.ts), `structuredCall` in [`structured.ts`](src/adapters/llm/structured.ts). Agents: [`crew`](src/agents/crew/crew.ts) `briefCrew`, [`chief`](src/agents/chief/chief.ts) `replanChief` | Recorded replies: keyword-routed for the Crew ([`fixtures/llm/crew-F1.json`](fixtures/llm/crew-F1.json)), per alarm transition then a deterministic [template](src/agents/chief/template.ts) for the Chief ([`chief-F1.json`](fixtures/llm/chief-F1.json)). The UI labels each answer recorded or rule-based | `ANTHROPIC_API_KEY`; default model `claude-sonnet-4-6`; on a 4 s timeout or a bad answer the recording answers instead. Measured: the Chief answers in about 3 s. #163 measured the Crew at 3.7 and 4.1 s against its 4 s timeout, so on a slow network it can fall back to the recording |
 | **Amazon Bedrock** | An alternative model provider | [`src/adapters/llm/bedrock.ts`](src/adapters/llm/bedrock.ts) `createBedrockModel` (`ChatBedrockConverse` from `@langchain/aws`) | — | Wired in and not used: `LLM_PROVIDER=bedrock`, refused unless `BEDROCK_ENABLED=1` |
 
 ## Run it
@@ -368,7 +382,7 @@ You need Node 22.12 or later. No keys, no `.env.local`, no database.
 ```sh
 git clone https://github.com/Ollienel777/Insider.git
 cd Insider
-npm install
+npm ci
 npm run dev
 ```
 
@@ -383,8 +397,10 @@ onto F1, F2 and F3, which have levels. Set `PORT` to use another port.
 `ANTHROPIC_API_KEY`; `COSTAR_KIT_DIR`; `VEXCEL_API_BASE` and
 `VEXCEL_API_KEY`; `NEXT_PUBLIC_MATTERPORT_SDK_KEY`, `MATTERPORT_API_KEY` and
 `MATTERPORT_API_TOKEN`. Each service goes live on its own; the rest stay on
-fixtures. For a real building, add `SHOWCASE_LEVELS=<building id>:<mission>`
-with a building id from your kit.
+fixtures. With CoStar live, every kit building in a mapped city shows on
+`/map`; to pin real buildings to missions and build their levels at start,
+add `SHOWCASE_LEVELS=<building id>:<mission>` with a building id from your
+kit.
 
 **Other commands.**
 
