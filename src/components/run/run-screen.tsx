@@ -285,7 +285,7 @@ export function RunScreen({
   // A call out is let finish when the alarm moves again; the newest event that waited is asked about after it (issue 172).
   const callChiefNext = useRef<(state: RunState, seq: number, queued: boolean) => void>(() => {});
   const callChief = useCallback(
-    (state: RunState, seq: number, queued = false) => {
+    (state: RunState, seq: number, queued = false, force = false) => {
       if (!placed || !zones) {
         // No board to ask about: a queued call must not hold the queue shut.
         if (queued) chiefCalls.current.reset();
@@ -295,7 +295,8 @@ export function RunScreen({
       // A Lockdown re-sighting in the same place asks nothing: the orders out still stand. One in a new
       // zone too soon after the last re-plan waits, so the radio reads that re-plan in full (issue 190).
       const now = performance.now();
-      const delay = event ? askDelay(event, askedAbout.current, now, clocked.current) : 0;
+      // Retry is the player asking: it always goes, whatever was asked about last.
+      const delay = event && !force ? askDelay(event, askedAbout.current, now, clocked.current) : 0;
       if (delay !== 0) {
         // A queued call skipped: free the queue, so the next event can ask.
         if (queued) chiefCalls.current.reset();
@@ -462,7 +463,7 @@ export function RunScreen({
 
   const retryChief = useCallback(() => {
     const current = latestRun.current;
-    if (current && current.alarmEvents.length > 0) callChief(current, current.alarmEvents.length - 1);
+    if (current && current.alarmEvents.length > 0) callChief(current, current.alarmEvents.length - 1, false, true);
   }, [callChief]);
 
   /** Forgets the earlier runs and places the level again, in its default posture. */
