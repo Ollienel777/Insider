@@ -240,16 +240,28 @@ runtimes, two installs and twice the gate memory on a 3.7 GB VM.
 | Model | `src/adapters/llm/` | Anthropic API via `@langchain/anthropic` (primary). Bedrock via `@langchain/aws` `ChatBedrockConverse`, present but refused unless `BEDROCK_ENABLED=1` | `ScriptedChatModel` for the builder; keyword-routed recorded replies for the crew; per-transition recorded orders and a deterministic template for the Chief; recorded drill narratives |
 | CoStar | `src/adapters/costar/` | **CoStar's data kit**, read from `COSTAR_KIT_DIR` at runtime: eight datasets exported from CoStar's data platform, documented in the kit's `index.md`, `models/` and `schemas/`. Only `data/commercial-property.jsonl` (buildings) and `data/commercial-listing-summary.jsonl` (space for lease or sale) are read, joined to Matterport models through `commercial-properties.csv`; field mapping in one file. The kit is licensed for the event only: **no kit record, and nothing derived from one, is ever committed** | five fixture buildings and the fixture inventory for casting, §7 |
 | Vexcel | `src/adapters/vexcel/` | `https://api.vexcelgroup.com/v2` with the `X-API-KEY` header: `property/extract` for the parcel, `ortho/extract` and the oblique directions `oriented/collections` reports, and `elements/detect` to tag docks and doors; imagery proxied, never stored in the repo | a massing render per building (footprint polygon plus height, drawn in Three.js) with hand-placed entry tags |
-| Matterport | `src/adapters/matterport/` (browser only) | Showcase SDK: `Sweep.data` and `Room.data` → `FloorGraph`, in memory; an "Inside view" panel follows the player's sweep. The SDK key works on `localhost` only. The GraphQL API (`MATTERPORT_API_KEY`, `MATTERPORT_API_TOKEN`, server side) also exposes rooms, room types, panoramas, floor plans and meshes; it stays unused until Q2 is answered | a hand-authored floor per building (`fixtures/floors/F*.json`), authored as fiction, so no Matterport content is involved |
+| Matterport | `src/adapters/matterport/` (browser only) | Showcase SDK: `Sweep.data` and `Room.data` → `FloorGraph`, in memory; an "Inside view" panel follows the player's sweep. The SDK key works on `localhost` only. The GraphQL API (`MATTERPORT_API_KEY`, `MATTERPORT_API_TOKEN`, server side) also exposes rooms, room types, panoramas, floor plans and meshes. Since Q2's yes, the scan renderer (#122) asks it for a scan's mesh and panorama links: the server relays signed links only, and the browser fetches the assets into memory | a hand-authored floor per building (`fixtures/floors/F*.json`), authored as fiction, so no Matterport content is involved |
 
-**Matterport terms (DECISION risk 2).** Until the sponsor says yes in writing,
-in live mode: the `FloorGraph` is built in the browser on each load and never
-sent to the server, persisted, or sent to a model. The Crew and the Chief
-receive zone ids and the game-fiction names the manifest gave them, the
-guard roster and the alarm state, never node coordinates or adjacency. The
-placer (D13) maps manifest roles onto nodes in the browser. The cached
-manifest holds no Matterport data. A written yes would let the crew see
-zone adjacency (Q2).
+**Matterport terms (DECISION risk 2).** Q2 is answered yes (the builder,
+2026-11-14, recorded on status issue #1). The team may keep data derived
+from a scan, show a scan's meshes and panoramas outside the Showcase viewer,
+and send scan-derived data to the model. What the event agreement still
+requires holds in every case:
+- No scan asset, model id or signed link is committed, logged or written to
+  disk.
+- Nothing from a scan is shared outside the team or kept after the event.
+
+In live mode:
+- The `FloorGraph` and the scan are held in the tab's memory for the session.
+  They are never sent to the server or stored.
+- The Crew and the Chief receive zone ids, the game-fiction names the manifest
+  gave them, the board's room names (#173), the guard roster and the alarm
+  state. Node ids reach them only as opaque `area-N` ids, never as
+  coordinates or adjacency.
+- The placer (D13) maps manifest roles onto nodes in the browser.
+- The cached manifest holds no Matterport data.
+
+Zone adjacency could now go to the crew too; it doesn't yet.
 
 **Latency (DECISION risk 3).** No model call blocks a frame. The builder runs
 ahead; crew and Chief calls are single structured calls with low `max_tokens`
@@ -500,7 +512,7 @@ Each blocks only the tickets named; everything else proceeds on fakes.
 | # | question | who answers | blocks |
 |---|---|---|---|
 | Q1 | ~~Which CoStar fields does the toolkit expose, and how?~~ **Answered:** a data kit of eight datasets, not an API (§4.5) | — | — |
-| Q2 | The keys reach 14,944 Houston and LA models. Is there a written yes for caching derived graphs, serving panoramas or meshes outside the Showcase viewer, and sending scan-derived data to an outside model? Without it, D26 ships under the §4.5 restrictions, and casting checks only that a scan exists, never what it contains | Matterport/CoStar on site, in writing | D26 |
+| Q2 | ~~The keys reach 14,944 Houston and LA models. Is there a written yes for caching derived graphs, serving panoramas or meshes outside the Showcase viewer, and sending scan-derived data to an outside model?~~ **Answered yes** (the builder, 2026-11-14, status issue #1): all three are allowed, under the event agreement's limits in §4.5 | — | — |
 | Q3 | What do the Vexcel keys include (obliques, ortho, entry detection), and may the imagery appear in a public repo and video? | Vexcel on site | D27; the video plan in D41 |
 | Q4 | The Anthropic API key, in `.env.local` and the repo's Actions secrets | the builder | D28, D29 |
 | Q5 | May CoStar records appear on screen in a public demo video? | CoStar | D41 |
@@ -508,7 +520,7 @@ Each blocks only the tickets named; everything else proceeds on fakes.
 | Q7 | The real deadline (EVENT.md marks it as an estimate) | the builder, from the hacker guide | none; moves the freeze and M5 |
 | Q8 | Does Drill Mode stay? It is on hold: off the demo script, its code kept, #34 and its PR held | the builder and the team | the held drill work |
 | Q9 | Does Owner Mode (§13) join casting as a second Monday answer, and does its beat make the 2-minute slot? Until then it is built only as far as O1 to O3 (no demo-script or smoke changes). Also ask CoStar's table whether owners would use it and whether the framing sits well with them | the builder and the team; CoStar | O4, O6 |
-| Q10 | May game elements (guards, cameras, rings) be drawn over the Showcase player, the player be shown under a CSS filter, and the scan appear in the demo video (§14)? | CoStar and Matterport on site | T5 to T7: the scan view in the demo and the video. T1 to T4 proceed |
+| Q10 | ~~May game elements (guards, cameras, rings) be drawn over the Showcase player, the player be shown under a CSS filter, and the scan appear in the demo video (§14)?~~ **Decided by the team** (2026-11-15, status issue #1; CoStar's ask-costar bot couldn't confirm either way): game pieces drawn into a real scan, darkened for night, with "Security shown is game fiction" on screen, are a yes in the game and on stage. The public demo video doesn't show the scan unless the CoStar crew says yes; until then it shows the run on F1 | — | the scan in the video only |
 
 ## 12. The casting backlog (C1–C6)
 
