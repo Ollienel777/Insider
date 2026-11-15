@@ -22,6 +22,9 @@ const MOVE = { KeyW: [1, 0], KeyS: [-1, 0], KeyD: [0, 1], KeyA: [0, -1], ArrowUp
 const TURN = { ArrowLeft: -1, ArrowRight: 1 } as const;
 const TAKEN = new Set<string>([...Object.keys(MOVE), ...Object.keys(TURN), "KeyE", "KeyG"]);
 
+/** A control set over the view (the Debrief link at the end, a Why card): a press on it is not a look. */
+const control = (target: EventTarget | null) => (target as Element | null)?.closest?.("a, button, [role=dialog]") != null;
+
 const typing = (target: EventTarget | null) =>
   (target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable=true], [contenteditable='']") != null;
 
@@ -65,8 +68,8 @@ export class Controller {
       this.turn(event.movementX * FP.lookRadPerPx, -event.movementY * FP.lookRadPerPx);
     });
     listen(document, "pointerlockerror", () => this.onRefused());
-    listen(surface, "click", () => {
-      if (this.locked) return;
+    listen(surface, "click", (event: MouseEvent) => {
+      if (this.locked || control(event.target)) return;
       try {
         // A browser may refuse (no gesture, a sandboxed frame, a remote session): dragging and the arrow keys still turn the view.
         void Promise.resolve(surface.requestPointerLock()).catch(() => this.onRefused());
@@ -76,7 +79,7 @@ export class Controller {
     });
     // Drag to look: the way to turn the view wherever the lock is refused. Same direction as the locked mouse.
     listen(surface, "pointerdown", (event: PointerEvent) => {
-      if (this.locked || event.button !== 0) return;
+      if (this.locked || event.button !== 0 || control(event.target)) return;
       this.drag = [event.clientX, event.clientY];
       try {
         surface.setPointerCapture(event.pointerId);
