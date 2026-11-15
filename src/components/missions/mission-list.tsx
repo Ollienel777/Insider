@@ -1,12 +1,12 @@
 "use client";
 
 import { ExternalLink } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useId, useState, type KeyboardEvent } from "react";
 import { buttonVariants } from "@/components/ui/button";
-import { BASEMAPS } from "@/components/map/basemap";
-import type { Mission } from "@/domain";
+import { BuildingMarker } from "@/components/map/map-pin";
+import { MapView } from "@/components/map/map-screen";
+import type { Building, Mission } from "@/domain";
 import { cityName } from "@/lib/cities";
 import { cn } from "@/lib/utils";
 import { BuildingSketch, eraStyle } from "./building-sketch";
@@ -44,7 +44,10 @@ const CASEHEAD = "flex items-baseline justify-between gap-3 border-b-2 border-da
  * the job itself on the right page; the stamp "Take the job" opens its cast
  * screen. ← and → flip through the jobs.
  */
-export function MissionList({ missions }: { missions: readonly Mission[] }) {
+/** A building as the mission picker's map draws it: where it is, and its name for the caption. */
+export type MissionMapBuilding = Pick<Building, "id" | "name" | "city" | "lat" | "lng">;
+
+export function MissionList({ missions, buildings = [] }: { missions: readonly Mission[]; buildings?: readonly MissionMapBuilding[] }) {
   const [at, setAt] = useState(0);
   const tabsId = useId();
   const mission = missions[at];
@@ -61,7 +64,7 @@ export function MissionList({ missions }: { missions: readonly Mission[] }) {
   if (!mission) return null;
   const source = mission.inspiredBy ? safeSourceUrl(mission.inspiredBy.sourceUrl) : null;
   const era = eraNeeded(mission);
-  const basemap = BASEMAPS[mission.city];
+  const inCity = buildings.filter((b) => b.city === mission.city);
   const fileNo = `${mission.type === "heist" ? "H" : "P"}-${String((at + 1) * 7).padStart(2, "0")}`;
   return (
     <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2">
@@ -173,19 +176,31 @@ export function MissionList({ missions }: { missions: readonly Mission[] }) {
           <span className="font-hand text-lg text-text-1 normal-case">{cityName(mission.city)}</span>
           <span>Map</span>
         </div>
-        <div className="relative min-h-[220px] flex-1 overflow-hidden rounded-[4px] border-2 border-border-strong bg-n-850">
-          <Image key={mission.city} src={basemap.file} alt={`Street map of ${cityName(mission.city)}`} fill unoptimized sizes="50vw" className="paper-map object-cover" />
-          <span className="absolute right-3 bottom-2 font-mono text-[10px] text-text-2">© OpenStreetMap contributors</span>
+        {/* The city's buildings our agent can cast from, each marked by a little building. */}
+        <div data-testid="mission-map" className="relative min-h-[220px] flex-1 overflow-hidden rounded-[4px] border-2 border-border-strong bg-n-850">
+          <MapView
+            city={mission.city}
+            buildings={inCity}
+            caption={`${cityName(mission.city)} · ${inCity.length} ${inCity.length === 1 ? "building" : "buildings"}`}
+            pin={(building, x, y) => (
+              <div
+                key={building.id}
+                data-testid="mission-map-pin"
+                data-building={building.id}
+                title={building.name}
+                className="absolute size-0"
+                style={{ left: `${x * 100}%`, top: `${y * 100}%` }}
+              >
+                <BuildingMarker size="sm" className="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2" />
+              </div>
+            )}
+          />
         </div>
         <div className="max-w-[420px] -rotate-1 self-start border-2 border-border bg-accent px-3 pt-2 pb-3 font-hand text-base leading-snug text-text-1 shadow-[3px_5px_0_rgb(0_0_0/0.2)]">
           <span className="block font-sans text-[10px] font-extrabold tracking-[0.1em] text-text-2 uppercase">The job</span>
           {mission.objective}
         </div>
         <p className="font-hand text-sm text-text-2">Somewhere in this city our agent finds a building that fits, then the board is built from it.</p>
-        {/* Off the demo path: the map of every prepared building, kept for the building screens' "Back to the map". */}
-        <Link href="/map" className="inline-flex h-10 w-fit items-center font-mono text-xs text-text-2 underline decoration-border-strong underline-offset-4 hover:text-text-1">
-          Or browse every prepared building on the map
-        </Link>
         {/* The stamp, docked on the desk at the end of the tab row like every screen's action (see BuildingScreen). */}
         <div
           data-testid="stamp-dock"

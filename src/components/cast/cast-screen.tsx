@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useReducedMotion } from "@/components/drill/use-reduced-motion";
 import { BASEMAPS, fitView, project } from "@/components/map/basemap";
+import { BuildingMarker } from "@/components/map/map-pin";
 import { CityTabs, MapView, useCityTab } from "@/components/map/map-screen";
 import { formatRecordedAt, recordedRunHeader, traceView } from "@/components/dossier/replay";
 import { Reveal } from "@/components/dossier/reveal";
@@ -395,23 +396,23 @@ function CastPin({ pin, x, y, state, finalist, selected }: CastPinProps) {
       className={cn("pointer-events-none absolute size-0", out ? "z-0" : finalist ? "z-20" : "z-10")}
       style={{ left: `${x * 100}%`, top: `${y * 100}%` }}
     >
-      <span
-        className={cn(
-          "absolute top-0 left-0 block -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface-0 transition-[width,height,background-color,opacity] duration-slow ease-out",
-          out ? "size-2 bg-n-600 opacity-60" : selected ? "size-3 bg-accent" : "size-3 bg-text-1",
-        )}
-      />
+      {out ? (
+        <span className="absolute top-0 left-0 block size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-n-600 opacity-60 ring-2 ring-surface-0 transition-opacity duration-slow" />
+      ) : (
+        // Still in: a little building marks the property.
+        <BuildingMarker size="sm" tone={selected ? "selected" : "default"} className="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2" />
+      )}
       {finalist && !out ? (
         <span
           className={cn(
-            "absolute top-0 left-0 block size-6 -translate-x-1/2 -translate-y-1/2 rounded-full border",
+            "absolute top-0 left-0 block size-8 -translate-x-1/2 -translate-y-1/2 rounded-[7px] border",
             selected ? "border-accent" : "border-text-2",
           )}
         />
       ) : null}
       <span
         className={cn(
-          "absolute top-[12px] left-0 flex -translate-x-1/2 gap-0.5 transition-opacity duration-slow",
+          "absolute top-[14px] left-0 flex -translate-x-1/2 gap-0.5 transition-opacity duration-slow",
           out ? "opacity-0" : "opacity-100",
         )}
       >
@@ -424,7 +425,7 @@ function CastPin({ pin, x, y, state, finalist, selected }: CastPinProps) {
           className={cn(
             "absolute top-0 -translate-y-1/2 rounded-sm bg-surface-0/80 px-1.5 text-xs font-medium whitespace-nowrap",
             // Near the right edge the name sits left of the pin, so it stays on the map.
-            x > 0.7 ? "right-4" : "left-4",
+            x > 0.7 ? "right-5" : "left-5",
             selected ? "text-accent" : "text-text-1",
           )}
         >

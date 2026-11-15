@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { FIXTURE_BUILDINGS } from "@/adapters/costar/fake";
 import { MISSIONS } from "@/agents/builder/missions";
 import { eraStyle } from "./building-sketch";
 import { castHref, eraNeeded, MISSION_DISCLAIMER, MissionList, safeSourceUrl } from "./mission-list";
@@ -55,9 +56,17 @@ describe("MissionList", () => {
     expect(out).toContain("Prevent · Los Angeles");
   });
 
-  it("opens with the hook as SPEC §2 beat 1 words it, and links to the map of every building", () => {
+  it("opens with the hook as SPEC §2 beat 1 words it, with no link off to the map of every building", () => {
     expect(text).toContain("Every heist in history needed a building. Our agent finds one that's empty tonight.");
-    expect(html).toContain('href="/map"');
+    expect(html).not.toContain('href="/map"');
+  });
+
+  it("marks the mission's city's buildings on its map with a little building each, and no other city's", () => {
+    const marked = renderToStaticMarkup(<MissionList missions={MISSIONS} buildings={FIXTURE_BUILDINGS} />);
+    const la = FIXTURE_BUILDINGS.filter((b) => b.city === "LA").map((b) => b.id);
+    expect([...marked.matchAll(/data-testid="mission-map-pin" data-building="(\w+)"/g)].map((m) => m[1])).toEqual(la);
+    expect(marked.match(/data-testid="pin-building"/g)).toHaveLength(la.length);
+    expect(marked).toContain(`Los Angeles · ${la.length} buildings`);
   });
 
   it("names the era each mission needs from its year-built filter, and sketches a building of that era", () => {

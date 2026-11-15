@@ -51,17 +51,7 @@ export function MapPin({ building, x, y, selected, showCard, onSelect, onHover }
           disabled ? "cursor-default" : "cursor-pointer",
         )}
       >
-        {/* A little building marks the spot. */}
-        <span
-          aria-hidden
-          data-testid="pin-building"
-          className={cn(
-            "flex size-6 items-center justify-center rounded-[5px] ring-2 ring-surface-0 shadow-e-1 transition-transform duration-fast",
-            disabled ? "bg-n-500 text-surface-0" : selected ? "bg-accent text-text-1" : "bg-text-1 text-surface-0 group-hover:scale-110",
-          )}
-        >
-          <Building2 className="size-4 stroke-[2]" />
-        </span>
+        <BuildingMarker tone={disabled ? "muted" : selected ? "selected" : "default"} className="group-hover:scale-110" />
         {selected ? (
           <span aria-hidden className="absolute size-9 rounded-[8px] border border-accent" />
         ) : null}
@@ -82,5 +72,35 @@ export function MapPin({ building, x, y, selected, showCard, onSelect, onHover }
       </button>
       {showCard ? <BuildingCard building={building} placement={cardPlacement(x, y)} /> : null}
     </div>
+  );
+}
+
+/**
+ * The little building that marks a building's spot on every map (the map, the
+ * mission picker's map, the cast map). Decorative: the pin or caption around
+ * it names the building.
+ */
+export function BuildingMarker({
+  tone = "default",
+  size = "md",
+  className,
+}: {
+  tone?: "default" | "selected" | "muted";
+  size?: "sm" | "md";
+  className?: string;
+}) {
+  return (
+    <span
+      aria-hidden
+      data-testid="pin-building"
+      className={cn(
+        "flex shrink-0 items-center justify-center ring-2 ring-surface-0 shadow-e-1 transition-transform duration-fast",
+        size === "md" ? "size-6 rounded-[5px]" : "size-5 rounded-[4px]",
+        tone === "muted" ? "bg-n-500 text-surface-0" : tone === "selected" ? "bg-accent text-text-1" : "bg-text-1 text-surface-0",
+        className,
+      )}
+    >
+      <Building2 className={cn("stroke-[2]", size === "md" ? "size-4" : "size-3.5")} />
+    </span>
   );
 }
