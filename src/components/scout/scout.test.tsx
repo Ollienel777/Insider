@@ -269,6 +269,26 @@ describe("the Scout on a live aerial", () => {
     expect(html).toContain('data-view="N"');
     expect(html).toContain("Vexcel · massing");
   });
+
+  it("says a kit building has no tagged entries, and a fixture's untagged aerial keeps its own line", () => {
+    const untagged = { ...live, entries: [] };
+    const panel = (source: "costar" | "fixture") =>
+      renderToStaticMarkup(
+        <ScoutPanel
+          building={{ ...f1, id: "900001", source }}
+          load={{ status: "ready", aerial: untagged, live: true }}
+          selected={null}
+          onPick={() => {}}
+          onRetry={() => {}}
+        />,
+      );
+    const kit = panel("costar");
+    expect(kit).toContain('data-testid="entries-untagged"');
+    expect(kit).toContain("No entries are tagged for this building");
+    expect(kit).toContain("0 tagged");
+    expect(panel("fixture")).not.toContain('data-testid="entries-untagged"');
+    expect(panel("fixture")).toContain("The aerial tags no entries on this building.");
+  });
 });
 
 describe("fetchAerial and the mode chip", () => {

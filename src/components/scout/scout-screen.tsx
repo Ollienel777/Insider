@@ -651,6 +651,12 @@ export function ScoutPanel({ building, load, selected, onPick, onRetry }: PanelP
               Retry
             </Button>
           </div>
+        ) : aerial!.entries.length === 0 && isFactsOnly(building.source) ? (
+          // A kit building's aerial is aimed from its CoStar facts, which mark no dock or door.
+          <p data-testid="entries-untagged" className="text-sm text-text-2">
+            No entries are tagged for this building: nothing in its CoStar facts marks a dock or a door. The level offers the
+            roof hatch and the street lobby, which every office building has.
+          </p>
         ) : aerial!.entries.length === 0 ? (
           <p className="text-sm text-text-2">The aerial tags no entries on this building.</p>
         ) : (

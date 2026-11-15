@@ -27,8 +27,9 @@ export interface LiveVexcelConfig {
   base?: string;
   key?: string;
   /**
-   * The building's hand-made massing, or `null` when the id is unknown. Its
-   * footprint says where to look; its entries are placed on the imagery.
+   * The building's hand-made massing (or, for a kit building, one derived
+   * from its CoStar facts), or `null` when the id is unknown. Its footprint
+   * says where to look; its entries are placed on the imagery.
    */
   massing: (buildingId: string) => Promise<Aerial | null>;
   fetch?: typeof fetch;

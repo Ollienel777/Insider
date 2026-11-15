@@ -7,10 +7,13 @@
 // adds `noCoverageFallback`). A failure of the network, a redirect, or
 // several buildings failing in a row trips the breaker instead: from then on
 // Vexcel stays on fixtures (`Breaker`), and the selection carries that `fallback`.
+import { getCoStar } from "@/adapters/costar";
+import type { Aerial, Building } from "@/domain";
 import { syncDemoEpoch } from "@/lib/demo-epoch";
 import { fallbackMessage, withFallback, type Fallback } from "@/lib/fallback";
 import { missingForLive, serviceModes, type ServiceMode } from "@/lib/mode";
 import { resetServerSlot, serverSlot } from "@/lib/server-breakers";
+import { deriveMassing } from "./derived-massing";
 import { createFakeVexcel } from "./fake";
 import { createLiveVexcel } from "./live";
 import type { VexcelAdapter } from "./types";
@@ -38,7 +41,32 @@ export function noCoverageFallback(buildingId: string): Fallback {
   return { service: "vexcel", id: `vexcel-no-scan-${buildingId}`, message: fallbackMessage("vexcel", "no-scan") };
 }
 
-export function selectVexcel(env: Env): VexcelSelection {
+/** One building's CoStar facts by id, or `null` when CoStar has no such building. */
+export type BuildingLookup = (id: string) => Promise<Building | null>;
+
+/** The building as CoStar serves it: the fixtures, or the kit when CoStar is live. */
+const fromCoStar: BuildingLookup = (id) => getCoStar().adapter.getBuilding(id);
+
+/**
+ * Where live Vexcel aims for a building, and the entries it pins: the
+ * hand-made massing when the building has one (F1–F5), else a square one
+ * derived from its CoStar facts (a kit building, which tags no entries),
+ * else `null`. CoStar is asked only for a building with no fixture massing;
+ * a CoStar failure is `null` here, so it never counts against Vexcel.
+ */
+export async function massingFor(id: string, building: BuildingLookup = fromCoStar): Promise<Aerial | null> {
+  const fixture = await fake.getAerial(id);
+  if (fixture) return fixture;
+  try {
+    const found = await building(id);
+    return found ? deriveMassing(found) : null;
+  } catch (error) {
+    console.warn(`Vexcel: no CoStar facts to aim at ${id} (${(error as Error)?.message ?? error})`);
+    return null;
+  }
+}
+
+export function selectVexcel(env: Env, options: { building?: BuildingLookup } = {}): VexcelSelection {
   const requested = serviceModes(env).vexcel;
   if (requested === "fake") {
     return { adapter: createFakeVexcel(), mode: "fake", reason: "Vexcel: fixtures (fake mode)" };
@@ -52,12 +80,13 @@ export function selectVexcel(env: Env): VexcelSelection {
     };
   }
   // Live imagery is fetched at the fixture massing's own block, and the
-  // massing's hand-placed entries are pinned onto it, until the CoStar kit
-  // can say where a real building stands (issue 29).
+  // massing's hand-placed entries are pinned onto it (issue 29). A kit
+  // building is aimed at from its CoStar point and size instead (`massingFor`).
+  const building = options.building ?? fromCoStar;
   const live = createLiveVexcel({
     base: env.VEXCEL_API_BASE,
     key: env.VEXCEL_API_KEY,
-    massing: (id) => fake.getAerial(id),
+    massing: (id) => massingFor(id, building),
   });
   return {
     adapter: {
